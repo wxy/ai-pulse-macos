@@ -55,7 +55,8 @@ final class MenuBarController: NSObject {
                     let byModel = NSMenuItem(title: "▸ By Model", action: nil, keyEquivalent: "")
                     let mSub = NSMenu()
                     for m in stats.models {
-                        mSub.addItem(NSMenuItem(title: "\(m.name)  ·  \(m.costStr)", action: nil, keyEquivalent: ""))
+                        let cplStr = stats.netLines > 0 ? " · $\(String(format: "%.3f", m.cost / Double(stats.netLines)))/line" : ""
+                        mSub.addItem(NSMenuItem(title: "\(m.name)  ·  \(m.costStr)\(cplStr)", action: nil, keyEquivalent: ""))
                     }
                     byModel.submenu = mSub
                     let after = self.menu.index(of: self.summaryItem) + 2
@@ -92,7 +93,7 @@ final class MenuBarController: NSObject {
     }
 
     private struct Stats {
-        let summary: String; let cpl: String; let models: [ModelStat]; let repos: [RepoStat]; let hasActivity: Bool
+        let summary: String; let cpl: String; let models: [ModelStat]; let repos: [RepoStat]; let netLines: Int; let hasActivity: Bool
     }
 
     private func fetchTodayStats() async -> Stats {
@@ -142,7 +143,7 @@ final class MenuBarController: NSObject {
             }
 
             if count == 0 {
-                return Stats(summary: "No AI usage recorded today", cpl: "", models: [], repos: [], hasActivity: false)
+                return Stats(summary: "No AI usage recorded today", cpl: "", models: [], repos: [], netLines: 0, hasActivity: false)
             }
             let totalT = (tokens?.0 ?? 0) + (tokens?.1 ?? 0) + (tokens?.2 ?? 0)
             let costStr: String
@@ -167,10 +168,10 @@ final class MenuBarController: NSObject {
             }
             return Stats(
                 summary: summaryLine, cpl: cplStr,
-                models: models, repos: repos, hasActivity: true
+                models: models, repos: repos, netLines: netLines ?? 0, hasActivity: true
             )
         } catch {
-            return Stats(summary: "Stats unavailable", cpl: "", models: [], repos: [], hasActivity: false)
+            return Stats(summary: "Stats unavailable", cpl: "", models: [], repos: [], netLines: 0, hasActivity: false)
         }
     }
 
