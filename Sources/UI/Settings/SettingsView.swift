@@ -56,108 +56,164 @@ struct SettingsView: View {
 // MARK: - Tools
 
 struct MonitoredToolsView: View {
-    @State private var claudeCodeEnabled = true
+    @State private var enabledTools: [ToolInfo] = []
+    struct ToolInfo: Identifiable, Equatable {
+        let id = UUID(); let name: String; let path: String; var enabled: Bool
+    }
+
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Monitored AI Tools").font(.headline)
-            HStack { Text("Claude Code"); Text("~/.claude/projects/").font(.caption).foregroundColor(.secondary) }
-            Text("More tools coming soon.").font(.caption).foregroundColor(.secondary).padding(.top, 4)
+            if enabledTools.isEmpty {
+                Text("No tools detected. Start using Claude Code or aider to auto-detect.").font(.caption).foregroundColor(.secondary)
+            } else {
+                List($enabledTools) { $tool in
+                    Toggle(isOn: $tool.enabled) {
+                        VStack(alignment: .leading) {
+                            Text(tool.name).font(.body)
+                            Text(tool.path).font(.caption).foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .listStyle(.inset)
+                .frame(height: 120)
+            }
         }
+        .onAppear { detectTools() }
+    }
+
+    private func detectTools() {
+        var tools: [ToolInfo] = []
+        let ccDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+        if FileManager.default.fileExists(atPath: ccDir.path) {
+            tools.append(ToolInfo(name: "Claude Code", path: "~/.claude/projects/", enabled: true))
+        }
+        // Check for aider in common repos
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        for dir in ["dev", "projects", "code"] {
+            let url = home.appendingPathComponent(dir)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            if let e = FileManager.default.enumerator(at: url,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
+                for case let repo as URL in e {
+                    let aiderFile = repo.appendingPathComponent(".aider.llm.history")
+                    if FileManager.default.fileExists(atPath: aiderFile.path) {
+                        if !tools.contains(where: { $0.name == "aider" }) {
+                            tools.append(ToolInfo(name: "aider", path: "(found in repos)", enabled: true))
+                        }
+                        e.skipDescendants()
+                    }
+                }
+            }
+        }
+        enabledTools = tools
     }
 }
 
 // MARK: - Repos
 
-/// Persistable repo search directories
 private let repoDirsKey = "repo_search_dirs"
 
 struct GitReposView: View {
-    @State private var searchDirs: [String] = ["~/dev", "~/projects", "~/code"]
-    @State private var repos: [String] = []
-    @State private var refreshed = false
+    @State private var searchDirs: [String] = []
+    @State private var selectedDir: String? = nil
+    @State private var reposForDir: [String] = []
+    @State private var dirRepoCounts: [String: Int] = [:]
+    @State private var showDeleteAlert = false
+    @State private var dirToDelete: String? = nil
 
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Git Repositories").font(.headline)
-            Text("Repos in these directories are monitored for commit changes.")
-                .font(.caption).foregroundColor(.secondary)
-
-            // Directory list
-            List {
-                ForEach(searchDirs, id: \.self) { dir in
-                    HStack {
-                        Text(dir).font(.caption)
-                        Spacer()
-                        Button("✕") { searchDirs.removeAll { $0 == dir }; save(); rescan() }
-                            .buttonStyle(.plain).foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                // Directory list
+                VStack(alignment: .leading) {
+                    Text("Directories").font(.caption).foregroundColor(.secondary)
+                    List(selection: $selectedDir) {
+                        ForEach(searchDirs, id: \.self) { dir in
+                            HStack {
+                                Text(dir).font(.caption)
+                                Spacer()
+                                Text("\(dirRepoCounts[dir, default: 0])").font(.caption).foregroundColor(.secondary)
+                            }
+                            .tag(dir)
+                            .contextMenu {
+                                Button("Remove") { dirToDelete = dir; showDeleteAlert = true }
+                            }
+                        }
+                    }
+                    .listStyle(.bordered)
+                    .frame(height: 100)
+                    .onChange(of: selectedDir) { _, newDir in
+                        if let d = newDir { reposForDir = scanRepos(in: d) }
                     }
                 }
+                .frame(maxWidth: .infinity)
+
+                // Repo list for selected dir
+                VStack(alignment: .leading) {
+                    Text(selectedDir != nil ? "Repos (\(reposForDir.count))" : "Repos").font(.caption).foregroundColor(.secondary)
+                    if reposForDir.isEmpty {
+                        Text(selectedDir != nil ? "No repos found." : "Select a directory.").font(.caption).foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center).padding(.top, 30)
+                    } else {
+                        List(reposForDir, id: \.self) { repo in
+                            Text(repo).font(.caption).lineLimit(1).truncationMode(.middle)
+                        }
+                        .listStyle(.bordered)
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
-            .frame(height: 80)
 
             HStack {
                 Button("Add Directory…") {
                     let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true
-                    panel.canChooseFiles = false
-                    panel.prompt = "Select"
+                    panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.prompt = "Select"
                     if panel.runModal() == .OK, let url = panel.url {
                         let path = url.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
-                        if !searchDirs.contains(path) { searchDirs.append(path); save(); rescan() }
+                        if !searchDirs.contains(path) { searchDirs.append(path); save(); rescanAll() }
                     }
                 }
             }
 
-            Divider()
-
-            if repos.isEmpty {
-                Text("No repos found. Add code directories above.")
-                    .font(.caption).foregroundColor(.secondary)
-            } else {
-                Text("\(repos.count) repositories found").font(.caption).foregroundColor(.secondary)
-                ScrollView {
-                    ForEach(repos, id: \.self) { repo in
-                        Text(URL(fileURLWithPath: repo).lastPathComponent)
-                            .font(.caption)
-                    }
-                }
-                .frame(height: 80)
+            Text("\(reposForDir.count) repos · \(searchDirs.count) directories").font(.caption2).foregroundColor(.secondary)
+        }
+        .onAppear { load(); rescanAll(); if selectedDir == nil { selectedDir = searchDirs.first } }
+        .alert("Remove Directory", isPresented: $showDeleteAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) {
+                if let d = dirToDelete { searchDirs.removeAll { $0 == d }; save(); rescanAll(); if selectedDir == d { selectedDir = searchDirs.first } }
             }
-        }
-        .onAppear {
-            load()
-            if !refreshed { rescan(); refreshed = true }
-        }
+        } message: { Text("Stop monitoring repos in '\(dirToDelete ?? "")'?") }
     }
 
     private func load() {
-        if let saved = UserDefaults.standard.stringArray(forKey: repoDirsKey), !saved.isEmpty {
-            searchDirs = saved
-        }
+        if let saved = UserDefaults.standard.stringArray(forKey: repoDirsKey), !saved.isEmpty { searchDirs = saved }
+        if searchDirs.isEmpty { searchDirs = ["~/dev", "~/projects", "~/code"] }
     }
-    private func save() {
-        UserDefaults.standard.set(searchDirs, forKey: repoDirsKey)
+    private func save() { UserDefaults.standard.set(searchDirs, forKey: repoDirsKey) }
+    private func rescanAll() {
+        dirRepoCounts.removeAll()
+        for dir in searchDirs { dirRepoCounts[dir] = scanRepos(in: dir).count }
+        if let d = selectedDir, searchDirs.contains(d) { reposForDir = scanRepos(in: d) }
     }
-    private func rescan() {
+    private func scanRepos(in dir: String) -> [String] {
+        let expanded = NSString(string: dir).expandingTildeInPath
         let fm = FileManager.default
+        guard fm.fileExists(atPath: expanded),
+              let e = fm.enumerator(at: URL(fileURLWithPath: expanded),
+                  includingPropertiesForKeys: [.isDirectoryKey],
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else { return [] }
         var found: [String] = []
-        for dir in searchDirs {
-            let expanded = NSString(string: dir).expandingTildeInPath
-            guard fm.fileExists(atPath: expanded) else { continue }
-            guard let e = fm.enumerator(at: URL(fileURLWithPath: expanded),
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles, .skipsPackageDescendants])
-            else { continue }
-            for case let url as URL in e {
-                let git = url.appendingPathComponent(".git")
-                var isDir: ObjCBool = false
-                if fm.fileExists(atPath: git.path, isDirectory: &isDir), isDir.boolValue {
-                    found.append(url.path)
-                    e.skipDescendants()
-                }
-            }
+        for case let url as URL in e {
+            let git = url.appendingPathComponent(".git")
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: git.path, isDirectory: &isDir), isDir.boolValue { found.append(url.lastPathComponent); e.skipDescendants() }
         }
-        repos = found.sorted()
+        return found.sorted()
     }
 }
 
@@ -183,44 +239,45 @@ struct SubscriptionToolsView: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Subscription Tools").font(.headline)
-            Text("Monthly fee tools. Cost per line = fee / net lines committed.")
-                .font(.caption).foregroundColor(.secondary).padding(.bottom, 4)
+            Text("Cost per line = monthly fee / net lines committed.")
+                .font(.caption).foregroundColor(.secondary)
 
-            // Preset picker
             HStack {
-                Picker("Add preset:", selection: $newName) {
-                    Text("Choose…").tag("")
+                Picker("Add:", selection: $newName) {
+                    Text("Choose preset…").tag("")
                     ForEach(presets, id: \.name) { p in
                         ForEach(p.tiers, id: \.label) { t in
                             Text("\(p.name) \(t.label) ($\(String(format: "%.0f", t.fee))/mo)").tag("\(p.name)|\(t.label)|\(t.fee)")
                         }
                     }
                 }
-                .frame(width: 280)
+                .frame(width: 260)
                 Button("Add") {
                     let parts = newName.components(separatedBy: "|")
                     guard parts.count == 3, let fee = Double(parts[2]) else { return }
-                    let tool = SubTool(name: "\(parts[0]) \(parts[1])", monthlyFee: fee, currency: "USD")
+                    let name = "\(parts[0]) \(parts[1])"
+                    guard !tools.contains(where: { $0.name == name }) else { newName = ""; return }
+                    let tool = SubTool(name: name, monthlyFee: fee, currency: "USD")
                     tools.append(tool); saveToDB(tool); newName = ""
                 }
                 .disabled(newName.isEmpty)
             }
 
-            // Current subscriptions
             List {
                 ForEach(tools) { tool in
                     HStack {
                         Text(tool.name)
                         Spacer()
                         Text("$\(String(format: "%.2f", tool.monthlyFee))/mo").foregroundColor(.secondary)
+                        Button { deleteFromDB(tool); tools.removeAll { $0.name == tool.name } } label: {
+                            Image(systemName: "trash").font(.caption)
+                        }.buttonStyle(.plain).foregroundColor(.secondary)
                     }
                 }
-                .onDelete { idx in
-                    for i in idx { deleteFromDB(tools[i]); tools.remove(at: i) }
-                }
             }
+            .listStyle(.inset)
             .frame(height: 100)
         }
         .onAppear { loadFromDB() }
