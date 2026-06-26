@@ -46,7 +46,10 @@ final class AppDatabase {
             }
             try db.create(indexOn: "code_change", columns: ["ts"])
             try db.create(indexOn: "code_change", columns: ["repo_path"])
+        }
 
+        // Run separately to ensure subscription_tool exists even if earlier migration failed
+        try dbQueue?.write { db in
             try db.create(table: "subscription_tool", ifNotExists: true) { t in
                 t.column("id", .text).primaryKey()
                 t.column("name", .text).notNull()

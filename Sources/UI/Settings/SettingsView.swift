@@ -65,7 +65,7 @@ struct ToolsTab: View {
                 VStack(spacing: 6) {
                     ForEach($tools) { $t in
                         HStack {
-                            Toggle(isOn: $t.enabled) {}.toggleStyle(.switch)
+                            Toggle(isOn: $t.enabled) {}.toggleStyle(.checkbox)
                             VStack(alignment: .leading) {
                                 Text(t.name).font(.body)
                                 Text("\(t.path) · \(t.sessions) sessions").font(.caption2).foregroundColor(.secondary)
@@ -113,7 +113,9 @@ struct ReposTab: View {
                     HStack {
                         Text("Directories").font(.caption).foregroundColor(.secondary)
                         Spacer()
-                        Button(action: pickDir) { Image(systemName: "plus.circle").font(.body) }.buttonStyle(.plain)
+                        Button(action: pickDir) {
+                            Label("Add", systemImage: "plus.circle").font(.caption)
+                        }
                     }
                     List(selection: $selectedDir) {
                         ForEach(searchDirs, id: \.self) { dir in
@@ -130,7 +132,7 @@ struct ReposTab: View {
                             .padding(.vertical, 1).tag(dir)
                         }
                     }
-                    .listStyle(.bordered).frame(width: 240, height: 140)
+                    .listStyle(.bordered).frame(minWidth: 200, idealWidth: 220, maxWidth: 240, minHeight: 140, maxHeight: 140)
                 }
 
                 // Right: repos
@@ -145,7 +147,7 @@ struct ReposTab: View {
                         }
                         .listStyle(.bordered)
                     }
-                }.frame(width: 200, height: 140)
+                }.frame(minWidth: 160, idealWidth: 190, maxWidth: 210, minHeight: 140, maxHeight: 140)
             }
 
             Text("\(searchDirs.count) dirs · \(counts.values.reduce(0,+)) repos").font(.caption2).foregroundColor(.secondary)
