@@ -3,7 +3,7 @@ import GRDB
 import AppKit
 
 struct SettingsView: View {
-    @State private var selectedTab = "tools"
+    @State private var selectedTab: Tab = .tools
 
     enum Tab: String, CaseIterable {
         case tools = "Tools"
@@ -25,17 +25,16 @@ struct SettingsView: View {
     var body: some View {
         NavigationSplitView(sidebar: {
             List(Tab.allCases, id: \.rawValue, selection: $selectedTab) { tab in
-                Label(tab.rawValue, systemImage: tab.icon).tag(tab.rawValue)
+                Label(tab.rawValue, systemImage: tab.icon)
             }
             .navigationSplitViewColumnWidth(120)
         }, detail: {
             switch selectedTab {
-            case "tools":       MonitoredToolsView()
-            case "repos":       GitReposView()
-            case "subscriptions": SubscriptionToolsView()
-            case "pricing":     PricingView()
-            case "about":       AboutView()
-            default:            Text("Select a tab").foregroundColor(.secondary)
+            case .tools:       MonitoredToolsView()
+            case .repos:       GitReposView()
+            case .subscriptions: SubscriptionToolsView()
+            case .pricing:     PricingView()
+            case .about:       AboutView()
             }
         })
         .frame(width: 580, height: 380)
