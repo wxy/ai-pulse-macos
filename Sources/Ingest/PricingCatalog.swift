@@ -56,7 +56,29 @@ final class PricingManager {
 
     func pricing(for model: String?) -> ModelPricing? {
         guard let model, let cat = catalog else { return nil }
-        return cat.models[model]
+        // 1. Exact match
+        if let exact = cat.models[model] { return exact }
+        // 2. Normalize (drop provider prefix + trailing date/version) and retry
+        let normalized = Self.normalize(model)
+        if let m = cat.models[normalized] { return m }
+        // 3. Longest catalog key that the normalized id starts with / contains.
+        //    Real logs append a date stamp (e.g. "claude-sonnet-4-20250514"),
+        //    so an exact dictionary lookup never matches the bare catalog key.
+        let candidates = cat.models.keys.filter { normalized.hasPrefix($0) || normalized.contains($0) }
+        if let best = candidates.max(by: { $0.count < $1.count }) {
+            return cat.models[best]
+        }
+        return nil
+    }
+
+    /// Strip provider prefix and trailing date/version suffix from a model id.
+    /// e.g. "anthropic/claude-sonnet-4-20250514" -> "claude-sonnet-4"
+    static func normalize(_ model: String) -> String {
+        var m = model.lowercased()
+        if let slash = m.lastIndex(of: "/") { m = String(m[m.index(after: slash)...]) }
+        m = m.replacingOccurrences(of: #"-\d{6,8}$"#, with: "", options: .regularExpression)
+        m = m.replacingOccurrences(of: #"-v\d+$"#, with: "", options: .regularExpression)
+        return m
     }
 
     func providerId(for model: String?) -> String? {

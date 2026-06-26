@@ -122,20 +122,37 @@ final class MenuBarController: NSObject {
                           cost: row["cst"] ?? 0)
             }
 
-            // Per-repo breakdown (all-time, not just today)
+            // Per-repo cost (all-time), keyed by repo_path
+            let repoCostRows: [Row] = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: """
+                    SELECT repo_path AS path, COALESCE(SUM(cost_usd),0) AS cost
+                    FROM usage_event WHERE repo_path IS NOT NULL
+                    GROUP BY repo_path
+                    """)
+            }
+            var costByRepo: [String: Double] = [:]
+            for row in repoCostRows {
+                let path: String = row["path"] ?? ""
+                guard !path.isEmpty else { continue }
+                costByRepo[path] = row["cost"] ?? 0
+            }
+
+            // Per-repo net lines (all-time). Use typed subscripts: GRDB's untyped
+            // subscript returns DatabaseValueConvertible? (boxing Int64), so `as? Int`
+            // would always be nil and silently drop every repo.
             let repoRows: [Row] = try await AppDatabase.shared.read { db in
                 try Row.fetchAll(db, sql: """
-                    SELECT repo_path, COALESCE(SUM(added - deleted),0) as lines
+                    SELECT repo_path AS path, COALESCE(SUM(added - deleted),0) AS lines
                     FROM code_change WHERE is_merge = 0
                     GROUP BY repo_path ORDER BY lines DESC
                     """)
             }
             let repos: [RepoStat] = repoRows.compactMap { row -> RepoStat? in
-                let path = (row["repo_path"] as? String) ?? ""
-                let lines = row["lines"] as? Int ?? 0
+                let path: String = row["path"] ?? ""
+                let lines: Int = row["lines"] ?? 0
                 guard lines > 0 else { return nil }
                 let name = URL(fileURLWithPath: path).lastPathComponent
-                return RepoStat(name: name, lines: lines, cost: cost ?? 0)
+                return RepoStat(name: name, lines: lines, cost: costByRepo[path] ?? 0)
             }
 
             // Net lines (all-time)
