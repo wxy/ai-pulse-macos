@@ -61,13 +61,16 @@ final class LogWatcher {
 
     private func discoverAndWatchRepos() {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        for dir in ["dev", "projects", "code", "Documents/GitHub"] {
-            let url = home.appendingPathComponent(dir)
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
-            enumerateGitRepos(in: url) { repoURL in
-                // Always watch git commits for cost-per-line
+        // Built-in search dirs + user-configured from Settings
+        var dirs = ["dev", "develop", "projects", "code", "Documents/GitHub"]
+        if let extra = UserDefaults.standard.stringArray(forKey: "repo_search_dirs") {
+            dirs.append(contentsOf: extra)
+        }
+        for dir in dirs {
+            let expanded = NSString(string: dir).expandingTildeInPath
+            guard FileManager.default.fileExists(atPath: expanded) else { continue }
+            enumerateGitRepos(in: URL(fileURLWithPath: expanded)) { repoURL in
                 GitMonitor.shared.watch(repoPath: repoURL.path)
-                // Also check for aider files
                 let llmFile = repoURL.appendingPathComponent(".aider.llm.history")
                 guard FileManager.default.fileExists(atPath: llmFile.path) else { return }
                 parseLines(from: llmFile) { line in
