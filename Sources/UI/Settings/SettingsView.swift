@@ -12,20 +12,24 @@ struct SettingsView: View {
                 claudeCodeEnabled: $claudeCodeEnabled,
                 aiderEnabled: $aiderEnabled
             )
-            .tabItem { Label("Tools", systemImage: " hammer ") }
+            .tabItem { Label("Tools", systemImage: "hammer") }
             .tag(0)
+
+            GitReposView()
+                .tabItem { Label("Repos", systemImage: "folder") }
+                .tag(1)
 
             SubscriptionToolsView()
                 .tabItem { Label("Subscriptions", systemImage: "creditcard") }
-                .tag(1)
+                .tag(2)
 
             PricingView()
                 .tabItem { Label("Pricing", systemImage: "dollarsign.circle") }
-                .tag(2)
+                .tag(3)
 
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
-                .tag(3)
+                .tag(4)
         }
         .frame(width: 480, height: 360)
     }
@@ -118,6 +122,93 @@ struct PricingView: View {
     }
 }
 
+struct GitReposView: View {
+    @State private var repos: [String] = []
+    @State private var searchDirs = ["~/dev", "~/projects", "~/code", "~/Documents/GitHub"]
+    @State private var newDir = ""
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text("Git Repositories")
+                .font(.headline)
+            Text("Repos discovered in these directories. Changes tracked via git commits.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            // Search directories
+            ForEach(searchDirs, id: \.self) { dir in
+                HStack {
+                    Text(dir).font(.caption)
+                    Spacer()
+                    Text("\(countRepos(in: dir)) repos").font(.caption).foregroundColor(.secondary)
+                }
+            }
+
+            HStack {
+                TextField("Add directory", text: $newDir)
+                    .frame(width: 160)
+                Button("Add") {
+                    if !newDir.isEmpty { searchDirs.append(newDir); newDir = ""; rescan() }
+                }
+            }
+            .padding(.top, 4)
+
+            Divider()
+
+            if repos.isEmpty {
+                Text("No repos found. Add your code directories above.")
+                    .font(.caption).foregroundColor(.secondary)
+            } else {
+                ScrollView {
+                    ForEach(repos, id: \.self) { repo in
+                        HStack {
+                            Text(URL(fileURLWithPath: repo).lastPathComponent)
+                                .font(.caption)
+                            Spacer()
+                            Text(repo)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+                .frame(height: 120)
+            }
+        }
+        .padding()
+        .onAppear { rescan() }
+    }
+
+    private func countRepos(in dir: String) -> Int {
+        let expanded = NSString(string: dir).expandingTildeInPath
+        return repos.filter { $0.hasPrefix(expanded) }.count
+    }
+
+    private func rescan() {
+        let fm = FileManager.default
+        var found: [String] = []
+        for dir in searchDirs {
+            let expanded = NSString(string: dir).expandingTildeInPath
+            guard fm.fileExists(atPath: expanded) else { continue }
+            guard let e = fm.enumerator(at: URL(fileURLWithPath: expanded),
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants])
+            else { continue }
+            for case let url as URL in e {
+                let git = url.appendingPathComponent(".git")
+                var isDir: ObjCBool = false
+                if fm.fileExists(atPath: git.path, isDirectory: &isDir), isDir.boolValue {
+                    found.append(url.path)
+                    e.skipDescendants()
+                }
+            }
+        }
+        repos = found.sorted()
+    }
+}
+
 struct SubscriptionToolsView: View {
     @State private var tools: [SubTool] = []
     @State private var newName = ""
@@ -184,7 +275,15 @@ struct SubscriptionToolsView: View {
             let rows: [Row]? = try? await AppDatabase.shared.read { db in
                 try Row.fetchAll(db, sql: "SELECT name, monthly_fee, currency FROM subscription_tool")
             }
-            let loaded = rows?.map { SubTool(name: $0["name"] ?? "", monthlyFee: $0["monthly_fee"] ?? 0, currency: $0["currency"] ?? "USD") } ?? []
+            var loaded = rows?.map { SubTool(name: $0["name"] ?? "", monthlyFee: $0["monthly_fee"] ?? 0, currency: $0["currency"] ?? "USD") } ?? []
+            // Pre-populate common subscription tools
+            if loaded.isEmpty {
+                for preset in [SubTool(name: "Cursor Pro", monthlyFee: 20, currency: "USD"),
+                               SubTool(name: "GitHub Copilot", monthlyFee: 10, currency: "USD")] {
+                    saveToDB(preset)
+                    loaded.append(preset)
+                }
+            }
             await MainActor.run { tools = loaded }
         }
     }

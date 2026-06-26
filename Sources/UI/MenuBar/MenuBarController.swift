@@ -190,6 +190,7 @@ final class MenuBarController: NSObject {
             backing: .buffered, defer: false
         )
         window.title = "AI Pulse Preferences"
+        window.setContentSize(NSSize(width: 520, height: 400))
         window.contentView = NSHostingView(rootView: settingsView)
         window.center()
         window.makeKeyAndOrderFront(nil)
