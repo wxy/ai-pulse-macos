@@ -23,9 +23,13 @@ final class MenuBarController: NSObject {
         let statsItem = NSMenuItem(title: "Loading…", action: nil, keyEquivalent: "")
         menu.addItem(statsItem)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Preferences…", action: #selector(openPreferences), keyEquivalent: ","))
+        let prefsItem = NSMenuItem(title: "Preferences…", action: #selector(openPreferences), keyEquivalent: ",")
+        prefsItem.target = self
+        menu.addItem(prefsItem)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
         statusItem.menu = menu
 
         // Refresh stats every 30 seconds
