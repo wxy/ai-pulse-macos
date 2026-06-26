@@ -1,191 +1,153 @@
 import SwiftUI
 import GRDB
+import AppKit
 
 struct SettingsView: View {
-    @State private var claudeCodeEnabled = true
-    @State private var aiderEnabled = false
-    @State private var selectedTab = 0
+    @State private var selectedTab = "tools"
+
+    enum Tab: String, CaseIterable {
+        case tools = "Tools"
+        case repos = "Repos"
+        case subscriptions = "Subscriptions"
+        case pricing = "Pricing"
+        case about = "About"
+        var icon: String {
+            switch self {
+            case .tools: return "hammer"
+            case .repos: return "folder"
+            case .subscriptions: return "creditcard"
+            case .pricing: return "dollarsign.circle"
+            case .about: return "info.circle"
+            }
+        }
+    }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            MonitoredToolsView(
-                claudeCodeEnabled: $claudeCodeEnabled,
-                aiderEnabled: $aiderEnabled
-            )
-            .tabItem { Label("Tools", systemImage: "hammer") }
-            .tag(0)
+        HStack(spacing: 0) {
+            // Sidebar
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Tab.allCases, id: \.rawValue) { tab in
+                    Button(action: { selectedTab = tab.rawValue }) {
+                        Label(tab.rawValue, systemImage: tab.icon)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
+                    .background(selectedTab == tab.rawValue ? Color.accentColor.opacity(0.15) : .clear)
+                    .cornerRadius(6)
+                }
+                Spacer()
+            }
+            .padding(12)
+            .frame(width: 150)
+            .background(Color(nsColor: .controlBackgroundColor))
 
-            GitReposView()
-                .tabItem { Label("Repos", systemImage: "folder") }
-                .tag(1)
+            Divider()
 
-            SubscriptionToolsView()
-                .tabItem { Label("Subscriptions", systemImage: "creditcard") }
-                .tag(2)
-
-            PricingView()
-                .tabItem { Label("Pricing", systemImage: "dollarsign.circle") }
-                .tag(3)
-
-            AboutView()
-                .tabItem { Label("About", systemImage: "info.circle") }
-                .tag(4)
+            // Content
+            Group {
+                switch selectedTab {
+                case "tools":       MonitoredToolsView()
+                case "repos":       GitReposView()
+                case "subscriptions": SubscriptionToolsView()
+                case "pricing":     PricingView()
+                case "about":       AboutView()
+                default:            EmptyView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(16)
         }
-        .frame(width: 480, height: 360)
+        .frame(width: 600, height: 380)
     }
 }
+
+// MARK: - Tools
 
 struct MonitoredToolsView: View {
-    @Binding var claudeCodeEnabled: Bool
-    @Binding var aiderEnabled: Bool
-
+    @State private var claudeCodeEnabled = true
     var body: some View {
-        Form {
-            Section(header: Text("Monitored AI Tools").font(.headline)) {
-                Toggle(isOn: $claudeCodeEnabled) {
-                    HStack {
-                        Text("Claude Code")
-                        Text("~/.claude/projects/")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                Toggle(isOn: $aiderEnabled) {
-                    HStack {
-                        Text("aider (coming soon)")
-                            .foregroundColor(.secondary)
-                        Text("repo/.aider.chat.history.md")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .disabled(true)
-            }
-
-            Section(header: Text("Configuration").font(.headline)) {
-                HStack {
-                    Text("Pricing catalog")
-                    Spacer()
-                    Text("12 models loaded")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                HStack {
-                    Text("Database")
-                    Spacer()
-                    Text("~/Library/Application Support/AIPulse/")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
+        VStack(alignment: .leading) {
+            Text("Monitored AI Tools").font(.headline)
+            HStack { Text("Claude Code"); Text("~/.claude/projects/").font(.caption).foregroundColor(.secondary) }
+            Text("More tools coming soon.").font(.caption).foregroundColor(.secondary).padding(.top, 4)
         }
-        .padding()
     }
 }
 
-struct PricingRow: Identifiable {
-    let id = UUID()
-    let name: String
-    let provider: String
-    let input: Double
-    let output: Double
-}
+// MARK: - Repos
 
-struct PricingView: View {
-    let models: [PricingRow] = [
-        PricingRow(name: "DeepSeek V4 Pro", provider: "deepseek", input: 0.5, output: 2.2),
-        PricingRow(name: "DeepSeek V4 Flash", provider: "deepseek", input: 0.25, output: 1.1),
-        PricingRow(name: "DeepSeek Chat (V3)", provider: "deepseek", input: 0.27, output: 1.1),
-        PricingRow(name: "DeepSeek Reasoner (R1)", provider: "deepseek", input: 0.55, output: 2.19),
-        PricingRow(name: "Claude Sonnet 4", provider: "anthropic", input: 3.0, output: 15.0),
-        PricingRow(name: "Claude Opus 4", provider: "anthropic", input: 15.0, output: 75.0),
-        PricingRow(name: "GPT-4o", provider: "openai", input: 2.5, output: 10.0),
-        PricingRow(name: "GPT-4o Mini", provider: "openai", input: 0.15, output: 0.6),
-        PricingRow(name: "Gemini 2.5 Pro", provider: "google", input: 1.25, output: 10.0),
-        PricingRow(name: "Gemini 2.5 Flash", provider: "google", input: 0.15, output: 0.6),
-    ]
-
-    var body: some View {
-        List(models) { m in
-            HStack {
-                Text(m.name).frame(width: 160, alignment: .leading)
-                Text(m.provider).frame(width: 80, alignment: .leading)
-                    .foregroundColor(.secondary)
-                Text("in: $\(String(format: "%.2f", m.input))").frame(width: 80, alignment: .trailing)
-                Text("out: $\(String(format: "%.2f", m.output))").frame(width: 80, alignment: .trailing)
-            }
-            .font(.caption)
-        }
-        .padding()
-    }
-}
+/// Persistable repo search directories
+private let repoDirsKey = "repo_search_dirs"
 
 struct GitReposView: View {
+    @State private var searchDirs: [String] = ["~/dev", "~/projects", "~/code"]
     @State private var repos: [String] = []
-    @State private var searchDirs = ["~/dev", "~/projects", "~/code", "~/Documents/GitHub"]
-    @State private var newDir = ""
+    @State private var refreshed = false
 
     var body: some View {
         VStack(alignment: .leading) {
-            Text("Git Repositories")
-                .font(.headline)
-            Text("Repos discovered in these directories. Changes tracked via git commits.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Text("Git Repositories").font(.headline)
+            Text("Repos in these directories are monitored for commit changes.")
+                .font(.caption).foregroundColor(.secondary)
 
-            // Search directories
-            ForEach(searchDirs, id: \.self) { dir in
-                HStack {
-                    Text(dir).font(.caption)
-                    Spacer()
-                    Text("\(countRepos(in: dir)) repos").font(.caption).foregroundColor(.secondary)
+            // Directory list
+            List {
+                ForEach(searchDirs, id: \.self) { dir in
+                    HStack {
+                        Text(dir).font(.caption)
+                        Spacer()
+                        Button("✕") { searchDirs.removeAll { $0 == dir }; save(); rescan() }
+                            .buttonStyle(.plain).foregroundColor(.secondary)
+                    }
                 }
             }
+            .frame(height: 80)
 
             HStack {
-                TextField("Add directory", text: $newDir)
-                    .frame(width: 160)
-                Button("Add") {
-                    if !newDir.isEmpty { searchDirs.append(newDir); newDir = ""; rescan() }
+                Button("Add Directory…") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true
+                    panel.canChooseFiles = false
+                    panel.prompt = "Select"
+                    if panel.runModal() == .OK, let url = panel.url {
+                        let path = url.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+                        if !searchDirs.contains(path) { searchDirs.append(path); save(); rescan() }
+                    }
                 }
             }
-            .padding(.top, 4)
 
             Divider()
 
             if repos.isEmpty {
-                Text("No repos found. Add your code directories above.")
+                Text("No repos found. Add code directories above.")
                     .font(.caption).foregroundColor(.secondary)
             } else {
+                Text("\(repos.count) repositories found").font(.caption).foregroundColor(.secondary)
                 ScrollView {
                     ForEach(repos, id: \.self) { repo in
-                        HStack {
-                            Text(URL(fileURLWithPath: repo).lastPathComponent)
-                                .font(.caption)
-                            Spacer()
-                            Text(repo)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        .padding(.vertical, 2)
+                        Text(URL(fileURLWithPath: repo).lastPathComponent)
+                            .font(.caption)
                     }
                 }
-                .frame(height: 120)
+                .frame(height: 80)
             }
         }
-        .padding()
-        .onAppear { rescan() }
+        .onAppear {
+            load()
+            if !refreshed { rescan(); refreshed = true }
+        }
     }
 
-    private func countRepos(in dir: String) -> Int {
-        let expanded = NSString(string: dir).expandingTildeInPath
-        return repos.filter { $0.hasPrefix(expanded) }.count
+    private func load() {
+        if let saved = UserDefaults.standard.stringArray(forKey: repoDirsKey), !saved.isEmpty {
+            searchDirs = saved
+        }
     }
-
+    private func save() {
+        UserDefaults.standard.set(searchDirs, forKey: repoDirsKey)
+    }
     private func rescan() {
         let fm = FileManager.default
         var found: [String] = []
@@ -209,6 +171,8 @@ struct GitReposView: View {
     }
 }
 
+// MARK: - Subscriptions
+
 struct SubscriptionToolsView: View {
     @State private var tools: [SubTool] = []
     @State private var newName = ""
@@ -221,43 +185,54 @@ struct SubscriptionToolsView: View {
         let currency: String
     }
 
+    let presets: [(name: String, tiers: [(label: String, fee: Double)])] = [
+        ("Cursor",    [("Pro", 20), ("Business", 40)]),
+        ("Copilot",   [("Individual", 10), ("Business", 19), ("Enterprise", 39)]),
+        ("Windsurf",  [("Pro", 15)]),
+        ("Codeium",   [("Individual", 15), ("Teams", 35)]),
+    ]
+
     var body: some View {
         VStack(alignment: .leading) {
-            Text("Subscription Tools")
-                .font(.headline)
-            Text("Add fixed-monthly-fee tools (Cursor, Copilot, etc.). Cost per line = monthly fee / net lines committed.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.bottom, 8)
+            Text("Subscription Tools").font(.headline)
+            Text("Monthly fee tools. Cost per line = fee / net lines committed.")
+                .font(.caption).foregroundColor(.secondary).padding(.bottom, 4)
 
+            // Preset picker
             HStack {
-                TextField("Tool name", text: $newName)
-                    .frame(width: 120)
-                TextField("$/mo", text: $newFee)
-                    .frame(width: 60)
-                Button("Add") {
-                    guard let fee = Double(newFee), !newName.isEmpty else { return }
-                    let tool = SubTool(name: newName, monthlyFee: fee, currency: "USD")
-                    tools.append(tool)
-                    saveToDB(tool)
-                    newName = ""; newFee = ""
+                Picker("Add preset:", selection: $newName) {
+                    Text("Choose…").tag("")
+                    ForEach(presets, id: \.name) { p in
+                        ForEach(p.tiers, id: \.label) { t in
+                            Text("\(p.name) \(t.label) ($\(String(format: "%.0f", t.fee))/mo)").tag("\(p.name)|\(t.label)|\(t.fee)")
+                        }
+                    }
                 }
-                .disabled(newName.isEmpty || newFee.isEmpty)
+                .frame(width: 280)
+                Button("Add") {
+                    let parts = newName.components(separatedBy: "|")
+                    guard parts.count == 3, let fee = Double(parts[2]) else { return }
+                    let tool = SubTool(name: "\(parts[0]) \(parts[1])", monthlyFee: fee, currency: "USD")
+                    tools.append(tool); saveToDB(tool); newName = ""
+                }
+                .disabled(newName.isEmpty)
             }
 
+            // Current subscriptions
             List {
                 ForEach(tools) { tool in
                     HStack {
                         Text(tool.name)
                         Spacer()
-                        Text("$\(String(format: "%.2f", tool.monthlyFee))/mo")
-                            .foregroundColor(.secondary)
+                        Text("$\(String(format: "%.2f", tool.monthlyFee))/mo").foregroundColor(.secondary)
                     }
                 }
-                .onDelete { _ in }
+                .onDelete { idx in
+                    for i in idx { deleteFromDB(tools[i]); tools.remove(at: i) }
+                }
             }
+            .frame(height: 100)
         }
-        .padding()
         .onAppear { loadFromDB() }
     }
 
@@ -269,19 +244,17 @@ struct SubscriptionToolsView: View {
             }
         }
     }
-
+    private func deleteFromDB(_ tool: SubTool) {
+        Task { try? await AppDatabase.shared.write { db in try db.execute(sql: "DELETE FROM subscription_tool WHERE id=?", arguments: [tool.name]) } }
+    }
     private func loadFromDB() {
         Task {
-            let rows: [Row]? = try? await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT name, monthly_fee, currency FROM subscription_tool")
-            }
+            let rows: [Row]? = try? await AppDatabase.shared.read { db in try Row.fetchAll(db, sql: "SELECT name, monthly_fee, currency FROM subscription_tool") }
             var loaded = rows?.map { SubTool(name: $0["name"] ?? "", monthlyFee: $0["monthly_fee"] ?? 0, currency: $0["currency"] ?? "USD") } ?? []
-            // Pre-populate common subscription tools
             if loaded.isEmpty {
                 for preset in [SubTool(name: "Cursor Pro", monthlyFee: 20, currency: "USD"),
                                SubTool(name: "GitHub Copilot", monthlyFee: 10, currency: "USD")] {
-                    saveToDB(preset)
-                    loaded.append(preset)
+                    saveToDB(preset); loaded.append(preset)
                 }
             }
             await MainActor.run { tools = loaded }
@@ -289,24 +262,44 @@ struct SubscriptionToolsView: View {
     }
 }
 
+// MARK: - Pricing
+
+struct PricingRow: Identifiable { let id = UUID(); let name: String; let provider: String; let input: Double; let output: Double }
+
+struct PricingView: View {
+    let models: [PricingRow] = [
+        PricingRow(name: "DeepSeek V4 Pro", provider: "deepseek", input: 0.5, output: 2.2),
+        PricingRow(name: "DeepSeek Chat (V3)", provider: "deepseek", input: 0.27, output: 1.1),
+        PricingRow(name: "Claude Sonnet 4", provider: "anthropic", input: 3.0, output: 15.0),
+        PricingRow(name: "GPT-4o", provider: "openai", input: 2.5, output: 10.0),
+        PricingRow(name: "Gemini 2.5 Pro", provider: "google", input: 1.25, output: 10.0),
+    ]
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text("Model Pricing ($/M tokens)").font(.headline).padding(.bottom, 4)
+            List(models) { m in
+                HStack {
+                    Text(m.name).frame(width: 150, alignment: .leading)
+                    Text(m.provider).frame(width: 80, alignment: .leading).foregroundColor(.secondary)
+                    Text("in: $\(String(format: "%.2f", m.input))").frame(width: 80, alignment: .trailing)
+                    Text("out: $\(String(format: "%.2f", m.output))").frame(width: 80, alignment: .trailing)
+                }.font(.caption)
+            }
+        }
+    }
+}
+
+// MARK: - About
+
 struct AboutView: View {
     var body: some View {
         VStack(spacing: 16) {
-            Text("🤖")
-                .font(.system(size: 48))
-            Text("AI Pulse")
-                .font(.title)
-                .fontWeight(.bold)
-            Text("Version 0.1.0 (M1)")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Text("🤖").font(.system(size: 48))
+            Text("AI Pulse").font(.title).fontWeight(.bold)
+            Text("Version 0.1.0 (M1)").font(.caption).foregroundColor(.secondary)
             Text("Know what AI coding really costs you — per line, per project, per tool.")
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-            Text("All data processed locally. Nothing leaves your machine.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center).padding(.horizontal, 40)
+            Text("All data processed locally. Nothing leaves your machine.").font(.caption).foregroundColor(.secondary)
         }
-        .padding()
     }
 }
