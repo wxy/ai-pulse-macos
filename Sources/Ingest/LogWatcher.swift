@@ -60,12 +60,8 @@ final class LogWatcher {
     // MARK: - aider
 
     private func discoverAndWatchRepos() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        // Built-in search dirs + user-configured from Settings
-        var dirs = ["dev", "develop", "projects", "code", "Documents/GitHub"]
-        if let extra = UserDefaults.standard.stringArray(forKey: "repo_search_dirs") {
-            dirs.append(contentsOf: extra)
-        }
+        let dirs = UserDefaults.standard.stringArray(forKey: "repo_search_dirs")
+            ?? ["~/dev", "~/projects", "~/code"]
         for dir in dirs {
             let expanded = NSString(string: dir).expandingTildeInPath
             guard FileManager.default.fileExists(atPath: expanded) else { continue }
