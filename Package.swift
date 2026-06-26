@@ -13,8 +13,7 @@ let package = Package(
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift"),
             ],
-            path: "Sources",
-            resources: [.process("Resources")]
+            path: "Sources"
         ),
         .testTarget(
             name: "AIPulseTests",

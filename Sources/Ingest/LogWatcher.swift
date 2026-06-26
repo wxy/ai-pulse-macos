@@ -70,28 +70,27 @@ final class LogWatcher {
     private func insertEvent(_ event: UsageEvent) {
         Task {
             do {
-                try await Database.shared.write { db in
-                    var stmt = try db.makeStatement(
-                        of: """
+                try await AppDatabase.shared.write { db in
+                    try db.execute(
+                        sql: """
                         INSERT OR IGNORE INTO usage_event
                           (ts, source, provider_id, model, in_tokens, out_tokens, cache_tokens, cost_usd, repo_path, session_id, dedupe_key)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """
+                        """,
+                        arguments: [
+                            event.ts,
+                            event.source,
+                            "anthropic",
+                            event.model,
+                            event.inTokens,
+                            event.outTokens,
+                            event.cacheTokens,
+                            nil,
+                            event.repoPath,
+                            event.sessionId,
+                            event.dedupeKey,
+                        ]
                     )
-                    try stmt.setUncheckedArguments([
-                        event.ts,
-                        event.source,
-                        "anthropic",
-                        event.model,
-                        event.inTokens,
-                        event.outTokens,
-                        event.cacheTokens,
-                        nil,
-                        event.repoPath,
-                        event.sessionId,
-                        event.dedupeKey,
-                    ] as [DatabaseValueConvertible?])
-                    try stmt.execute()
                 }
             } catch {
                 print("Failed to insert usage event: \(error)")

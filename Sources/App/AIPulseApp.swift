@@ -19,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Initialize database
         do {
-            try Database.shared.setup()
+            try AppDatabase.shared.setup()
         } catch {
             print("Database setup failed: \(error)")
         }

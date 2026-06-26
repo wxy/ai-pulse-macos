@@ -1,8 +1,8 @@
 import Foundation
 import GRDB
 
-final class Database {
-    static let shared = Database()
+final class AppDatabase {
+    static let shared = AppDatabase()
     private var dbQueue: DatabaseQueue?
 
     func setup() throws {
@@ -52,16 +52,16 @@ final class Database {
     var writer: DatabaseWriter? { dbQueue }
 
     func write<T>(_ updates: @escaping (Database) throws -> T) async throws -> T {
-        guard let queue = dbQueue else { throw DBError.notReady }
+        guard let queue = dbQueue else { throw AppDBError.notReady }
         return try await queue.write(updates)
     }
 
     func read<T>(_ value: @escaping (Database) throws -> T) async throws -> T {
-        guard let queue = dbQueue else { throw DBError.notReady }
+        guard let queue = dbQueue else { throw AppDBError.notReady }
         return try await queue.read(value)
     }
 }
 
-enum DBError: Error {
+enum AppDBError: Error {
     case notReady
 }

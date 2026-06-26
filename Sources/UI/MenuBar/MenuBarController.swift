@@ -41,18 +41,11 @@ final class MenuBarController: NSObject {
     private func fetchTodayStats() async -> String {
         do {
             let todayStart = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000
-            let count: Int = try await Database.shared.read { db in
-                try Int.fetchOne(db, sql: """
-                    SELECT COUNT(*) FROM usage_event WHERE ts >= ?
-                    """, arguments: [todayStart]) ?? 0
+            let count: Int = try await AppDatabase.shared.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event WHERE ts >= ?", arguments: [todayStart]) ?? 0
             }
-            let tokens: (Int, Int, Int)? = try await Database.shared.read { db in
-                try Row.fetchOne(db, sql: """
-                    SELECT COALESCE(SUM(in_tokens),0) AS inp,
-                           COALESCE(SUM(out_tokens),0) AS outp,
-                           COALESCE(SUM(cache_tokens),0) AS cache
-                    FROM usage_event WHERE ts >= ?
-                    """, arguments: [todayStart]).map { row in
+            let tokens: (Int, Int, Int)? = try await AppDatabase.shared.read { db in
+                try Row.fetchOne(db, sql: "SELECT COALESCE(SUM(in_tokens),0) AS inp, COALESCE(SUM(out_tokens),0) AS outp, COALESCE(SUM(cache_tokens),0) AS cache FROM usage_event WHERE ts >= ?", arguments: [todayStart]).map { row in
                     (row["inp"], row["outp"], row["cache"])
                 }
             }
