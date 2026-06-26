@@ -47,19 +47,22 @@ final class MenuBarController: NSObject {
             let stats = await fetchTodayStats()
             DispatchQueue.main.async {
                 self.summaryItem.title = stats.summary
-                // Remove old model items
-                for item in self.modelItems {
-                    self.menu.removeItem(item)
-                }
+                // Remove old submenu items
+                for item in self.modelItems { self.menu.removeItem(item) }
                 self.modelItems.removeAll()
 
-                // Insert model breakdown after summary
-                let afterSummary = self.menu.index(of: self.summaryItem) + 2 // skip separator
-                for m in stats.models.reversed() {
-                    let item = NSMenuItem(title: "  \(m.name)  ·  \(m.costStr)", action: nil, keyEquivalent: "")
-                    item.isEnabled = false
-                    self.menu.insertItem(item, at: afterSummary)
-                    self.modelItems.append(item)
+                if !stats.models.isEmpty {
+                    // Add "By Model" submenu
+                    let byModel = NSMenuItem(title: "▸ By Model", action: nil, keyEquivalent: "")
+                    let subMenu = NSMenu()
+                    for m in stats.models {
+                        let item = NSMenuItem(title: "\(m.name)  ·  \(m.costStr)", action: nil, keyEquivalent: "")
+                        subMenu.addItem(item)
+                    }
+                    byModel.submenu = subMenu
+                    let afterSummary = self.menu.index(of: self.summaryItem) + 2
+                    self.menu.insertItem(byModel, at: afterSummary)
+                    self.modelItems.append(byModel)
                 }
 
                 if let button = self.statusItem.button {
