@@ -19,18 +19,16 @@ final class MenuBarController: NSObject {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.title = "🤖"
-            button.font = NSFont.systemFont(ofSize: 14)
         }
 
         menu = NSMenu()
         summaryItem = NSMenuItem(title: "Loading…", action: nil, keyEquivalent: "")
+        summaryItem.isEnabled = false
         menu.addItem(summaryItem)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem.separator())
         let prefsItem = NSMenuItem(title: "Preferences…", action: #selector(openPreferences), keyEquivalent: ",")
         prefsItem.target = self
         menu.addItem(prefsItem)
-        menu.addItem(.separator())
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
