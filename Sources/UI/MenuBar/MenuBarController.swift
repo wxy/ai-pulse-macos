@@ -1,5 +1,12 @@
 import AppKit
+import SwiftUI
 import GRDB
+
+/// Holds a reference to the Preferences window so it stays alive
+final class SettingsWindowManager {
+    static let shared = SettingsWindowManager()
+    var window: NSWindow?
+}
 
 final class MenuBarController: NSObject {
     private var statusItem: NSStatusItem!
@@ -15,6 +22,8 @@ final class MenuBarController: NSObject {
         let menu = NSMenu()
         let statsItem = NSMenuItem(title: "Loading…", action: nil, keyEquivalent: "")
         menu.addItem(statsItem)
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Preferences…", action: #selector(openPreferences), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
@@ -75,6 +84,27 @@ final class MenuBarController: NSObject {
         if n >= 1_000_000 { return "\(n / 1_000_000).\( (n % 1_000_000) / 100_000)M" }
         if n >= 1_000 { return "\(n / 1_000).\( (n % 1_000) / 100)K" }
         return "\(n)"
+    }
+
+    @objc private func openPreferences() {
+        // Bring app to foreground briefly to show Settings window
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        let settingsView = SettingsView()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 360),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "AI Pulse Preferences"
+        window.contentView = NSHostingView(rootView: settingsView)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        // Keep a reference so it's not deallocated
+        SettingsWindowManager.shared.window = window
+        // Hide from Dock again when window closes
+        window.isReleasedWhenClosed = false
     }
 
     @objc private func quit() {
