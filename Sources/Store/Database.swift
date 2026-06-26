@@ -31,8 +31,8 @@ final class AppDatabase {
                     t.column("session_id", .text)
                     t.column("dedupe_key", .text).unique()
                 }
-                try db.create(indexOn: "usage_event", columns: ["ts"])
-                try db.create(indexOn: "usage_event", columns: ["repo_path"])
+                try? db.create(indexOn: "usage_event", columns: ["ts"])
+                try? db.create(indexOn: "usage_event", columns: ["repo_path"])
             }),
             ("code_change", { db in
                 try db.create(table: "code_change", ifNotExists: true) { t in
@@ -44,8 +44,8 @@ final class AppDatabase {
                     t.column("deleted", .integer).defaults(to: 0)
                     t.column("is_merge", .boolean).defaults(to: false)
                 }
-                try db.create(indexOn: "code_change", columns: ["ts"])
-                try db.create(indexOn: "code_change", columns: ["repo_path"])
+                try? db.create(indexOn: "code_change", columns: ["ts"])
+                try? db.create(indexOn: "code_change", columns: ["repo_path"])
             }),
             ("subscription_tool", { db in
                 try db.create(table: "subscription_tool", ifNotExists: true) { t in

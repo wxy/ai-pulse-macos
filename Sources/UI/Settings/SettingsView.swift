@@ -5,15 +5,23 @@ import AppKit
 // MARK: - Main Settings
 
 struct SettingsView: View {
-    @State private var selectedTab = "Coding Tools"
+    @State private var selectedTab = "General"
     @State private var lang = I18n.getLang()
     let tabs: [(String, String)] = [
-        ("Coding Tools", "hammer"), ("Repos", "folder"),
+        ("General", "gear"), ("Coding Tools", "hammer"), ("Repos", "folder"),
         ("Subscriptions", "creditcard"), ("Pricing", "dollarsign.circle"), ("About", "info.circle"),
     ]
 
+    /// Custom binding that calls I18n.setLang() synchronously on every set,
+    /// so the language change takes effect BEFORE SwiftUI re-evaluates the
+    /// body (avoiding the `.onChange` race with `.id()`-based view recreation).
+    var langBinding: Binding<String> {
+        Binding(get: { lang }, set: { v in lang = v; I18n.setLang(v) })
+    }
+
     func localizedName(_ key: String) -> String {
         switch key {
+        case "General": return I18n.t("settings.general")
         case "Coding Tools": return I18n.t("settings.coding_tools")
         case "Repos": return I18n.t("settings.repos")
         case "Subscriptions": return I18n.t("settings.subscriptions")
@@ -39,25 +47,20 @@ struct SettingsView: View {
                         .onTapGesture { selectedTab = name }
                 }
                 Spacer()
-                Picker("", selection: $lang) {
-                    Text("中文").tag("zh")
-                    Text("English").tag("en")
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 12).padding(.bottom, 8)
-                .onChange(of: lang) { _, v in I18n.setLang(v) }
             }
             .frame(width: 160).padding(.top, 12)
             .background(Color(red: 0.13, green: 0.14, blue: 0.16))
 
-            // Content
+            // Content — each tab has .id(lang) so it re-renders immediately
+            // when the language picker changes (no tab-switch needed).
             Group {
                 switch selectedTab {
-                case "Coding Tools":   ToolsTab()
-                case "Repos":          ReposTab()
-                case "Subscriptions":  SubsTab()
-                case "Pricing":        PricingTab()
-                case "About":          AboutTab()
+                case "General":         GeneralTab(lang: langBinding).id("general.\(lang)")
+                case "Coding Tools":   ToolsTab().id("tools.\(lang)")
+                case "Repos":          ReposTab().id("repos.\(lang)")
+                case "Subscriptions":  SubsTab().id("subs.\(lang)")
+                case "Pricing":        PricingTab().id("pricing.\(lang)")
+                case "About":          AboutTab().id("about.\(lang)")
                 default: EmptyView()
                 }
             }
@@ -70,6 +73,29 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - General
+
+struct GeneralTab: View {
+    @Binding var lang: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(I18n.t("general.title")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("general.desc")).font(.caption).foregroundColor(.secondary)
+
+            HStack {
+                Text(I18n.t("general.language_label"))
+                    .frame(width: 100, alignment: .leading)
+                Picker("", selection: $lang) {
+                    Text(I18n.t("settings.language_zh")).tag("zh")
+                    Text(I18n.t("settings.language_en")).tag("en")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+            }
+        }
+    }
+}
+
 // MARK: - Tools
 
 struct ToolsTab: View {
@@ -77,10 +103,10 @@ struct ToolsTab: View {
     struct ToolItem: Identifiable { let id = UUID(); let name: String; let path: String; let sessions: Int; var enabled: Bool }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Monitored Tools").font(.title3).fontWeight(.semibold)
-            Text("AI coding tools auto-detected on your machine.").font(.caption).foregroundColor(.secondary)
+            Text(I18n.t("tools.title")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("tools.desc")).font(.caption).foregroundColor(.secondary)
             if tools.isEmpty {
-                Label("No tools detected yet", systemImage: "questionmark.circle").foregroundColor(.secondary).padding(.top, 20)
+                Label(I18n.t("tools.no_tools"), systemImage: "questionmark.circle").foregroundColor(.secondary).padding(.top, 20)
             } else {
                 VStack(spacing: 6) {
                     ForEach($tools) { $t in
@@ -88,7 +114,7 @@ struct ToolsTab: View {
                             Toggle(isOn: $t.enabled) {}.toggleStyle(.checkbox)
                             VStack(alignment: .leading) {
                                 Text(t.name).font(.body)
-                                Text("\(t.path) · \(t.sessions) sessions").font(.caption2).foregroundColor(.secondary)
+                                Text("\(t.path) · \(t.sessions) \(I18n.t("tools.sessions"))").font(.caption2).foregroundColor(.secondary)
                             }
                             Spacer()
                         }
@@ -104,7 +130,7 @@ struct ToolsTab: View {
         let ccDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
         if FileManager.default.fileExists(atPath: ccDir.path) {
             let sessions = (try? FileManager.default.contentsOfDirectory(atPath: ccDir.path))?.count ?? 0
-            list.append(ToolItem(name: "Claude Code", path: "~/.claude/projects/", sessions: sessions, enabled: true))
+            list.append(ToolItem(name: I18n.t("tools.claude_code"), path: "~/.claude/projects/", sessions: sessions, enabled: true))
         }
         tools = list
     }
@@ -125,16 +151,16 @@ struct ReposTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Git Repositories").font(.title3).fontWeight(.semibold)
+            Text(I18n.t("repos.title")).font(.title3).fontWeight(.semibold)
 
             HStack(spacing: 10) {
                 // Left: directories
                 VStack(alignment: .leading) {
                     HStack {
-                        Text("Directories").font(.caption).foregroundColor(.secondary)
+                        Text(I18n.t("repos.directories")).font(.caption).foregroundColor(.secondary)
                         Spacer()
                         Button(action: pickDir) {
-                            Label("Add", systemImage: "plus.circle").font(.caption)
+                            Label(I18n.t("repos.add"), systemImage: "plus.circle").font(.caption)
                         }
                     }
                     List(selection: $selectedDir) {
@@ -157,9 +183,9 @@ struct ReposTab: View {
 
                 // Right: repos
                 VStack(alignment: .leading) {
-                    Text("Repositories (\(reposForSelected.count))").font(.caption).foregroundColor(.secondary)
+                    Text("\(I18n.t("repos.repositories")) (\(reposForSelected.count))").font(.caption).foregroundColor(.secondary)
                     if reposForSelected.isEmpty {
-                        Text("Select a directory").font(.caption).foregroundColor(.secondary)
+                        Text(I18n.t("repos.select_dir")).font(.caption).foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .center).padding(.top, 30)
                     } else {
                         List(reposForSelected, id: \.self) { repo in
@@ -170,7 +196,7 @@ struct ReposTab: View {
                 }.frame(minWidth: 160, idealWidth: 190, maxWidth: 210, minHeight: 140, maxHeight: 140)
             }
 
-            Text("\(searchDirs.count) dirs · \(counts.values.reduce(0,+)) repos").font(.caption2).foregroundColor(.secondary)
+            Text(String(format: I18n.t("repos.summary"), searchDirs.count, counts.values.reduce(0,+))).font(.caption2).foregroundColor(.secondary)
         }
         .onAppear {
             load()
@@ -178,16 +204,16 @@ struct ReposTab: View {
             if selectedDir == nil || !searchDirs.contains(selectedDir!) { selectedDir = searchDirs.first }
         }
         .onChange(of: selectedDir) { _, d in if let d, searchDirs.contains(d) { reposForSelected = scan(d) } else { reposForSelected = [] } }
-        .alert("Remove Directory", isPresented: $showDelete) {
-            Button("Cancel", role: .cancel) {}
-            Button("Remove", role: .destructive) {
+        .alert(I18n.t("repos.delete_title"), isPresented: $showDelete) {
+            Button(I18n.t("repos.cancel"), role: .cancel) {}
+            Button(I18n.t("repos.remove"), role: .destructive) {
                 if let d = deleteTarget { searchDirs.removeAll { $0 == d }; save(); refreshAll(); if selectedDir == d { selectedDir = searchDirs.first } }
             }
-        } message: { Text("Stop monitoring '\(deleteTarget ?? "")'?\nIts repos will no longer be tracked.") }
+        } message: { Text(String(format: I18n.t("repos.delete_msg"), deleteTarget ?? "")) }
     }
 
     private func pickDir() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.prompt = "Add"
+        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.prompt = I18n.t("repos.add")
         if panel.runModal() == .OK, let url = panel.url {
             let p = url.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
             if !searchDirs.contains(p) { searchDirs.append(p); save(); refreshAll(); if selectedDir == nil { selectedDir = p } }
@@ -234,16 +260,16 @@ struct SubsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Subscription Tools").font(.title3).fontWeight(.semibold)
-            Text("Cost per line = monthly fee / net committed lines.").font(.caption).foregroundColor(.secondary)
+            Text(I18n.t("subs.title")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("subs.desc")).font(.caption).foregroundColor(.secondary)
             HStack {
-                Picker("Add", selection: $pickerValue) {
-                    Text("Choose preset…").tag("")
+                Picker(I18n.t("subs.add"), selection: $pickerValue) {
+                    Text(I18n.t("subs.choose")).tag("")
                     ForEach(presets, id: \.name) { p in
-                        ForEach(p.tiers) { t in Text("\(p.name) \(t.label) ($\(String(format: "%.0f", t.fee))/mo)").tag("\(p.name)|\(t.label)|\(t.fee)") }
+                        ForEach(p.tiers) { t in Text("\(p.name) \(t.label) ($\(String(format: "%.0f", t.fee))\(I18n.t("subs.per_month")))").tag("\(p.name)|\(t.label)|\(t.fee)") }
                     }
                 }.frame(width: 280)
-                Button("Add") {
+                Button(I18n.t("subs.add")) {
                     let parts = pickerValue.components(separatedBy: "|")
                     guard parts.count == 3, let fee = Double(parts[2]) else { return }
                     let name = "\(parts[0]) \(parts[1])"
@@ -254,14 +280,14 @@ struct SubsTab: View {
             }
             if let err = dbError { Text(err).font(.caption2).foregroundColor(.red) }
             if tools.isEmpty {
-                Text("No subscriptions added. Choose a preset above.").font(.caption).foregroundColor(.secondary).padding(.top, 10)
+                Text(I18n.t("subs.empty")).font(.caption).foregroundColor(.secondary).padding(.top, 10)
             } else {
                 VStack(spacing: 6) {
                     ForEach(tools) { item in
                         HStack {
                             Label(item.name, systemImage: "creditcard").font(.body)
                             Spacer()
-                            Text("$\(String(format: "%.2f", item.monthlyFee))/mo").foregroundColor(.secondary).font(.callout)
+                            Text("$\(String(format: "%.2f", item.monthlyFee))\(I18n.t("subs.per_month"))").foregroundColor(.secondary).font(.callout)
                             Button { deleteTarget = item; showDelete = true } label: {
                                 Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                             }.buttonStyle(.plain)
@@ -272,10 +298,10 @@ struct SubsTab: View {
             }
         }
         .onAppear { loadFromDB() }
-        .alert("Remove Subscription", isPresented: $showDelete) {
-            Button("Cancel", role: .cancel) {}
-            Button("Remove", role: .destructive) { if let t = deleteTarget { tools.removeAll { $0.name == t.name }; deleteFromDB(t) } }
-        } message: { Text("Remove '\(deleteTarget?.name ?? "")'?") }
+        .alert(I18n.t("subs.delete_title"), isPresented: $showDelete) {
+            Button(I18n.t("repos.cancel"), role: .cancel) {}
+            Button(I18n.t("repos.remove"), role: .destructive) { if let t = deleteTarget { tools.removeAll { $0.name == t.name }; deleteFromDB(t) } }
+        } message: { Text(String(format: I18n.t("subs.delete_msg"), deleteTarget?.name ?? "")) }
     }
 
     private func saveToDB(_ item: SubItem) {
@@ -329,10 +355,10 @@ struct PricingTab: View {
     ]
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Model Pricing").font(.title3).fontWeight(.semibold)
-            Text("USD per million tokens.").font(.caption).foregroundColor(.secondary)
+            Text(I18n.t("pricing.title")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("pricing.desc")).font(.caption).foregroundColor(.secondary)
             Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 6) {
-                GridRow { Text("Model").font(.caption).foregroundColor(.secondary); Text("Input").font(.caption).foregroundColor(.secondary); Text("Output").font(.caption).foregroundColor(.secondary) }
+                GridRow { Text(I18n.t("pricing.model")).font(.caption).foregroundColor(.secondary); Text(I18n.t("pricing.input")).font(.caption).foregroundColor(.secondary); Text(I18n.t("pricing.output")).font(.caption).foregroundColor(.secondary) }
                 ForEach(models) { m in
                     GridRow {
                         Text(m.name).font(.callout)
@@ -351,10 +377,10 @@ struct AboutTab: View {
     var body: some View {
         VStack(spacing: 16) {
             Text("🤖").font(.system(size: 48))
-            Text("AI Pulse").font(.title).fontWeight(.bold)
-            Text("Version M1 (0.1.0)").font(.caption).foregroundColor(.secondary)
-            Text("Know what AI coding really costs you.").multilineTextAlignment(.center)
-            Text("All data stays on your machine.").font(.caption2).foregroundColor(.secondary)
+            Text(I18n.t("about.title")).font(.title).fontWeight(.bold)
+            Text(I18n.t("about.version")).font(.caption).foregroundColor(.secondary)
+            Text(I18n.t("about.desc")).multilineTextAlignment(.center)
+            Text(I18n.t("about.privacy")).font(.caption2).foregroundColor(.secondary)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

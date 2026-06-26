@@ -7,8 +7,13 @@ final class LogWatcher {
     private var claudeSource: DispatchSourceFileSystemObject?
 
     func start() {
-        watchClaudeCode()
-        discoverAndWatchRepos()
+        // Offload the initial scan to a background queue — scanning all git
+        // repos and JSONL files on the main thread blocks the run loop and
+        // makes the menu bar item unresponsive for seconds after launch.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.watchClaudeCode()
+            self?.discoverAndWatchRepos()
+        }
     }
 
     func stop() {
