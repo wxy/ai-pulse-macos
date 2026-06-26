@@ -24,24 +24,16 @@ struct SettingsView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Sidebar
-            VStack(alignment: .leading, spacing: 4) {
+            // Sidebar using List selection
+            List(selection: $selectedTab) {
                 ForEach(Tab.allCases, id: \.rawValue) { tab in
-                    Button(action: { selectedTab = tab.rawValue }) {
-                        Label(tab.rawValue, systemImage: tab.icon)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.plain)
-                    .background(selectedTab == tab.rawValue ? Color.accentColor.opacity(0.15) : .clear)
-                    .cornerRadius(6)
+                    Label(tab.rawValue, systemImage: tab.icon)
+                        .padding(.vertical, 2)
+                        .tag(tab.rawValue)
                 }
-                Spacer()
             }
-            .padding(12)
-            .frame(width: 150)
-            .background(Color(nsColor: .controlBackgroundColor))
+            .listStyle(.sidebar)
+            .frame(width: 140)
 
             Divider()
 
