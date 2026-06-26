@@ -2,306 +2,249 @@ import SwiftUI
 import GRDB
 import AppKit
 
+// MARK: - Main Settings
+
 struct SettingsView: View {
     @State private var selectedTab = "Tools"
-
     let tabs = [
-        ("Tools", "hammer"),
-        ("Repos", "folder"),
-        ("Subscriptions", "creditcard"),
-        ("Pricing", "dollarsign.circle"),
-        ("About", "info.circle"),
+        ("Tools", "hammer"), ("Repos", "folder"),
+        ("Subscriptions", "creditcard"), ("Pricing", "dollarsign.circle"), ("About", "info.circle"),
     ]
-
     var body: some View {
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(spacing: 0) {
                 ForEach(tabs, id: \.0) { (name, icon) in
                     Button(action: { selectedTab = name }) {
-                        HStack {
-                            Image(systemName: icon).frame(width: 20)
-                            Text(name)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(selectedTab == name ? Color.accentColor : Color.clear)
-                        .foregroundColor(selectedTab == name ? .white : .primary)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+                        Label(name, systemImage: icon)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 14).padding(.vertical, 9)
+                            .background(selectedTab == name ? Color.accentColor.opacity(0.12) : .clear)
+                            .foregroundColor(selectedTab == name ? .accentColor : .secondary)
+                    }.buttonStyle(.plain)
                 }
                 Spacer()
             }
-            .frame(width: 140)
-            .background(Color(nsColor: .windowBackgroundColor))
-
-            Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 1)
-
+            .frame(width: 145).padding(.top, 8)
+            .background(Color(nsColor: .underPageBackgroundColor))
+            Divider()
             Group {
-                if selectedTab == "Tools" { MonitoredToolsView() }
-                else if selectedTab == "Repos" { GitReposView() }
-                else if selectedTab == "Subscriptions" { SubscriptionToolsView() }
-                else if selectedTab == "Pricing" { PricingView() }
-                else if selectedTab == "About" { AboutView() }
+                switch selectedTab {
+                case "Tools":         ToolsTab()
+                case "Repos":         ReposTab()
+                case "Subscriptions":  SubsTab()
+                case "Pricing":       PricingTab()
+                case "About":         AboutTab()
+                default: EmptyView()
+                }
             }
-            .id(selectedTab)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(16)
+            .id(selectedTab).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(20).background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 600, height: 380)
+        .frame(width: 620, height: 400)
     }
 }
 
 // MARK: - Tools
 
-struct MonitoredToolsView: View {
-    @State private var enabledTools: [ToolInfo] = []
-    struct ToolInfo: Identifiable, Equatable {
-        let id = UUID(); let name: String; let path: String; var enabled: Bool
-    }
-
+struct ToolsTab: View {
+    @State private var tools: [ToolItem] = []
+    struct ToolItem: Identifiable { let id = UUID(); let name: String; let path: String; var enabled: Bool }
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Monitored AI Tools").font(.headline)
-            if enabledTools.isEmpty {
-                Text("No tools detected. Start using Claude Code or aider to auto-detect.").font(.caption).foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Monitored Tools").font(.title3).fontWeight(.semibold)
+            Text("AI coding tools auto-detected on your machine.").font(.caption).foregroundColor(.secondary)
+            if tools.isEmpty {
+                Label("No tools detected yet", systemImage: "questionmark.circle").foregroundColor(.secondary).padding(.top, 20)
             } else {
-                List($enabledTools) { $tool in
-                    Toggle(isOn: $tool.enabled) {
-                        VStack(alignment: .leading) {
-                            Text(tool.name).font(.body)
-                            Text(tool.path).font(.caption).foregroundColor(.secondary)
+                VStack(spacing: 6) {
+                    ForEach($tools) { $t in
+                        HStack {
+                            Toggle(isOn: $t.enabled) {
+                                VStack(alignment: .leading) { Text(t.name).font(.body); Text(t.path).font(.caption2).foregroundColor(.secondary) }
+                            }
                         }
+                        .padding(10).background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
                     }
                 }
-                .listStyle(.inset)
-                .frame(height: 120)
             }
         }
-        .onAppear { detectTools() }
+        .onAppear { detect() }
     }
-
-    private func detectTools() {
-        var tools: [ToolInfo] = []
+    private func detect() {
+        var list: [ToolItem] = []
         let ccDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
-        if FileManager.default.fileExists(atPath: ccDir.path) {
-            tools.append(ToolInfo(name: "Claude Code", path: "~/.claude/projects/", enabled: true))
-        }
-        // Check for aider in common repos
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        for dir in ["dev", "projects", "code"] {
-            let url = home.appendingPathComponent(dir)
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
-            if let e = FileManager.default.enumerator(at: url,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
-                for case let repo as URL in e {
-                    let aiderFile = repo.appendingPathComponent(".aider.llm.history")
-                    if FileManager.default.fileExists(atPath: aiderFile.path) {
-                        if !tools.contains(where: { $0.name == "aider" }) {
-                            tools.append(ToolInfo(name: "aider", path: "(found in repos)", enabled: true))
-                        }
-                        e.skipDescendants()
-                    }
-                }
-            }
-        }
-        enabledTools = tools
+        if FileManager.default.fileExists(atPath: ccDir.path) { list.append(ToolItem(name: "Claude Code", path: "~/.claude/projects/", enabled: true)) }
+        tools = list
     }
 }
 
 // MARK: - Repos
 
 private let repoDirsKey = "repo_search_dirs"
+private var repoCache: [String: [String]] = [:]
 
-struct GitReposView: View {
+struct ReposTab: View {
     @State private var searchDirs: [String] = []
     @State private var selectedDir: String? = nil
-    @State private var reposForDir: [String] = []
-    @State private var dirRepoCounts: [String: Int] = [:]
-    @State private var showDeleteAlert = false
-    @State private var dirToDelete: String? = nil
+    @State private var reposForSelected: [String] = []
+    @State private var counts: [String: Int] = [:]
+    @State private var deleteTarget: String? = nil
+    @State private var showDelete = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Git Repositories").font(.headline)
-            HStack(spacing: 8) {
-                // Directory list
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Git Repositories").font(.title3).fontWeight(.semibold)
+            HStack(spacing: 12) {
                 VStack(alignment: .leading) {
                     Text("Directories").font(.caption).foregroundColor(.secondary)
-                    List(selection: $selectedDir) {
-                        ForEach(searchDirs, id: \.self) { dir in
-                            HStack {
-                                Text(dir).font(.caption)
-                                Spacer()
-                                Text("\(dirRepoCounts[dir, default: 0])").font(.caption).foregroundColor(.secondary)
-                            }
-                            .tag(dir)
-                            .contextMenu {
-                                Button("Remove") { dirToDelete = dir; showDeleteAlert = true }
-                            }
+                    List(searchDirs, id: \.self, selection: $selectedDir) { dir in
+                        HStack {
+                            Image(systemName: "folder").foregroundColor(.accentColor)
+                            Text(dir).font(.caption)
+                            Spacer()
+                            Text("\(counts[dir, default: 0])").font(.caption2).foregroundColor(.secondary)
+                                .padding(.horizontal, 6).background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
                         }
+                        .padding(.vertical, 2).tag(dir)
+                        .contextMenu { Button("Remove") { deleteTarget = dir; showDelete = true } }
                     }
-                    .listStyle(.bordered)
-                    .frame(height: 100)
-                    .onChange(of: selectedDir) { _, newDir in
-                        if let d = newDir { reposForDir = scanRepos(in: d) }
-                    }
-                }
-                .frame(maxWidth: .infinity)
-
-                // Repo list for selected dir
+                    .listStyle(.bordered).frame(height: 110)
+                }.frame(maxWidth: .infinity)
                 VStack(alignment: .leading) {
-                    Text(selectedDir != nil ? "Repos (\(reposForDir.count))" : "Repos").font(.caption).foregroundColor(.secondary)
-                    if reposForDir.isEmpty {
-                        Text(selectedDir != nil ? "No repos found." : "Select a directory.").font(.caption).foregroundColor(.secondary)
+                    Text("Repositories").font(.caption).foregroundColor(.secondary)
+                    if reposForSelected.isEmpty {
+                        Text("Select a directory").font(.caption).foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .center).padding(.top, 30)
                     } else {
-                        List(reposForDir, id: \.self) { repo in
-                            Text(repo).font(.caption).lineLimit(1).truncationMode(.middle)
+                        List(reposForSelected, id: \.self) { repo in
+                            Label(repo, systemImage: "chevron.left.forwardslash.chevron.right").font(.caption)
                         }
                         .listStyle(.bordered)
                     }
-                }
-                .frame(maxWidth: .infinity)
+                }.frame(maxWidth: .infinity)
             }
-
             HStack {
-                Button("Add Directory…") {
-                    let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.prompt = "Select"
-                    if panel.runModal() == .OK, let url = panel.url {
-                        let path = url.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
-                        if !searchDirs.contains(path) { searchDirs.append(path); save(); rescanAll() }
-                    }
-                }
+                Button(action: pickDir) { Label("Add Directory", systemImage: "plus.circle") }
+                Text("\(searchDirs.count) dirs · \(counts.values.reduce(0,+)) repos").font(.caption2).foregroundColor(.secondary)
             }
-
-            Text("\(reposForDir.count) repos · \(searchDirs.count) directories").font(.caption2).foregroundColor(.secondary)
         }
-        .onAppear { load(); rescanAll(); if selectedDir == nil { selectedDir = searchDirs.first } }
-        .alert("Remove Directory", isPresented: $showDeleteAlert) {
+        .onAppear {
+            load()
+            refreshAll()
+            if selectedDir == nil || !searchDirs.contains(selectedDir!) { selectedDir = searchDirs.first }
+        }
+        .onChange(of: selectedDir) { _, d in if let d { reposForSelected = repoCache[d] ?? scan(d) } }
+        .alert("Remove Directory", isPresented: $showDelete) {
             Button("Cancel", role: .cancel) {}
             Button("Remove", role: .destructive) {
-                if let d = dirToDelete { searchDirs.removeAll { $0 == d }; save(); rescanAll(); if selectedDir == d { selectedDir = searchDirs.first } }
+                if let d = deleteTarget { searchDirs.removeAll { $0 == d }; save(); refreshAll(); if selectedDir == d { selectedDir = searchDirs.first } }
             }
-        } message: { Text("Stop monitoring repos in '\(dirToDelete ?? "")'?") }
+        } message: { Text("Stop monitoring '\(deleteTarget ?? "")'?") }
     }
 
+    private func pickDir() {
+        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.prompt = "Add"
+        if panel.runModal() == .OK, let url = panel.url {
+            let p = url.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+            if !searchDirs.contains(p) { searchDirs.append(p); save(); refreshAll() }
+        }
+    }
     private func load() {
-        if let saved = UserDefaults.standard.stringArray(forKey: repoDirsKey), !saved.isEmpty { searchDirs = saved }
-        if searchDirs.isEmpty { searchDirs = ["~/dev", "~/projects", "~/code"] }
+        if let s = UserDefaults.standard.stringArray(forKey: repoDirsKey), !s.isEmpty { searchDirs = s }
+        if searchDirs.isEmpty { searchDirs = ["~/dev", "~/projects", "~/code"]; save() }
     }
     private func save() { UserDefaults.standard.set(searchDirs, forKey: repoDirsKey) }
-    private func rescanAll() {
-        dirRepoCounts.removeAll()
-        for dir in searchDirs { dirRepoCounts[dir] = scanRepos(in: dir).count }
-        if let d = selectedDir, searchDirs.contains(d) { reposForDir = scanRepos(in: d) }
-    }
-    private func scanRepos(in dir: String) -> [String] {
-        let expanded = NSString(string: dir).expandingTildeInPath
-        let fm = FileManager.default
+    private func refreshAll() { counts.removeAll(); for d in searchDirs { counts[d] = scan(d).count } }
+    private func scan(_ dir: String) -> [String] {
+        if let cached = repoCache[dir] { return cached }
+        let expanded = NSString(string: dir).expandingTildeInPath; let fm = FileManager.default
         guard fm.fileExists(atPath: expanded),
-              let e = fm.enumerator(at: URL(fileURLWithPath: expanded),
-                  includingPropertiesForKeys: [.isDirectoryKey],
-                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+              let e = fm.enumerator(at: URL(fileURLWithPath: expanded), includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsPackageDescendants])
         else { return [] }
         var found: [String] = []
         for case let url as URL in e {
-            let git = url.appendingPathComponent(".git")
-            var isDir: ObjCBool = false
-            if fm.fileExists(atPath: git.path, isDirectory: &isDir), isDir.boolValue { found.append(url.lastPathComponent); e.skipDescendants() }
+            let git = url.appendingPathComponent(".git"); var d: ObjCBool = false
+            if fm.fileExists(atPath: git.path, isDirectory: &d), d.boolValue { found.append(url.lastPathComponent); e.skipDescendants() }
         }
-        return found.sorted()
+        let sorted = found.sorted(); repoCache[dir] = sorted; return sorted
     }
 }
 
 // MARK: - Subscriptions
 
-struct SubscriptionToolsView: View {
-    @State private var tools: [SubTool] = []
-    @State private var newName = ""
-    @State private var newFee = ""
-
-    struct SubTool: Identifiable, Codable {
-        var id: String { name }
-        let name: String
-        let monthlyFee: Double
-        let currency: String
-    }
-
-    let presets: [(name: String, tiers: [(label: String, fee: Double)])] = [
-        ("Cursor",    [("Pro", 20), ("Business", 40)]),
-        ("Copilot",   [("Individual", 10), ("Business", 19), ("Enterprise", 39)]),
-        ("Windsurf",  [("Pro", 15)]),
-        ("Codeium",   [("Individual", 15), ("Teams", 35)]),
+struct SubsTab: View {
+    @State private var tools: [SubItem] = []
+    @State private var pickerValue = ""
+    @State private var deleteTarget: SubItem? = nil
+    @State private var showDelete = false
+    struct SubItem: Identifiable, Equatable { var id: String { name }; let name: String; let monthlyFee: Double; let currency: String }
+    struct Preset { let name: String; let tiers: [Tier] }
+    struct Tier: Identifiable { var id: String { label }; let label: String; let fee: Double }
+    let presets: [Preset] = [
+        Preset(name: "Cursor",    tiers: [Tier(label: "Pro", fee: 20), Tier(label: "Business", fee: 40)]),
+        Preset(name: "Copilot",   tiers: [Tier(label: "Individual", fee: 10), Tier(label: "Business", fee: 19), Tier(label: "Enterprise", fee: 39)]),
+        Preset(name: "Windsurf",  tiers: [Tier(label: "Pro", fee: 15)]),
+        Preset(name: "Codeium",   tiers: [Tier(label: "Individual", fee: 15), Tier(label: "Teams", fee: 35)]),
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Subscription Tools").font(.headline)
-            Text("Cost per line = monthly fee / net lines committed.")
-                .font(.caption).foregroundColor(.secondary)
-
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Subscription Tools").font(.title3).fontWeight(.semibold)
+            Text("Monthly-fee tools. Line cost = fee / net committed lines.").font(.caption).foregroundColor(.secondary)
             HStack {
-                Picker("Add:", selection: $newName) {
+                Picker("Add", selection: $pickerValue) {
                     Text("Choose preset…").tag("")
                     ForEach(presets, id: \.name) { p in
-                        ForEach(p.tiers, id: \.label) { t in
-                            Text("\(p.name) \(t.label) ($\(String(format: "%.0f", t.fee))/mo)").tag("\(p.name)|\(t.label)|\(t.fee)")
-                        }
+                        ForEach(p.tiers) { t in Text("\(p.name) \(t.label) ($\(String(format: "%.0f", t.fee))/mo)").tag("\(p.name)|\(t.label)|\(t.fee)") }
                     }
-                }
-                .frame(width: 260)
+                }.frame(width: 280)
                 Button("Add") {
-                    let parts = newName.components(separatedBy: "|")
+                    let parts = pickerValue.components(separatedBy: "|")
                     guard parts.count == 3, let fee = Double(parts[2]) else { return }
                     let name = "\(parts[0]) \(parts[1])"
-                    guard !tools.contains(where: { $0.name == name }) else { newName = ""; return }
-                    let tool = SubTool(name: name, monthlyFee: fee, currency: "USD")
-                    tools.append(tool); saveToDB(tool); newName = ""
-                }
-                .disabled(newName.isEmpty)
+                    guard !tools.contains(where: { $0.name == name }) else { pickerValue = ""; return }
+                    let item = SubItem(name: name, monthlyFee: fee, currency: "USD")
+                    tools.append(item); save(item); pickerValue = ""
+                }.disabled(pickerValue.isEmpty)
             }
-
-            List {
-                ForEach(tools) { tool in
-                    HStack {
-                        Text(tool.name)
-                        Spacer()
-                        Text("$\(String(format: "%.2f", tool.monthlyFee))/mo").foregroundColor(.secondary)
-                        Button { deleteFromDB(tool); tools.removeAll { $0.name == tool.name } } label: {
-                            Image(systemName: "trash").font(.caption)
-                        }.buttonStyle(.plain).foregroundColor(.secondary)
+            if tools.isEmpty {
+                Text("No subscriptions added.").font(.caption).foregroundColor(.secondary).padding(.top, 10)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(tools) { item in
+                        HStack {
+                            Label(item.name, systemImage: "creditcard").font(.body)
+                            Spacer()
+                            Text("$\(String(format: "%.2f", item.monthlyFee))/mo").foregroundColor(.secondary).font(.callout)
+                            Button { deleteTarget = item; showDelete = true } label: { Image(systemName: "xmark.circle.fill").foregroundColor(.secondary) }.buttonStyle(.plain)
+                        }
+                        .padding(10).background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
                     }
                 }
             }
-            .listStyle(.inset)
-            .frame(height: 100)
         }
-        .onAppear { loadFromDB() }
+        .onAppear(perform: load)
+        .alert("Remove Subscription", isPresented: $showDelete) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove", role: .destructive) { if let t = deleteTarget { tools.removeAll { $0.name == t.name }; delete(t) } }
+        } message: { Text("Remove '\(deleteTarget?.name ?? "")'?") }
     }
 
-    private func saveToDB(_ tool: SubTool) {
-        Task {
-            try? await AppDatabase.shared.write { db in
-                try db.execute(sql: "INSERT OR REPLACE INTO subscription_tool (id, name, monthly_fee, currency) VALUES (?,?,?,?)",
-                    arguments: [tool.name, tool.name, tool.monthlyFee, tool.currency])
-            }
-        }
+    private func save(_ item: SubItem) {
+        Task { try? await AppDatabase.shared.write { db in
+            try db.execute(sql: "INSERT OR REPLACE INTO subscription_tool (id, name, monthly_fee, currency) VALUES (?,?,?,?)", arguments: [item.name, item.name, item.monthlyFee, item.currency])
+        }}
     }
-    private func deleteFromDB(_ tool: SubTool) {
-        Task { try? await AppDatabase.shared.write { db in try db.execute(sql: "DELETE FROM subscription_tool WHERE id=?", arguments: [tool.name]) } }
+    private func delete(_ item: SubItem) {
+        Task { try? await AppDatabase.shared.write { db in try db.execute(sql: "DELETE FROM subscription_tool WHERE id=?", arguments: [item.name]) } }
     }
-    private func loadFromDB() {
+    private func load() {
         Task {
             let rows: [Row]? = try? await AppDatabase.shared.read { db in try Row.fetchAll(db, sql: "SELECT name, monthly_fee, currency FROM subscription_tool") }
-            var loaded = rows?.map { SubTool(name: $0["name"] ?? "", monthlyFee: $0["monthly_fee"] ?? 0, currency: $0["currency"] ?? "USD") } ?? []
+            var loaded = rows?.map { SubItem(name: $0["name"] ?? "", monthlyFee: $0["monthly_fee"] ?? 0, currency: $0["currency"] ?? "USD") } ?? []
             if loaded.isEmpty {
-                for preset in [SubTool(name: "Cursor Pro", monthlyFee: 20, currency: "USD"),
-                               SubTool(name: "GitHub Copilot", monthlyFee: 10, currency: "USD")] {
-                    saveToDB(preset); loaded.append(preset)
+                for preset in [SubItem(name: "Cursor Pro", monthlyFee: 20, currency: "USD"), SubItem(name: "GitHub Copilot", monthlyFee: 10, currency: "USD")] {
+                    save(preset); loaded.append(preset)
                 }
             }
             await MainActor.run { tools = loaded }
@@ -311,26 +254,27 @@ struct SubscriptionToolsView: View {
 
 // MARK: - Pricing
 
-struct PricingRow: Identifiable { let id = UUID(); let name: String; let provider: String; let input: Double; let output: Double }
-
-struct PricingView: View {
-    let models: [PricingRow] = [
-        PricingRow(name: "DeepSeek V4 Pro", provider: "deepseek", input: 0.5, output: 2.2),
-        PricingRow(name: "DeepSeek Chat (V3)", provider: "deepseek", input: 0.27, output: 1.1),
-        PricingRow(name: "Claude Sonnet 4", provider: "anthropic", input: 3.0, output: 15.0),
-        PricingRow(name: "GPT-4o", provider: "openai", input: 2.5, output: 10.0),
-        PricingRow(name: "Gemini 2.5 Pro", provider: "google", input: 1.25, output: 10.0),
+struct PricingTab: View {
+    struct Row: Identifiable { let id = UUID(); let name: String; let provider: String; let input: Double; let output: Double }
+    let models: [Row] = [
+        Row(name: "DeepSeek V4 Pro", provider: "deepseek", input: 0.5, output: 2.2),
+        Row(name: "Claude Sonnet 4", provider: "anthropic", input: 3.0, output: 15.0),
+        Row(name: "GPT-4o", provider: "openai", input: 2.5, output: 10.0),
+        Row(name: "Gemini 2.5 Pro", provider: "google", input: 1.25, output: 10.0),
     ]
     var body: some View {
-        VStack(alignment: .leading) {
-            Text("Model Pricing ($/M tokens)").font(.headline).padding(.bottom, 4)
-            List(models) { m in
-                HStack {
-                    Text(m.name).frame(width: 150, alignment: .leading)
-                    Text(m.provider).frame(width: 80, alignment: .leading).foregroundColor(.secondary)
-                    Text("in: $\(String(format: "%.2f", m.input))").frame(width: 80, alignment: .trailing)
-                    Text("out: $\(String(format: "%.2f", m.output))").frame(width: 80, alignment: .trailing)
-                }.font(.caption)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Model Pricing").font(.title3).fontWeight(.semibold)
+            Text("Price per million tokens (USD).").font(.caption).foregroundColor(.secondary)
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                GridRow { Text("Model").font(.caption).foregroundColor(.secondary); Text("Input").font(.caption).foregroundColor(.secondary); Text("Output").font(.caption).foregroundColor(.secondary) }
+                ForEach(models) { m in
+                    GridRow {
+                        Text(m.name).font(.callout)
+                        Text("$\(String(format: "%.2f", m.input))").font(.callout).monospacedDigit()
+                        Text("$\(String(format: "%.2f", m.output))").font(.callout).monospacedDigit()
+                    }
+                }
             }
         }
     }
@@ -338,15 +282,16 @@ struct PricingView: View {
 
 // MARK: - About
 
-struct AboutView: View {
+struct AboutTab: View {
     var body: some View {
         VStack(spacing: 16) {
             Text("🤖").font(.system(size: 48))
             Text("AI Pulse").font(.title).fontWeight(.bold)
-            Text("Version 0.1.0 (M1)").font(.caption).foregroundColor(.secondary)
-            Text("Know what AI coding really costs you — per line, per project, per tool.")
-                .multilineTextAlignment(.center).padding(.horizontal, 40)
-            Text("All data processed locally. Nothing leaves your machine.").font(.caption).foregroundColor(.secondary)
+            Text("Version M1 (0.1.0)").font(.caption).foregroundColor(.secondary)
+            Text("Know what AI coding really costs you.")
+                .multilineTextAlignment(.center)
+            Text("All data stays on your machine.").font(.caption2).foregroundColor(.secondary)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
