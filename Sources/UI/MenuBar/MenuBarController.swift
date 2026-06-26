@@ -150,9 +150,10 @@ final class MenuBarController: NSObject {
             let repos: [RepoStat] = repoRows.compactMap { row -> RepoStat? in
                 let path: String = row["path"] ?? ""
                 let lines: Int = row["lines"] ?? 0
-                guard lines > 0 else { return nil }
+                let cost = costByRepo[path] ?? 0
+                guard lines > 0, cost > 0 else { return nil }
                 let name = URL(fileURLWithPath: path).lastPathComponent
-                return RepoStat(name: name, lines: lines, cost: costByRepo[path] ?? 0)
+                return RepoStat(name: name, lines: lines, cost: cost)
             }
 
             // Net lines (all-time)
