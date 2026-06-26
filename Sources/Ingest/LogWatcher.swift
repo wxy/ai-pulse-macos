@@ -98,23 +98,17 @@ final class LogWatcher {
         }
     }
 
-    /// Decode Claude Code's hex-encoded cwd directory name
+    /// Decode Claude Code's cwd directory name.
+    /// Claude Code encodes absolute paths by replacing '/' with '-', e.g.:
+    /// /Users/foo/bar → -Users-foo-bar
     private func decodeCWD(from dirName: String) -> String? {
-        // Claude Code encodes cwd as hex string of the absolute path
-        var hex = dirName
-        // Remove any non-hex prefix
-        if let idx = hex.firstIndex(where: { $0.isHexDigit }) {
-            hex = String(hex[idx...])
+        // Replace '-' back to '/', then replace leading '-' with root '/'
+        var path = dirName.replacingOccurrences(of: "-", with: "/")
+        if path.hasPrefix("/") && path != "/" {
+            // Already starts with /, good
+        } else if path.hasPrefix("/") {
+            return "/"
         }
-        guard hex.count % 2 == 0 else { return nil }
-        var bytes = Data()
-        var index = hex.startIndex
-        while index < hex.endIndex {
-            let next = hex.index(index, offsetBy: 2)
-            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
-            bytes.append(byte)
-            index = next
-        }
-        return String(data: bytes, encoding: .utf8)
+        return path
     }
 }

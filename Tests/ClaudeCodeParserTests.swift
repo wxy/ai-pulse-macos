@@ -4,7 +4,7 @@ import XCTest
 final class ClaudeCodeParserTests: XCTestCase {
     func testParseAssistantMessageWithUsage() {
         let json = """
-        {"type":"assistant","model":"claude-sonnet-4","timestamp":1719000000.0,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":200}}
+        {"message":{"id":"msg-1","role":"assistant","model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":200}},"timestamp":"2026-06-18T09:29:32.485Z"}
         """
         let result = ClaudeCodeParser.parse(line: json, cwd: "/Users/test/project", sessionId: "session-1")
         XCTAssertNotNil(result)
@@ -19,7 +19,7 @@ final class ClaudeCodeParserTests: XCTestCase {
 
     func testIgnoresNonAssistantMessages() {
         let json = """
-        {"type":"user","message":"hello"}
+        {"type":"queue-operation","operation":"enqueue"}
         """
         let result = ClaudeCodeParser.parse(line: json, cwd: nil, sessionId: nil)
         XCTAssertNil(result)
@@ -27,7 +27,7 @@ final class ClaudeCodeParserTests: XCTestCase {
 
     func testIgnoresAssistantWithoutUsage() {
         let json = """
-        {"type":"assistant","model":"claude-sonnet-4","content":"Hello"}
+        {"message":{"role":"assistant","model":"claude-sonnet-4","content":"Hello"}}
         """
         let result = ClaudeCodeParser.parse(line: json, cwd: nil, sessionId: nil)
         XCTAssertNil(result)
@@ -35,7 +35,7 @@ final class ClaudeCodeParserTests: XCTestCase {
 
     func testHandlesMissingFields() {
         let json = """
-        {"type":"assistant","usage":{}}
+        {"message":{"role":"assistant","usage":{}}}
         """
         let result = ClaudeCodeParser.parse(line: json, cwd: nil, sessionId: nil)
         XCTAssertNotNil(result)
@@ -46,9 +46,9 @@ final class ClaudeCodeParserTests: XCTestCase {
 
     func testDedupeKeyWithSessionId() {
         let json = """
-        {"type":"assistant","timestamp":1719000000.0,"usage":{"input_tokens":1}}
+        {"message":{"id":"msg-xyz","role":"assistant","usage":{"input_tokens":1}}}
         """
         let result = ClaudeCodeParser.parse(line: json, cwd: nil, sessionId: "abc")
-        XCTAssertEqual(result?.dedupeKey, "claude-code|abc|1719000000000")
+        XCTAssertEqual(result?.dedupeKey, "claude-code|abc|msg-xyz")
     }
 }
