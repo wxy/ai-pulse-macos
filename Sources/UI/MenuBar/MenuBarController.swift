@@ -53,10 +53,19 @@ final class MenuBarController: NSObject {
             if count == 0 {
                 return "No AI usage recorded today"
             }
-            let total = (tokens?.0 ?? 0) + (tokens?.1 ?? 0) + (tokens?.2 ?? 0)
-            // Rough cost estimate: ~$3/M input, $15/M output (Claude Sonnet)
-            let estCost = (Double(tokens?.0 ?? 0) * 3.0 + Double(tokens?.1 ?? 0) * 15.0) / 1_000_000
-            return "\(count) calls · \(formatNumber(total)) tokens · ~$\(String(format: "%.2f", estCost))"
+            let totalTokens = (tokens?.0 ?? 0) + (tokens?.1 ?? 0) + (tokens?.2 ?? 0)
+
+            // Real cost from pricing catalog (stored in DB) or estimated
+            let cost: Double? = try await AppDatabase.shared.read { db in
+                try Double.fetchOne(db, sql: "SELECT COALESCE(SUM(cost_usd),0) FROM usage_event WHERE ts >= ?", arguments: [todayStart])
+            }
+            let costStr: String
+            if let cost, cost > 0.0001 {
+                costStr = "$\(String(format: "%.2f", cost))"
+            } else {
+                costStr = "~$0"
+            }
+            return "\(count) calls · \(formatNumber(totalTokens)) tokens · \(costStr)"
         } catch {
             return "Stats unavailable"
         }

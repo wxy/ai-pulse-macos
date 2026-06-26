@@ -70,6 +70,13 @@ final class LogWatcher {
     private func insertEvent(_ event: UsageEvent) {
         Task {
             do {
+                let providerId = PricingManager.shared.providerId(for: event.model) ?? "unknown"
+                let cost = PricingManager.shared.costUSD(
+                    model: event.model,
+                    inTokens: event.inTokens,
+                    outTokens: event.outTokens,
+                    cacheTokens: event.cacheTokens
+                )
                 try await AppDatabase.shared.write { db in
                     try db.execute(
                         sql: """
@@ -80,12 +87,12 @@ final class LogWatcher {
                         arguments: [
                             event.ts,
                             event.source,
-                            "anthropic",
+                            providerId,
                             event.model,
                             event.inTokens,
                             event.outTokens,
                             event.cacheTokens,
-                            nil,
+                            cost,
                             event.repoPath,
                             event.sessionId,
                             event.dedupeKey,
@@ -102,13 +109,14 @@ final class LogWatcher {
     /// Claude Code encodes absolute paths by replacing '/' with '-', e.g.:
     /// /Users/foo/bar → -Users-foo-bar
     private func decodeCWD(from dirName: String) -> String? {
-        // Replace '-' back to '/', then replace leading '-' with root '/'
-        var path = dirName.replacingOccurrences(of: "-", with: "/")
-        if path.hasPrefix("/") && path != "/" {
-            // Already starts with /, good
-        } else if path.hasPrefix("/") {
-            return "/"
-        }
-        return path
+        // Claude Code encodes '/' as '-'. Try the naive replacement first,
+        // then verify the result exists on disk.
+        let path = "/" + dirName.replacingOccurrences(of: "-", with: "/")
+        // Strip leading double-slash if present
+        let clean = path.replacingOccurrences(of: "//", with: "/")
+        if FileManager.default.fileExists(atPath: clean) { return clean }
+        // Fallback: return the best-guess path even if it doesn't exist
+        // (repo may have been deleted but logs remain)
+        return clean
     }
 }
