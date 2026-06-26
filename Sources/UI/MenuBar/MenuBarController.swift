@@ -142,18 +142,22 @@ final class MenuBarController: NSObject {
                 return RepoStat(name: name, lines: lines, cost: cost ?? 0)
             }
 
-            if count == 0 {
-                return Stats(summary: "No AI usage recorded today", cpl: "", models: [], repos: [], netLines: 0, hasActivity: false)
-            }
-            let totalT = (tokens?.0 ?? 0) + (tokens?.1 ?? 0) + (tokens?.2 ?? 0)
-            let costStr: String
-            if let cost, cost > 0.0001 { costStr = "$\(String(format: "%.2f", cost))" }
-            else { costStr = "~$0" }
-
-            // Cost per line: total cost / net lines (all-time)
+            // Net lines (all-time)
             let netLines: Int? = try await AppDatabase.shared.read { db in
                 try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added - deleted),0) FROM code_change WHERE is_merge = 0")
             }
+
+            let totalT = (tokens?.0 ?? 0) + (tokens?.1 ?? 0) + (tokens?.2 ?? 0)
+
+            if count == 0 && repos.isEmpty {
+                return Stats(summary: "No AI usage recorded today", cpl: "", models: [], repos: [], netLines: 0, hasActivity: false)
+            }
+            if count == 0 {
+                return Stats(summary: "No AI usage today · \(repos.count) repos tracked", cpl: "", models: [], repos: repos, netLines: netLines ?? 0, hasActivity: true)
+            }
+            let costStr: String
+            if let cost, cost > 0.0001 { costStr = "$\(String(format: "%.2f", cost))" }
+            else { costStr = "~$0" }
             let cplStr: String
             if let lines = netLines, lines > 0, let cost, cost > 0 {
                 let cpl = cost / Double(lines)
