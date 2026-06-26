@@ -5,40 +5,39 @@ import AppKit
 // MARK: - Main Settings
 
 struct SettingsView: View {
-    @State private var selectedTab = "Tools"
+    @State private var selectedTab = "Coding Tools"
     let tabs = [
-        ("Tools", "hammer"), ("Repos", "folder"),
+        ("Coding Tools", "hammer"), ("Repos", "folder"),
         ("Subscriptions", "creditcard"), ("Pricing", "dollarsign.circle"), ("About", "info.circle"),
     ]
     var body: some View {
         HStack(spacing: 0) {
             // Sidebar
-            VStack(spacing: 0) {
+            VStack(spacing: 2) {
                 ForEach(tabs, id: \.0) { (name, icon) in
-                    Button(action: { selectedTab = name }) {
-                        Label(name, systemImage: icon)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 14).padding(.vertical, 9)
-                            .background(selectedTab == name ? Color.white.opacity(0.15) : .clear)
-                            .foregroundColor(.white)
-                            .cornerRadius(6).padding(.horizontal, 6)
-                    }
-                    .buttonStyle(.plain)
-                    .contentShape(Rectangle())
+                    Text(name)
+                        .font(.system(size: 12, weight: selectedTab == name ? .semibold : .regular))
+                        .foregroundColor(selectedTab == name ? .white : Color.white.opacity(0.6))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(selectedTab == name ? Color.white.opacity(0.1) : .clear)
+                        .cornerRadius(4).padding(.horizontal, 6)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedTab = name }
                 }
                 Spacer()
             }
-            .frame(width: 145).padding(.top, 8)
-            .background(Color(red: 0.15, green: 0.16, blue: 0.18))
+            .frame(width: 160).padding(.top, 12)
+            .background(Color(red: 0.13, green: 0.14, blue: 0.16))
 
             // Content
             Group {
                 switch selectedTab {
-                case "Tools":         ToolsTab()
-                case "Repos":         ReposTab()
+                case "Coding Tools":   ToolsTab()
+                case "Repos":          ReposTab()
                 case "Subscriptions":  SubsTab()
-                case "Pricing":       PricingTab()
-                case "About":         AboutTab()
+                case "Pricing":        PricingTab()
+                case "About":          AboutTab()
                 default: EmptyView()
                 }
             }
@@ -47,7 +46,7 @@ struct SettingsView: View {
             .padding(20)
             .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 620, height: 420)
+        .frame(width: 640, height: 420)
     }
 }
 
@@ -258,36 +257,41 @@ struct SubsTab: View {
     }
 
     private func saveToDB(_ item: SubItem) {
-        do {
-            let dbQueue = AppDatabase.shared.writer
-            guard let queue = dbQueue else { dbError = "DB not ready"; return }
-            try queue.write { db in
-                try db.execute(sql: "INSERT OR REPLACE INTO subscription_tool (id, name, monthly_fee, currency) VALUES (?,?,?,?)",
-                    arguments: [item.name, item.name, item.monthlyFee, item.currency])
-            }
-            dbError = nil
-        } catch { dbError = "Save failed: \(error.localizedDescription)" }
+        Task {
+            do {
+                try await AppDatabase.shared.write { db in
+                    try db.execute(sql: "INSERT OR REPLACE INTO subscription_tool (id, name, monthly_fee, currency) VALUES (?,?,?,?)",
+                        arguments: [item.name, item.name, item.monthlyFee, item.currency])
+                }
+                await MainActor.run { dbError = nil }
+            } catch { await MainActor.run { dbError = "Save: \(error.localizedDescription)" } }
+        }
     }
     private func deleteFromDB(_ item: SubItem) {
-        do {
-            let dbQueue = AppDatabase.shared.writer
-            guard let queue = dbQueue else { return }
-            try queue.write { db in try db.execute(sql: "DELETE FROM subscription_tool WHERE id=?", arguments: [item.name]) }
-        } catch { dbError = "Delete failed: \(error.localizedDescription)" }
+        Task {
+            do {
+                try await AppDatabase.shared.write { db in
+                    try db.execute(sql: "DELETE FROM subscription_tool WHERE id=?", arguments: [item.name])
+                }
+            } catch { await MainActor.run { dbError = "Delete: \(error.localizedDescription)" } }
+        }
     }
     private func loadFromDB() {
-        do {
-            let dbQueue = AppDatabase.shared.writer
-            guard let queue = dbQueue else { return }
-            let rows = try queue.read { db in try Row.fetchAll(db, sql: "SELECT name, monthly_fee, currency FROM subscription_tool") }
-            var loaded = rows.map { SubItem(name: $0["name"] ?? "", monthlyFee: $0["monthly_fee"] ?? 0, currency: $0["currency"] ?? "USD") }
-            if loaded.isEmpty {
-                for preset in [SubItem(name: "Cursor Pro", monthlyFee: 20, currency: "USD"), SubItem(name: "GitHub Copilot", monthlyFee: 10, currency: "USD")] {
-                    saveToDB(preset); loaded.append(preset)
+        Task {
+            do {
+                let rows = try await AppDatabase.shared.read { db in
+                    try Row.fetchAll(db, sql: "SELECT name, monthly_fee, currency FROM subscription_tool")
                 }
-            }
-            tools = loaded
-        } catch { dbError = "Load failed: \(error.localizedDescription)" }
+                var loaded = rows.map { SubItem(name: $0["name"] ?? "", monthlyFee: $0["monthly_fee"] ?? 0, currency: $0["currency"] ?? "USD") }
+                if loaded.isEmpty {
+                    let preset1 = SubItem(name: "Cursor Pro", monthlyFee: 20, currency: "USD")
+                    let preset2 = SubItem(name: "GitHub Copilot", monthlyFee: 10, currency: "USD")
+                    loaded = [preset1, preset2]
+                    saveToDB(preset1); saveToDB(preset2)
+                }
+                await MainActor.run { tools = loaded; dbError = nil }
+            } catch { await MainActor.run { dbError = "Load: \(error.localizedDescription)" } }
+        }
     }
 }
 
