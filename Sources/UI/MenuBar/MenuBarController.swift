@@ -57,8 +57,7 @@ final class MenuBarController: NSObject {
                         mSub.addItem(NSMenuItem(title: "\(m.name)  ·  \(m.costStr)\(cplStr)", action: nil, keyEquivalent: ""))
                     }
                     byModel.submenu = mSub
-                    let after = self.menu.index(of: self.summaryItem) + 2
-                    self.menu.insertItem(byModel, at: after)
+                    self.menu.insertItem(byModel, at: self.menu.numberOfItems - 2)
                     self.modelItems.append(byModel)
                 }
 
@@ -69,8 +68,7 @@ final class MenuBarController: NSObject {
                         rSub.addItem(NSMenuItem(title: "\(r.name) · \(r.lines) lines · \(r.cplStr)", action: nil, keyEquivalent: ""))
                     }
                     byRepo.submenu = rSub
-                    let after = self.menu.index(of: self.summaryItem) + 2 + (stats.models.isEmpty ? 0 : 1)
-                    self.menu.insertItem(byRepo, at: after)
+                    self.menu.insertItem(byRepo, at: self.menu.numberOfItems - 2)
                     self.modelItems.append(byRepo)
                 }
 
