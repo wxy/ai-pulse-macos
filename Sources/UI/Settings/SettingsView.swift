@@ -23,35 +23,22 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Sidebar using List selection
-            List(selection: $selectedTab) {
-                ForEach(Tab.allCases, id: \.rawValue) { tab in
-                    Label(tab.rawValue, systemImage: tab.icon)
-                        .padding(.vertical, 2)
-                        .tag(tab.rawValue)
-                }
+        NavigationSplitView(sidebar: {
+            List(Tab.allCases, id: \.rawValue, selection: $selectedTab) { tab in
+                Label(tab.rawValue, systemImage: tab.icon).tag(tab.rawValue)
             }
-            .listStyle(.sidebar)
-            .frame(width: 140)
-
-            Divider()
-
-            // Content
-            Group {
-                switch selectedTab {
-                case "tools":       MonitoredToolsView()
-                case "repos":       GitReposView()
-                case "subscriptions": SubscriptionToolsView()
-                case "pricing":     PricingView()
-                case "about":       AboutView()
-                default:            EmptyView()
-                }
+            .navigationSplitViewColumnWidth(120)
+        }, detail: {
+            switch selectedTab {
+            case "tools":       MonitoredToolsView()
+            case "repos":       GitReposView()
+            case "subscriptions": SubscriptionToolsView()
+            case "pricing":     PricingView()
+            case "about":       AboutView()
+            default:            Text("Select a tab").foregroundColor(.secondary)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(16)
-        }
-        .frame(width: 600, height: 380)
+        })
+        .frame(width: 580, height: 380)
     }
 }
 
