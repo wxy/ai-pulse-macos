@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarController?.start()
 
         LogWatcher.shared.start()
+        ApiPoller.shared.start()
 
         // Extra activation after menu bar setup (belt-and-suspenders with main.swift)
         NSApp.activate(ignoringOtherApps: true)
@@ -22,5 +23,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         LogWatcher.shared.stop()
+        ApiPoller.shared.stop()
     }
 }

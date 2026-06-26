@@ -41,4 +41,25 @@ final class PricingCatalogTests: XCTestCase {
     func testPricingForUnknownModelReturnsNil() {
         XCTAssertNil(PricingManager.shared.pricing(for: "nonexistent-model-xyz"))
     }
+
+    // MARK: - costUSD edge cases
+
+    func testCostUSDWithNilModel() {
+        let cost = PricingManager.shared.costUSD(model: nil, inTokens: 1000, outTokens: 500, cacheTokens: 0)
+        XCTAssertNil(cost, "nil model should return nil cost")
+    }
+
+    func testCostUSDWithZeroTokens() {
+        let cost = PricingManager.shared.costUSD(model: "deepseek-v4-pro", inTokens: 0, outTokens: 0, cacheTokens: 0)
+        XCTAssertNotNil(cost)
+        XCTAssertEqual(cost!, 0.0, accuracy: 0.0001, "zero tokens should cost $0")
+    }
+
+    func testCostUSDScalesLinearly() {
+        // 2x tokens → 2x cost
+        let cost1 = PricingManager.shared.costUSD(model: "deepseek-v4-pro", inTokens: 1_000_000, outTokens: 0, cacheTokens: 0)
+        let cost2 = PricingManager.shared.costUSD(model: "deepseek-v4-pro", inTokens: 2_000_000, outTokens: 0, cacheTokens: 0)
+        XCTAssertNotNil(cost1); XCTAssertNotNil(cost2)
+        XCTAssertEqual(cost2!, cost1! * 2.0, accuracy: 0.001)
+    }
 }

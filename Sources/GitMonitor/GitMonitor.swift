@@ -16,7 +16,7 @@ final class GitMonitor {
     private var lastSeenCommit: [String: String] = [:] // repo -> last processed commit hash
 
     /// Exclusion patterns for non-code files (glob-style)
-    private static let excludedSuffixes: Set<String> = [
+    static let excludedSuffixes: Set<String> = [
         ".lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
         ".pb.go", ".generated.swift", ".generated.ts", ".graphql",
         ".min.js", ".min.css", ".map"
@@ -80,7 +80,9 @@ final class GitMonitor {
         }
     }
 
-    private func isExcluded(file: String) -> Bool {
+    /// Check whether a file path matches exclusion patterns (lockfiles,
+    /// generated code, vendor dirs, etc.).
+    func isExcluded(file: String) -> Bool {
         for suffix in Self.excludedSuffixes where file.hasSuffix(suffix) { return true }
         for dir in Self.excludedDirs where file.contains("/\(dir)/") || file.hasPrefix("\(dir)/") { return true }
         return false

@@ -8,7 +8,7 @@ struct SettingsView: View {
     @State private var selectedTab = "General"
     @State private var lang = I18n.getLang()
     let tabs: [(String, String)] = [
-        ("General", "gear"), ("Coding Tools", "hammer"), ("Repos", "folder"),
+        ("General", "gear"), ("API Keys", "key"), ("Coding Tools", "hammer"), ("Repos", "folder"),
         ("Subscriptions", "creditcard"), ("Pricing", "dollarsign.circle"), ("About", "info.circle"),
     ]
 
@@ -22,6 +22,7 @@ struct SettingsView: View {
     func localizedName(_ key: String) -> String {
         switch key {
         case "General": return I18n.t("settings.general")
+        case "API Keys": return I18n.t("settings.api_keys")
         case "Coding Tools": return I18n.t("settings.coding_tools")
         case "Repos": return I18n.t("settings.repos")
         case "Subscriptions": return I18n.t("settings.subscriptions")
@@ -56,6 +57,7 @@ struct SettingsView: View {
             Group {
                 switch selectedTab {
                 case "General":         GeneralTab(lang: langBinding).id("general.\(lang)")
+                case "API Keys":        ApiKeysTab().id("apikeys.\(lang)")
                 case "Coding Tools":   ToolsTab().id("tools.\(lang)")
                 case "Repos":          ReposTab().id("repos.\(lang)")
                 case "Subscriptions":  SubsTab().id("subs.\(lang)")
@@ -93,6 +95,111 @@ struct GeneralTab: View {
                 .frame(width: 160)
             }
         }
+    }
+}
+
+// MARK: - API Keys
+
+struct ApiKeysTab: View {
+    @State private var keyInputs: [String: String] = [:]
+    @State private var masks: [String: Bool] = [:]   // true = key saved, show mask
+    @State private var cachedBalances: [String: CachedBalance] = [:]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(I18n.t("apikeys.title")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("apikeys.desc")).font(.caption).foregroundColor(.secondary)
+
+            ScrollView {
+                VStack(spacing: 5) {
+                    ForEach(ProviderRegistry.all, id: \.id) { p in
+                        HStack(spacing: 0) {
+                            Text(p.name).font(.callout).frame(width: 72, alignment: .leading)
+
+                            if p.canFetchBalance {
+                                if masks[p.id] == true {
+                                    Text("••••••••")
+                                        .font(.callout).foregroundColor(.secondary)
+                                        .frame(width: 148, alignment: .leading)
+
+                                    Button(I18n.t("apikeys.change")) {
+                                        masks[p.id] = false
+                                        keyInputs[p.id] = ""
+                                    }.frame(width: 44)
+                                } else {
+                                    TextField(I18n.t("apikeys.placeholder"), text: Binding(
+                                        get: { keyInputs[p.id] ?? "" },
+                                        set: { keyInputs[p.id] = $0 }
+                                    ))
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 148)
+
+                                    Button(I18n.t("apikeys.save")) {
+                                        let k = keyInputs[p.id] ?? ""
+                                        if k.isEmpty {
+                                            ApiKeyManager.shared.delete(p.id)
+                                            masks[p.id] = false
+                                        } else {
+                                            ApiKeyManager.shared.set(p.id, key: k)
+                                            masks[p.id] = true
+                                            keyInputs[p.id] = ""
+                                            ApiPoller.shared.fetchNow(providerId: p.id)
+                                        }
+                                        refreshCache()
+                                    }
+                                    .disabled((keyInputs[p.id] ?? "").isEmpty)
+                                    .frame(width: 44)
+                                }
+
+                                balanceView(for: p.id).frame(width: 110, alignment: .leading)
+                            } else {
+                                Spacer().frame(width: 196)
+                                Text(I18n.t("apikeys.no_balance"))
+                                    .font(.caption).foregroundColor(.secondary)
+                                    .frame(width: 110, alignment: .leading)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            for p in ProviderRegistry.all {
+                if let saved = ApiKeyManager.shared.get(p.id), !saved.isEmpty {
+                    masks[p.id] = true
+                    keyInputs[p.id] = ""
+                } else {
+                    masks[p.id] = false
+                    keyInputs[p.id] = ""
+                }
+            }
+            refreshCache()
+        }
+    }
+
+    @ViewBuilder
+    private func balanceView(for providerId: String) -> some View {
+        if let cb = cachedBalances[providerId] {
+            if let err = cb.error {
+                Text(err).font(.caption2).foregroundColor(.orange).lineLimit(1)
+            } else if let b = cb.balances.first {
+                Text("\(b.currency) \(String(format: "%.2f", b.totalBalance))")
+                    .font(.caption2).foregroundColor(.secondary).monospacedDigit()
+            } else {
+                Text("--").font(.caption2).foregroundColor(.secondary)
+            }
+        } else {
+            Text("--").font(.caption2).foregroundColor(.secondary)
+        }
+    }
+
+    private func refreshCache() {
+        var cb: [String: CachedBalance] = [:]
+        for p in ProviderRegistry.all where p.canFetchBalance {
+            if let c = ApiPoller.shared.cachedBalance(for: p.id) { cb[p.id] = c }
+        }
+        cachedBalances = cb
     }
 }
 
