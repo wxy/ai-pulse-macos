@@ -52,17 +52,27 @@ final class MenuBarController: NSObject {
                 self.modelItems.removeAll()
 
                 if !stats.models.isEmpty {
-                    // Add "By Model" submenu
                     let byModel = NSMenuItem(title: "▸ By Model", action: nil, keyEquivalent: "")
-                    let subMenu = NSMenu()
+                    let mSub = NSMenu()
                     for m in stats.models {
-                        let item = NSMenuItem(title: "\(m.name)  ·  \(m.costStr)", action: nil, keyEquivalent: "")
-                        subMenu.addItem(item)
+                        mSub.addItem(NSMenuItem(title: "\(m.name)  ·  \(m.costStr)", action: nil, keyEquivalent: ""))
                     }
-                    byModel.submenu = subMenu
-                    let afterSummary = self.menu.index(of: self.summaryItem) + 2
-                    self.menu.insertItem(byModel, at: afterSummary)
+                    byModel.submenu = mSub
+                    let after = self.menu.index(of: self.summaryItem) + 2
+                    self.menu.insertItem(byModel, at: after)
                     self.modelItems.append(byModel)
+                }
+
+                if !stats.repos.isEmpty {
+                    let byRepo = NSMenuItem(title: "▸ By Repo", action: nil, keyEquivalent: "")
+                    let rSub = NSMenu()
+                    for r in stats.repos {
+                        rSub.addItem(NSMenuItem(title: "\(r.name) · \(r.lines) lines · \(r.cplStr)", action: nil, keyEquivalent: ""))
+                    }
+                    byRepo.submenu = rSub
+                    let after = self.menu.index(of: self.summaryItem) + 2 + (stats.models.isEmpty ? 0 : 1)
+                    self.menu.insertItem(byRepo, at: after)
+                    self.modelItems.append(byRepo)
                 }
 
                 if let button = self.statusItem.button {
@@ -73,21 +83,16 @@ final class MenuBarController: NSObject {
     }
 
     private struct ModelStat {
-        let name: String
-        let calls: Int
-        let tokens: Int
-        let cost: Double
-        var costStr: String {
-            if cost > 0.0001 { return "$\(String(format: "%.2f", cost))" }
-            return "~$0"
-        }
+        let name: String; let calls: Int; let tokens: Int; let cost: Double
+        var costStr: String { cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0" }
+    }
+    private struct RepoStat {
+        let name: String; let lines: Int; let cost: Double
+        var cplStr: String { lines > 0 ? "$\(String(format: "%.3f", cost / Double(lines)))/line" : "-" }
     }
 
     private struct Stats {
-        let summary: String
-        let cpl: String   // cost per line
-        let models: [ModelStat]
-        let hasActivity: Bool
+        let summary: String; let cpl: String; let models: [ModelStat]; let repos: [RepoStat]; let hasActivity: Bool
     }
 
     private func fetchTodayStats() async -> Stats {
@@ -120,8 +125,24 @@ final class MenuBarController: NSObject {
                           cost: row["cst"] ?? 0)
             }
 
+            // Per-repo breakdown
+            let repoRows: [Row] = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: """
+                    SELECT repo_path, COALESCE(SUM(added - deleted),0) as lines
+                    FROM code_change WHERE ts >= ? AND is_merge = 0
+                    GROUP BY repo_path ORDER BY lines DESC
+                    """, arguments: [todayStart])
+            }
+            let repos: [RepoStat] = repoRows.compactMap { row -> RepoStat? in
+                let path = (row["repo_path"] as? String) ?? ""
+                let lines = row["lines"] as? Int ?? 0
+                guard lines > 0 else { return nil }
+                let name = URL(fileURLWithPath: path).lastPathComponent
+                return RepoStat(name: name, lines: lines, cost: cost ?? 0)
+            }
+
             if count == 0 {
-                return Stats(summary: "No AI usage recorded today", cpl: "", models: [], hasActivity: false)
+                return Stats(summary: "No AI usage recorded today", cpl: "", models: [], repos: [], hasActivity: false)
             }
             let totalT = (tokens?.0 ?? 0) + (tokens?.1 ?? 0) + (tokens?.2 ?? 0)
             let costStr: String
@@ -146,10 +167,10 @@ final class MenuBarController: NSObject {
             }
             return Stats(
                 summary: summaryLine, cpl: cplStr,
-                models: models, hasActivity: true
+                models: models, repos: repos, hasActivity: true
             )
         } catch {
-            return Stats(summary: "Stats unavailable", cpl: "", models: [], hasActivity: false)
+            return Stats(summary: "Stats unavailable", cpl: "", models: [], repos: [], hasActivity: false)
         }
     }
 

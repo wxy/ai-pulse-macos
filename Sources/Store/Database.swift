@@ -46,6 +46,13 @@ final class AppDatabase {
             }
             try db.create(indexOn: "code_change", columns: ["ts"])
             try db.create(indexOn: "code_change", columns: ["repo_path"])
+
+            try db.create(table: "subscription_tool", ifNotExists: true) { t in
+                t.column("id", .text).primaryKey()
+                t.column("name", .text).notNull()
+                t.column("monthly_fee", .double).notNull()
+                t.column("currency", .text).defaults(to: "USD")
+            }
         }
     }
 

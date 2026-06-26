@@ -1,4 +1,5 @@
 import SwiftUI
+import GRDB
 
 struct SettingsView: View {
     @State private var claudeCodeEnabled = true
@@ -14,13 +15,17 @@ struct SettingsView: View {
             .tabItem { Label("Tools", systemImage: " hammer ") }
             .tag(0)
 
+            SubscriptionToolsView()
+                .tabItem { Label("Subscriptions", systemImage: "creditcard") }
+                .tag(1)
+
             PricingView()
                 .tabItem { Label("Pricing", systemImage: "dollarsign.circle") }
-                .tag(1)
+                .tag(2)
 
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
-                .tag(2)
+                .tag(3)
         }
         .frame(width: 480, height: 360)
     }
@@ -110,6 +115,78 @@ struct PricingView: View {
             .font(.caption)
         }
         .padding()
+    }
+}
+
+struct SubscriptionToolsView: View {
+    @State private var tools: [SubTool] = []
+    @State private var newName = ""
+    @State private var newFee = ""
+
+    struct SubTool: Identifiable, Codable {
+        var id: String { name }
+        let name: String
+        let monthlyFee: Double
+        let currency: String
+    }
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text("Subscription Tools")
+                .font(.headline)
+            Text("Add fixed-monthly-fee tools (Cursor, Copilot, etc.). Cost per line = monthly fee / net lines committed.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 8)
+
+            HStack {
+                TextField("Tool name", text: $newName)
+                    .frame(width: 120)
+                TextField("$/mo", text: $newFee)
+                    .frame(width: 60)
+                Button("Add") {
+                    guard let fee = Double(newFee), !newName.isEmpty else { return }
+                    let tool = SubTool(name: newName, monthlyFee: fee, currency: "USD")
+                    tools.append(tool)
+                    saveToDB(tool)
+                    newName = ""; newFee = ""
+                }
+                .disabled(newName.isEmpty || newFee.isEmpty)
+            }
+
+            List {
+                ForEach(tools) { tool in
+                    HStack {
+                        Text(tool.name)
+                        Spacer()
+                        Text("$\(String(format: "%.2f", tool.monthlyFee))/mo")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .onDelete { _ in }
+            }
+        }
+        .padding()
+        .onAppear { loadFromDB() }
+    }
+
+    private func saveToDB(_ tool: SubTool) {
+        Task {
+            try? await AppDatabase.shared.write { db in
+                try db.execute(sql: "INSERT OR REPLACE INTO subscription_tool (id, name, monthly_fee, currency) VALUES (?,?,?,?)",
+                    arguments: [tool.name, tool.name, tool.monthlyFee, tool.currency])
+            }
+        }
+    }
+
+    private func loadFromDB() {
+        Task {
+            let rows: [Row]? = try? await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT name, monthly_fee, currency FROM subscription_tool")
+            }
+            let loaded = rows?.map { SubTool(name: $0["name"] ?? "", monthlyFee: $0["monthly_fee"] ?? 0, currency: $0["currency"] ?? "USD") } ?? []
+            await MainActor.run { tools = loaded }
+        }
     }
 }
 
