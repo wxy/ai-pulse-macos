@@ -3,41 +3,53 @@ import GRDB
 import AppKit
 
 struct SettingsView: View {
-    @State private var selectedTab: Tab = .tools
+    @State private var selectedTab = "Tools"
 
-    enum Tab: String, CaseIterable {
-        case tools = "Tools"
-        case repos = "Repos"
-        case subscriptions = "Subscriptions"
-        case pricing = "Pricing"
-        case about = "About"
-        var icon: String {
-            switch self {
-            case .tools: return "hammer"
-            case .repos: return "folder"
-            case .subscriptions: return "creditcard"
-            case .pricing: return "dollarsign.circle"
-            case .about: return "info.circle"
-            }
-        }
-    }
+    let tabs = [
+        ("Tools", "hammer"),
+        ("Repos", "folder"),
+        ("Subscriptions", "creditcard"),
+        ("Pricing", "dollarsign.circle"),
+        ("About", "info.circle"),
+    ]
 
     var body: some View {
-        NavigationSplitView(sidebar: {
-            List(Tab.allCases, id: \.rawValue, selection: $selectedTab) { tab in
-                Label(tab.rawValue, systemImage: tab.icon)
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(tabs, id: \.0) { (name, icon) in
+                    Button(action: { selectedTab = name }) {
+                        HStack {
+                            Image(systemName: icon).frame(width: 20)
+                            Text(name)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(selectedTab == name ? Color.accentColor : Color.clear)
+                        .foregroundColor(selectedTab == name ? .white : .primary)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
             }
-            .navigationSplitViewColumnWidth(120)
-        }, detail: {
-            switch selectedTab {
-            case .tools:       MonitoredToolsView()
-            case .repos:       GitReposView()
-            case .subscriptions: SubscriptionToolsView()
-            case .pricing:     PricingView()
-            case .about:       AboutView()
+            .frame(width: 140)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+            Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 1)
+
+            Group {
+                if selectedTab == "Tools" { MonitoredToolsView() }
+                else if selectedTab == "Repos" { GitReposView() }
+                else if selectedTab == "Subscriptions" { SubscriptionToolsView() }
+                else if selectedTab == "Pricing" { PricingView() }
+                else if selectedTab == "About" { AboutView() }
             }
-        })
-        .frame(width: 580, height: 380)
+            .id(selectedTab)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(16)
+        }
+        .frame(width: 600, height: 380)
     }
 }
 
