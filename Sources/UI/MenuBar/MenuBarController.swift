@@ -82,6 +82,7 @@ final class MenuBarController: NSObject {
 
     private struct Stats {
         let summary: String
+        let cpl: String   // cost per line
         let models: [ModelStat]
         let hasActivity: Bool
     }
@@ -117,18 +118,35 @@ final class MenuBarController: NSObject {
             }
 
             if count == 0 {
-                return Stats(summary: "No AI usage recorded today", models: [], hasActivity: false)
+                return Stats(summary: "No AI usage recorded today", cpl: "", models: [], hasActivity: false)
             }
             let totalT = (tokens?.0 ?? 0) + (tokens?.1 ?? 0) + (tokens?.2 ?? 0)
             let costStr: String
             if let cost, cost > 0.0001 { costStr = "$\(String(format: "%.2f", cost))" }
             else { costStr = "~$0" }
+
+            // Cost per line: total cost / net lines today
+            let netLines: Int? = try await AppDatabase.shared.read { db in
+                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added - deleted),0) FROM code_change WHERE ts >= ? AND is_merge = 0", arguments: [todayStart])
+            }
+            let cplStr: String
+            if let lines = netLines, lines > 0, let cost, cost > 0 {
+                let cpl = cost / Double(lines)
+                cplStr = "$\(String(format: "%.3f", cpl))/line"
+            } else {
+                cplStr = ""
+            }
+            let summaryLine = if !cplStr.isEmpty {
+                "📊 \(count) calls · \(formatNumber(totalT)) tokens · \(costStr) · \(cplStr)"
+            } else {
+                "📊 \(count) calls · \(formatNumber(totalT)) tokens · \(costStr)"
+            }
             return Stats(
-                summary: "📊 \(count) calls · \(formatNumber(totalT)) tokens · \(costStr)",
+                summary: summaryLine, cpl: cplStr,
                 models: models, hasActivity: true
             )
         } catch {
-            return Stats(summary: "Stats unavailable", models: [], hasActivity: false)
+            return Stats(summary: "Stats unavailable", cpl: "", models: [], hasActivity: false)
         }
     }
 

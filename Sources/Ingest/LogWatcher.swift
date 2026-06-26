@@ -8,7 +8,7 @@ final class LogWatcher {
 
     func start() {
         watchClaudeCode()
-        scanAiderRepos()
+        discoverAndWatchRepos()
     }
 
     func stop() {
@@ -47,6 +47,10 @@ final class LogWatcher {
         for case let file as URL in enumerator where file.pathExtension == "jsonl" {
             let cwd = decodeCWD(from: file.deletingLastPathComponent().lastPathComponent)
             let sessionId = file.deletingPathExtension().lastPathComponent
+            // Watch the repo for commit tracking
+            if let repoUrl = findGitRepo(containing: cwd) {
+                GitMonitor.shared.watch(repoPath: repoUrl.path)
+            }
             parseLines(from: file) { line in
                 ClaudeCodeParser.parse(line: line, cwd: cwd, sessionId: sessionId)
             }
@@ -55,17 +59,19 @@ final class LogWatcher {
 
     // MARK: - aider
 
-    private func scanAiderRepos() {
+    private func discoverAndWatchRepos() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         for dir in ["dev", "projects", "code", "Documents/GitHub"] {
             let url = home.appendingPathComponent(dir)
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             enumerateGitRepos(in: url) { repoURL in
+                // Always watch git commits for cost-per-line
+                GitMonitor.shared.watch(repoPath: repoURL.path)
+                // Also check for aider files
                 let llmFile = repoURL.appendingPathComponent(".aider.llm.history")
                 guard FileManager.default.fileExists(atPath: llmFile.path) else { return }
-                let cwd = repoURL.path
                 parseLines(from: llmFile) { line in
-                    AiderParser.parseJSONL(line: line, cwd: cwd)
+                    AiderParser.parseJSONL(line: line, cwd: repoURL.path)
                 }
             }
         }
@@ -121,6 +127,20 @@ final class LogWatcher {
                 print("Failed to insert: \(error)")
             }
         }
+    }
+
+    /// Walk up from a path until we find a .git directory
+    private func findGitRepo(containing path: String?) -> URL? {
+        guard var url = path.map({ URL(fileURLWithPath: $0) }) else { return nil }
+        while url.path != "/" {
+            let git = url.appendingPathComponent(".git")
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: git.path, isDirectory: &isDir), isDir.boolValue {
+                return url
+            }
+            url = url.deletingLastPathComponent()
+        }
+        return nil
     }
 
     private func decodeCWD(from dirName: String) -> String? {
