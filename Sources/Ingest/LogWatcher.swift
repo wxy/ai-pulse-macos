@@ -45,17 +45,17 @@ final class LogWatcher {
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return }
         for case let file as URL in enumerator where file.pathExtension == "jsonl" {
-            let cwd = decodeCWD(from: file.deletingLastPathComponent().lastPathComponent)
-            let sessionId = file.deletingPathExtension().lastPathComponent
-            // Attribute usage to the git repo root (not the raw cwd) so usage_event
-            // and code_change share the same repo_path key for per-repo cost.
-            var repoPath = cwd
-            if let repoUrl = findGitRepo(containing: cwd) {
-                GitMonitor.shared.watch(repoPath: repoUrl.path)
-                repoPath = repoUrl.path
-            }
             parseLines(from: file) { line in
-                ClaudeCodeParser.parse(line: line, cwd: repoPath, sessionId: sessionId)
+                guard let event = ClaudeCodeParser.parse(line: line) else { return nil }
+                // Resolve cwd to git repo root for consistent repo_path
+                var repoPath = event.repoPath
+                if let repoUrl = findGitRepo(containing: repoPath) {
+                    GitMonitor.shared.watch(repoPath: repoUrl.path)
+                    repoPath = repoUrl.path
+                }
+                return UsageEvent(ts: event.ts, source: event.source, model: event.model,
+                    inTokens: event.inTokens, outTokens: event.outTokens, cacheTokens: event.cacheTokens,
+                    repoPath: repoPath, sessionId: event.sessionId, dedupeKey: event.dedupeKey)
             }
         }
     }
@@ -150,9 +150,4 @@ final class LogWatcher {
         return nil
     }
 
-    private func decodeCWD(from dirName: String) -> String? {
-        let path = "/" + dirName.replacingOccurrences(of: "-", with: "/")
-            .replacingOccurrences(of: "//", with: "/")
-        return path
-    }
 }
