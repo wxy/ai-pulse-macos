@@ -6,16 +6,29 @@ import AppKit
 
 struct SettingsView: View {
     @State private var selectedTab = "Coding Tools"
-    let tabs = [
+    @State private var lang = I18n.getLang()
+    let tabs: [(String, String)] = [
         ("Coding Tools", "hammer"), ("Repos", "folder"),
         ("Subscriptions", "creditcard"), ("Pricing", "dollarsign.circle"), ("About", "info.circle"),
     ]
+
+    func localizedName(_ key: String) -> String {
+        switch key {
+        case "Coding Tools": return I18n.t("settings.coding_tools")
+        case "Repos": return I18n.t("settings.repos")
+        case "Subscriptions": return I18n.t("settings.subscriptions")
+        case "Pricing": return I18n.t("settings.pricing")
+        case "About": return I18n.t("settings.about")
+        default: return key
+        }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Sidebar
             VStack(spacing: 2) {
                 ForEach(tabs, id: \.0) { (name, icon) in
-                    Text(name)
+                    Text(localizedName(name))
                         .font(.system(size: 12, weight: selectedTab == name ? .semibold : .regular))
                         .foregroundColor(selectedTab == name ? .white : Color.white.opacity(0.6))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -26,6 +39,13 @@ struct SettingsView: View {
                         .onTapGesture { selectedTab = name }
                 }
                 Spacer()
+                Picker("", selection: $lang) {
+                    Text("中文").tag("zh")
+                    Text("English").tag("en")
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 12).padding(.bottom, 8)
+                .onChange(of: lang) { _, v in I18n.setLang(v) }
             }
             .frame(width: 160).padding(.top, 12)
             .background(Color(red: 0.13, green: 0.14, blue: 0.16))

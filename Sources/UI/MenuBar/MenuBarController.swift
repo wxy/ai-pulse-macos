@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 import GRDB
 
-/// Holds a reference to the Preferences window so it stays alive
 final class SettingsWindowManager {
     static let shared = SettingsWindowManager()
     var window: NSWindow?
@@ -17,207 +16,120 @@ final class MenuBarController: NSObject {
 
     func start() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = statusItem.button {
-            button.title = "🤖"
-        }
+        if let button = statusItem.button { button.title = "🤖" }
 
         menu = NSMenu()
-        summaryItem = NSMenuItem(title: "Loading…", action: nil, keyEquivalent: "")
-        summaryItem.isEnabled = false
+        summaryItem = NSMenuItem(title: I18n.t("menu.loading"), action: nil, keyEquivalent: "")
         menu.addItem(summaryItem)
         menu.addItem(.separator())
-        let prefsItem = NSMenuItem(title: "Preferences…", action: #selector(openPreferences), keyEquivalent: ",")
-        prefsItem.target = self
-        menu.addItem(prefsItem)
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
+        let prefsItem = NSMenuItem(title: I18n.t("menu.preferences"), action: #selector(openPreferences), keyEquivalent: ",")
+        prefsItem.target = self; menu.addItem(prefsItem)
+        let quitItem = NSMenuItem(title: I18n.t("menu.quit"), action: #selector(quit), keyEquivalent: "q")
+        quitItem.target = self; menu.addItem(quitItem)
         statusItem.menu = menu
 
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            self?.refreshStats()
-        }
+        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.refreshStats() }
         refreshStats()
     }
 
     private func refreshStats() {
         Task {
-            let stats = await fetchTodayStats()
+            let stats = await fetchThisWeekStats()
             DispatchQueue.main.async {
                 self.summaryItem.title = stats.summary
-                // Remove old submenu items
                 for item in self.modelItems { self.menu.removeItem(item) }
                 self.modelItems.removeAll()
-
                 if !stats.models.isEmpty {
-                    let byModel = NSMenuItem(title: "▸ By Model", action: nil, keyEquivalent: "")
-                    let mSub = NSMenu()
-                    for m in stats.models {
-                        let cplStr = stats.netLines > 0 ? " · $\(String(format: "%.3f", m.cost / Double(stats.netLines)))/line" : ""
-                        mSub.addItem(NSMenuItem(title: "\(m.name)  ·  \(m.costStr)\(cplStr)", action: nil, keyEquivalent: ""))
+                    let m = NSMenuItem(title: I18n.t("menu.by_model"), action: nil, keyEquivalent: "")
+                    let s = NSMenu()
+                    for x in stats.models {
+                        let l = stats.netLines > 0 ? " · $\(String(format: "%.3f", x.cost / Double(stats.netLines)))/line" : ""
+                        s.addItem(NSMenuItem(title: "\(x.name) · \(x.costStr)\(l)", action: nil, keyEquivalent: ""))
                     }
-                    byModel.submenu = mSub
-                    self.menu.insertItem(byModel, at: self.menu.numberOfItems - 2)
-                    self.modelItems.append(byModel)
+                    m.submenu = s; self.menu.insertItem(m, at: self.menu.numberOfItems - 2); self.modelItems.append(m)
                 }
-
                 if !stats.repos.isEmpty {
-                    let byRepo = NSMenuItem(title: "▸ By Repo", action: nil, keyEquivalent: "")
-                    let rSub = NSMenu()
-                    for r in stats.repos {
-                        rSub.addItem(NSMenuItem(title: "\(r.name) · \(r.lines) lines · \(r.cplStr)", action: nil, keyEquivalent: ""))
-                    }
-                    byRepo.submenu = rSub
-                    self.menu.insertItem(byRepo, at: self.menu.numberOfItems - 2)
-                    self.modelItems.append(byRepo)
+                    let m = NSMenuItem(title: I18n.t("menu.by_repo"), action: nil, keyEquivalent: "")
+                    let s = NSMenu()
+                    for r in stats.repos { s.addItem(NSMenuItem(title: "\(r.name) · \(r.lines) \(I18n.t("menu.lines")) · \(r.cplStr)", action: nil, keyEquivalent: "")) }
+                    m.submenu = s; self.menu.insertItem(m, at: self.menu.numberOfItems - 2); self.modelItems.append(m)
                 }
-
-                if let button = self.statusItem.button {
-                    button.title = stats.hasActivity ? "💬" : "🤖"
-                }
+                if let button = self.statusItem.button { button.title = stats.hasActivity ? "💬" : "🤖" }
             }
         }
     }
 
-    private struct ModelStat {
-        let name: String; let calls: Int; let tokens: Int; let cost: Double
-        var costStr: String { cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0" }
-    }
-    private struct RepoStat {
-        let name: String; let lines: Int; let cost: Double
-        var cplStr: String { lines > 0 ? "$\(String(format: "%.3f", cost / Double(lines)))/line" : "-" }
-    }
+    // MARK: - Data
 
-    private struct Stats {
-        let summary: String; let cpl: String; let models: [ModelStat]; let repos: [RepoStat]; let netLines: Int; let hasActivity: Bool
-    }
+    private struct ModelStat { let name: String; let calls: Int; let tokens: Int; let cost: Double
+        var costStr: String { cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0" } }
+    private struct RepoStat { let name: String; let lines: Int; let cost: Double
+        var cplStr: String { lines > 0 ? "$\(String(format: "%.3f", cost / Double(lines)))/line" : "-" } }
+    private struct Stats { let summary: String; let cpl: String; let models: [ModelStat]; let repos: [RepoStat]; let netLines: Int; let hasActivity: Bool }
 
-    private func fetchTodayStats() async -> Stats {
+    private func fetchThisWeekStats() async -> Stats {
         do {
-            let todayStart = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000
-            let count: Int = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event WHERE ts >= ?", arguments: [todayStart]) ?? 0
+            let cal = Calendar.current
+            let w = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!.timeIntervalSince1970 * 1000
+
+            let cnt: Int = try await AppDatabase.shared.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event WHERE ts >= ?", arguments: [w]) ?? 0
             }
-            let tokens: (Int, Int, Int)? = try await AppDatabase.shared.read { db in
-                try Row.fetchOne(db, sql: "SELECT COALESCE(SUM(in_tokens),0) AS inp, COALESCE(SUM(out_tokens),0) AS outp, COALESCE(SUM(cache_tokens),0) AS cache FROM usage_event WHERE ts >= ?", arguments: [todayStart]).map { ($0["inp"], $0["outp"], $0["cache"]) }
+            let tokRow: Row? = try await AppDatabase.shared.read { db in
+                try Row.fetchOne(db, sql: "SELECT COALESCE(SUM(in_tokens),0) AS i, COALESCE(SUM(out_tokens),0) AS o, COALESCE(SUM(cache_tokens),0) AS c FROM usage_event WHERE ts >= ?", arguments: [w])
             }
-            let cost: Double? = try await AppDatabase.shared.read { db in
-                try Double.fetchOne(db, sql: "SELECT COALESCE(SUM(cost_usd),0) FROM usage_event WHERE ts >= ?", arguments: [todayStart])
+            let cst: Double? = try await AppDatabase.shared.read { db in
+                try Double.fetchOne(db, sql: "SELECT COALESCE(SUM(cost_usd),0) FROM usage_event WHERE ts >= ?", arguments: [w])
             }
 
-            // Per-model breakdown
             let rows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: """
-                    SELECT COALESCE(model,'unknown') as model, COUNT(*) as cnt,
-                           COALESCE(SUM(in_tokens+out_tokens+cache_tokens),0) as tok,
-                           COALESCE(SUM(cost_usd),0) as cst
-                    FROM usage_event WHERE ts >= ?
-                    GROUP BY model ORDER BY cst DESC
-                    """, arguments: [todayStart])
+                try Row.fetchAll(db, sql: "SELECT COALESCE(model,'unknown') as m, COUNT(*) as cnt, COALESCE(SUM(in_tokens+out_tokens+cache_tokens),0) as tok, COALESCE(SUM(cost_usd),0) as cst FROM usage_event WHERE ts >= ? GROUP BY m ORDER BY cst DESC", arguments: [w])
             }
-            let models: [ModelStat] = rows.map { row in
-                ModelStat(name: row["model"] ?? "unknown",
-                          calls: row["cnt"] ?? 0,
-                          tokens: row["tok"] ?? 0,
-                          cost: row["cst"] ?? 0)
+            let models = rows.map { r in ModelStat(name: r["m"] ?? "?", calls: r["cnt"] ?? 0, tokens: r["tok"] ?? 0, cost: r["cst"] ?? 0) }
+
+            var cbr: [String: Double] = [:]
+            let rcRows: [Row] = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? GROUP BY repo_path", arguments: [w])
+            }
+            for r in rcRows { if let p: String = r["p"], !p.isEmpty { cbr[p] = r["c"] ?? 0 } }
+
+            let rrRows: [Row] = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(added - deleted),0) AS l FROM code_change WHERE is_merge = 0 AND ts >= ? GROUP BY repo_path ORDER BY l DESC", arguments: [w])
+            }
+            var repos: [RepoStat] = []
+            for r in rrRows {
+                let path: String = r["p"] ?? ""; let lines: Int = r["l"] ?? 0; let c = cbr[path] ?? 0
+                guard lines > 0, c > 0 else { continue }
+                repos.append(RepoStat(name: URL(fileURLWithPath: path).lastPathComponent, lines: lines, cost: c))
             }
 
-            // Per-repo cost (all-time), keyed by repo_path
-            let repoCostRows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: """
-                    SELECT repo_path AS path, COALESCE(SUM(cost_usd),0) AS cost
-                    FROM usage_event WHERE repo_path IS NOT NULL
-                    GROUP BY repo_path
-                    """)
-            }
-            var costByRepo: [String: Double] = [:]
-            for row in repoCostRows {
-                let path: String = row["path"] ?? ""
-                guard !path.isEmpty else { continue }
-                costByRepo[path] = row["cost"] ?? 0
+            let nl: Int? = try await AppDatabase.shared.read { db in
+                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added - deleted),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [w])
             }
 
-            // Per-repo net lines (all-time). Use typed subscripts: GRDB's untyped
-            // subscript returns DatabaseValueConvertible? (boxing Int64), so `as? Int`
-            // would always be nil and silently drop every repo.
-            let repoRows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: """
-                    SELECT repo_path AS path, COALESCE(SUM(added - deleted),0) AS lines
-                    FROM code_change WHERE is_merge = 0
-                    GROUP BY repo_path ORDER BY lines DESC
-                    """)
-            }
-            let repos: [RepoStat] = repoRows.compactMap { row -> RepoStat? in
-                let path: String = row["path"] ?? ""
-                let lines: Int = row["lines"] ?? 0
-                let cost = costByRepo[path] ?? 0
-                guard lines > 0, cost > 0 else { return nil }
-                let name = URL(fileURLWithPath: path).lastPathComponent
-                return RepoStat(name: name, lines: lines, cost: cost)
-            }
+            let totalT = (tokRow?["i"] as? Int ?? 0) + (tokRow?["o"] as? Int ?? 0) + (tokRow?["c"] as? Int ?? 0)
+            let coeff = cst ?? 0
+            let costS = coeff > 0.0001 ? "$\(String(format: "%.2f", coeff))" : "~$0"
+            let nlv = nl ?? 0
+            let cplS = nlv > 0 && coeff > 0 ? "$\(String(format: "%.3f", coeff / Double(nlv)))/line" : ""
+            let sum = cplS.isEmpty ? "📊 \(cnt) calls · \(fmt(totalT)) tokens · \(costS)" : "📊 \(cnt) calls · \(fmt(totalT)) tokens · \(costS) · \(cplS)"
 
-            // Net lines (all-time)
-            let netLines: Int? = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added - deleted),0) FROM code_change WHERE is_merge = 0")
-            }
-
-            let totalT = (tokens?.0 ?? 0) + (tokens?.1 ?? 0) + (tokens?.2 ?? 0)
-
-            if count == 0 && repos.isEmpty {
-                return Stats(summary: "No AI usage recorded today", cpl: "", models: [], repos: [], netLines: 0, hasActivity: false)
-            }
-            if count == 0 {
-                return Stats(summary: "No AI usage today · \(repos.count) repos tracked", cpl: "", models: [], repos: repos, netLines: netLines ?? 0, hasActivity: true)
-            }
-            let costStr: String
-            if let cost, cost > 0.0001 { costStr = "$\(String(format: "%.2f", cost))" }
-            else { costStr = "~$0" }
-            let cplStr: String
-            if let lines = netLines, lines > 0, let cost, cost > 0 {
-                let cpl = cost / Double(lines)
-                cplStr = "$\(String(format: "%.3f", cpl))/line"
-            } else {
-                cplStr = ""
-            }
-            let summaryLine = if !cplStr.isEmpty {
-                "📊 \(count) calls · \(formatNumber(totalT)) tokens · \(costStr) · \(cplStr)"
-            } else {
-                "📊 \(count) calls · \(formatNumber(totalT)) tokens · \(costStr)"
-            }
-            return Stats(
-                summary: summaryLine, cpl: cplStr,
-                models: models, repos: repos, netLines: netLines ?? 0, hasActivity: true
-            )
-        } catch {
-            return Stats(summary: "Stats unavailable", cpl: "", models: [], repos: [], netLines: 0, hasActivity: false)
-        }
+            if cnt == 0 && repos.isEmpty { return Stats(summary: I18n.t("menu.no_usage"), cpl: "", models: [], repos: [], netLines: 0, hasActivity: false) }
+            return Stats(summary: sum, cpl: cplS, models: models, repos: repos, netLines: nl ?? 0, hasActivity: true)
+        } catch { return Stats(summary: I18n.t("menu.unavailable"), cpl: "", models: [], repos: [], netLines: 0, hasActivity: false) }
     }
 
-    private func formatNumber(_ n: Int) -> String {
-        if n >= 1_000_000 { return "\(n / 1_000_000).\( (n % 1_000_000) / 100_000)M" }
-        if n >= 1_000 { return "\(n / 1_000).\( (n % 1_000) / 100)K" }
+    private func fmt(_ n: Int) -> String {
+        if n >= 1_000_000 { return "\(n/1_000_000).\( (n%1_000_000)/100_000)M" }
+        if n >= 1_000 { return "\(n/1_000).\( (n%1_000)/100)K" }
         return "\(n)"
     }
 
     @objc private func openPreferences() {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        let settingsView = SettingsView()
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 360),
-            styleMask: [.titled, .closable, .miniaturizable],
-            backing: .buffered, defer: false
-        )
-        window.title = "AI Pulse Preferences"
-        window.setContentSize(NSSize(width: 600, height: 400))
-        window.contentView = NSHostingView(rootView: settingsView)
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        SettingsWindowManager.shared.window = window
-        window.isReleasedWhenClosed = false
+        NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        w.title = "AI Pulse Preferences"; w.contentView = NSHostingView(rootView: SettingsView()); w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
+        SettingsWindowManager.shared.window = w
     }
-
-    @objc private func quit() {
-        NSApplication.shared.terminate(nil)
-    }
+    @objc private func quit() { NSApplication.shared.terminate(nil) }
 }

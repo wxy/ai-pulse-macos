@@ -15,18 +15,24 @@ struct UsageEvent: Codable {
 
 /// Parses Claude Code session logs (~/.claude/projects/<encoded-cwd>/*.jsonl)
 struct ClaudeCodeParser {
-    /// Each JSONL line is a full message object. Claude Code nests the assistant
-    /// message under `message`, with `message.type == "assistant"` and `message.usage`.
-    static func parse(line: String, cwd: String?, sessionId: String?) -> UsageEvent? {
+    /// Parse a Claude Code JSONL line. The `cwd` is read from the JSON's "cwd" field,
+    /// NOT from the directory name (which uses ambiguous dash-encoding).
+    static func parse(line: String) -> UsageEvent? {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
+
+        // cwd is at top level: "cwd":"/Users/..."
+        let cwd = json["cwd"] as? String
+
+        // sessionId at top level
+        let sessionId = json["sessionId"] as? String
 
         // Claude Code wraps the actual message in `message`
         let msg = (json["message"] as? [String: Any]) ?? json
         let usage = (msg["usage"] as? [String: Any]) ?? json["usage"] as? [String: Any]
 
-        // Only process assistant messages with usage. Claude Code uses `role: "assistant"`.
+        // Only process assistant messages with usage
         guard (msg["role"] as? String) == "assistant",
               usage != nil
         else { return nil }
@@ -41,8 +47,6 @@ struct ClaudeCodeParser {
         let messageId = (msg["id"] as? String) ?? json["uuid"] as? String
         if let sid = sessionId, let mid = messageId {
             dedupeKey = "claude-code|\(sid)|\(mid)"
-        } else if let sid = sessionId, let ts = json["timestamp"] as? String {
-            dedupeKey = "claude-code|\(sid)|\(ts)"
         } else {
             dedupeKey = "claude-code|\(line.hash)"
         }
