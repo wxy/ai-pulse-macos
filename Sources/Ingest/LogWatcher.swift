@@ -1,114 +1,158 @@
 import Foundation
 import GRDB
 
-/// Watches Claude Code log directories for new session files and incrementally parses them
+/// Watches log directories for AI coding tools and incrementally parses them
 final class LogWatcher {
     static let shared = LogWatcher()
-    private var source: DispatchSourceFileSystemObject?
+    private var claudeSource: DispatchSourceFileSystemObject?
 
     func start() {
-        let claudeProjects = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects")
+        watchClaudeCode()
+        discoverAndWatchRepos()
+    }
 
-        guard FileManager.default.fileExists(atPath: claudeProjects.path) else {
-            print("Claude Code projects directory not found at \(claudeProjects.path)")
+    func stop() {
+        claudeSource?.cancel()
+        claudeSource = nil
+    }
+
+    // MARK: - Claude Code
+
+    private func watchClaudeCode() {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+        guard FileManager.default.fileExists(atPath: dir.path) else {
+            print("Claude Code projects dir not found")
             return
         }
+        scanClaudeCode(at: dir)
 
-        // Scan existing session files
-        scanExisting(at: claudeProjects)
-
-        // Watch for new files
-        let fd = open(claudeProjects.path, O_EVTONLY)
+        let fd = open(dir.path, O_EVTONLY)
         guard fd >= 0 else { return }
-        source = DispatchSource.makeFileSystemObjectSource(
+        claudeSource = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .extend, .rename],
             queue: DispatchQueue.global(qos: .utility)
         )
-        source?.setEventHandler { [weak self] in
-            self?.scanExisting(at: claudeProjects)
-        }
-        source?.setCancelHandler { close(fd) }
-        source?.resume()
+        claudeSource?.setEventHandler { [weak self] in self?.scanClaudeCode(at: dir) }
+        claudeSource?.setCancelHandler { close(fd) }
+        claudeSource?.resume()
     }
 
-    func stop() {
-        source?.cancel()
-        source = nil
-    }
-
-    private func scanExisting(at dir: URL) {
+    private func scanClaudeCode(at dir: URL) {
         guard let enumerator = FileManager.default.enumerator(
-            at: dir,
-            includingPropertiesForKeys: [.isRegularFileKey],
+            at: dir, includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return }
-
-        for case let file as URL in enumerator {
-            guard file.pathExtension == "jsonl" else { continue }
-            parseFile(at: file)
-        }
-    }
-
-    private func parseFile(at url: URL) {
-        // Extract cwd from the parent directory name (encoded path)
-        let parentDir = url.deletingLastPathComponent().lastPathComponent
-        let cwd = decodeCWD(from: parentDir)
-
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return }
-        let lines = content.components(separatedBy: .newlines)
-        let sessionId = url.deletingPathExtension().lastPathComponent
-
-        for line in lines {
-            guard !line.isEmpty else { continue }
-            guard let event = ClaudeCodeParser.parse(line: line, cwd: cwd, sessionId: sessionId) else { continue }
-            insertEvent(event)
-        }
-    }
-
-    private func insertEvent(_ event: UsageEvent) {
-        Task {
-            do {
-                try await AppDatabase.shared.write { db in
-                    try db.execute(
-                        sql: """
-                        INSERT OR IGNORE INTO usage_event
-                          (ts, source, provider_id, model, in_tokens, out_tokens, cache_tokens, cost_usd, repo_path, session_id, dedupe_key)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        arguments: [
-                            event.ts,
-                            event.source,
-                            "anthropic",
-                            event.model,
-                            event.inTokens,
-                            event.outTokens,
-                            event.cacheTokens,
-                            nil,
-                            event.repoPath,
-                            event.sessionId,
-                            event.dedupeKey,
-                        ]
-                    )
-                }
-            } catch {
-                print("Failed to insert usage event: \(error)")
+        for case let file as URL in enumerator where file.pathExtension == "jsonl" {
+            let cwd = decodeCWD(from: file.deletingLastPathComponent().lastPathComponent)
+            let sessionId = file.deletingPathExtension().lastPathComponent
+            // Attribute usage to the git repo root (not the raw cwd) so usage_event
+            // and code_change share the same repo_path key for per-repo cost.
+            var repoPath = cwd
+            if let repoUrl = findGitRepo(containing: cwd) {
+                GitMonitor.shared.watch(repoPath: repoUrl.path)
+                repoPath = repoUrl.path
+            }
+            parseLines(from: file) { line in
+                ClaudeCodeParser.parse(line: line, cwd: repoPath, sessionId: sessionId)
             }
         }
     }
 
-    /// Decode Claude Code's cwd directory name.
-    /// Claude Code encodes absolute paths by replacing '/' with '-', e.g.:
-    /// /Users/foo/bar → -Users-foo-bar
-    private func decodeCWD(from dirName: String) -> String? {
-        // Replace '-' back to '/', then replace leading '-' with root '/'
-        var path = dirName.replacingOccurrences(of: "-", with: "/")
-        if path.hasPrefix("/") && path != "/" {
-            // Already starts with /, good
-        } else if path.hasPrefix("/") {
-            return "/"
+    // MARK: - aider
+
+    private func discoverAndWatchRepos() {
+        let dirs = UserDefaults.standard.stringArray(forKey: "repo_search_dirs")
+            ?? ["~/dev", "~/projects", "~/code"]
+        for dir in dirs {
+            let expanded = NSString(string: dir).expandingTildeInPath
+            guard FileManager.default.fileExists(atPath: expanded) else { continue }
+            enumerateGitRepos(in: URL(fileURLWithPath: expanded)) { repoURL in
+                GitMonitor.shared.watch(repoPath: repoURL.path)
+                let llmFile = repoURL.appendingPathComponent(".aider.llm.history")
+                guard FileManager.default.fileExists(atPath: llmFile.path) else { return }
+                parseLines(from: llmFile) { line in
+                    AiderParser.parseJSONL(line: line, cwd: repoURL.path)
+                }
+            }
         }
+    }
+
+    // MARK: - Shared helpers
+
+    private func parseLines(from url: URL, parser: (String) -> UsageEvent?) {
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return }
+        for line in content.components(separatedBy: .newlines) {
+            guard !line.isEmpty, let event = parser(line) else { continue }
+            insertEvent(event)
+        }
+    }
+
+    private func enumerateGitRepos(in dir: URL, handler: (URL) -> Void) {
+        guard let enumerator = FileManager.default.enumerator(
+            at: dir, includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return }
+        for case let url as URL in enumerator {
+            let gitDir = url.appendingPathComponent(".git")
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: gitDir.path, isDirectory: &isDir), isDir.boolValue
+            else { continue }
+            handler(url)
+            enumerator.skipDescendants()
+        }
+    }
+
+    private func insertEvent(_ event: UsageEvent) {
+        let providerId = PricingManager.shared.providerId(for: event.model) ?? "unknown"
+        let cost = PricingManager.shared.costUSD(
+            model: event.model,
+            inTokens: event.inTokens,
+            outTokens: event.outTokens,
+            cacheTokens: event.cacheTokens
+        )
+        Task {
+            do {
+                try await AppDatabase.shared.write { db in
+                    try db.execute(sql: """
+                        INSERT INTO usage_event
+                          (ts, source, provider_id, model, in_tokens, out_tokens, cache_tokens, cost_usd, repo_path, session_id, dedupe_key)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(dedupe_key) DO UPDATE SET
+                          provider_id = excluded.provider_id,
+                          model       = excluded.model,
+                          cost_usd    = excluded.cost_usd,
+                          repo_path   = excluded.repo_path
+                        """, arguments: [
+                            event.ts, event.source, providerId, event.model,
+                            event.inTokens, event.outTokens, event.cacheTokens,
+                            cost, event.repoPath, event.sessionId, event.dedupeKey,
+                        ])
+                }
+            } catch {
+                print("Failed to insert: \(error)")
+            }
+        }
+    }
+
+    /// Walk up from a path until we find a .git directory
+    private func findGitRepo(containing path: String?) -> URL? {
+        guard var url = path.map({ URL(fileURLWithPath: $0) }) else { return nil }
+        while url.path != "/" {
+            let git = url.appendingPathComponent(".git")
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: git.path, isDirectory: &isDir), isDir.boolValue {
+                return url
+            }
+            url = url.deletingLastPathComponent()
+        }
+        return nil
+    }
+
+    private func decodeCWD(from dirName: String) -> String? {
+        let path = "/" + dirName.replacingOccurrences(of: "-", with: "/")
+            .replacingOccurrences(of: "//", with: "/")
         return path
     }
 }
