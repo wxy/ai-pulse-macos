@@ -7,56 +7,65 @@ final class AppDatabase {
 
     func setup() throws {
         let appSupport = try FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true)
         let dbDir = appSupport.appendingPathComponent("AIPulse")
         try FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
         let dbPath = dbDir.appendingPathComponent("aipulse.db").path
         dbQueue = try DatabaseQueue(path: dbPath)
+        print("DB opened at \(dbPath)")
 
-        try dbQueue?.write { db in
-            try db.create(table: "usage_event", ifNotExists: true) { t in
-                t.autoIncrementedPrimaryKey("id")
-                t.column("ts", .integer).notNull()
-                t.column("source", .text).notNull()
-                t.column("provider_id", .text)
-                t.column("model", .text)
-                t.column("in_tokens", .integer).defaults(to: 0)
-                t.column("out_tokens", .integer).defaults(to: 0)
-                t.column("cache_tokens", .integer).defaults(to: 0)
-                t.column("cost_usd", .double)
-                t.column("repo_path", .text)
-                t.column("session_id", .text)
-                t.column("dedupe_key", .text).unique()
-            }
-            try db.create(indexOn: "usage_event", columns: ["ts"])
-            try db.create(indexOn: "usage_event", columns: ["repo_path"])
+        let tables: [(String, (Database) throws -> Void)] = [
+            ("usage_event", { db in
+                try db.create(table: "usage_event", ifNotExists: true) { t in
+                    t.autoIncrementedPrimaryKey("id")
+                    t.column("ts", .integer).notNull()
+                    t.column("source", .text).notNull()
+                    t.column("provider_id", .text)
+                    t.column("model", .text)
+                    t.column("in_tokens", .integer).defaults(to: 0)
+                    t.column("out_tokens", .integer).defaults(to: 0)
+                    t.column("cache_tokens", .integer).defaults(to: 0)
+                    t.column("cost_usd", .double)
+                    t.column("repo_path", .text)
+                    t.column("session_id", .text)
+                    t.column("dedupe_key", .text).unique()
+                }
+                try db.create(indexOn: "usage_event", columns: ["ts"])
+                try db.create(indexOn: "usage_event", columns: ["repo_path"])
+            }),
+            ("code_change", { db in
+                try db.create(table: "code_change", ifNotExists: true) { t in
+                    t.autoIncrementedPrimaryKey("id")
+                    t.column("commit_hash", .text).notNull().unique()
+                    t.column("ts", .integer).notNull()
+                    t.column("repo_path", .text).notNull()
+                    t.column("added", .integer).defaults(to: 0)
+                    t.column("deleted", .integer).defaults(to: 0)
+                    t.column("is_merge", .boolean).defaults(to: false)
+                }
+                try db.create(indexOn: "code_change", columns: ["ts"])
+                try db.create(indexOn: "code_change", columns: ["repo_path"])
+            }),
+            ("subscription_tool", { db in
+                try db.create(table: "subscription_tool", ifNotExists: true) { t in
+                    t.column("id", .text).primaryKey()
+                    t.column("name", .text).notNull()
+                    t.column("monthly_fee", .double).notNull()
+                    t.column("currency", .text).defaults(to: "USD")
+                }
+            }),
+        ]
 
-            try db.create(table: "code_change", ifNotExists: true) { t in
-                t.autoIncrementedPrimaryKey("id")
-                t.column("commit_hash", .text).notNull().unique()
-                t.column("ts", .integer).notNull()
-                t.column("repo_path", .text).notNull()
-                t.column("added", .integer).defaults(to: 0)
-                t.column("deleted", .integer).defaults(to: 0)
-                t.column("is_merge", .boolean).defaults(to: false)
+        for (name, migration) in tables {
+            do {
+                try dbQueue?.write { try migration($0) }
+                print("  ✓ \(name)")
+            } catch {
+                print("  ✗ \(name): \(error)")
             }
-            try db.create(indexOn: "code_change", columns: ["ts"])
-            try db.create(indexOn: "code_change", columns: ["repo_path"])
         }
-
-        // Run separately to ensure subscription_tool exists even if earlier migration failed
-        try dbQueue?.write { db in
-            try db.create(table: "subscription_tool", ifNotExists: true) { t in
-                t.column("id", .text).primaryKey()
-                t.column("name", .text).notNull()
-                t.column("monthly_fee", .double).notNull()
-                t.column("currency", .text).defaults(to: "USD")
-            }
-        }
+        print("DB migration complete")
     }
 
     var writer: DatabaseWriter? { dbQueue }
