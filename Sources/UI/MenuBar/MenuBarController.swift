@@ -126,13 +126,13 @@ final class MenuBarController: NSObject {
                           cost: row["cst"] ?? 0)
             }
 
-            // Per-repo breakdown
+            // Per-repo breakdown (all-time, not just today)
             let repoRows: [Row] = try await AppDatabase.shared.read { db in
                 try Row.fetchAll(db, sql: """
                     SELECT repo_path, COALESCE(SUM(added - deleted),0) as lines
-                    FROM code_change WHERE ts >= ? AND is_merge = 0
+                    FROM code_change WHERE is_merge = 0
                     GROUP BY repo_path ORDER BY lines DESC
-                    """, arguments: [todayStart])
+                    """)
             }
             let repos: [RepoStat] = repoRows.compactMap { row -> RepoStat? in
                 let path = (row["repo_path"] as? String) ?? ""
@@ -150,9 +150,9 @@ final class MenuBarController: NSObject {
             if let cost, cost > 0.0001 { costStr = "$\(String(format: "%.2f", cost))" }
             else { costStr = "~$0" }
 
-            // Cost per line: total cost / net lines today
+            // Cost per line: total cost / net lines (all-time)
             let netLines: Int? = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added - deleted),0) FROM code_change WHERE ts >= ? AND is_merge = 0", arguments: [todayStart])
+                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added - deleted),0) FROM code_change WHERE is_merge = 0")
             }
             let cplStr: String
             if let lines = netLines, lines > 0, let cost, cost > 0 {
