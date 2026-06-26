@@ -1,0 +1,121 @@
+import Foundation
+import GRDB
+
+/// Watches Claude Code log directories for new session files and incrementally parses them
+final class LogWatcher {
+    static let shared = LogWatcher()
+    private var source: DispatchSourceFileSystemObject?
+
+    func start() {
+        let claudeProjects = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+
+        guard FileManager.default.fileExists(atPath: claudeProjects.path) else {
+            print("Claude Code projects directory not found at \(claudeProjects.path)")
+            return
+        }
+
+        // Scan existing session files
+        scanExisting(at: claudeProjects)
+
+        // Watch for new files
+        let fd = open(claudeProjects.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .rename],
+            queue: DispatchQueue.global(qos: .utility)
+        )
+        source?.setEventHandler { [weak self] in
+            self?.scanExisting(at: claudeProjects)
+        }
+        source?.setCancelHandler { close(fd) }
+        source?.resume()
+    }
+
+    func stop() {
+        source?.cancel()
+        source = nil
+    }
+
+    private func scanExisting(at dir: URL) {
+        guard let enumerator = FileManager.default.enumerator(
+            at: dir,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else { return }
+
+        for case let file as URL in enumerator {
+            guard file.pathExtension == "jsonl" else { continue }
+            parseFile(at: file)
+        }
+    }
+
+    private func parseFile(at url: URL) {
+        // Extract cwd from the parent directory name (encoded path)
+        let parentDir = url.deletingLastPathComponent().lastPathComponent
+        let cwd = decodeCWD(from: parentDir)
+
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return }
+        let lines = content.components(separatedBy: .newlines)
+        let sessionId = url.deletingPathExtension().lastPathComponent
+
+        for line in lines {
+            guard !line.isEmpty else { continue }
+            guard let event = ClaudeCodeParser.parse(line: line, cwd: cwd, sessionId: sessionId) else { continue }
+            insertEvent(event)
+        }
+    }
+
+    private func insertEvent(_ event: UsageEvent) {
+        Task {
+            do {
+                try await Database.shared.write { db in
+                    var stmt = try db.makeStatement(
+                        of: """
+                        INSERT OR IGNORE INTO usage_event
+                          (ts, source, provider_id, model, in_tokens, out_tokens, cache_tokens, cost_usd, repo_path, session_id, dedupe_key)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """
+                    )
+                    try stmt.setUncheckedArguments([
+                        event.ts,
+                        event.source,
+                        "anthropic",
+                        event.model,
+                        event.inTokens,
+                        event.outTokens,
+                        event.cacheTokens,
+                        nil,
+                        event.repoPath,
+                        event.sessionId,
+                        event.dedupeKey,
+                    ] as [DatabaseValueConvertible?])
+                    try stmt.execute()
+                }
+            } catch {
+                print("Failed to insert usage event: \(error)")
+            }
+        }
+    }
+
+    /// Decode Claude Code's hex-encoded cwd directory name
+    private func decodeCWD(from dirName: String) -> String? {
+        // Claude Code encodes cwd as hex string of the absolute path
+        var hex = dirName
+        // Remove any non-hex prefix
+        if let idx = hex.firstIndex(where: { $0.isHexDigit }) {
+            hex = String(hex[idx...])
+        }
+        guard hex.count % 2 == 0 else { return nil }
+        var bytes = Data()
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        return String(data: bytes, encoding: .utf8)
+    }
+}
