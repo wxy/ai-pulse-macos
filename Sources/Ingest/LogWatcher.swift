@@ -1,19 +1,41 @@
 import Foundation
 import GRDB
 
-/// Watches log directories for AI coding tools and incrementally parses them
+/// Watches log directories for AI coding tools and incrementally parses them.
+///
+/// Incremental parsing: tracks per-file byte positions so FSEvent rescans only
+/// read new data (not the whole file).  Positions are persisted to UserDefaults
+/// so they survive restarts.
 final class LogWatcher {
     static let shared = LogWatcher()
     private var claudeSource: DispatchSourceFileSystemObject?
 
+    /// Last-read byte offset per file path.  Persisted in UserDefaults.
+    private var filePositions: [String: UInt64] = [:]
+    /// Leftover partial line (when a write stops mid-line) per file path.
+    private var partialLines: [String: String] = [:]
+
+    private init() {
+        // Restore saved positions from previous run
+        if let saved = UserDefaults.standard.dictionary(forKey: "logwatcher_positions") as? [String: UInt64] {
+            filePositions = saved
+        }
+    }
+
     func start() {
-        watchClaudeCode()
-        discoverAndWatchRepos()
+        // Offload the initial scan to a background queue — scanning all git
+        // repos and JSONL files on the main thread blocks the run loop and
+        // makes the menu bar item unresponsive for seconds after launch.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.watchClaudeCode()
+            self?.discoverAndWatchRepos()
+        }
     }
 
     func stop() {
         claudeSource?.cancel()
         claudeSource = nil
+        persistPositions()
     }
 
     // MARK: - Claude Code
@@ -45,7 +67,7 @@ final class LogWatcher {
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return }
         for case let file as URL in enumerator where file.pathExtension == "jsonl" {
-            parseLines(from: file) { line in
+            parseLinesIncremental(from: file) { line in
                 guard let event = ClaudeCodeParser.parse(line: line) else { return nil }
                 // Resolve cwd to git repo root for consistent repo_path
                 var repoPath = event.repoPath
@@ -72,7 +94,7 @@ final class LogWatcher {
                 GitMonitor.shared.watch(repoPath: repoURL.path)
                 let llmFile = repoURL.appendingPathComponent(".aider.llm.history")
                 guard FileManager.default.fileExists(atPath: llmFile.path) else { return }
-                parseLines(from: llmFile) { line in
+                parseLinesIncremental(from: llmFile) { line in
                     AiderParser.parseJSONL(line: line, cwd: repoURL.path)
                 }
             }
@@ -81,12 +103,49 @@ final class LogWatcher {
 
     // MARK: - Shared helpers
 
-    private func parseLines(from url: URL, parser: (String) -> UsageEvent?) {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return }
-        for line in content.components(separatedBy: .newlines) {
+    /// Read only new bytes since the last scan.  Uses FileHandle seeking +
+    /// a partial-line buffer so we never lose or duplicate a line when the
+    /// file is appended mid-write.
+    private func parseLinesIncremental(from url: URL, parser: (String) -> UsageEvent?) {
+        let path = url.path
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let fileSize = attrs[.size] as? UInt64
+        else { return }
+
+        let lastPos = filePositions[path] ?? 0
+
+        // File was truncated or rotated — start over
+        let startPos = lastPos <= fileSize ? lastPos : 0
+        guard startPos < fileSize else { return } // nothing new
+
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? handle.close() }
+
+        try? handle.seek(toOffset: startPos)
+        let newBytes = handle.readData(ofLength: Int(fileSize - startPos))
+        guard let raw = String(data: newBytes, encoding: .utf8), !raw.isEmpty else {
+            filePositions[path] = fileSize; persistPositions(); return
+        }
+
+        // Prepend any partial line left over from the last read
+        let content = (partialLines[path] ?? "") + raw
+        let lines = content.components(separatedBy: .newlines)
+
+        // Process all complete lines (drop the last — it may be incomplete)
+        for line in lines.dropLast() {
             guard !line.isEmpty, let event = parser(line) else { continue }
             insertEvent(event)
         }
+
+        // Save the trailing (potentially incomplete) line for next time
+        partialLines[path] = lines.last ?? ""
+
+        filePositions[path] = fileSize
+        persistPositions()
+    }
+
+    private func persistPositions() {
+        UserDefaults.standard.set(filePositions, forKey: "logwatcher_positions")
     }
 
     private func enumerateGitRepos(in dir: URL, handler: (URL) -> Void) {
