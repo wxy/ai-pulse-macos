@@ -102,8 +102,16 @@ struct GeneralTab: View {
 
 struct ApiKeysTab: View {
     @State private var keyInputs: [String: String] = [:]
-    @State private var masks: [String: Bool] = [:]   // true = key saved, show mask
+    @State private var masks: [String: Bool] = [:]
     @State private var cachedBalances: [String: CachedBalance] = [:]
+
+    // Fixed column widths so rows with/without balance API align identically
+    private let nameW: CGFloat   = 72
+    private let keyW: CGFloat    = 148
+    private let btnW: CGFloat    = 44
+    private let balW: CGFloat    = 110
+    // Total width after the name column (key + btn + balance)
+    private var restW: CGFloat   { keyW + btnW + balW }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -114,25 +122,27 @@ struct ApiKeysTab: View {
                 VStack(spacing: 5) {
                     ForEach(ProviderRegistry.all, id: \.id) { p in
                         HStack(spacing: 0) {
-                            Text(p.name).font(.callout).frame(width: 72, alignment: .leading)
+                            // Column 1: Provider name (fixed, all rows aligned)
+                            Text(p.name).font(.callout).frame(width: nameW, alignment: .leading)
 
                             if p.canFetchBalance {
+                                // Column 2: Key input or mask
                                 if masks[p.id] == true {
                                     Text("••••••••")
                                         .font(.callout).foregroundColor(.secondary)
-                                        .frame(width: 148, alignment: .leading)
+                                        .frame(width: keyW, alignment: .leading)
 
                                     Button(I18n.t("apikeys.change")) {
                                         masks[p.id] = false
                                         keyInputs[p.id] = ""
-                                    }.frame(width: 44)
+                                    }.frame(width: btnW)
                                 } else {
                                     TextField(I18n.t("apikeys.placeholder"), text: Binding(
                                         get: { keyInputs[p.id] ?? "" },
                                         set: { keyInputs[p.id] = $0 }
                                     ))
                                     .textFieldStyle(.roundedBorder)
-                                    .frame(width: 148)
+                                    .frame(width: keyW)
 
                                     Button(I18n.t("apikeys.save")) {
                                         let k = keyInputs[p.id] ?? ""
@@ -148,15 +158,16 @@ struct ApiKeysTab: View {
                                         refreshCache()
                                     }
                                     .disabled((keyInputs[p.id] ?? "").isEmpty)
-                                    .frame(width: 44)
+                                    .frame(width: btnW)
                                 }
 
-                                balanceView(for: p.id).frame(width: 110, alignment: .leading)
+                                // Column 4: Balance
+                                balanceView(for: p.id).frame(width: balW, alignment: .leading)
                             } else {
-                                Spacer().frame(width: 196)
-                                Text(I18n.t("apikeys.no_balance"))
-                                    .font(.caption).foregroundColor(.secondary)
-                                    .frame(width: 110, alignment: .leading)
+                                // No balance API — note spans the remaining 3 columns
+                                Text(I18n.t(p.noBalanceNoteKey ?? "apikeys.no_balance"))
+                                    .font(.caption2).foregroundColor(.secondary)
+                                    .frame(width: restW, alignment: .leading)
                             }
                         }
                         .padding(.vertical, 2)

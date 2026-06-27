@@ -71,6 +71,15 @@ enum I18n {
         "apikeys.last_fetch": "上次获取",
         "apikeys.change": "更换",
         "apikeys.never": "尚未获取",
+        "apikeys.note_anthropic": "无公开用量 API，请在 console.anthropic.com 查看余额。",
+        "apikeys.note_google": "无公开用量 API，请在 aistudio.google.com 查看使用量。",
+        "apikeys.note_xai": "无公开用量 API，每请求费用见响应体 cost_in_usd_ticks 字段。",
+        "apikeys.note_cohere": "无公开用量 API，请在 dashboard.cohere.com 查看。",
+        "apikeys.note_perplexity": "无公开用量 API，每请求费用见响应体 usage 字段。",
+        "apikeys.note_qwen": "无公开用量 API，请在 dashscope.console.aliyun.com 查看账单。",
+        "apikeys.note_baichuan": "无公开用量 API，请在 platform.baichuan-ai.com 查看。",
+        "apikeys.note_ernie": "无公开用量 API，请在 console.bce.baidu.com 查看账单。",
+        "apikeys.note_mistral": "有 Admin Billing API 但需 Admin Key，权限过高暂不支持。请在 console.mistral.ai 查看。",
     ]
 
     static let en: [String: String] = [
@@ -143,6 +152,15 @@ enum I18n {
         "apikeys.last_fetch": "Last fetch",
         "apikeys.change": "Change",
         "apikeys.never": "Never fetched",
+        "apikeys.note_anthropic": "No public usage API. Check balance at console.anthropic.com",
+        "apikeys.note_google": "No public usage API. Check usage at aistudio.google.com",
+        "apikeys.note_xai": "No public usage API. Per-request cost in response body (cost_in_usd_ticks).",
+        "apikeys.note_cohere": "No public usage API. Check at dashboard.cohere.com",
+        "apikeys.note_perplexity": "No public usage API. Per-request cost in response body (usage).",
+        "apikeys.note_qwen": "No public usage API. Check billing at dashscope.console.aliyun.com",
+        "apikeys.note_baichuan": "No public usage API. Check at platform.baichuan-ai.com",
+        "apikeys.note_ernie": "No public usage API. Check billing at console.bce.baidu.com",
+        "apikeys.note_mistral": "Admin Billing API exists but requires admin key — not supported. Check at console.mistral.ai",
     ]
 
     static let didChangeLanguage = Notification.Name("I18nDidChangeLanguage")
