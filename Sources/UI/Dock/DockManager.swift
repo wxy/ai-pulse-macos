@@ -6,17 +6,22 @@ final class DockManager {
     static let shared = DockManager()
     private var timer: Timer?
     private let baseIcon: NSImage = {
-        // Load custom app icon
-        if let img = NSImage(contentsOf: Bundle.main.resourceURL?
+        // Try bundle first (for .app builds), then relative to binary (for dev runs)
+        if let bundleImg = NSImage(contentsOf: Bundle.main.resourceURL?
             .appendingPathComponent("AIPulse.png") ?? URL(fileURLWithPath: "")) {
-            return img
+            return bundleImg
         }
-        // Fallback: look in Resources/ relative to binary
-        let alt = URL(fileURLWithPath: #file)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Resources/AIPulse.png")
-        return NSImage(contentsOf: alt)
-            ?? NSImage(systemSymbolName: "fuelpump.fill", accessibilityDescription: nil)!
+        // When running as bare binary from .build/debug/, Resources/ is 3 levels up
+        let binaryDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+        let candidates = [
+            binaryDir.appendingPathComponent("../Resources/AIPulse.png"),
+            binaryDir.appendingPathComponent("../../Resources/AIPulse.png"),
+            binaryDir.appendingPathComponent("../../../Resources/AIPulse.png"),
+        ]
+        for url in candidates {
+            if let img = NSImage(contentsOf: url) { return img }
+        }
+        return NSImage(systemSymbolName: "fuelpump.fill", accessibilityDescription: nil)!
     }()
 
     func start() {

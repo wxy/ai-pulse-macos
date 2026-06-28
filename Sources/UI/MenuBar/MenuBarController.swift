@@ -20,10 +20,9 @@ final class MenuBarController: NSObject {
     func start() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            let img = NSImage(contentsOf: Bundle.main.resourceURL?
-                .appendingPathComponent("AIPulse.png") ?? URL(fileURLWithPath: ""))
+            let icon = loadAppIcon()
             let resized = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-                img?.draw(in: rect)
+                icon.draw(in: rect)
                 return true
             }
             resized.isTemplate = true  // adapts to light/dark menu bar
@@ -115,6 +114,20 @@ final class MenuBarController: NSObject {
                 }
             }
         }
+    }
+
+    private func loadAppIcon() -> NSImage {
+        if let bundleImg = NSImage(contentsOf: Bundle.main.resourceURL?
+            .appendingPathComponent("AIPulse.png") ?? URL(fileURLWithPath: "")) {
+            return bundleImg
+        }
+        let binaryDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+        for depth in 1...4 {
+            let url = binaryDir.appendingPathComponent(
+                (0..<depth).map { _ in ".." }.joined(separator: "/") + "/Resources/AIPulse.png")
+            if let img = NSImage(contentsOf: url) { return img }
+        }
+        return NSImage(systemSymbolName: "fuelpump.fill", accessibilityDescription: nil)!
     }
 
     // MARK: - Data
