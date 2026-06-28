@@ -20,7 +20,7 @@ struct SettingsView: View {
         Binding(get: { lang }, set: { v in lang = v; I18n.setLang(v) })
     }
 
-    func localizedName(_ key: String) -> String {
+    func labelFor(_ key: String) -> String {
         switch key {
         case "General": return I18n.t("settings.general")
         case "Integrations": return I18n.t("settings.integrations")
@@ -33,26 +33,32 @@ struct SettingsView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Sidebar
-            VStack(spacing: 2) {
+            // Sidebar — native macOS style
+            VStack(spacing: 0) {
                 ForEach(tabs, id: \.0) { (name, icon) in
-                    Text(localizedName(name))
-                        .font(.system(size: 12, weight: selectedTab == name ? .semibold : .regular))
-                        .foregroundColor(selectedTab == name ? .white : Color.white.opacity(0.6))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(selectedTab == name ? Color.white.opacity(0.1) : .clear)
-                        .cornerRadius(4).padding(.horizontal, 6)
-                        .contentShape(Rectangle())
-                        .onTapGesture { selectedTab = name }
+                    HStack(spacing: 8) {
+                        Image(systemName: icon)
+                            .frame(width: 16)
+                            .foregroundColor(selectedTab == name ? .accentColor : .secondary)
+                        Text(labelFor(name))
+                            .font(.system(size: 13, weight: selectedTab == name ? .semibold : .regular))
+                            .foregroundColor(selectedTab == name ? .primary : .secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(selectedTab == name
+                        ? Color(nsColor: .quaternarySystemFill)
+                        : .clear)
+                    .cornerRadius(5).padding(.horizontal, 8)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectedTab = name }
                 }
                 Spacer()
             }
             .frame(width: 160).padding(.top, 12)
-            .background(Color(red: 0.13, green: 0.14, blue: 0.16))
+            .background(Color(nsColor: .controlBackgroundColor))
 
-            // Content — each tab has .id(lang) so it re-renders immediately
-            // when the language picker changes (no tab-switch needed).
+            // Content
             Group {
                 switch selectedTab {
                 case "General":         GeneralTab(lang: langBinding).id("general.\(lang)")
@@ -65,10 +71,10 @@ struct SettingsView: View {
             }
             .id(selectedTab)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(20)
+            .padding(24)
             .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 640, height: 420)
+        .frame(width: 680, height: 460)
     }
 }
 

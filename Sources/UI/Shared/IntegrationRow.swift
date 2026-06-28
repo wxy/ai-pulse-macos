@@ -1,10 +1,7 @@
 import SwiftUI
 
-/// A single integration row — used identically in Onboarding and Settings.
-/// Renders the correct control based on DataGrade:
-///   A: toggle (enable/disable log watching)
-///   B: API key input + save (balance/usage polling)
-///   C: subscription tier picker (monthly plan selection)
+/// Integration row — used in Onboarding and Settings.
+/// Grade-adaptive: A=toggle, B=key+save, C=plan picker.
 struct IntegrationRow: View {
     let integration: any Detectable
     let detected: DetectionResult
@@ -12,73 +9,127 @@ struct IntegrationRow: View {
     @State private var keyInput: String
     @State private var tierInput: String
     @State private var saved: Bool
+    @State private var showKey: Bool = false
 
     init(integration: any Detectable, detected: DetectionResult) {
         self.integration = integration
         self.detected = detected
         let cfg = IntegrationRegistry.config(for: integration.id)
+        let hasKey = !(ApiKeyManager.shared.get(integration.id) ?? "").isEmpty
         _enabled = State(initialValue: cfg.enabled)
-        _keyInput = State(initialValue: ApiKeyManager.shared.get(integration.id) ?? "")
+        _keyInput = State(initialValue: "")
         _tierInput = State(initialValue: cfg.subscriptionTier)
-        _saved = State(initialValue: cfg.enabled || !(ApiKeyManager.shared.get(integration.id) ?? "").isEmpty)
+        _saved = State(initialValue: cfg.enabled || hasKey)
+        _showKey = State(initialValue: !hasKey)
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Status icon
+        HStack(alignment: .top, spacing: 0) {
+            // Icon
             Image(systemName: detected.found ? "checkmark.circle.fill" : "circle")
                 .foregroundColor(detected.found ? .green : .secondary)
-                .frame(width: 16)
+                .font(.title3)
+                .frame(width: 28, alignment: .top)
 
-            // Name + detection summary
+            // Info
             VStack(alignment: .leading, spacing: 2) {
-                Text(integration.displayName).font(.body)
-                Text(detected.summary).font(.caption2).foregroundColor(.secondary)
+                HStack(spacing: 6) {
+                    Text(integration.displayName).font(.body).fontWeight(.medium)
+                    gradeBadge
+                }
+                Text(detected.found ? detected.summary : "Not installed")
+                    .font(.caption).foregroundColor(.secondary)
+                    .lineLimit(2)
+
+                if detected.found {
+                    controls
+                        .padding(.top, 6)
+                }
             }
-            .frame(width: 160, alignment: .leading)
+            .padding(.leading, 8)
 
-            // Grade badge
-            Text("[\(integration.grade.rawValue)]")
-                .font(.caption2).foregroundColor(.secondary).frame(width: 28)
+            Spacer()
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(detected.found ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+                .shadow(color: .black.opacity(detected.found ? 0.04 : 0), radius: 2, y: 1)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor).opacity(detected.found ? 0.5 : 0), lineWidth: 0.5)
+        )
+    }
 
-            // Controls
-            if detected.found {
-                switch integration.grade {
-                case .A:
-                    Toggle("", isOn: $enabled)
-                        .toggleStyle(.switch)
-                        .onChange(of: enabled) { _, v in saveConfig() }
-                case .B:
-                    HStack(spacing: 4) {
-                        TextField("API Key", text: $keyInput)
-                            .textFieldStyle(.roundedBorder).frame(width: 160)
-                        Button("Save") {
-                            ApiKeyManager.shared.set(integration.id, key: keyInput)
-                            ApiPoller.shared.fetchNow(providerId: integration.id)
-                            enabled = true; saved = true; saveConfig()
-                        }.disabled(keyInput.isEmpty)
-                        if saved { Image(systemName: "checkmark").foregroundColor(.green).font(.caption) }
-                    }
-                case .C:
-                    HStack(spacing: 4) {
-                        Picker("", selection: $tierInput) {
-                            Text("None").tag("")
-                            ForEach(SubscriptionRegistry.tool(forName: integration.displayName)?.tiers ?? [], id: \.label) { t in
-                                Text("\(t.label) ($\(String(format: "%.0f", t.fee))/mo)").tag(t.label)
-                            }
-                        }.frame(width: 160)
-                        .onChange(of: tierInput) { _, v in
-                            if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
-                        }
-                    }
+    var gradeBadge: some View {
+        let (label, color): (String, Color) = {
+            switch integration.grade {
+            case .A: return ("CPL", .green)
+            case .B: return ("Balance", .blue)
+            case .C: return ("Sub", .orange)
+            }
+        }()
+        return Text(label).font(.caption2).fontWeight(.medium)
+            .foregroundColor(color)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(color.opacity(0.12))
+            .cornerRadius(4)
+    }
+
+    @ViewBuilder
+    var controls: some View {
+        switch integration.grade {
+        case .A:
+            HStack {
+                Toggle(enabled ? "Enabled" : "Disabled", isOn: $enabled)
+                    .toggleStyle(.switch)
+                    .onChange(of: enabled) { _, v in saveConfig() }
+                Spacer()
+            }
+
+        case .B:
+            if showKey {
+                HStack(spacing: 8) {
+                    TextField("Paste API Key", text: $keyInput)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 260)
+                    Button("Save") {
+                        let k = keyInput.trimmingCharacters(in: .whitespaces)
+                        if k.isEmpty { return }
+                        ApiKeyManager.shared.set(integration.id, key: k)
+                        ApiPoller.shared.fetchNow(providerId: integration.id)
+                        enabled = true; saved = true; showKey = false
+                        saveConfig()
+                    }.disabled(keyInput.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Cancel") { showKey = false }
+                        .disabled(false)
                 }
             } else {
-                Text("Not installed").font(.caption).foregroundColor(.secondary)
+                HStack {
+                    Text("••••••••").foregroundColor(.secondary)
+                    Button("Change Key") { keyInput = ""; showKey = true }
+                    if saved { Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption) }
+                    Spacer()
+                }
+            }
+
+        case .C:
+            let tiers = SubscriptionRegistry.tool(forName: integration.displayName)?.tiers ?? []
+            HStack {
+                Picker("Plan", selection: $tierInput) {
+                    Text("None").tag("")
+                    ForEach(tiers, id: \.label) { t in
+                        Text("\(t.label) ($\(String(format: "%.0f", t.fee))/mo)").tag(t.label)
+                    }
+                }
+                .pickerStyle(.menu).frame(maxWidth: 240)
+                .onChange(of: tierInput) { _, v in
+                    if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
+                }
+                Spacer()
             }
         }
-        .padding(.horizontal, 8).padding(.vertical, 6)
-        .background(detected.found ? Color(nsColor: .quaternarySystemFill) : .clear)
-        .cornerRadius(6)
     }
 
     private func saveConfig() {
