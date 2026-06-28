@@ -5,27 +5,26 @@ import AppKit
 // MARK: - Main Settings
 
 struct SettingsView: View {
-    @State private var selectedTab = "General"
+    @State private var selectedTab: String
     @State private var lang = I18n.getLang()
+
+    init(initialTab: String = "General") {
+        _selectedTab = State(initialValue: initialTab)
+    }
     let tabs: [(String, String)] = [
-        ("General", "gear"), ("API Keys", "key"), ("Coding Tools", "hammer"), ("Repos", "folder"),
-        ("Subscriptions", "creditcard"), ("Pricing", "dollarsign.circle"), ("About", "info.circle"),
+        ("General", "gear"), ("Integrations", "square.grid.2x2"), ("Repos", "folder"),
+        ("Pricing", "dollarsign.circle"), ("About", "info.circle"),
     ]
 
-    /// Custom binding that calls I18n.setLang() synchronously on every set,
-    /// so the language change takes effect BEFORE SwiftUI re-evaluates the
-    /// body (avoiding the `.onChange` race with `.id()`-based view recreation).
     var langBinding: Binding<String> {
         Binding(get: { lang }, set: { v in lang = v; I18n.setLang(v) })
     }
 
-    func localizedName(_ key: String) -> String {
+    func labelFor(_ key: String) -> String {
         switch key {
         case "General": return I18n.t("settings.general")
-        case "API Keys": return I18n.t("settings.api_keys")
-        case "Coding Tools": return I18n.t("settings.coding_tools")
+        case "Integrations": return I18n.t("settings.integrations")
         case "Repos": return I18n.t("settings.repos")
-        case "Subscriptions": return I18n.t("settings.subscriptions")
         case "Pricing": return I18n.t("settings.pricing")
         case "About": return I18n.t("settings.about")
         default: return key
@@ -34,33 +33,37 @@ struct SettingsView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Sidebar
-            VStack(spacing: 2) {
+            // Sidebar — native macOS style
+            VStack(spacing: 0) {
                 ForEach(tabs, id: \.0) { (name, icon) in
-                    Text(localizedName(name))
-                        .font(.system(size: 12, weight: selectedTab == name ? .semibold : .regular))
-                        .foregroundColor(selectedTab == name ? .white : Color.white.opacity(0.6))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(selectedTab == name ? Color.white.opacity(0.1) : .clear)
-                        .cornerRadius(4).padding(.horizontal, 6)
-                        .contentShape(Rectangle())
-                        .onTapGesture { selectedTab = name }
+                    HStack(spacing: 8) {
+                        Image(systemName: icon)
+                            .frame(width: 16)
+                            .foregroundColor(selectedTab == name ? .accentColor : .secondary)
+                        Text(labelFor(name))
+                            .font(.system(size: 13, weight: selectedTab == name ? .semibold : .regular))
+                            .foregroundColor(selectedTab == name ? .primary : .secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(selectedTab == name
+                        ? Color(nsColor: .quaternarySystemFill)
+                        : .clear)
+                    .cornerRadius(5).padding(.horizontal, 8)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selectedTab = name }
                 }
                 Spacer()
             }
             .frame(width: 160).padding(.top, 12)
-            .background(Color(red: 0.13, green: 0.14, blue: 0.16))
+            .background(Color(nsColor: .controlBackgroundColor))
 
-            // Content — each tab has .id(lang) so it re-renders immediately
-            // when the language picker changes (no tab-switch needed).
+            // Content
             Group {
                 switch selectedTab {
                 case "General":         GeneralTab(lang: langBinding).id("general.\(lang)")
-                case "API Keys":        ApiKeysTab().id("apikeys.\(lang)")
-                case "Coding Tools":   ToolsTab().id("tools.\(lang)")
+                case "Integrations":    IntegrationsSettingsTab().id("integrations.\(lang)")
                 case "Repos":          ReposTab().id("repos.\(lang)")
-                case "Subscriptions":  SubsTab().id("subs.\(lang)")
                 case "Pricing":        PricingTab().id("pricing.\(lang)")
                 case "About":          AboutTab().id("about.\(lang)")
                 default: EmptyView()
@@ -68,10 +71,67 @@ struct SettingsView: View {
             }
             .id(selectedTab)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(20)
+            .padding(24)
             .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 640, height: 420)
+        .frame(width: 680, height: 460)
+    }
+}
+
+// MARK: - Integrations
+
+struct IntegrationsSettingsTab: View {
+    @State private var results: [(any Detectable, DetectionResult)] = []
+    @State private var isDetecting = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(I18n.t("integrations.title")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("integrations.desc"))
+                .font(.caption).foregroundColor(.secondary)
+
+            let detected = results.filter(\.1.found)
+            let notDetected = results.filter { !$0.1.found }
+
+            ScrollView {
+                VStack(spacing: 6) {
+                    if !detected.isEmpty {
+                        ForEach(detected, id: \.0.id) { (i, r) in
+                            IntegrationRow(integration: i, detected: r)
+                        }
+                    }
+
+                    if !notDetected.isEmpty {
+                        HStack {
+                            Text(I18n.t("integrations.not_installed")).font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                            if isDetecting {
+                                ProgressView().scaleEffect(0.6)
+                            } else {
+                                Button(I18n.t("integrations.redetect")) { reDetect() }.font(.caption)
+                            }
+                        }
+                        .padding(.top, 8)
+                        ForEach(notDetected, id: \.0.id) { (i, r) in
+                            IntegrationRow(integration: i, detected: r)
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear { runDetection() }
+    }
+
+    func runDetection() {
+        results = IntegrationRegistry.all.map { ($0, $0.detect()) }
+    }
+
+    func reDetect() {
+        isDetecting = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            results = IntegrationRegistry.all.map { ($0, $0.detect()) }
+            isDetecting = false
+        }
     }
 }
 
@@ -93,6 +153,22 @@ struct GeneralTab: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 160)
+            }
+
+            Divider().padding(.vertical, 8)
+
+            Text(I18n.t("general.rerun_welcome_desc"))
+                .font(.caption).foregroundColor(.secondary)
+            Button(I18n.t("general.rerun_welcome")) {
+                UserDefaults.standard.removeObject(forKey: "onboarding_completed")
+                // Re-open onboarding
+                if let w = OnboardingWindowManager.shared.window { w.close() }
+                let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+                                 styleMask: [.titled, .closable], backing: .buffered, defer: false)
+                w.title = "AI Pulse — Welcome"
+                w.contentView = NSHostingView(rootView: OnboardingView())
+                w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
+                OnboardingWindowManager.shared.window = w
             }
         }
     }
@@ -118,57 +194,51 @@ struct ApiKeysTab: View {
             Text(I18n.t("apikeys.title")).font(.title3).fontWeight(.semibold)
             Text(I18n.t("apikeys.desc")).font(.caption).foregroundColor(.secondary)
 
+            let balanceProviders = ProviderRegistry.all.filter(\.canFetchBalance)
+
             ScrollView {
                 VStack(spacing: 5) {
-                    ForEach(ProviderRegistry.all, id: \.id) { p in
+                    ForEach(balanceProviders, id: \.id) { p in
                         HStack(spacing: 0) {
-                            // Column 1: Provider name (fixed, all rows aligned)
                             Text(p.name).font(.callout).frame(width: nameW, alignment: .leading)
 
-                            if p.canFetchBalance {
-                                // Column 2: Key input or mask
-                                if masks[p.id] == true {
-                                    Text("••••••••")
-                                        .font(.callout).foregroundColor(.secondary)
-                                        .frame(width: keyW, alignment: .leading)
+                            if masks[p.id] == true {
+                                Text("••••••••")
+                                    .font(.callout).foregroundColor(.secondary)
+                                    .frame(width: keyW, alignment: .leading)
 
-                                    Button(I18n.t("apikeys.change")) {
-                                        masks[p.id] = false
-                                        keyInputs[p.id] = ""
-                                    }.frame(width: btnW)
-                                } else {
-                                    TextField(I18n.t("apikeys.placeholder"), text: Binding(
+                                Button(I18n.t("apikeys.change")) {
+                                    masks[p.id] = false
+                                    keyInputs[p.id] = ""
+                                }.frame(width: btnW)
+                            } else {
+PasteableTextField(
+                                    text: Binding(
                                         get: { keyInputs[p.id] ?? "" },
                                         set: { keyInputs[p.id] = $0 }
-                                    ))
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: keyW)
+                                    ),
+                                    placeholder: I18n.t("apikeys.placeholder")
+                                )
+                                    .frame(width: keyW, height: 22)
 
-                                    Button(I18n.t("apikeys.save")) {
-                                        let k = keyInputs[p.id] ?? ""
-                                        if k.isEmpty {
-                                            ApiKeyManager.shared.delete(p.id)
-                                            masks[p.id] = false
-                                        } else {
-                                            ApiKeyManager.shared.set(p.id, key: k)
-                                            masks[p.id] = true
-                                            keyInputs[p.id] = ""
-                                            ApiPoller.shared.fetchNow(providerId: p.id)
-                                        }
-                                        refreshCache()
+                                Button(I18n.t("apikeys.save")) {
+                                    let k = keyInputs[p.id] ?? ""
+                                    if k.isEmpty {
+                                        ApiKeyManager.shared.delete(p.id)
+                                        masks[p.id] = false
+                                    } else {
+                                        ApiKeyManager.shared.set(p.id, key: k)
+                                        masks[p.id] = true
+                                        keyInputs[p.id] = ""
+                                        ApiPoller.shared.fetchNow(providerId: p.id)
                                     }
-                                    .disabled((keyInputs[p.id] ?? "").isEmpty)
-                                    .frame(width: btnW)
+                                    refreshCache()
                                 }
-
-                                // Column 4: Balance
-                                balanceView(for: p.id).frame(width: balW, alignment: .leading)
-                            } else {
-                                // No balance API — note spans the remaining 3 columns
-                                Text(I18n.t(p.noBalanceNoteKey ?? "apikeys.no_balance"))
-                                    .font(.caption2).foregroundColor(.secondary)
-                                    .frame(width: restW, alignment: .leading)
+                                .disabled((keyInputs[p.id] ?? "").isEmpty)
+                                .frame(width: btnW)
                             }
+
+                            balanceView(for: p.id).frame(width: balW, alignment: .leading)
                         }
                         .padding(.vertical, 2)
                     }
@@ -176,7 +246,7 @@ struct ApiKeysTab: View {
             }
         }
         .onAppear {
-            for p in ProviderRegistry.all {
+            for p in ProviderRegistry.all where p.canFetchBalance {
                 if let saved = ApiKeyManager.shared.get(p.id), !saved.isEmpty {
                     masks[p.id] = true
                     keyInputs[p.id] = ""
@@ -361,102 +431,93 @@ struct ReposTab: View {
 // MARK: - Subscriptions
 
 struct SubsTab: View {
-    @State private var tools: [SubItem] = []
-    @State private var pickerValue = ""
-    @State private var deleteTarget: SubItem? = nil
-    @State private var showDelete = false
+    @State private var selections: [String: String] = [:] // bundleId → tier label
     @State private var dbError: String?
-    struct SubItem: Identifiable, Equatable { var id: String { name }; let name: String; let monthlyFee: Double; let currency: String }
-    struct Preset { let name: String; let tiers: [Tier] }
-    struct Tier: Identifiable { var id: String { label }; let label: String; let fee: Double }
-    let presets: [Preset] = [
-        Preset(name: "Cursor",  tiers: [Tier(label: "Pro", fee: 20), Tier(label: "Business", fee: 40)]),
-        Preset(name: "Copilot", tiers: [Tier(label: "Individual", fee: 10), Tier(label: "Business", fee: 19), Tier(label: "Enterprise", fee: 39)]),
-        Preset(name: "Windsurf", tiers: [Tier(label: "Pro", fee: 15)]),
-        Preset(name: "Codeium", tiers: [Tier(label: "Individual", fee: 15), Tier(label: "Teams", fee: 35)]),
-    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(I18n.t("subs.title")).font(.title3).fontWeight(.semibold)
             Text(I18n.t("subs.desc")).font(.caption).foregroundColor(.secondary)
-            HStack {
-                Picker(I18n.t("subs.add"), selection: $pickerValue) {
-                    Text(I18n.t("subs.choose")).tag("")
-                    ForEach(presets, id: \.name) { p in
-                        ForEach(p.tiers) { t in Text("\(p.name) \(t.label) ($\(String(format: "%.0f", t.fee))\(I18n.t("subs.per_month")))").tag("\(p.name)|\(t.label)|\(t.fee)") }
-                    }
-                }.frame(width: 280)
-                Button(I18n.t("subs.add")) {
-                    let parts = pickerValue.components(separatedBy: "|")
-                    guard parts.count == 3, let fee = Double(parts[2]) else { return }
-                    let name = "\(parts[0]) \(parts[1])"
-                    if tools.contains(where: { $0.name == name }) { pickerValue = ""; return }
-                    let item = SubItem(name: name, monthlyFee: fee, currency: "USD")
-                    tools.append(item); saveToDB(item); pickerValue = ""
-                }.disabled(pickerValue.isEmpty)
-            }
-            if let err = dbError { Text(err).font(.caption2).foregroundColor(.red) }
-            if tools.isEmpty {
+
+            let detected = SubscriptionRegistry.tools.filter(\.installed)
+            let notDetected = SubscriptionRegistry.tools.filter { !$0.installed }
+
+            if detected.isEmpty && notDetected.isEmpty {
                 Text(I18n.t("subs.empty")).font(.caption).foregroundColor(.secondary).padding(.top, 10)
-            } else {
-                VStack(spacing: 6) {
-                    ForEach(tools) { item in
-                        HStack {
-                            Label(item.name, systemImage: "creditcard").font(.body)
-                            Spacer()
-                            Text("$\(String(format: "%.2f", item.monthlyFee))\(I18n.t("subs.per_month"))").foregroundColor(.secondary).font(.callout)
-                            Button { deleteTarget = item; showDelete = true } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
-                            }.buttonStyle(.plain)
+            }
+
+            // Detected tools — pick a tier
+            ForEach(detected) { tool in
+                HStack {
+                    Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
+                    Text(tool.name).font(.body).frame(width: 180, alignment: .leading)
+                    Picker("", selection: Binding(
+                        get: { selections[tool.name] ?? "" },
+                        set: { v in selections[tool.name] = v; save(tool: tool, tierLabel: v) }
+                    )) {
+                        Text(I18n.t("subs.choose")).tag("")
+                        ForEach(tool.tiers) { t in
+                            Text("\(t.label) ($\(String(format: "%.0f", t.fee))\(I18n.t("subs.per_month")))").tag(t.label)
                         }
-                        .padding(10).background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
+                    }.frame(width: 220)
+                }
+                .padding(.vertical, 4)
+            }
+
+            // Not installed — greyed out
+            if !notDetected.isEmpty && !detected.isEmpty {
+                Divider().padding(.vertical, 4)
+            }
+            ForEach(notDetected) { tool in
+                HStack {
+                    Image(systemName: "questionmark.circle").foregroundColor(.secondary)
+                    Text(tool.name).font(.body).foregroundColor(.secondary).frame(width: 180, alignment: .leading)
+                    Text(I18n.t("subs.not_installed")).font(.caption).foregroundColor(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+
+            if let err = dbError { Text(err).font(.caption2).foregroundColor(.red) }
+        }
+        .onAppear {
+            // Restore saved selections from DB
+            Task {
+                do {
+                    let rows = try await AppDatabase.shared.read { db in
+                        try Row.fetchAll(db, sql: "SELECT id, name, monthly_fee, currency FROM subscription_tool")
                     }
+                    var map = [String: String]()
+                    for r in rows {
+                        let name: String = r["name"] ?? ""
+                        // id is tool name, find matching tool
+                        if let tool = SubscriptionRegistry.tools.first(where: { name.hasPrefix($0.name) }) {
+                            let tierLabel = String(name.dropFirst(tool.name.count + 1))
+                            if tool.tiers.contains(where: { $0.label == tierLabel }) {
+                                map[tool.name] = tierLabel
+                            }
+                        }
+                    }
+                    await MainActor.run { selections = map; dbError = nil }
+                } catch {
+                    await MainActor.run { dbError = "Load: \(error.localizedDescription)" }
                 }
             }
         }
-        .onAppear { loadFromDB() }
-        .alert(I18n.t("subs.delete_title"), isPresented: $showDelete) {
-            Button(I18n.t("repos.cancel"), role: .cancel) {}
-            Button(I18n.t("repos.remove"), role: .destructive) { if let t = deleteTarget { tools.removeAll { $0.name == t.name }; deleteFromDB(t) } }
-        } message: { Text(String(format: I18n.t("subs.delete_msg"), deleteTarget?.name ?? "")) }
     }
 
-    private func saveToDB(_ item: SubItem) {
+    private func save(tool: SubscriptionTool, tierLabel: String) {
+        let itemName = "\(tool.name) \(tierLabel)"
+        guard let tier = tool.tiers.first(where: { $0.label == tierLabel }) else { return }
         Task {
             do {
                 try await AppDatabase.shared.write { db in
-                    try db.execute(sql: "INSERT OR REPLACE INTO subscription_tool (id, name, monthly_fee, currency) VALUES (?,?,?,?)",
-                        arguments: [item.name, item.name, item.monthlyFee, item.currency])
+                    try db.execute(sql: """
+                        INSERT OR REPLACE INTO subscription_tool (id, name, monthly_fee, currency)
+                        VALUES (?, ?, ?, ?)
+                        """, arguments: [tool.name, itemName, tier.fee, tier.currency])
                 }
                 await MainActor.run { dbError = nil }
             } catch { await MainActor.run { dbError = "Save: \(error.localizedDescription)" } }
-        }
-    }
-    private func deleteFromDB(_ item: SubItem) {
-        Task {
-            do {
-                try await AppDatabase.shared.write { db in
-                    try db.execute(sql: "DELETE FROM subscription_tool WHERE id=?", arguments: [item.name])
-                }
-            } catch { await MainActor.run { dbError = "Delete: \(error.localizedDescription)" } }
-        }
-    }
-    private func loadFromDB() {
-        Task {
-            do {
-                let rows = try await AppDatabase.shared.read { db in
-                    try Row.fetchAll(db, sql: "SELECT name, monthly_fee, currency FROM subscription_tool")
-                }
-                var loaded = rows.map { SubItem(name: $0["name"] ?? "", monthlyFee: $0["monthly_fee"] ?? 0, currency: $0["currency"] ?? "USD") }
-                if loaded.isEmpty {
-                    let preset1 = SubItem(name: "Cursor Pro", monthlyFee: 20, currency: "USD")
-                    let preset2 = SubItem(name: "GitHub Copilot", monthlyFee: 10, currency: "USD")
-                    loaded = [preset1, preset2]
-                    saveToDB(preset1); saveToDB(preset2)
-                }
-                await MainActor.run { tools = loaded; dbError = nil }
-            } catch { await MainActor.run { dbError = "Load: \(error.localizedDescription)" } }
         }
     }
 }
@@ -494,7 +555,7 @@ struct PricingTab: View {
 struct AboutTab: View {
     var body: some View {
         VStack(spacing: 16) {
-            Text("🤖").font(.system(size: 48))
+            Image(nsImage: AppIconLoader.uiImage(size: 64))
             Text(I18n.t("about.title")).font(.title).fontWeight(.bold)
             Text(I18n.t("about.version")).font(.caption).foregroundColor(.secondary)
             Text(I18n.t("about.desc")).multilineTextAlignment(.center)
