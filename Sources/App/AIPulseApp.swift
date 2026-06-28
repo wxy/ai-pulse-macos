@@ -23,6 +23,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start all enabled, detected integrations via the registry
         IntegrationRegistry.startAllEnabled()
 
+        // P3: Dock fuel gauge + Bridge API (demo)
+        DockManager.shared.start()
+        LocalAPIServer.shared.start()
+
         // Request notification permission (only works in .app bundle, not bare binary)
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
@@ -39,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         IntegrationRegistry.stopAll()
+        DockManager.shared.stop()
     }
 
     private func showOnboardingIfNeeded() {
