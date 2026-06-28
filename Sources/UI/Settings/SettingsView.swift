@@ -555,7 +555,7 @@ struct PricingTab: View {
 struct AboutTab: View {
     var body: some View {
         VStack(spacing: 16) {
-            Text("🤖").font(.system(size: 48))
+            Image(nsImage: AppIconLoader.uiImage(size: 64))
             Text(I18n.t("about.title")).font(.title).fontWeight(.bold)
             Text(I18n.t("about.version")).font(.caption).foregroundColor(.secondary)
             Text(I18n.t("about.desc")).multilineTextAlignment(.center)

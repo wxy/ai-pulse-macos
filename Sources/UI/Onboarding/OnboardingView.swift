@@ -63,7 +63,7 @@ struct OnboardingView: View {
 
     var welcomeStep: some View {
         VStack(spacing: 16) {
-            Text("🤖").font(.system(size: 56))
+            Image(nsImage: AppIconLoader.uiImage(size: 72))
             Text("AI Pulse").font(.title).fontWeight(.bold)
             Text(I18n.t("onboarding.welcome"))
                 .font(.title2).foregroundColor(.secondary)
