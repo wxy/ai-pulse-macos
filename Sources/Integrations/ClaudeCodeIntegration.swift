@@ -14,7 +14,9 @@ struct ClaudeCodeIntegration: Detectable, Collectable {
         let sessions = (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.count ?? 0
         return DetectionResult(
             found: exists && sessions > 0,
-            summary: exists ? "~/.claude/projects found, \(sessions) sessions" : "~/.claude/projects not found"
+            summary: exists
+                ? String(format: I18n.t("detect.claude_found"), sessions)
+                : I18n.t("detect.claude_not_found")
         )
     }
 

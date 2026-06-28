@@ -32,7 +32,9 @@ struct AiderIntegration: Detectable {
         }
         return DetectionResult(
             found: count > 0,
-            summary: count > 0 ? "\(count) repos with .aider.llm.history" : "no aider logs found"
+            summary: count > 0
+                ? String(format: I18n.t("detect.aider_found"), count)
+                : I18n.t("detect.aider_not_found")
         )
     }
 

@@ -11,7 +11,8 @@ struct CursorIntegration: Detectable {
     func detect() -> DetectionResult {
         let bundleId = "com.todesktop.230313mzl4w4u92"
         let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil
-        return DetectionResult(found: installed, summary: installed ? "Cursor.app installed" : "Cursor.app not found")
+        let name = "Cursor"
+        return DetectionResult(found: installed, summary: I18n.t(installed ? "detect.app_installed" : "detect.app_not_found").replacingOccurrences(of: "%@", with: name))
     }
 }
 
@@ -25,7 +26,8 @@ struct CopilotIntegration: Detectable {
     func detect() -> DetectionResult {
         let bids = ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"]
         let installed = bids.contains { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) != nil }
-        return DetectionResult(found: installed, summary: installed ? "VS Code installed" : "VS Code not found")
+        let name = "VS Code"
+        return DetectionResult(found: installed, summary: I18n.t(installed ? "detect.app_installed" : "detect.app_not_found").replacingOccurrences(of: "%@", with: name))
     }
 }
 
@@ -39,6 +41,7 @@ struct WindsurfIntegration: Detectable {
     func detect() -> DetectionResult {
         let bundleId = "com.codeium.windsurf"
         let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil
-        return DetectionResult(found: installed, summary: installed ? "Windsurf.app installed" : "Windsurf.app not found")
+        let name = "Windsurf"
+        return DetectionResult(found: installed, summary: I18n.t(installed ? "detect.app_installed" : "detect.app_not_found").replacingOccurrences(of: "%@", with: name))
     }
 }

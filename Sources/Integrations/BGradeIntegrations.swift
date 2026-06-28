@@ -10,7 +10,7 @@ struct DeepSeekIntegration: Detectable, Collectable {
     func detect() -> DetectionResult {
         let hasKey = ApiPoller.shared.cachedBalance(for: id) != nil
             || ApiKeyManager.shared.get(id) != nil
-        return DetectionResult(found: hasKey, summary: hasKey ? "API key configured" : "no API key")
+        return DetectionResult(found: hasKey, summary: I18n.t(hasKey ? "detect.key_configured" : "detect.key_missing"))
     }
 
     func start() {}  // ApiPoller handles all B-grade
@@ -26,7 +26,7 @@ struct OpenAI_Integration: Detectable, Collectable {
 
     func detect() -> DetectionResult {
         let hasKey = ApiKeyManager.shared.get(id) != nil
-        return DetectionResult(found: hasKey, summary: hasKey ? "API key configured" : "no API key")
+        return DetectionResult(found: hasKey, summary: I18n.t(hasKey ? "detect.key_configured" : "detect.key_missing"))
     }
 
     func start() {}
@@ -42,7 +42,7 @@ struct KimiIntegration: Detectable, Collectable {
 
     func detect() -> DetectionResult {
         let hasKey = ApiKeyManager.shared.get(id) != nil
-        return DetectionResult(found: hasKey, summary: hasKey ? "API key configured" : "no API key")
+        return DetectionResult(found: hasKey, summary: I18n.t(hasKey ? "detect.key_configured" : "detect.key_missing"))
     }
 
     func start() {}
@@ -58,7 +58,7 @@ struct ZhipuIntegration: Detectable, Collectable {
 
     func detect() -> DetectionResult {
         let hasKey = ApiKeyManager.shared.get(id) != nil
-        return DetectionResult(found: hasKey, summary: hasKey ? "API key configured" : "no API key")
+        return DetectionResult(found: hasKey, summary: I18n.t(hasKey ? "detect.key_configured" : "detect.key_missing"))
     }
 
     func start() {}
