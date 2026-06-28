@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import UserNotifications
 
 // Menu-bar-only app. main.swift sets .accessory BEFORE NSApp.run() and
@@ -17,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Auto-enable integrations that are detected on first launch
         migrateIntegrationDefaults()
+        // Onboarding: show welcome page if first launch or no integrations enabled
+        showOnboardingIfNeeded()
         // Start all enabled, detected integrations via the registry
         IntegrationRegistry.startAllEnabled()
 
@@ -36,6 +39,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         IntegrationRegistry.stopAll()
+    }
+
+    private func showOnboardingIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: "onboarding_completed") else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.openOnboarding()
+        }
+    }
+
+    private func openOnboarding() {
+        NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 440),
+                         styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        w.title = "AI Pulse — Welcome"
+        w.contentView = NSHostingView(rootView: OnboardingView())
+        w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
+        OnboardingWindowManager.shared.window = w
     }
 
     /// On first launch, auto-enable integrations that have data detected.
