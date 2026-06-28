@@ -23,9 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start all enabled, detected integrations via the registry
         IntegrationRegistry.startAllEnabled()
 
-        // P3: Dock fuel gauge + Bridge API (demo)
+        // P3: Dock fuel gauge
         DockManager.shared.start()
-        LocalAPIServer.shared.start()
 
         // Request notification permission (only works in .app bundle, not bare binary)
         if Bundle.main.bundleIdentifier != nil {

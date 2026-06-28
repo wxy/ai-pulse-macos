@@ -1,12 +1,20 @@
 import AppKit
 
 /// Shows today's AI spend on the Dock tile — a mini "fuel gauge".
-/// Updates every 60 seconds.
+/// Uses a gauge SF Symbol as the base icon, tinted by spend level.
 final class DockManager {
     static let shared = DockManager()
     private var timer: Timer?
+    private let baseIcon: NSImage = {
+        // Fuel gauge icon as the app identity
+        let cfg = NSImage.SymbolConfiguration(pointSize: 256, weight: .regular)
+        return NSImage(systemSymbolName: "fuelpump.fill", accessibilityDescription: nil)!
+            .withSymbolConfiguration(cfg)!
+    }()
 
     func start() {
+        // Set base icon immediately
+        NSApp.applicationIconImage = baseIcon
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.refresh()
@@ -29,29 +37,32 @@ final class DockManager {
                         : "$\(String(format: "%.0f", todayCost))"
                     tile.badgeLabel = text
 
-                    // Color alert: red if today > 3x daily avg, yellow if > 1.5x
+                    // Tint by alert level
                     let dailyAvg = prediction.dailyRate
-                    if dailyAvg > 0 && todayCost > dailyAvg * 3 {
-                        NSApp.applicationIconImage = coloredIcon(.systemRed)
-                    } else if dailyAvg > 0 && todayCost > dailyAvg * 1.5 {
-                        NSApp.applicationIconImage = coloredIcon(.systemOrange)
+                    let color: NSColor?
+                    if dailyAvg > 0 && todayCost > dailyAvg * 3 { color = .systemRed }
+                    else if dailyAvg > 0 && todayCost > dailyAvg * 1.5 { color = .systemOrange }
+                    else { color = nil }
+
+                    if let c = color {
+                        NSApp.applicationIconImage = tintedIcon(baseIcon, with: c)
                     } else {
-                        NSApp.applicationIconImage = nil
+                        NSApp.applicationIconImage = baseIcon
                     }
                 } else {
                     tile.badgeLabel = nil
-                    NSApp.applicationIconImage = nil
+                    NSApp.applicationIconImage = baseIcon
                 }
             }
         }
     }
 
-    private func coloredIcon(_ color: NSColor) -> NSImage? {
-        guard let img = NSApp.applicationIconImage?.copy() as? NSImage else { return nil }
-        img.lockFocus()
+    private func tintedIcon(_ image: NSImage, with color: NSColor) -> NSImage {
+        let copy = image.copy() as! NSImage
+        copy.lockFocus()
         color.set()
-        NSRect(origin: .zero, size: img.size).fill(using: .sourceAtop)
-        img.unlockFocus()
-        return img
+        NSRect(origin: .zero, size: copy.size).fill(using: .sourceAtop)
+        copy.unlockFocus()
+        return copy
     }
 }
