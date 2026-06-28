@@ -25,7 +25,7 @@ final class MenuBarController: NSObject {
                 icon.draw(in: rect)
                 return true
             }
-            resized.isTemplate = true  // adapts to light/dark menu bar
+            // Don't use isTemplate — full-color icon at menu bar size
             button.image = resized
         }
 
@@ -116,19 +116,7 @@ final class MenuBarController: NSObject {
         }
     }
 
-    private func loadAppIcon() -> NSImage {
-        if let bundleImg = NSImage(contentsOf: Bundle.main.resourceURL?
-            .appendingPathComponent("AIPulse.png") ?? URL(fileURLWithPath: "")) {
-            return bundleImg
-        }
-        let binaryDir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
-        for depth in 1...4 {
-            let url = binaryDir.appendingPathComponent(
-                (0..<depth).map { _ in ".." }.joined(separator: "/") + "/Resources/AIPulse.png")
-            if let img = NSImage(contentsOf: url) { return img }
-        }
-        return NSImage(systemSymbolName: "fuelpump.fill", accessibilityDescription: nil)!
-    }
+    private func loadAppIcon() -> NSImage { AppIconLoader.load() }
 
     // MARK: - Data
 

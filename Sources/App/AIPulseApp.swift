@@ -10,6 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var menuBarController: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Set Dock icon immediately — must happen before .activate()
+        NSApp.applicationIconImage = AppIconLoader.load()
+
         do { try AppDatabase.shared.setup() }
         catch { print("DB setup failed: \(error)") }
 
