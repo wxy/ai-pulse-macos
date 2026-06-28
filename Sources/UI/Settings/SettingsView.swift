@@ -118,57 +118,51 @@ struct ApiKeysTab: View {
             Text(I18n.t("apikeys.title")).font(.title3).fontWeight(.semibold)
             Text(I18n.t("apikeys.desc")).font(.caption).foregroundColor(.secondary)
 
+            let balanceProviders = ProviderRegistry.all.filter(\.canFetchBalance)
+
             ScrollView {
                 VStack(spacing: 5) {
-                    ForEach(ProviderRegistry.all, id: \.id) { p in
+                    ForEach(balanceProviders, id: \.id) { p in
                         HStack(spacing: 0) {
-                            // Column 1: Provider name (fixed, all rows aligned)
                             Text(p.name).font(.callout).frame(width: nameW, alignment: .leading)
 
-                            if p.canFetchBalance {
-                                // Column 2: Key input or mask
-                                if masks[p.id] == true {
-                                    Text("••••••••")
-                                        .font(.callout).foregroundColor(.secondary)
-                                        .frame(width: keyW, alignment: .leading)
+                            if masks[p.id] == true {
+                                Text("••••••••")
+                                    .font(.callout).foregroundColor(.secondary)
+                                    .frame(width: keyW, alignment: .leading)
 
-                                    Button(I18n.t("apikeys.change")) {
-                                        masks[p.id] = false
-                                        keyInputs[p.id] = ""
-                                    }.frame(width: btnW)
-                                } else {
-                                    TextField(I18n.t("apikeys.placeholder"), text: Binding(
+                                Button(I18n.t("apikeys.change")) {
+                                    masks[p.id] = false
+                                    keyInputs[p.id] = ""
+                                }.frame(width: btnW)
+                            } else {
+PasteableTextField(
+                                    text: Binding(
                                         get: { keyInputs[p.id] ?? "" },
                                         set: { keyInputs[p.id] = $0 }
-                                    ))
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: keyW)
+                                    ),
+                                    placeholder: I18n.t("apikeys.placeholder")
+                                )
+                                    .frame(width: keyW, height: 22)
 
-                                    Button(I18n.t("apikeys.save")) {
-                                        let k = keyInputs[p.id] ?? ""
-                                        if k.isEmpty {
-                                            ApiKeyManager.shared.delete(p.id)
-                                            masks[p.id] = false
-                                        } else {
-                                            ApiKeyManager.shared.set(p.id, key: k)
-                                            masks[p.id] = true
-                                            keyInputs[p.id] = ""
-                                            ApiPoller.shared.fetchNow(providerId: p.id)
-                                        }
-                                        refreshCache()
+                                Button(I18n.t("apikeys.save")) {
+                                    let k = keyInputs[p.id] ?? ""
+                                    if k.isEmpty {
+                                        ApiKeyManager.shared.delete(p.id)
+                                        masks[p.id] = false
+                                    } else {
+                                        ApiKeyManager.shared.set(p.id, key: k)
+                                        masks[p.id] = true
+                                        keyInputs[p.id] = ""
+                                        ApiPoller.shared.fetchNow(providerId: p.id)
                                     }
-                                    .disabled((keyInputs[p.id] ?? "").isEmpty)
-                                    .frame(width: btnW)
+                                    refreshCache()
                                 }
-
-                                // Column 4: Balance
-                                balanceView(for: p.id).frame(width: balW, alignment: .leading)
-                            } else {
-                                // No balance API — note spans the remaining 3 columns
-                                Text(I18n.t(p.noBalanceNoteKey ?? "apikeys.no_balance"))
-                                    .font(.caption2).foregroundColor(.secondary)
-                                    .frame(width: restW, alignment: .leading)
+                                .disabled((keyInputs[p.id] ?? "").isEmpty)
+                                .frame(width: btnW)
                             }
+
+                            balanceView(for: p.id).frame(width: balW, alignment: .leading)
                         }
                         .padding(.vertical, 2)
                     }
@@ -176,7 +170,7 @@ struct ApiKeysTab: View {
             }
         }
         .onAppear {
-            for p in ProviderRegistry.all {
+            for p in ProviderRegistry.all where p.canFetchBalance {
                 if let saved = ApiKeyManager.shared.get(p.id), !saved.isEmpty {
                     masks[p.id] = true
                     keyInputs[p.id] = ""
@@ -361,102 +355,93 @@ struct ReposTab: View {
 // MARK: - Subscriptions
 
 struct SubsTab: View {
-    @State private var tools: [SubItem] = []
-    @State private var pickerValue = ""
-    @State private var deleteTarget: SubItem? = nil
-    @State private var showDelete = false
+    @State private var selections: [String: String] = [:] // bundleId → tier label
     @State private var dbError: String?
-    struct SubItem: Identifiable, Equatable { var id: String { name }; let name: String; let monthlyFee: Double; let currency: String }
-    struct Preset { let name: String; let tiers: [Tier] }
-    struct Tier: Identifiable { var id: String { label }; let label: String; let fee: Double }
-    let presets: [Preset] = [
-        Preset(name: "Cursor",  tiers: [Tier(label: "Pro", fee: 20), Tier(label: "Business", fee: 40)]),
-        Preset(name: "Copilot", tiers: [Tier(label: "Individual", fee: 10), Tier(label: "Business", fee: 19), Tier(label: "Enterprise", fee: 39)]),
-        Preset(name: "Windsurf", tiers: [Tier(label: "Pro", fee: 15)]),
-        Preset(name: "Codeium", tiers: [Tier(label: "Individual", fee: 15), Tier(label: "Teams", fee: 35)]),
-    ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(I18n.t("subs.title")).font(.title3).fontWeight(.semibold)
             Text(I18n.t("subs.desc")).font(.caption).foregroundColor(.secondary)
-            HStack {
-                Picker(I18n.t("subs.add"), selection: $pickerValue) {
-                    Text(I18n.t("subs.choose")).tag("")
-                    ForEach(presets, id: \.name) { p in
-                        ForEach(p.tiers) { t in Text("\(p.name) \(t.label) ($\(String(format: "%.0f", t.fee))\(I18n.t("subs.per_month")))").tag("\(p.name)|\(t.label)|\(t.fee)") }
-                    }
-                }.frame(width: 280)
-                Button(I18n.t("subs.add")) {
-                    let parts = pickerValue.components(separatedBy: "|")
-                    guard parts.count == 3, let fee = Double(parts[2]) else { return }
-                    let name = "\(parts[0]) \(parts[1])"
-                    if tools.contains(where: { $0.name == name }) { pickerValue = ""; return }
-                    let item = SubItem(name: name, monthlyFee: fee, currency: "USD")
-                    tools.append(item); saveToDB(item); pickerValue = ""
-                }.disabled(pickerValue.isEmpty)
-            }
-            if let err = dbError { Text(err).font(.caption2).foregroundColor(.red) }
-            if tools.isEmpty {
+
+            let detected = SubscriptionRegistry.tools.filter(\.installed)
+            let notDetected = SubscriptionRegistry.tools.filter { !$0.installed }
+
+            if detected.isEmpty && notDetected.isEmpty {
                 Text(I18n.t("subs.empty")).font(.caption).foregroundColor(.secondary).padding(.top, 10)
-            } else {
-                VStack(spacing: 6) {
-                    ForEach(tools) { item in
-                        HStack {
-                            Label(item.name, systemImage: "creditcard").font(.body)
-                            Spacer()
-                            Text("$\(String(format: "%.2f", item.monthlyFee))\(I18n.t("subs.per_month"))").foregroundColor(.secondary).font(.callout)
-                            Button { deleteTarget = item; showDelete = true } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
-                            }.buttonStyle(.plain)
+            }
+
+            // Detected tools — pick a tier
+            ForEach(detected) { tool in
+                HStack {
+                    Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
+                    Text(tool.name).font(.body).frame(width: 180, alignment: .leading)
+                    Picker("", selection: Binding(
+                        get: { selections[tool.name] ?? "" },
+                        set: { v in selections[tool.name] = v; save(tool: tool, tierLabel: v) }
+                    )) {
+                        Text(I18n.t("subs.choose")).tag("")
+                        ForEach(tool.tiers) { t in
+                            Text("\(t.label) ($\(String(format: "%.0f", t.fee))\(I18n.t("subs.per_month")))").tag(t.label)
                         }
-                        .padding(10).background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
+                    }.frame(width: 220)
+                }
+                .padding(.vertical, 4)
+            }
+
+            // Not installed — greyed out
+            if !notDetected.isEmpty && !detected.isEmpty {
+                Divider().padding(.vertical, 4)
+            }
+            ForEach(notDetected) { tool in
+                HStack {
+                    Image(systemName: "questionmark.circle").foregroundColor(.secondary)
+                    Text(tool.name).font(.body).foregroundColor(.secondary).frame(width: 180, alignment: .leading)
+                    Text(I18n.t("subs.not_installed")).font(.caption).foregroundColor(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+
+            if let err = dbError { Text(err).font(.caption2).foregroundColor(.red) }
+        }
+        .onAppear {
+            // Restore saved selections from DB
+            Task {
+                do {
+                    let rows = try await AppDatabase.shared.read { db in
+                        try Row.fetchAll(db, sql: "SELECT id, name, monthly_fee, currency FROM subscription_tool")
                     }
+                    var map = [String: String]()
+                    for r in rows {
+                        let name: String = r["name"] ?? ""
+                        // id is tool name, find matching tool
+                        if let tool = SubscriptionRegistry.tools.first(where: { name.hasPrefix($0.name) }) {
+                            let tierLabel = String(name.dropFirst(tool.name.count + 1))
+                            if tool.tiers.contains(where: { $0.label == tierLabel }) {
+                                map[tool.name] = tierLabel
+                            }
+                        }
+                    }
+                    await MainActor.run { selections = map; dbError = nil }
+                } catch {
+                    await MainActor.run { dbError = "Load: \(error.localizedDescription)" }
                 }
             }
         }
-        .onAppear { loadFromDB() }
-        .alert(I18n.t("subs.delete_title"), isPresented: $showDelete) {
-            Button(I18n.t("repos.cancel"), role: .cancel) {}
-            Button(I18n.t("repos.remove"), role: .destructive) { if let t = deleteTarget { tools.removeAll { $0.name == t.name }; deleteFromDB(t) } }
-        } message: { Text(String(format: I18n.t("subs.delete_msg"), deleteTarget?.name ?? "")) }
     }
 
-    private func saveToDB(_ item: SubItem) {
+    private func save(tool: SubscriptionTool, tierLabel: String) {
+        let itemName = "\(tool.name) \(tierLabel)"
+        guard let tier = tool.tiers.first(where: { $0.label == tierLabel }) else { return }
         Task {
             do {
                 try await AppDatabase.shared.write { db in
-                    try db.execute(sql: "INSERT OR REPLACE INTO subscription_tool (id, name, monthly_fee, currency) VALUES (?,?,?,?)",
-                        arguments: [item.name, item.name, item.monthlyFee, item.currency])
+                    try db.execute(sql: """
+                        INSERT OR REPLACE INTO subscription_tool (id, name, monthly_fee, currency)
+                        VALUES (?, ?, ?, ?)
+                        """, arguments: [tool.name, itemName, tier.fee, tier.currency])
                 }
                 await MainActor.run { dbError = nil }
             } catch { await MainActor.run { dbError = "Save: \(error.localizedDescription)" } }
-        }
-    }
-    private func deleteFromDB(_ item: SubItem) {
-        Task {
-            do {
-                try await AppDatabase.shared.write { db in
-                    try db.execute(sql: "DELETE FROM subscription_tool WHERE id=?", arguments: [item.name])
-                }
-            } catch { await MainActor.run { dbError = "Delete: \(error.localizedDescription)" } }
-        }
-    }
-    private func loadFromDB() {
-        Task {
-            do {
-                let rows = try await AppDatabase.shared.read { db in
-                    try Row.fetchAll(db, sql: "SELECT name, monthly_fee, currency FROM subscription_tool")
-                }
-                var loaded = rows.map { SubItem(name: $0["name"] ?? "", monthlyFee: $0["monthly_fee"] ?? 0, currency: $0["currency"] ?? "USD") }
-                if loaded.isEmpty {
-                    let preset1 = SubItem(name: "Cursor Pro", monthlyFee: 20, currency: "USD")
-                    let preset2 = SubItem(name: "GitHub Copilot", monthlyFee: 10, currency: "USD")
-                    loaded = [preset1, preset2]
-                    saveToDB(preset1); saveToDB(preset2)
-                }
-                await MainActor.run { tools = loaded; dbError = nil }
-            } catch { await MainActor.run { dbError = "Load: \(error.localizedDescription)" } }
         }
     }
 }

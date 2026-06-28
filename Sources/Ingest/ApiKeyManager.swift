@@ -1,52 +1,29 @@
 import Foundation
-import Security
 
-/// Manages API keys in the macOS Keychain.
-/// Each provider's key is stored under the service "ai-pulse/{providerId}".
+/// Stores API keys in UserDefaults (not Keychain).
+///
+/// Keychain was considered but `kSecAttrAccessibleAfterFirstUnlock` still
+/// periodically prompts for the login keychain password on macOS, which is
+/// unacceptable for a menu-bar tool.  These are API keys for read-only
+/// usage/balance checks — not payment credentials — so UserDefaults is an
+/// acceptable trade-off.
 final class ApiKeyManager {
     static let shared = ApiKeyManager()
-
-    private func serviceName(for providerId: String) -> String {
-        "ai-pulse/\(providerId)"
-    }
+    private let defaults = UserDefaults.standard
+    private let prefix = "apikey_"
 
     func get(_ providerId: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName(for: providerId),
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecReturnData as String: true,
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data,
-              let key = String(data: data, encoding: .utf8)
-        else { return nil }
-        return key
+        defaults.string(forKey: prefix + providerId)
     }
 
     func set(_ providerId: String, key: String) {
-        // Delete existing first
-        delete(providerId)
-
-        guard let data = key.data(using: .utf8) else { return }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName(for: providerId),
-            kSecValueData as String: data,
-        ]
-        SecItemAdd(query as CFDictionary, nil)
+        defaults.set(key, forKey: prefix + providerId)
     }
 
     func delete(_ providerId: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName(for: providerId),
-        ]
-        SecItemDelete(query as CFDictionary)
+        defaults.removeObject(forKey: prefix + providerId)
     }
 
-    /// All provider IDs that have a stored key.
     func configuredProviderIds() -> [String] {
         ProviderRegistry.all.compactMap { get($0.id) != nil ? $0.id : nil }
     }

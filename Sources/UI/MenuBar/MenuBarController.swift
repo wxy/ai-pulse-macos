@@ -7,6 +7,11 @@ final class SettingsWindowManager {
     var window: NSWindow?
 }
 
+final class DashboardWindowManager {
+    static let shared = DashboardWindowManager()
+    var window: NSWindow?
+}
+
 final class MenuBarController: NSObject {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
@@ -42,13 +47,15 @@ final class MenuBarController: NSObject {
             DispatchQueue.main.async {
                 self.menu.removeAllItems()
 
-                // Today line (hidden if no data)
+                // Today line — click opens Dashboard
                 if let today = stats.todaySummary {
-                    self.menu.addItem(NSMenuItem(title: today, action: nil, keyEquivalent: ""))
+                    let item = NSMenuItem(title: today, action: #selector(self.openDashboard), keyEquivalent: "")
+                    item.target = self; self.menu.addItem(item)
                 }
-                // Week line (hidden if no data)
+                // Week line — click opens Dashboard
                 if let week = stats.weekSummary {
-                    self.menu.addItem(NSMenuItem(title: week, action: nil, keyEquivalent: ""))
+                    let item = NSMenuItem(title: week, action: #selector(self.openDashboard), keyEquivalent: "")
+                    item.target = self; self.menu.addItem(item)
                 }
 
                 // Stats submenus — only shown if they have items
@@ -56,7 +63,8 @@ final class MenuBarController: NSObject {
                 if hasSubmenus { self.menu.addItem(.separator()) }
 
                 if !stats.models.isEmpty {
-                    let m = NSMenuItem(title: I18n.t("menu.by_model"), action: nil, keyEquivalent: "")
+                    let m = NSMenuItem(title: I18n.t("menu.by_model"), action: #selector(self.openDashboard), keyEquivalent: "")
+                    m.target = self
                     let s = NSMenu()
                     for x in stats.models {
                         let l = stats.netLines > 0 ? " · $\(String(format: "%.3f", x.cost / Double(stats.netLines)))\(I18n.t("menu.per_line"))" : ""
@@ -65,13 +73,14 @@ final class MenuBarController: NSObject {
                     m.submenu = s; self.menu.addItem(m)
                 }
                 if !stats.repos.isEmpty {
-                    let m = NSMenuItem(title: I18n.t("menu.by_repo"), action: nil, keyEquivalent: "")
+                    let m = NSMenuItem(title: I18n.t("menu.by_repo"), action: #selector(self.openDashboard), keyEquivalent: "")
+                    m.target = self
                     let s = NSMenu()
                     for r in stats.repos { s.addItem(NSMenuItem(title: "\(r.name) · \(r.lines) \(I18n.t("menu.lines")) · \(r.cplStr)", action: nil, keyEquivalent: "")) }
                     m.submenu = s; self.menu.addItem(m)
                 }
 
-                // Fixed bottom items
+                // Preferences + Quit
                 self.menu.addItem(.separator())
                 let prefsItem = NSMenuItem(title: I18n.t("menu.preferences"), action: #selector(self.openPreferences), keyEquivalent: ",")
                 prefsItem.target = self; self.menu.addItem(prefsItem)
@@ -182,6 +191,13 @@ final class MenuBarController: NSObject {
         if n >= 1_000_000 { return "\(n/1_000_000).\( (n%1_000_000)/100_000)M" }
         if n >= 1_000 { return "\(n/1_000).\( (n%1_000)/100)K" }
         return "\(n)"
+    }
+
+    @objc private func openDashboard() {
+        NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 520), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        w.title = I18n.t("dashboard.title"); w.contentView = NSHostingView(rootView: DashboardView()); w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
+        DashboardWindowManager.shared.window = w
     }
 
     @objc private func openPreferences() {
