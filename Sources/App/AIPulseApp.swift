@@ -54,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openOnboarding() {
         NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 440),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
                          styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = "AI Pulse — Welcome"
         w.contentView = NSHostingView(rootView: OnboardingView())

@@ -163,7 +163,7 @@ struct GeneralTab: View {
                 UserDefaults.standard.removeObject(forKey: "onboarding_completed")
                 // Re-open onboarding
                 if let w = OnboardingWindowManager.shared.window { w.close() }
-                let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 440),
+                let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
                                  styleMask: [.titled, .closable], backing: .buffered, defer: false)
                 w.title = "AI Pulse — Welcome"
                 w.contentView = NSHostingView(rootView: OnboardingView())
