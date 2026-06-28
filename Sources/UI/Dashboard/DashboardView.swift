@@ -12,6 +12,10 @@ struct DashboardView: View {
     @State private var cplHoverX: CGFloat = 0
     @State private var hoverX: CGFloat = 0
 
+    var hasAGrade: Bool {
+        IntegrationRegistry.enabledAGrade().contains { $0.detect().found }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -27,10 +31,18 @@ struct DashboardView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     summaryCards.padding(.horizontal, 20)
-                    combinedChart.padding(.horizontal, 20)
-                    cplChart.padding(.horizontal, 20)
-                    HStack(alignment: .top, spacing: 16) { modelSection; repoSection }
-                        .padding(.horizontal, 20)
+
+                    if hasAGrade {
+                        combinedChart.padding(.horizontal, 20)
+                        cplChart.padding(.horizontal, 20)
+                        HStack(alignment: .top, spacing: 16) { modelSection; repoSection }
+                            .padding(.horizontal, 20)
+                    } else {
+                        cplGuidanceCard.padding(.horizontal, 20)
+                    }
+
+                    subscriptionCard.padding(.horizontal, 20)
+                    apiBalanceCard.padding(.horizontal, 20)
                 }.padding(.bottom, 20)
             }
         }
@@ -38,6 +50,97 @@ struct DashboardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await load() }
         .onChange(of: dayRange) { _, _ in Task { await load() } }
+    }
+
+    // MARK: - CPL guidance (no A-grade)
+
+    var cplGuidanceCard: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "chart.line.uptrend.xyaxis").font(.system(size: 32)).foregroundColor(.secondary)
+            Text("单行成本不可用").font(.headline)
+            Text("启用 Claude Code 或 aider 以解锁 CPL 统计。这些工具会写入本地日志，可精确归因到仓库。")
+                .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
+            HStack(spacing: 16) {
+                Text("Claude Code：`~/.claude/projects/`").font(.caption2).foregroundColor(.secondary)
+                Text("aider：仓库内 `.aider.llm.history`").font(.caption2).foregroundColor(.secondary)
+            }
+        }
+        .padding(24).frame(maxWidth: .infinity)
+        .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
+        .cornerRadius(10)
+    }
+
+    // MARK: - Subscription card (C-grade)
+
+    var subscriptionCard: some View {
+        let subs = IntegrationRegistry.enabledCGrade()
+        guard !subs.isEmpty else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 8) {
+                Text("订阅月费").font(.headline)
+                Text("⚠️ 不参与 CPL 计算。可能与 Token 花费重叠。")
+                    .font(.caption).foregroundColor(.secondary)
+                ForEach(subs, id: \.id) { s in
+                    let cfg = IntegrationRegistry.config(for: s.id)
+                    HStack {
+                        Text(s.displayName).font(.body)
+                        Spacer()
+                        Text(cfg.subscriptionTier).font(.callout).foregroundColor(.secondary)
+                        Text("· 日均 $\(String(format: "%.2f", estimatedDailySub(s.id)))")
+                            .font(.caption).foregroundColor(.secondary).monospacedDigit()
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+            .padding(16)
+            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
+            .cornerRadius(10)
+        )
+    }
+
+    // MARK: - API Balance card (B-grade)
+
+    var apiBalanceCard: some View {
+        let bs = IntegrationRegistry.enabledBGrade()
+        guard !bs.isEmpty else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 8) {
+                Text("API 余额").font(.headline)
+                Text("⚠️ 不参与 CPL。余额变化可能包含 Token 花费中的数据。")
+                    .font(.caption).foregroundColor(.secondary)
+                ForEach(bs, id: \.id) { b in
+                    HStack {
+                        Text(b.displayName).font(.body)
+                        Spacer()
+                        if let cached = ApiPoller.shared.cachedBalance(for: b.id),
+                           let bal = cached.balances.first {
+                            Text("\(bal.currency) \(String(format: "%.2f", bal.totalBalance))")
+                                .font(.callout).monospacedDigit()
+                        } else {
+                            Text("--").foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
+            .cornerRadius(10)
+        )
+    }
+
+    func estimatedDailySub(_ id: String) -> Double {
+        // Get subscription from existing SubsTab DB or config
+        // For now: estimate monthly fee from subscription tool tiers
+        let cfg = IntegrationRegistry.config(for: id)
+        guard !cfg.subscriptionTier.isEmpty else { return 0 }
+        let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        // Find the tier fee from SubscriptionRegistry
+        if let tool = SubscriptionRegistry.tool(forName: id == "cursor" ? "Cursor" : id == "copilot" ? "GitHub Copilot" : id == "windsurf" ? "Windsurf" : ""),
+           let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
+            return tier.fee / days
+        }
+        // Fallback: check subscription_tool DB
+        return 0
     }
 
     // MARK: - Summary cards
