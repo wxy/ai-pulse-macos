@@ -59,24 +59,32 @@ final class MenuBarController: NSObject {
                 }
 
                 // Stats submenus — only shown if they have items
-                let hasSubmenus = !stats.models.isEmpty || !stats.repos.isEmpty
+                let bs = IntegrationRegistry.enabledBGrade()
+                let hasSubmenus = !stats.repos.isEmpty || !bs.isEmpty
                 if hasSubmenus { self.menu.addItem(.separator()) }
 
-                if !stats.models.isEmpty {
-                    let m = NSMenuItem(title: I18n.t("menu.by_model"), action: #selector(self.openDashboard), keyEquivalent: "")
-                    m.target = self
+                // Provider submenu — B-grade balance data from ApiPoller
+                if !bs.isEmpty {
+                    let m = NSMenuItem(title: I18n.t("menu.by_provider"), action: nil, keyEquivalent: "")
                     let s = NSMenu()
-                    for x in stats.models {
-                        let l = stats.netLines > 0 ? " · $\(String(format: "%.3f", x.cost * 1000 / Double(stats.netLines)))\(I18n.t("menu.per_line"))" : ""
-                        s.addItem(NSMenuItem(title: "\(x.name) · \(x.costStr)\(l)", action: nil, keyEquivalent: ""))
+                    for b in bs {
+                        if let cached = ApiPoller.shared.cachedBalance(for: b.id),
+                           let bal = cached.balances.first {
+                            s.addItem(NSMenuItem(
+                                title: "\(b.displayName) · \(bal.currency) \(String(format: "%.2f", bal.totalBalance))",
+                                action: nil, keyEquivalent: ""
+                            ))
+                        }
                     }
-                    m.submenu = s; self.menu.addItem(m)
+                    if s.numberOfItems > 0 {
+                        m.submenu = s; self.menu.addItem(m)
+                    }
                 }
                 if !stats.repos.isEmpty {
                     let m = NSMenuItem(title: I18n.t("menu.by_repo"), action: #selector(self.openDashboard), keyEquivalent: "")
                     m.target = self
                     let s = NSMenu()
-                    for r in stats.repos { s.addItem(NSMenuItem(title: "\(r.name) · \(r.lines) \(I18n.t("menu.lines")) · \(r.cplStr)", action: nil, keyEquivalent: "")) }
+                    for r in stats.repos { s.addItem(NSMenuItem(title: "\(r.name) · \(r.summary)", action: nil, keyEquivalent: "")) }
                     m.submenu = s; self.menu.addItem(m)
                 }
 
@@ -94,11 +102,9 @@ final class MenuBarController: NSObject {
 
     // MARK: - Data
 
-    private struct ModelStat { let name: String; let calls: Int; let tokens: Int; let cost: Double
-        var costStr: String { cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0" } }
-    private struct RepoStat { let name: String; let lines: Int; let cost: Double
-        var cplStr: String { lines > 0 ? "$\(String(format: "%.2f", cost * 1000 / Double(lines)))\(I18n.t("menu.per_line"))" : "-" } }
-    private struct Stats { let todaySummary: String?; let weekSummary: String?; let models: [ModelStat]; let repos: [RepoStat]; let netLines: Int; let hasActivity: Bool }
+    private struct RepoStat { let name: String; let added: Int; let deleted: Int; let cost: Double
+        var summary: String { "$\(String(format: "%.2f", cost)) · +\(added)/-\(deleted) \(I18n.t("menu.lines"))" } }
+    private struct Stats { let todaySummary: String?; let weekSummary: String?; let repos: [RepoStat]; let hasActivity: Bool }
 
     private func fetchStats() async -> Stats {
         do {
@@ -110,87 +116,76 @@ final class MenuBarController: NSObject {
             let todayCnt: Int = try await AppDatabase.shared.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart]) ?? 0
             }
-            let todayTokRow: Row? = try await AppDatabase.shared.read { db in
-                try Row.fetchOne(db, sql: "SELECT COALESCE(SUM(in_tokens),0) AS i, COALESCE(SUM(out_tokens),0) AS o, COALESCE(SUM(cache_tokens),0) AS c FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart])
-            }
             let todayCst: Double? = try await AppDatabase.shared.read { db in
                 try Double.fetchOne(db, sql: "SELECT COALESCE(SUM(cost_usd),0) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart])
             }
-            let todayNl: Int? = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added - deleted),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [todayStart])
+            let todayAdded: Int = try await AppDatabase.shared.read { db in
+                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [todayStart]) ?? 0
+            }
+            let todayDeleted: Int = try await AppDatabase.shared.read { db in
+                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(deleted),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [todayStart]) ?? 0
             }
 
             // --- This week ---
             let weekCnt: Int = try await AppDatabase.shared.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart]) ?? 0
             }
-            let weekTokRow: Row? = try await AppDatabase.shared.read { db in
-                try Row.fetchOne(db, sql: "SELECT COALESCE(SUM(in_tokens),0) AS i, COALESCE(SUM(out_tokens),0) AS o, COALESCE(SUM(cache_tokens),0) AS c FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart])
-            }
             let weekCst: Double? = try await AppDatabase.shared.read { db in
                 try Double.fetchOne(db, sql: "SELECT COALESCE(SUM(cost_usd),0) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart])
             }
-            let weekNl: Int? = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added - deleted),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [weekStart])
+            let weekAdded: Int = try await AppDatabase.shared.read { db in
+                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [weekStart]) ?? 0
+            }
+            let weekDeleted: Int = try await AppDatabase.shared.read { db in
+                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(deleted),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [weekStart]) ?? 0
             }
 
             // --- Submenu breakdowns (this week) ---
-            let rows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT COALESCE(model,'unknown') as m, COUNT(*) as cnt, COALESCE(SUM(in_tokens+out_tokens+cache_tokens),0) as tok, COALESCE(SUM(cost_usd),0) as cst FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>') GROUP BY m ORDER BY cst DESC", arguments: [weekStart])
+            // Repo added/deleted per repo
+            let raRows: [Row] = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(added),0) AS a, COALESCE(SUM(deleted),0) AS d FROM code_change WHERE is_merge = 0 AND ts >= ? GROUP BY repo_path", arguments: [weekStart])
             }
-            let models: [ModelStat] = rows.compactMap { r in
-                let name: String = r["m"]
-                guard name != "<synthetic>" && name != "unknown" else { return nil }
-                let calls: Int64 = r["cnt"]; let tokens: Int64 = r["tok"]; let cost: Double = r["cst"]
-                return ModelStat(name: name, calls: Int(calls), tokens: Int(tokens), cost: cost)
+            var repoAddDel: [String: (Int, Int)] = [:]
+            for r in raRows {
+                let path: String = r["p"] ?? ""
+                let a: Int64 = r["a"] ?? 0
+                let d: Int64 = r["d"] ?? 0
+                repoAddDel[path] = (Int(a), Int(d))
             }
 
+            // Repo cost per repo
             var cbr: [String: Double] = [:]
             let rcRows: [Row] = try await AppDatabase.shared.read { db in
                 try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? GROUP BY repo_path", arguments: [weekStart])
             }
             for r in rcRows { if let p: String = r["p"], !p.isEmpty { cbr[p] = r["c"] ?? 0 } }
 
-            let rrRows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(added - deleted),0) AS l FROM code_change WHERE is_merge = 0 AND ts >= ? GROUP BY repo_path ORDER BY l DESC", arguments: [weekStart])
-            }
             var repos: [RepoStat] = []
-            for r in rrRows {
-                let path: String = r["p"] ?? ""; let lines: Int = r["l"] ?? 0; let c = cbr[path] ?? 0
-                guard lines > 0, c > 0 else { continue }
-                repos.append(RepoStat(name: URL(fileURLWithPath: path).lastPathComponent, lines: lines, cost: c))
+            for (path, cost) in cbr {
+                let (a, d) = repoAddDel[path] ?? (0, 0)
+                guard a > 0 || d > 0, cost > 0 else { continue }
+                repos.append(RepoStat(name: URL(fileURLWithPath: path).lastPathComponent, added: a, deleted: d, cost: cost))
             }
 
             // --- Helper to format a stats line ---
-            func makeSummary(cnt: Int, tokRow: Row?, cost: Double, netLines: Int, label: String) -> String? {
-                guard cnt > 0 else { return nil }
-                var t = 0
-                if let row = tokRow {
-                    let i: Int64 = row["i"]; let o: Int64 = row["o"]; let c: Int64 = row["c"]
-                    t = Int(i + o + c)
-                }
+            func makeSummary(cnt: Int, cost: Double, added: Int, deleted: Int, label: String) -> String? {
+                guard cnt > 0 || added > 0 || deleted > 0 else { return nil }
                 let cS = cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0"
-                let cpl = netLines > 0 && cost > 0 ? " · $\(String(format: "%.2f", cost * 1000 / Double(netLines)))\(I18n.t("menu.per_line"))" : ""
-                return "\(label) \(cnt) \(I18n.t("menu.calls")) · \(fmt(t)) \(I18n.t("menu.tokens")) · \(cS)\(cpl)"
+                let linesStr = "+\(added)/-\(deleted) \(I18n.t("menu.lines"))"
+                return "\(label) · \(cS) · \(linesStr)"
             }
 
-            let todaySum = makeSummary(cnt: todayCnt, tokRow: todayTokRow, cost: todayCst ?? 0, netLines: todayNl ?? 0, label: I18n.t("menu.today"))
-            let weekSum  = makeSummary(cnt: weekCnt,  tokRow: weekTokRow,  cost: weekCst ?? 0,  netLines: weekNl ?? 0,  label: I18n.t("menu.this_week"))
+            let todaySum = makeSummary(cnt: todayCnt, cost: todayCst ?? 0, added: todayAdded, deleted: todayDeleted, label: I18n.t("menu.today"))
+            let weekSum  = makeSummary(cnt: weekCnt,  cost: weekCst ?? 0,  added: weekAdded,  deleted: weekDeleted,  label: I18n.t("menu.this_week"))
 
-            let hasActivity = weekCnt > 0 || !repos.isEmpty
+            let hasActivity = weekCnt > 0 || !repos.isEmpty || weekAdded > 0 || weekDeleted > 0
             if !hasActivity {
-                return Stats(todaySummary: nil, weekSummary: nil, models: [], repos: [], netLines: 0, hasActivity: false)
+                return Stats(todaySummary: nil, weekSummary: nil, repos: [], hasActivity: false)
             }
-            return Stats(todaySummary: todaySum, weekSummary: weekSum, models: models, repos: repos, netLines: weekNl ?? 0, hasActivity: true)
+            return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos, hasActivity: true)
         } catch {
-            return Stats(todaySummary: I18n.t("menu.unavailable"), weekSummary: nil, models: [], repos: [], netLines: 0, hasActivity: false)
+            return Stats(todaySummary: I18n.t("menu.unavailable"), weekSummary: nil, repos: [], hasActivity: false)
         }
-    }
-
-    private func fmt(_ n: Int) -> String {
-        if n >= 1_000_000 { return "\(n/1_000_000).\( (n%1_000_000)/100_000)M" }
-        if n >= 1_000 { return "\(n/1_000).\( (n%1_000)/100)K" }
-        return "\(n)"
     }
 
     @objc private func openDashboard() {
