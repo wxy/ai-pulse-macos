@@ -34,6 +34,20 @@ struct Prediction {
     let monthSoFar: Double
 }
 
+struct ProviderDailyCost: Identifiable {
+    var id: String { "\(providerId)-\(Int(date.timeIntervalSince1970))" }
+    let date: Date
+    let providerId: String
+    let cost: Double
+}
+
+struct DailyCodeChange: Identifiable {
+    var id: Date { date }
+    let date: Date
+    let added: Int
+    let deleted: Int
+}
+
 /// Pre-aggregated stats service for the Dashboard.
 enum StatsService {
 
@@ -177,6 +191,75 @@ enum StatsService {
             return Prediction(monthProjected: projected, dailyRate: dailyRate, daysRemaining: daysRemaining, monthSoFar: spent)
         } catch {
             return Prediction(monthProjected: 0, dailyRate: 0, daysRemaining: 0, monthSoFar: 0)
+        }
+    }
+
+    // MARK: - Provider daily cost
+
+    /// Daily cost grouped by provider_id for the cost chart.
+    static func providerDailyCosts(days: Int) async -> [ProviderDailyCost] {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
+        let startMs = Int64(start.timeIntervalSince1970 * 1000)
+        let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
+
+        do {
+            let rows = try await AppDatabase.shared.read { db -> [Row] in
+                try Row.fetchAll(db, sql: """
+                    SELECT (ts / 86400000) * 86400000 AS day_ts,
+                           COALESCE(provider_id, 'unknown') AS pid,
+                           COALESCE(SUM(cost_usd), 0) AS c
+                    FROM usage_event
+                    WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
+                    GROUP BY day_ts, pid ORDER BY day_ts, c DESC
+                    """, arguments: [startMs, todayMs + 86_400_000])
+            }
+            return rows.compactMap { r in
+                guard let day: Int64 = r["day_ts"],
+                      let pid: String = r["pid"],
+                      let c: Double = r["c"],
+                      c > 0 else { return nil }
+                let date = Date(timeIntervalSince1970: Double(day) / 1000)
+                return ProviderDailyCost(date: date, providerId: pid, cost: c)
+            }
+        } catch {
+            print("StatsService.providerDailyCosts error: \(error)")
+            return []
+        }
+    }
+
+    // MARK: - Daily code changes
+
+    /// Daily added/deleted lines (separate, not net) for the code-change chart.
+    static func dailyCodeChanges(days: Int) async -> [DailyCodeChange] {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
+        let startMs = Int64(start.timeIntervalSince1970 * 1000)
+        let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
+
+        do {
+            let rows = try await AppDatabase.shared.read { db -> [Row] in
+                try Row.fetchAll(db, sql: """
+                    SELECT (ts / 86400000) * 86400000 AS day_ts,
+                           COALESCE(SUM(added), 0) AS a,
+                           COALESCE(SUM(deleted), 0) AS d
+                    FROM code_change
+                    WHERE is_merge = 0 AND ts >= ? AND ts < ?
+                    GROUP BY day_ts ORDER BY day_ts
+                    """, arguments: [startMs, todayMs + 86_400_000])
+            }
+            return rows.compactMap { r in
+                guard let day: Int64 = r["day_ts"] else { return nil }
+                let a: Int64 = r["a"] ?? 0
+                let d: Int64 = r["d"] ?? 0
+                let date = Date(timeIntervalSince1970: Double(day) / 1000)
+                return DailyCodeChange(date: date, added: Int(a), deleted: Int(d))
+            }
+        } catch {
+            print("StatsService.dailyCodeChanges error: \(error)")
+            return []
         }
     }
 }
