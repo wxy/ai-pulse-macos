@@ -12,13 +12,10 @@ struct SettingsView: View {
         _selectedTab = State(initialValue: initialTab)
     }
     let tabs: [(String, String)] = [
-        ("General", "gear"), ("API Keys", "key"), ("Coding Tools", "hammer"), ("Repos", "folder"),
-        ("Subscriptions", "creditcard"), ("Pricing", "dollarsign.circle"), ("About", "info.circle"),
+        ("General", "gear"), ("Integrations", "square.grid.2x2"), ("Repos", "folder"),
+        ("Pricing", "dollarsign.circle"), ("About", "info.circle"),
     ]
 
-    /// Custom binding that calls I18n.setLang() synchronously on every set,
-    /// so the language change takes effect BEFORE SwiftUI re-evaluates the
-    /// body (avoiding the `.onChange` race with `.id()`-based view recreation).
     var langBinding: Binding<String> {
         Binding(get: { lang }, set: { v in lang = v; I18n.setLang(v) })
     }
@@ -26,10 +23,8 @@ struct SettingsView: View {
     func localizedName(_ key: String) -> String {
         switch key {
         case "General": return I18n.t("settings.general")
-        case "API Keys": return I18n.t("settings.api_keys")
-        case "Coding Tools": return I18n.t("settings.coding_tools")
+        case "Integrations": return I18n.t("settings.integrations")
         case "Repos": return I18n.t("settings.repos")
-        case "Subscriptions": return I18n.t("settings.subscriptions")
         case "Pricing": return I18n.t("settings.pricing")
         case "About": return I18n.t("settings.about")
         default: return key
@@ -61,10 +56,8 @@ struct SettingsView: View {
             Group {
                 switch selectedTab {
                 case "General":         GeneralTab(lang: langBinding).id("general.\(lang)")
-                case "API Keys":        ApiKeysTab().id("apikeys.\(lang)")
-                case "Coding Tools":   ToolsTab().id("tools.\(lang)")
+                case "Integrations":    IntegrationsSettingsTab().id("integrations.\(lang)")
                 case "Repos":          ReposTab().id("repos.\(lang)")
-                case "Subscriptions":  SubsTab().id("subs.\(lang)")
                 case "Pricing":        PricingTab().id("pricing.\(lang)")
                 case "About":          AboutTab().id("about.\(lang)")
                 default: EmptyView()
@@ -76,6 +69,51 @@ struct SettingsView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .frame(width: 640, height: 420)
+    }
+}
+
+// MARK: - Integrations
+
+struct IntegrationsSettingsTab: View {
+    @State private var results: [(any Detectable, DetectionResult)] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Integrations").font(.title3).fontWeight(.semibold)
+                Spacer()
+                Button("Re-detect") { runDetection() }.font(.caption)
+            }
+            Text("All integrated AI tools. Detected ones show configuration controls; undetected ones show what you can install to expand coverage.")
+                .font(.caption).foregroundColor(.secondary)
+
+            let detected = results.filter(\.1.found)
+            let notDetected = results.filter { !$0.1.found }
+
+            ScrollView {
+                VStack(spacing: 4) {
+                    if !detected.isEmpty {
+                        Text("DETECTED").font(.caption2).foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        ForEach(detected, id: \.0.id) { (i, r) in
+                            IntegrationRow(integration: i, detected: r)
+                        }
+                    }
+                    if !notDetected.isEmpty {
+                        Text("NOT INSTALLED").font(.caption2).foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                        ForEach(notDetected, id: \.0.id) { (i, r) in
+                            IntegrationRow(integration: i, detected: r)
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear { runDetection() }
+    }
+
+    func runDetection() {
+        results = IntegrationRegistry.all.map { ($0, $0.detect()) }
     }
 }
 

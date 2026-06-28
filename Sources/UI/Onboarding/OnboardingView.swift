@@ -62,49 +62,20 @@ struct OnboardingView: View {
     // MARK: - Step 1: Detection results
 
     var detectionStep: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let detected = detectionResults.filter(\.1.found)
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Detected Tools").font(.title3).fontWeight(.semibold)
-            Text("We scan your machine for AI tools and API keys. Enable what you want to track.")
+            Text("Enable what you want to track. More tools available in Settings → Integrations.")
                 .font(.caption).foregroundColor(.secondary)
 
             ScrollView {
-                VStack(spacing: 6) {
-                    ForEach(detectionResults, id: \.0.id) { (integration, result) in
-                        HStack {
-                            Image(systemName: result.found ? "checkmark.circle.fill" : "circle")
-                                .foregroundColor(result.found ? .green : .secondary)
-                            Text(integration.displayName).font(.body)
-                            Spacer()
-                            gradeBadge(integration.grade)
-                            Text(result.summary).font(.caption2).foregroundColor(.secondary)
-                                .frame(width: 140, alignment: .leading).lineLimit(1)
-
-                            if result.found {
-                                switch integration.grade {
-                                case .A:
-                                    // A-grade: zero-config, just toggle
-                                    Toggle("", isOn: Binding(
-                                        get: { enabledIds.contains(integration.id) },
-                                        set: { v in
-                                            if v { enabledIds.insert(integration.id) }
-                                            else { enabledIds.remove(integration.id) }
-                                        }
-                                    ))
-                                    .toggleStyle(.switch).frame(width: 50)
-                                case .B:
-                                    Button("Set Key") { openSettings(tab: "API Keys") }
-                                        .font(.caption2)
-                                case .C:
-                                    Button("Choose Plan") { openSettings(tab: "Subscriptions") }
-                                        .font(.caption2)
-                                }
-                            } else {
-                                Text("—").foregroundColor(.secondary).frame(width: 50)
-                            }
-                        }
-                        .padding(.horizontal, 8).padding(.vertical, 6)
-                        .background(result.found ? Color(nsColor: .quaternarySystemFill) : .clear)
-                        .cornerRadius(6)
+                VStack(spacing: 4) {
+                    ForEach(detected, id: \.0.id) { (integration, result) in
+                        IntegrationRow(integration: integration, detected: result)
+                    }
+                    if detected.isEmpty {
+                        Text("No AI tools detected. Open Settings → Integrations to see all supported tools.")
+                            .foregroundColor(.secondary).padding()
                     }
                 }
             }
@@ -120,10 +91,8 @@ struct OnboardingView: View {
             Text("You're All Set").font(.title2).fontWeight(.bold)
             Text("\(enabledIds.count) tools enabled. Menu bar will show today's spend shortly.")
                 .multilineTextAlignment(.center).foregroundColor(.secondary)
-            if enabledIds.contains(where: { id in
-                detectionResults.first(where: { $0.0.id == id })?.0.grade == .A
-            }) {
-                Text("Dashboard is available with CPL stats since you enabled an A-grade tool.")
+            if detectionResults.contains(where: { $0.1.found && $0.0.grade == .A }) {
+                Text("Dashboard available with CPL stats (A-grade tool detected).")
                     .font(.caption).foregroundColor(.secondary)
             }
         }
@@ -150,16 +119,6 @@ struct OnboardingView: View {
         for (i, r) in detectionResults where r.found && i.grade == .A {
             enabledIds.insert(i.id)
         }
-    }
-
-    func openSettings(tab: String) {
-        // Open Settings to the right tab
-        NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420),
-                         styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-        w.title = I18n.t("settings.title")
-        w.contentView = NSHostingView(rootView: SettingsView(initialTab: tab))
-        w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
     }
 
     func finish() {

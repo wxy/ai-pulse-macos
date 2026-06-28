@@ -19,6 +19,13 @@ struct SubscriptionTier: Identifiable {
 
 /// Registry of subscription-based AI coding tools that can be detected on disk.
 enum SubscriptionRegistry {
+    static func tool(forName name: String) -> SubscriptionTool? {
+        tools.first { $0.name == name }
+    }
+
+    static func tool(forBundleId id: String) -> SubscriptionTool? {
+        tools.first { $0.bundleIds.contains(id) }
+    }
     /// All known subscription tools.  Displayed in settings only if `installed` is true.
     static let tools: [SubscriptionTool] = {
         let fm = FileManager.default
