@@ -5,8 +5,12 @@ import AppKit
 // MARK: - Main Settings
 
 struct SettingsView: View {
-    @State private var selectedTab = "General"
+    @State private var selectedTab: String
     @State private var lang = I18n.getLang()
+
+    init(initialTab: String = "General") {
+        _selectedTab = State(initialValue: initialTab)
+    }
     let tabs: [(String, String)] = [
         ("General", "gear"), ("API Keys", "key"), ("Coding Tools", "hammer"), ("Repos", "folder"),
         ("Subscriptions", "creditcard"), ("Pricing", "dollarsign.circle"), ("About", "info.circle"),

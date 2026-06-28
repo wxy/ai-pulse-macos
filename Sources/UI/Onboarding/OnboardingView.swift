@@ -20,7 +20,6 @@ struct OnboardingView: View {
                 switch step {
                 case 0: welcomeStep
                 case 1: detectionStep
-                case 2: configureStep
                 default: doneStep
                 }
             }
@@ -32,12 +31,8 @@ struct OnboardingView: View {
                     Button("← Back") { step -= 1 }
                 }
                 Spacer()
-                if step < 3 {
-                    Button(step == 2 ? "Finish" : "Next →") {
-                        if step == 2 { finish() }
-                        step += 1
-                    }
-                    .disabled(step == 2 && enabledIds.isEmpty)
+                if step < 2 {
+                    Button("Next →") { step += 1 }
                 } else {
                     Button("Close") { close() }
                 }
@@ -83,16 +78,26 @@ struct OnboardingView: View {
                             gradeBadge(integration.grade)
                             Text(result.summary).font(.caption2).foregroundColor(.secondary)
                                 .frame(width: 140, alignment: .leading).lineLimit(1)
+
                             if result.found {
-                                Toggle("", isOn: Binding(
-                                    get: { enabledIds.contains(integration.id) },
-                                    set: { v in
-                                        if v { enabledIds.insert(integration.id) }
-                                        else { enabledIds.remove(integration.id) }
-                                    }
-                                ))
-                                .toggleStyle(.switch)
-                                .frame(width: 50)
+                                switch integration.grade {
+                                case .A:
+                                    // A-grade: zero-config, just toggle
+                                    Toggle("", isOn: Binding(
+                                        get: { enabledIds.contains(integration.id) },
+                                        set: { v in
+                                            if v { enabledIds.insert(integration.id) }
+                                            else { enabledIds.remove(integration.id) }
+                                        }
+                                    ))
+                                    .toggleStyle(.switch).frame(width: 50)
+                                case .B:
+                                    Button("Set Key") { openSettings(tab: "API Keys") }
+                                        .font(.caption2)
+                                case .C:
+                                    Button("Choose Plan") { openSettings(tab: "Subscriptions") }
+                                        .font(.caption2)
+                                }
                             } else {
                                 Text("—").foregroundColor(.secondary).frame(width: 50)
                             }
@@ -107,57 +112,7 @@ struct OnboardingView: View {
         .padding(.horizontal, 24)
     }
 
-    // MARK: - Step 2: Configure
-
-    var configureStep: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Configure Enabled Tools").font(.title3).fontWeight(.semibold)
-            Text("Some tools need a little setup to start tracking.")
-                .font(.caption).foregroundColor(.secondary)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(Array(enabledIds), id: \.self) { id in
-                        if let i = detectionResults.first(where: { $0.0.id == id })?.0 {
-                            configCard(for: i)
-                        }
-                    }
-                    if enabledIds.isEmpty {
-                        Text("No tools enabled. Go back and enable at least one.")
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 24)
-    }
-
-    @ViewBuilder
-    func configCard(for i: any Detectable) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(i.displayName).font(.body).fontWeight(.semibold)
-                Spacer()
-                gradeBadge(i.grade)
-            }
-            switch i.grade {
-            case .A:
-                Text("Reads AI session logs locally. No data leaves your machine. No API key needed.")
-                    .font(.caption2).foregroundColor(.secondary)
-            case .B:
-                Text("Polls the official API for usage/balance data. Requires an API key — configure in Settings → API Keys after onboarding.")
-                    .font(.caption2).foregroundColor(.secondary)
-            case .C:
-                Text("Fixed monthly subscription. Select your plan in Settings → Subscriptions after onboarding.")
-                    .font(.caption2).foregroundColor(.secondary)
-            }
-        }
-        .padding(10)
-        .background(Color(nsColor: .quaternarySystemFill))
-        .cornerRadius(8)
-    }
-
-    // MARK: - Step 3: Done
+    // MARK: - Step 2: Done
 
     var doneStep: some View {
         VStack(spacing: 16) {
@@ -191,10 +146,20 @@ struct OnboardingView: View {
 
     func runDetection() {
         detectionResults = IntegrationRegistry.all.map { ($0, $0.detect()) }
-        // Auto-enable detected A-grade integrations
+        // Auto-enable detected A-grade integrations (zero-config, just consent)
         for (i, r) in detectionResults where r.found && i.grade == .A {
             enabledIds.insert(i.id)
         }
+    }
+
+    func openSettings(tab: String) {
+        // Open Settings to the right tab
+        NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420),
+                         styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        w.title = I18n.t("settings.title")
+        w.contentView = NSHostingView(rootView: SettingsView(initialTab: tab))
+        w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
     }
 
     func finish() {
@@ -203,9 +168,7 @@ struct OnboardingView: View {
             cfg.enabled = true
             IntegrationRegistry.setConfig(for: id, cfg)
         }
-        // Start any newly enabled Collectable integrations
         IntegrationRegistry.startAllEnabled()
-        // Mark onboarding complete
         UserDefaults.standard.set(true, forKey: "onboarding_completed")
     }
 
