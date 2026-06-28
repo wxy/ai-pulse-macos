@@ -170,7 +170,7 @@ final class MenuBarController: NSObject {
                     t = Int(i + o + c)
                 }
                 let cS = cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0"
-                let cpl = netLines > 0 && cost > 0 ? " · $\(String(format: "%.3f", cost / Double(netLines)))\(I18n.t("menu.per_line"))" : ""
+                let cpl = netLines > 0 && cost > 0 ? " · $\(String(format: "%.4f", cost / Double(netLines)))\(I18n.t("menu.per_line"))" : ""
                 return "\(label) \(cnt) \(I18n.t("menu.calls")) · \(fmt(t)) \(I18n.t("menu.tokens")) · \(cS)\(cpl)"
             }
 
