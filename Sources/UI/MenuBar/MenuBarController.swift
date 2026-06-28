@@ -60,7 +60,12 @@ final class MenuBarController: NSObject {
 
                 // Stats submenus — only shown if they have items
                 let bs = IntegrationRegistry.enabledBGrade()
-                let hasSubmenus = !stats.repos.isEmpty || !bs.isEmpty
+                let hasProviderItems = bs.contains { provider in
+                    if let cached = ApiPoller.shared.cachedBalance(for: provider.id),
+                       let bal = cached.balances.first, bal.totalBalance > 0 { return true }
+                    return false
+                }
+                let hasSubmenus = !stats.repos.isEmpty || hasProviderItems
                 if hasSubmenus { self.menu.addItem(.separator()) }
 
                 // Provider submenu — B-grade balance data from ApiPoller
