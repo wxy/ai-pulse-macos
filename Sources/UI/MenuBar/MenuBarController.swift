@@ -67,7 +67,7 @@ final class MenuBarController: NSObject {
                     m.target = self
                     let s = NSMenu()
                     for x in stats.models {
-                        let l = stats.netLines > 0 ? " · $\(String(format: "%.3f", x.cost / Double(stats.netLines)))\(I18n.t("menu.per_line"))" : ""
+                        let l = stats.netLines > 0 ? " · $\(String(format: "%.3f", x.cost * 1000 / Double(stats.netLines)))\(I18n.t("menu.per_line"))" : ""
                         s.addItem(NSMenuItem(title: "\(x.name) · \(x.costStr)\(l)", action: nil, keyEquivalent: ""))
                     }
                     m.submenu = s; self.menu.addItem(m)
@@ -97,7 +97,7 @@ final class MenuBarController: NSObject {
     private struct ModelStat { let name: String; let calls: Int; let tokens: Int; let cost: Double
         var costStr: String { cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0" } }
     private struct RepoStat { let name: String; let lines: Int; let cost: Double
-        var cplStr: String { lines > 0 ? "$\(String(format: "%.3f", cost / Double(lines)))\(I18n.t("menu.per_line"))" : "-" } }
+        var cplStr: String { lines > 0 ? "$\(String(format: "%.2f", cost * 1000 / Double(lines)))\(I18n.t("menu.per_line"))" : "-" } }
     private struct Stats { let todaySummary: String?; let weekSummary: String?; let models: [ModelStat]; let repos: [RepoStat]; let netLines: Int; let hasActivity: Bool }
 
     private func fetchStats() async -> Stats {
@@ -170,7 +170,7 @@ final class MenuBarController: NSObject {
                     t = Int(i + o + c)
                 }
                 let cS = cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0"
-                let cpl = netLines > 0 && cost > 0 ? " · $\(String(format: "%.4f", cost / Double(netLines)))\(I18n.t("menu.per_line"))" : ""
+                let cpl = netLines > 0 && cost > 0 ? " · $\(String(format: "%.2f", cost * 1000 / Double(netLines)))\(I18n.t("menu.per_line"))" : ""
                 return "\(label) \(cnt) \(I18n.t("menu.calls")) · \(fmt(t)) \(I18n.t("menu.tokens")) · \(cS)\(cpl)"
             }
 

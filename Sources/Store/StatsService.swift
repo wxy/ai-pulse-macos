@@ -84,7 +84,7 @@ enum StatsService {
                 let day: Int64 = r["day_ts"]
                 let c: Double = r["c"]; let cnt: Int = r["cnt"]; let tok: Int64 = r["tok"]
                 let nl = lineMap[day] ?? 0
-                let cpl = nl > 0 ? c / Double(nl) : 0
+                let cpl = nl > 0 ? c * 1000 / Double(nl) : 0  // per 1K lines
                 let date = Date(timeIntervalSince1970: Double(day) / 1000)
                 result.append(DailyStat(date: date, cost: c, calls: cnt, tokens: Int(tok), netLines: nl, costPerLine: cpl))
             }
@@ -145,7 +145,7 @@ enum StatsService {
                 guard let p: String = r["p"], !p.isEmpty else { return nil }
                 let c: Double = r["c"]; let nl = lineMap[p] ?? 0
                 // Show repos even if netLines is 0 or negative (still tracks AI cost)
-                return RepoBreakdown(repo: URL(fileURLWithPath: p).lastPathComponent, cost: c, netLines: nl, costPerLine: nl > 0 ? c / Double(nl) : 0)
+                return RepoBreakdown(repo: URL(fileURLWithPath: p).lastPathComponent, cost: c, netLines: nl, costPerLine: nl > 0 ? c * 1000 / Double(nl) : 0)
             }
         } catch { return [] }
     }

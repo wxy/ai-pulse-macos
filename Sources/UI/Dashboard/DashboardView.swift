@@ -387,7 +387,7 @@ struct DashboardView: View {
                             Text("$\(String(format: "%.2f", r.cost))").font(.caption2).monospacedDigit()
                             Text("\(r.netLines)").font(.caption2).monospacedDigit()
                             let cpl = r.netLines > 0 ? r.costPerLine : 0
-                            Text("$\(String(format: "%.4f", cpl))\(I18n.t("menu.per_line"))")
+                            Text("$\(String(format: "%.2f", cpl))\(I18n.t("menu.per_line"))")
                                 .font(.caption2).monospacedDigit()
                         }
                     }
@@ -445,7 +445,7 @@ struct DashboardView: View {
     func cplTooltipView(date: Date, cpl: Double) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(date, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
-            Text("$\(String(format: "%.4f", cpl))\(I18n.t("menu.per_line"))").font(.caption2).monospacedDigit()
+            Text("$\(String(format: "%.2f", cpl))\(I18n.t("menu.per_line"))").font(.caption2).monospacedDigit()
         }
         .padding(6).background(.regularMaterial).cornerRadius(6)
     }
@@ -478,7 +478,7 @@ struct DashboardView: View {
         let tc = dailyStats.reduce(0) { $0 + $1.cost }
         let tl = dailyStats.reduce(0) { $0 + $1.netLines }
         guard tl > 0, tc > 0 else { return "--" }
-        return "$\(String(format: "%.4f", tc / Double(tl)))"
+        return "$\(String(format: "%.2f", tc * 1000 / Double(tl)))"
     }
 
     func totalLines() -> String {
