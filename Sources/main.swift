@@ -6,7 +6,7 @@ import AppKit
 // An extra activate() after a short delay ensures the menu bar item responds.
 autoreleasepool {
     let app = NSApplication.shared
-    app.setActivationPolicy(.accessory)
+    app.setActivationPolicy(.regular)
     let delegate = AppDelegate()
     app.delegate = delegate
 
