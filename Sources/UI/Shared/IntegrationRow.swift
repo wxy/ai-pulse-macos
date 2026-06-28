@@ -10,6 +10,7 @@ struct IntegrationRow: View {
     @State private var tierInput: String
     @State private var saved: Bool
     @State private var showKey: Bool = false
+    @State private var detecting: Bool = false
 
     init(integration: any Detectable, detected: DetectionResult) {
         self.integration = integration
@@ -24,42 +25,52 @@ struct IntegrationRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
+        HStack(spacing: 12) {
             // Icon
-            Image(systemName: detected.found ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(detected.found ? .green : .secondary)
-                .font(.title3)
-                .frame(width: 28, alignment: .top)
+            if detecting {
+                ProgressView().scaleEffect(0.6).frame(width: 20)
+            } else {
+                Image(systemName: iconName)
+                    .foregroundColor(iconColor)
+                    .font(.title3).frame(width: 20)
+            }
 
-            // Info
+            // Name + badge + summary
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(integration.displayName).font(.body).fontWeight(.medium)
                     gradeBadge
                 }
-                Text(detected.found ? detected.summary : "Not installed")
-                    .font(.caption).foregroundColor(.secondary)
-                    .lineLimit(2)
-
-                if detected.found {
-                    controls
-                        .padding(.top, 6)
-                }
+                Text(detected.found ? detected.summary : "Not installed — install to enable tracking")
+                    .font(.caption).foregroundColor(.secondary).lineLimit(1)
             }
-            .padding(.leading, 8)
 
             Spacer()
+
+            // Controls on the right
+            if detected.found {
+                controls
+            }
         }
-        .padding(10)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(detected.found ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+                .fill(detected.found ? Color(nsColor: .controlBackgroundColor) : Color(nsColor: .controlBackgroundColor).opacity(0.4))
                 .shadow(color: .black.opacity(detected.found ? 0.04 : 0), radius: 2, y: 1)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(nsColor: .separatorColor).opacity(detected.found ? 0.5 : 0), lineWidth: 0.5)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
         )
+    }
+
+    var iconName: String {
+        if detecting { return "arrow.triangle.2.circlepath" }
+        return detected.found ? "checkmark.circle.fill" : "questionmark.circle"
+    }
+
+    var iconColor: Color {
+        detecting ? .blue : (detected.found ? .green : .orange)
     }
 
     var gradeBadge: some View {
@@ -81,53 +92,41 @@ struct IntegrationRow: View {
     var controls: some View {
         switch integration.grade {
         case .A:
-            HStack {
-                Toggle(enabled ? "Enabled" : "Disabled", isOn: $enabled)
-                    .toggleStyle(.switch)
-                    .onChange(of: enabled) { _, v in saveConfig() }
-                Spacer()
-            }
+            Toggle("", isOn: $enabled)
+                .toggleStyle(.switch).onChange(of: enabled) { _, v in saveConfig() }
 
         case .B:
             if showKey {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     TextField("Paste API Key", text: $keyInput)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 260)
+                        .textFieldStyle(.roundedBorder).frame(width: 180)
                     Button("Save") {
                         let k = keyInput.trimmingCharacters(in: .whitespaces)
-                        if k.isEmpty { return }
+                        guard !k.isEmpty else { return }
                         ApiKeyManager.shared.set(integration.id, key: k)
                         ApiPoller.shared.fetchNow(providerId: integration.id)
-                        enabled = true; saved = true; showKey = false
-                        saveConfig()
+                        enabled = true; saved = true; showKey = false; saveConfig()
                     }.disabled(keyInput.trimmingCharacters(in: .whitespaces).isEmpty)
-                    Button("Cancel") { showKey = false }
-                        .disabled(false)
                 }
             } else {
-                HStack {
+                HStack(spacing: 6) {
                     Text("••••••••").foregroundColor(.secondary)
-                    Button("Change Key") { keyInput = ""; showKey = true }
-                    if saved { Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption) }
-                    Spacer()
+                    Button("Change") { keyInput = ""; showKey = true }.font(.caption)
+                    if saved { Image(systemName: "checkmark.circle.fill").foregroundColor(.green) }
                 }
             }
 
         case .C:
             let tiers = SubscriptionRegistry.tool(forName: integration.displayName)?.tiers ?? []
-            HStack {
-                Picker("Plan", selection: $tierInput) {
-                    Text("None").tag("")
-                    ForEach(tiers, id: \.label) { t in
-                        Text("\(t.label) ($\(String(format: "%.0f", t.fee))/mo)").tag(t.label)
-                    }
+            Picker("", selection: $tierInput) {
+                Text("Select plan").tag("")
+                ForEach(tiers, id: \.label) { t in
+                    Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
                 }
-                .pickerStyle(.menu).frame(maxWidth: 240)
-                .onChange(of: tierInput) { _, v in
-                    if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
-                }
-                Spacer()
+            }
+            .pickerStyle(.menu).frame(width: 180)
+            .onChange(of: tierInput) { _, v in
+                if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
             }
         }
     }

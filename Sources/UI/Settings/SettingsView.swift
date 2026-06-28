@@ -82,32 +82,36 @@ struct SettingsView: View {
 
 struct IntegrationsSettingsTab: View {
     @State private var results: [(any Detectable, DetectionResult)] = []
+    @State private var isDetecting = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Integrations").font(.title3).fontWeight(.semibold)
-                Spacer()
-                Button("Re-detect") { runDetection() }.font(.caption)
-            }
-            Text("All integrated AI tools. Detected ones show configuration controls; undetected ones show what you can install to expand coverage.")
+            Text("Integrations").font(.title3).fontWeight(.semibold)
+            Text("Detected tools show configuration controls. Install undetected tools to expand coverage.")
                 .font(.caption).foregroundColor(.secondary)
 
             let detected = results.filter(\.1.found)
             let notDetected = results.filter { !$0.1.found }
 
             ScrollView {
-                VStack(spacing: 4) {
+                VStack(spacing: 6) {
                     if !detected.isEmpty {
-                        Text("DETECTED").font(.caption2).foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                         ForEach(detected, id: \.0.id) { (i, r) in
                             IntegrationRow(integration: i, detected: r)
                         }
                     }
+
                     if !notDetected.isEmpty {
-                        Text("NOT INSTALLED").font(.caption2).foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                        HStack {
+                            Text("NOT INSTALLED").font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                            if isDetecting {
+                                ProgressView().scaleEffect(0.6)
+                            } else {
+                                Button("Re-detect") { reDetect() }.font(.caption)
+                            }
+                        }
+                        .padding(.top, 8)
                         ForEach(notDetected, id: \.0.id) { (i, r) in
                             IntegrationRow(integration: i, detected: r)
                         }
@@ -120,6 +124,14 @@ struct IntegrationsSettingsTab: View {
 
     func runDetection() {
         results = IntegrationRegistry.all.map { ($0, $0.detect()) }
+    }
+
+    func reDetect() {
+        isDetecting = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            results = IntegrationRegistry.all.map { ($0, $0.detect()) }
+            isDetecting = false
+        }
     }
 }
 
@@ -141,6 +153,22 @@ struct GeneralTab: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 160)
+            }
+
+            Divider().padding(.vertical, 8)
+
+            Text("Re-run the first-launch welcome to re-detect tools and configure integrations.")
+                .font(.caption).foregroundColor(.secondary)
+            Button("Re-run Welcome Setup") {
+                UserDefaults.standard.removeObject(forKey: "onboarding_completed")
+                // Re-open onboarding
+                if let w = OnboardingWindowManager.shared.window { w.close() }
+                let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 440),
+                                 styleMask: [.titled, .closable], backing: .buffered, defer: false)
+                w.title = "AI Pulse — Welcome"
+                w.contentView = NSHostingView(rootView: OnboardingView())
+                w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
+                OnboardingWindowManager.shared.window = w
             }
         }
     }
