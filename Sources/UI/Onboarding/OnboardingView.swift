@@ -9,7 +9,7 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             // Step indicator
             HStack(spacing: 4) {
-                ForEach(0..<4, id: \.self) { i in
+                ForEach(0..<3, id: \.self) { i in
                     Circle()
                         .fill(i <= step ? Color.accentColor : Color.secondary.opacity(0.3))
                         .frame(width: 8, height: 8)
@@ -28,13 +28,13 @@ struct OnboardingView: View {
             // Navigation
             HStack {
                 if step > 0 {
-                    Button("← Back") { step -= 1 }
+                    Button(I18n.t("onboarding.back")) { step -= 1 }
                 }
                 Spacer()
                 if step < 2 {
-                    Button("Next →") { step += 1 }
+                    Button(I18n.t("onboarding.next")) { step += 1 }
                 } else {
-                    Button("Close") { close() }
+                    Button(I18n.t("onboarding.close")) { close() }
                 }
             }
             .padding(.horizontal, 24).padding(.bottom, 16)
@@ -50,11 +50,11 @@ struct OnboardingView: View {
         VStack(spacing: 16) {
             Text("🤖").font(.system(size: 56))
             Text("AI Pulse").font(.title).fontWeight(.bold)
-            Text("Your AI Fuel Gauge")
+            Text(I18n.t("onboarding.welcome"))
                 .font(.title2).foregroundColor(.secondary)
-            Text("Know what AI coding really costs you — across all your tools, subscriptions, and API keys.")
+            Text(I18n.t("onboarding.desc"))
                 .multilineTextAlignment(.center).padding(.horizontal, 40)
-            Text("All data stays on your machine.")
+            Text(I18n.t("onboarding.privacy"))
                 .font(.caption).foregroundColor(.secondary)
         }
     }
@@ -64,8 +64,8 @@ struct OnboardingView: View {
     var detectionStep: some View {
         let detected = detectionResults.filter(\.1.found)
         return VStack(alignment: .leading, spacing: 12) {
-            Text("Detected Tools").font(.title3).fontWeight(.semibold)
-            Text("Enable what you want to track. More tools available in Settings → Integrations.")
+            Text(I18n.t("onboarding.detected")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("onboarding.detected_hint"))
                 .font(.caption).foregroundColor(.secondary)
 
             ScrollView {
@@ -74,7 +74,7 @@ struct OnboardingView: View {
                         IntegrationRow(integration: integration, detected: result)
                     }
                     if detected.isEmpty {
-                        Text("No AI tools detected. Open Settings → Integrations to see all supported tools.")
+                        Text(I18n.t("onboarding.no_tools"))
                             .foregroundColor(.secondary).padding()
                     }
                 }
@@ -88,11 +88,11 @@ struct OnboardingView: View {
     var doneStep: some View {
         VStack(spacing: 16) {
             Text("🎉").font(.system(size: 48))
-            Text("You're All Set").font(.title2).fontWeight(.bold)
-            Text("\(enabledIds.count) tools enabled. Menu bar will show today's spend shortly.")
+            Text(I18n.t("onboarding.done_title")).font(.title2).fontWeight(.bold)
+            Text(I18n.t("onboarding.done_msg"))
                 .multilineTextAlignment(.center).foregroundColor(.secondary)
             if detectionResults.contains(where: { $0.1.found && $0.0.grade == .A }) {
-                Text("Dashboard available with CPL stats (A-grade tool detected).")
+                Text(I18n.t("onboarding.done_cpl"))
                     .font(.caption).foregroundColor(.secondary)
             }
         }

@@ -41,7 +41,7 @@ struct IntegrationRow: View {
                     Text(integration.displayName).font(.body).fontWeight(.medium)
                     gradeBadge
                 }
-                Text(detected.found ? detected.summary : "Not installed — install to enable tracking")
+                Text(detected.found ? detected.summary : I18n.t("integrations.not_installed_note"))
                     .font(.caption).foregroundColor(.secondary).lineLimit(1)
             }
 
@@ -98,9 +98,9 @@ struct IntegrationRow: View {
         case .B:
             if showKey {
                 HStack(spacing: 6) {
-                    TextField("Paste API Key", text: $keyInput)
+                    TextField(I18n.t("integrations.key_placeholder"), text: $keyInput)
                         .textFieldStyle(.roundedBorder).frame(width: 180)
-                    Button("Save") {
+                    Button(I18n.t("integrations.key_save")) {
                         let k = keyInput.trimmingCharacters(in: .whitespaces)
                         guard !k.isEmpty else { return }
                         ApiKeyManager.shared.set(integration.id, key: k)
@@ -111,7 +111,7 @@ struct IntegrationRow: View {
             } else {
                 HStack(spacing: 6) {
                     Text("••••••••").foregroundColor(.secondary)
-                    Button("Change") { keyInput = ""; showKey = true }.font(.caption)
+                    Button(I18n.t("integrations.key_change")) { keyInput = ""; showKey = true }.font(.caption)
                     if saved { Image(systemName: "checkmark.circle.fill").foregroundColor(.green) }
                 }
             }
@@ -119,7 +119,7 @@ struct IntegrationRow: View {
         case .C:
             let tiers = SubscriptionRegistry.tool(forName: integration.displayName)?.tiers ?? []
             Picker("", selection: $tierInput) {
-                Text("Select plan").tag("")
+                Text(I18n.t("integrations.select_plan")).tag("")
                 ForEach(tiers, id: \.label) { t in
                     Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
                 }

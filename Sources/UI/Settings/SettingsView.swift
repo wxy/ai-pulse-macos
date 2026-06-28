@@ -86,8 +86,8 @@ struct IntegrationsSettingsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Integrations").font(.title3).fontWeight(.semibold)
-            Text("Detected tools show configuration controls. Install undetected tools to expand coverage.")
+            Text(I18n.t("integrations.title")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("integrations.desc"))
                 .font(.caption).foregroundColor(.secondary)
 
             let detected = results.filter(\.1.found)
@@ -103,12 +103,12 @@ struct IntegrationsSettingsTab: View {
 
                     if !notDetected.isEmpty {
                         HStack {
-                            Text("NOT INSTALLED").font(.caption).foregroundColor(.secondary)
+                            Text(I18n.t("integrations.not_installed")).font(.caption).foregroundColor(.secondary)
                             Spacer()
                             if isDetecting {
                                 ProgressView().scaleEffect(0.6)
                             } else {
-                                Button("Re-detect") { reDetect() }.font(.caption)
+                                Button(I18n.t("integrations.redetect")) { reDetect() }.font(.caption)
                             }
                         }
                         .padding(.top, 8)
@@ -157,9 +157,9 @@ struct GeneralTab: View {
 
             Divider().padding(.vertical, 8)
 
-            Text("Re-run the first-launch welcome to re-detect tools and configure integrations.")
+            Text(I18n.t("general.rerun_welcome_desc"))
                 .font(.caption).foregroundColor(.secondary)
-            Button("Re-run Welcome Setup") {
+            Button(I18n.t("general.rerun_welcome")) {
                 UserDefaults.standard.removeObject(forKey: "onboarding_completed")
                 // Re-open onboarding
                 if let w = OnboardingWindowManager.shared.window { w.close() }
