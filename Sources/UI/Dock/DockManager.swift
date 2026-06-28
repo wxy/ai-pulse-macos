@@ -6,10 +6,17 @@ final class DockManager {
     static let shared = DockManager()
     private var timer: Timer?
     private let baseIcon: NSImage = {
-        // Fuel gauge icon as the app identity
-        let cfg = NSImage.SymbolConfiguration(pointSize: 256, weight: .regular)
-        return NSImage(systemSymbolName: "fuelpump.fill", accessibilityDescription: nil)!
-            .withSymbolConfiguration(cfg)!
+        // Load custom app icon
+        if let img = NSImage(contentsOf: Bundle.main.resourceURL?
+            .appendingPathComponent("AIPulse.png") ?? URL(fileURLWithPath: "")) {
+            return img
+        }
+        // Fallback: look in Resources/ relative to binary
+        let alt = URL(fileURLWithPath: #file)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Resources/AIPulse.png")
+        return NSImage(contentsOf: alt)
+            ?? NSImage(systemSymbolName: "fuelpump.fill", accessibilityDescription: nil)!
     }()
 
     func start() {

@@ -144,7 +144,7 @@ enum I18n {
         "dashboard.empty_state": "在 设置 → 集成 中启用工具后，这里将显示花费与代码变化图表。",
         "menu.added": "新增",
         "menu.deleted": "删除",
-        "menu.by_provider": "▸ 按 Provider",
+        "menu.by_provider": "▸ 按服务商",
         "onboarding.step0": "欢迎",
         "onboarding.step1": "侦测",
         "onboarding.step2": "启用",

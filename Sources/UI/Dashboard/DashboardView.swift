@@ -150,8 +150,7 @@ struct DashboardView: View {
                  value: prediction.map { "$\(String(format: "%.2f", $0.monthSoFar))" } ?? "--")
             card(title: I18n.t("dashboard.month_projected"),
                  value: prediction.map { "$\(String(format: "%.2f", $0.monthProjected))" } ?? "--")
-            card(title: I18n.t("dashboard.week_added_del"),
-                 value: weekAddedDel())
+            weekAddedDelCard
             card(title: I18n.t("dashboard.sub_daily"),
                  value: "$\(String(format: "%.2f", totalSubDaily()))")
         }
@@ -166,10 +165,16 @@ struct DashboardView: View {
         .background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
     }
 
-    func weekAddedDel() -> String {
+    var weekAddedDelCard: some View {
         let added = codeChanges.reduce(0) { $0 + $1.added }
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
-        return "+\(added)/-\(deleted)"
+        return VStack(spacing: 2) {
+            Text("+\(added)").font(.subheadline).fontWeight(.semibold).monospacedDigit()
+            Text("-\(deleted)").font(.subheadline).fontWeight(.semibold).monospacedDigit()
+            Text(I18n.t("dashboard.week_added_del")).font(.caption2).foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 10)
+        .background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
     }
 
     func totalSubDaily() -> Double {
@@ -207,23 +212,13 @@ struct DashboardView: View {
             } else {
                 ZStack(alignment: .topLeading) {
                     Chart {
-                        // Subscription amortization (bottom layer — constant per day)
-                        ForEach(subDaily, id: \.id) { item in
+                        // Single ForEach with sub first (bottom) + api second (top) for auto-stacking
+                        ForEach(subDaily + apiDaily, id: \.id) { item in
                             BarMark(
                                 x: .value("Date", item.date, unit: .day),
                                 y: .value("Cost", item.cost)
                             )
                             .foregroundStyle(by: .value("Source", item.label))
-                            .position(by: .value("Layer", "sub"))
-                        }
-                        // API balance consumption (top layer — variable per day)
-                        ForEach(apiDaily, id: \.id) { item in
-                            BarMark(
-                                x: .value("Date", item.date, unit: .day),
-                                y: .value("Cost", item.cost)
-                            )
-                            .foregroundStyle(by: .value("Source", item.label))
-                            .position(by: .value("Layer", "api"))
                         }
                         if let hd = costHoverDate {
                             RuleMark(x: .value("Date", hd, unit: .day))
@@ -342,21 +337,12 @@ struct DashboardView: View {
             } else {
                 ZStack(alignment: .topLeading) {
                     Chart {
-                        ForEach(paddedChanges, id: \.id) { d in
+                        ForEach(codeChangeSegments, id: \.id) { seg in
                             BarMark(
-                                x: .value("Date", d.date, unit: .day),
-                                y: .value("Lines", d.added)
+                                x: .value("Date", seg.date, unit: .day),
+                                y: .value("Lines", seg.lines)
                             )
-                            .foregroundStyle(Color.green.opacity(0.7))
-                            .position(by: .value("Type", I18n.t("dashboard.added")))
-                        }
-                        ForEach(paddedChanges, id: \.id) { d in
-                            BarMark(
-                                x: .value("Date", d.date, unit: .day),
-                                y: .value("Lines", d.deleted)
-                            )
-                            .foregroundStyle(Color.orange.opacity(0.7))
-                            .position(by: .value("Type", I18n.t("dashboard.deleted")))
+                            .foregroundStyle(by: .value("Type", seg.type))
                         }
                         if let hd = codeHoverDate {
                             RuleMark(x: .value("Date", hd, unit: .day))
@@ -375,6 +361,10 @@ struct DashboardView: View {
                         }
                     }
                     .chartYAxisLabel(I18n.t("menu.lines"))
+                    .chartForegroundStyleScale([
+                        I18n.t("dashboard.added"): Color.green.opacity(0.7),
+                        I18n.t("dashboard.deleted"): Color.orange.opacity(0.7)
+                    ])
                     .chartOverlay { proxy in
                         GeometryReader { geo in
                             Color.clear
@@ -405,6 +395,23 @@ struct DashboardView: View {
         .padding(16)
         .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
         .cornerRadius(10)
+    }
+
+    /// Flatten paddedChanges into segments ordered for stacked bars (added bottom, deleted top).
+    var codeChangeSegments: [CodeChangeSegment] {
+        paddedChanges.flatMap { d in
+            [
+                CodeChangeSegment(date: d.date, lines: d.added, type: I18n.t("dashboard.added")),
+                CodeChangeSegment(date: d.date, lines: d.deleted, type: I18n.t("dashboard.deleted"))
+            ]
+        }
+    }
+
+    struct CodeChangeSegment: Identifiable {
+        var id: String { "\(type)-\(Int(date.timeIntervalSince1970))" }
+        let date: Date
+        let lines: Int
+        let type: String
     }
 
     func padCodeChanges() -> [DailyCodeChange] {

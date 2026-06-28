@@ -111,8 +111,15 @@ enum StatsService {
 
     // MARK: - Model breakdown (this week)
 
+    /// Calendar with Monday as first weekday.
+    static var mondayCalendar: Calendar {
+        var cal = Calendar.current
+        cal.firstWeekday = 2
+        return cal
+    }
+
     static func modelBreakdown() async -> [ModelBreakdown] {
-        let cal = Calendar.current
+        let cal = StatsService.mondayCalendar
         let weekStart = Int64(cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!.timeIntervalSince1970 * 1000)
         do {
             let rows: [Row] = try await AppDatabase.shared.read { db in
@@ -135,7 +142,7 @@ enum StatsService {
     // MARK: - Repo breakdown (this week)
 
     static func repoBreakdown() async -> [RepoBreakdown] {
-        let cal = Calendar.current
+        let cal = StatsService.mondayCalendar
         let weekStart = Int64(cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!.timeIntervalSince1970 * 1000)
         do {
             let costRows: [Row] = try await AppDatabase.shared.read { db in

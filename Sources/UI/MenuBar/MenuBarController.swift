@@ -19,7 +19,16 @@ final class MenuBarController: NSObject {
 
     func start() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = statusItem.button { button.title = "🤖" }
+        if let button = statusItem.button {
+            let img = NSImage(contentsOf: Bundle.main.resourceURL?
+                .appendingPathComponent("AIPulse.png") ?? URL(fileURLWithPath: ""))
+            let resized = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+                img?.draw(in: rect)
+                return true
+            }
+            resized.isTemplate = true  // adapts to light/dark menu bar
+            button.image = resized
+        }
 
         menu = NSMenu()
         statusItem.menu = menu
@@ -100,7 +109,10 @@ final class MenuBarController: NSObject {
                 let quitItem = NSMenuItem(title: I18n.t("menu.quit"), action: #selector(self.quit), keyEquivalent: "q")
                 quitItem.target = self; self.menu.addItem(quitItem)
 
-                if let button = self.statusItem.button { button.title = stats.hasActivity ? "💬" : "🤖" }
+                // Tint: accent color when activity, secondary when idle
+                if let button = self.statusItem.button {
+                    button.contentTintColor = stats.hasActivity ? .controlAccentColor : .secondaryLabelColor
+                }
             }
         }
     }
@@ -114,7 +126,8 @@ final class MenuBarController: NSObject {
     private func fetchStats() async -> Stats {
         do {
             let cal = Calendar.current
-            let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!.timeIntervalSince1970 * 1000
+            var monCal = cal; monCal.firstWeekday = 2
+            let weekStart = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!.timeIntervalSince1970 * 1000
             let todayStart = cal.startOfDay(for: Date()).timeIntervalSince1970 * 1000
 
             // --- Today ---
