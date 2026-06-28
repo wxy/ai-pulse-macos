@@ -5,6 +5,7 @@ struct DashboardView: View {
     @State private var dailyStats: [DailyStat] = []
     @State private var providerCosts: [ProviderDailyCost] = []
     @State private var codeChanges: [DailyCodeChange] = []
+    @State private var paddedChanges: [DailyCodeChange] = []
     @State private var models: [ModelBreakdown] = []
     @State private var repos: [RepoBreakdown] = []
     @State private var prediction: Prediction?
@@ -13,6 +14,8 @@ struct DashboardView: View {
     @State private var codeHoverDate: Date? = nil
     @State private var costHoverX: CGFloat = 0
     @State private var codeHoverX: CGFloat = 0
+    @State private var subDaily: [ChartDataPoint] = []
+    @State private var apiDaily: [ChartDataPoint] = []
 
     var hasAGrade: Bool {
         IntegrationRegistry.enabledAGrade().contains { $0.detect().found }
@@ -132,7 +135,7 @@ struct DashboardView: View {
         let cfg = IntegrationRegistry.config(for: id)
         guard !cfg.subscriptionTier.isEmpty else { return 0 }
         let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        if let tool = SubscriptionRegistry.tool(forName: id == "cursor" ? "Cursor" : id == "copilot" ? "GitHub Copilot" : id == "windsurf" ? "Windsurf" : ""),
+        if let tool = SubscriptionRegistry.tool(forName: toolName(for: id)),
            let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
             return tier.fee / days
         }
@@ -205,7 +208,7 @@ struct DashboardView: View {
                 ZStack(alignment: .topLeading) {
                     Chart {
                         // Subscription amortization (bottom layer — constant per day)
-                        ForEach(subDailyData(), id: \.id) { item in
+                        ForEach(subDaily, id: \.id) { item in
                             BarMark(
                                 x: .value("Date", item.date, unit: .day),
                                 y: .value("Cost", item.cost)
@@ -214,7 +217,7 @@ struct DashboardView: View {
                             .position(by: .value("Layer", "sub"))
                         }
                         // API balance consumption (top layer — variable per day)
-                        ForEach(apiDailyData(), id: \.id) { item in
+                        ForEach(apiDaily, id: \.id) { item in
                             BarMark(
                                 x: .value("Date", item.date, unit: .day),
                                 y: .value("Cost", item.cost)
@@ -311,8 +314,8 @@ struct DashboardView: View {
 
     func costTooltip(for date: Date) -> some View {
         let cal = Calendar.current
-        let subs = subDailyData().filter { cal.isDate($0.date, inSameDayAs: date) }
-        let apis = apiDailyData().filter { cal.isDate($0.date, inSameDayAs: date) }
+        let subs = subDaily.filter { cal.isDate($0.date, inSameDayAs: date) }
+        let apis = apiDaily.filter { cal.isDate($0.date, inSameDayAs: date) }
         let totalCost = subs.reduce(0) { $0 + $1.cost } + apis.reduce(0) { $0 + $1.cost }
 
         return VStack(alignment: .leading, spacing: 2) {
@@ -339,7 +342,7 @@ struct DashboardView: View {
             } else {
                 ZStack(alignment: .topLeading) {
                     Chart {
-                        ForEach(paddedCodeChanges(), id: \.id) { d in
+                        ForEach(paddedChanges, id: \.id) { d in
                             BarMark(
                                 x: .value("Date", d.date, unit: .day),
                                 y: .value("Lines", d.added)
@@ -347,7 +350,7 @@ struct DashboardView: View {
                             .foregroundStyle(Color.green.opacity(0.7))
                             .position(by: .value("Type", I18n.t("dashboard.added")))
                         }
-                        ForEach(paddedCodeChanges(), id: \.id) { d in
+                        ForEach(paddedChanges, id: \.id) { d in
                             BarMark(
                                 x: .value("Date", d.date, unit: .day),
                                 y: .value("Lines", d.deleted)
@@ -391,7 +394,7 @@ struct DashboardView: View {
                     .frame(height: 200)
 
                     if let hd = codeHoverDate,
-                       let pt = paddedCodeChanges().first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
+                       let pt = paddedChanges.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
                        pt.added > 0 || pt.deleted > 0 {
                         codeTooltip(date: hd, added: pt.added, deleted: pt.deleted)
                             .offset(x: min(max(codeHoverX - 40, 0), 560), y: 0)
@@ -404,7 +407,7 @@ struct DashboardView: View {
         .cornerRadius(10)
     }
 
-    func paddedCodeChanges() -> [DailyCodeChange] {
+    func padCodeChanges() -> [DailyCodeChange] {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
         var map = [Date: DailyCodeChange]()
@@ -479,7 +482,7 @@ struct DashboardView: View {
         VStack(spacing: 12) {
             Image(systemName: "fuelpump").font(.system(size: 32)).foregroundColor(.secondary)
             Text("AI Pulse").font(.headline)
-            Text("在 设置 → 集成 中启用工具后，这里将显示花费与代码变化图表。")
+            Text(I18n.t("dashboard.empty_state"))
                 .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
         }
         .padding(24).frame(maxWidth: .infinity)
@@ -600,5 +603,8 @@ struct DashboardView: View {
         models = await StatsService.modelBreakdown()
         repos = await StatsService.repoBreakdown()
         prediction = await StatsService.prediction()
+        paddedChanges = padCodeChanges()
+        subDaily = subDailyData()
+        apiDaily = apiDailyData()
     }
 }
