@@ -273,8 +273,8 @@ struct DashboardView: View {
                 Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
                     GridRow {
                         Text("Repository").font(.caption2).foregroundColor(.secondary)
-                        Text("Cost").font(.caption2).foregroundColor(.secondary)
-                        Text("Lines").font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.cost_usd")).font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("menu.lines")).font(.caption2).foregroundColor(.secondary)
                         Text("CPL").font(.caption2).foregroundColor(.secondary)
                     }
                     Divider()
