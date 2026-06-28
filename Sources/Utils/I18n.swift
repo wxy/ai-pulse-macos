@@ -155,6 +155,7 @@ enum I18n {
         "onboarding.repos_scanning": "正在扫描…",
         "onboarding.repos_count": "%d 个仓库",
         "onboarding.skip": "跳过",
+        "onboarding.done_repos_count": "%d 个仓库已配置监控。",
     ]
 
     static let en: [String: String] = [
@@ -311,6 +312,7 @@ enum I18n {
         "onboarding.repos_scanning": "Scanning…",
         "onboarding.repos_count": "%d repos",
         "onboarding.skip": "Skip",
+        "onboarding.done_repos_count": "%d repos configured for monitoring.",
     ]
 
     static let didChangeLanguage = Notification.Name("I18nDidChangeLanguage")

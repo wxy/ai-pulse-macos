@@ -160,7 +160,7 @@ struct OnboardingView: View {
             Text(I18n.t("onboarding.done_msg"))
                 .multilineTextAlignment(.center).foregroundColor(.secondary)
             if !selectedRepos.isEmpty {
-                Text("\(selectedRepos.count) 个仓库已配置监控。")
+                Text(String(format: I18n.t("onboarding.done_repos_count"), selectedRepos.count))
                     .font(.caption).foregroundColor(.secondary)
             }
             if detectionResults.contains(where: { $0.1.found && $0.0.grade == .A }) {
@@ -204,26 +204,31 @@ struct OnboardingView: View {
     }
 
     func scanRepos() {
-        let fm = FileManager.default
-        var allRepos = Set<String>()
-        for dir in searchDirs {
-            let expanded = NSString(string: dir).expandingTildeInPath
-            guard fm.fileExists(atPath: expanded),
-                  let e = fm.enumerator(at: URL(fileURLWithPath: expanded),
-                                        includingPropertiesForKeys: [.isDirectoryKey],
-                                        options: [.skipsHiddenFiles, .skipsPackageDescendants])
-            else { continue }
-            for case let url as URL in e {
-                let git = url.appendingPathComponent(".git")
-                var d: ObjCBool = false
-                if fm.fileExists(atPath: git.path, isDirectory: &d), d.boolValue {
-                    allRepos.insert(url.path)
-                    e.skipDescendants()
+        isScanning = true
+        Task {
+            let fm = FileManager.default
+            var allRepos = Set<String>()
+            for dir in searchDirs {
+                let expanded = NSString(string: dir).expandingTildeInPath
+                guard fm.fileExists(atPath: expanded),
+                      let e = fm.enumerator(at: URL(fileURLWithPath: expanded),
+                                            includingPropertiesForKeys: [.isDirectoryKey],
+                                            options: [.skipsHiddenFiles, .skipsPackageDescendants])
+                else { continue }
+                for case let url as URL in e {
+                    let git = url.appendingPathComponent(".git")
+                    var d: ObjCBool = false
+                    if fm.fileExists(atPath: git.path, isDirectory: &d), d.boolValue {
+                        allRepos.insert(url.path)
+                        e.skipDescendants()
+                    }
                 }
             }
+            await MainActor.run {
+                discoveredRepos = allRepos.sorted()
+                isScanning = false
+            }
         }
-        discoveredRepos = allRepos.sorted()
-        isScanning = false
     }
 
     func saveRepos() {
