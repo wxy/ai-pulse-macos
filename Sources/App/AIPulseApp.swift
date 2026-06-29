@@ -18,7 +18,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menuBarController = MenuBarController()
         menuBarController?.start()
-
         // Auto-enable integrations that are detected on first launch
         migrateIntegrationDefaults()
         // Onboarding: show welcome page if first launch or no integrations enabled
@@ -41,6 +40,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Extra activation after menu bar setup (belt-and-suspenders with main.swift)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // Dock right-click → same menu as status bar, minus Quit (macOS adds its own)
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        guard let src = menuBarController?.menu else { return nil }
+        let copy = NSMenu()
+        for item in src.items {
+            // Skip the Quit item (macOS Dock automatically appends one)
+            if item.keyEquivalent == "q" && item.action != nil { continue }
+            let dup = NSMenuItem(title: item.title, action: item.action, keyEquivalent: item.keyEquivalent)
+            dup.target = item.target
+            dup.submenu = item.submenu
+            copy.addItem(dup)
+        }
+        return copy
     }
 
     func applicationWillTerminate(_ notification: Notification) {

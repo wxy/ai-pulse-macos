@@ -15,7 +15,7 @@ final class DashboardWindowManager {
 final class MenuBarController: NSObject {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
-    private var menu: NSMenu!
+    private(set) var menu: NSMenu!
 
     func start() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

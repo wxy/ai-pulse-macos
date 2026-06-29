@@ -106,6 +106,14 @@ struct OnboardingView: View {
             Text(I18n.t("onboarding.repos_hint"))
                 .font(.caption).foregroundColor(.secondary)
 
+            HStack {
+                Button(action: pickDir) {
+                    Label(I18n.t("repos.add"), systemImage: "plus.circle")
+                        .font(.caption)
+                }
+                Spacer()
+            }
+
             if isScanning {
                 HStack {
                     ProgressView().scaleEffect(0.8)
@@ -171,6 +179,20 @@ struct OnboardingView: View {
     }
 
     // MARK: - Helpers
+
+    private func pickDir() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.prompt = I18n.t("repos.add")
+        if panel.runModal() == .OK, let url = panel.url {
+            let p = url.path.replacingOccurrences(
+                of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+            if !searchDirs.contains(p) {
+                searchDirs.append(p)
+                scanRepos()
+            }
+        }
+    }
 
     func gradeBadge(_ g: DataGrade) -> some View {
         Text("[\(g.rawValue)] \(gradeLabel(g))")
