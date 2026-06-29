@@ -6,7 +6,6 @@ struct DashboardView: View {
     @State private var providerCosts: [ProviderDailyCost] = []
     @State private var codeChanges: [DailyCodeChange] = []
     @State private var paddedChanges: [DailyCodeChange] = []
-    @State private var models: [ModelBreakdown] = []
     @State private var repos: [RepoBreakdown] = []
     @State private var prediction: Prediction?
     @State private var dayRange = 7
@@ -16,9 +15,14 @@ struct DashboardView: View {
     @State private var codeHoverX: CGFloat = 0
     @State private var subDaily: [ChartDataPoint] = []
     @State private var apiDaily: [ChartDataPoint] = []
+    @State private var editorMappings: [EditorDetector.Mapping] = []
 
     var hasAGrade: Bool {
         IntegrationRegistry.enabledAGrade().contains { $0.detect().found }
+    }
+
+    var hasCertainEditorMapping: Bool {
+        editorMappings.contains { $0.confidence == .certain && $0.dailySubscriptionCost > 0 }
     }
 
     var body: some View {
@@ -429,7 +433,7 @@ struct DashboardView: View {
     // MARK: - CPL info card (demoted from trend chart to small window)
 
     var cplInfoCard: some View {
-        let cplRepos = repos.filter { $0.netLines > 0 && $0.cost > 0 }
+        let cplRepos = repos.filter { $0.totalChanges > 0 && !$0.allSources.isEmpty }
         return VStack(alignment: .leading, spacing: 8) {
             Text(I18n.t("dashboard.cpl_card")).font(.headline)
             if cplRepos.isEmpty {
@@ -437,16 +441,27 @@ struct DashboardView: View {
                     .font(.caption).foregroundColor(.secondary)
             } else {
                 ForEach(cplRepos.prefix(5)) { r in
-                    HStack {
-                        Text(r.repo).font(.caption).lineLimit(1)
-                        Spacer()
-                        Text("$\(String(format: "%.2f", r.costPerLine))\(I18n.t("menu.per_line"))")
-                            .font(.caption).monospacedDigit()
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack {
+                            Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
+                            Text("+\(r.added)/-\(r.deleted)").font(.caption2).foregroundColor(.secondary).monospacedDigit()
+                            Spacer()
+                        }
+                        ForEach(r.allSources) { src in
+                            HStack {
+                                Text(src.label).font(.caption2).foregroundColor(.secondary)
+                                Spacer()
+                                Text("$\(String(format: "%.2f", src.cpl))\(I18n.t("menu.per_line"))")
+                                    .font(.caption2).monospacedDigit()
+                            }
+                            .padding(.leading, 8)
+                        }
+                    }
+                    if r.id != cplRepos.prefix(5).last?.id {
+                        Divider()
                     }
                 }
             }
-            Text("ℹ️ \(I18n.t("dashboard.cpl_disclaimer"))")
-                .font(.caption2).foregroundColor(.secondary)
         }
         .padding(16)
         .frame(maxWidth: .infinity)
@@ -459,7 +474,7 @@ struct DashboardView: View {
     var bottomCards: some View {
         HStack(alignment: .top, spacing: 16) {
             apiBreakdownCard
-            if hasAGrade {
+            if hasAGrade || hasCertainEditorMapping {
                 cplInfoCard
             } else {
                 cplGuidanceCard
@@ -479,64 +494,6 @@ struct DashboardView: View {
         .padding(24).frame(maxWidth: .infinity)
         .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
         .cornerRadius(10)
-    }
-
-    // MARK: - Model breakdown
-
-    var modelSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(I18n.t("menu.by_model")).font(.headline)
-            if models.isEmpty {
-                Text(I18n.t("menu.no_usage")).font(.caption).foregroundColor(.secondary)
-            } else {
-                Chart(models) { m in
-                    BarMark(x: .value("Cost", m.cost), y: .value("Model", m.model))
-                        .foregroundStyle(Color.accentColor.opacity(0.7))
-                }
-                .chartXAxisLabel(I18n.t("dashboard.cost_usd")).frame(height: 160)
-                VStack(spacing: 4) {
-                    ForEach(models.prefix(5)) { m in
-                        HStack {
-                            Text(m.model).font(.caption).lineLimit(1)
-                            Spacer()
-                            Text("$\(String(format: "%.2f", m.cost)) · \(m.calls) \(I18n.t("menu.calls"))")
-                                .font(.caption2).foregroundColor(.secondary).monospacedDigit()
-                        }
-                    }
-                }
-            }
-        }.frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Repo breakdown
-
-    var repoSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(I18n.t("menu.by_repo")).font(.headline)
-            if repos.isEmpty {
-                Text(I18n.t("menu.no_usage")).font(.caption).foregroundColor(.secondary)
-            } else {
-                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
-                    GridRow {
-                        Text(I18n.t("dashboard.col_repo")).font(.caption2).foregroundColor(.secondary)
-                        Text(I18n.t("dashboard.cost_usd")).font(.caption2).foregroundColor(.secondary)
-                        Text(I18n.t("menu.lines")).font(.caption2).foregroundColor(.secondary)
-                        Text(I18n.t("dashboard.col_cpl")).font(.caption2).foregroundColor(.secondary)
-                    }
-                    Divider()
-                    ForEach(repos.prefix(8)) { r in
-                        GridRow {
-                            Text(r.repo).font(.caption).lineLimit(1)
-                            Text("$\(String(format: "%.2f", r.cost))").font(.caption2).monospacedDigit()
-                            Text("\(r.netLines)").font(.caption2).monospacedDigit()
-                            let cpl = r.netLines > 0 ? r.costPerLine : 0
-                            Text("$\(String(format: "%.2f", cpl))\(I18n.t("menu.per_line"))")
-                                .font(.caption2).monospacedDigit()
-                        }
-                    }
-                }
-            }
-        }.frame(maxWidth: .infinity)
     }
 
     // MARK: - Date formatting
@@ -591,8 +548,8 @@ struct DashboardView: View {
         dailyStats = padStats(raw, days: dayRange)
         providerCosts = await StatsService.providerDailyCosts(days: dayRange)
         codeChanges = await StatsService.dailyCodeChanges(days: dayRange)
-        models = await StatsService.modelBreakdown()
-        repos = await StatsService.repoBreakdown()
+        editorMappings = EditorDetector.certainMappings()
+        repos = await StatsService.repoBreakdown(days: dayRange, editorMappings: editorMappings)
         prediction = await StatsService.prediction()
         paddedChanges = padCodeChanges()
         subDaily = subDailyData()
