@@ -12,15 +12,8 @@ struct DailyStat: Identifiable {
     let costPerLine: Double
 }
 
-struct ModelBreakdown: Identifiable {
-    var id: String { model }
-    let model: String
-    let cost: Double
-    let calls: Int
-}
-
 struct CPLSource: Identifiable {
-    var id: String { label }
+    var id: String { "\(label)-\(String(format: "%.4f", cpl))" }
     let label: String        // "Claude Code", "GitHub Copilot"
     let cpl: Double          // cost per 1000 lines, independent per source
 }
@@ -123,37 +116,7 @@ enum StatsService {
         }
     }
 
-    // MARK: - Model breakdown (this week)
-
-    /// Calendar with Monday as first weekday.
-    static var mondayCalendar: Calendar {
-        var cal = Calendar.current
-        cal.firstWeekday = 2
-        return cal
-    }
-
-    static func modelBreakdown() async -> [ModelBreakdown] {
-        let cal = StatsService.mondayCalendar
-        let weekStart = Int64(cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!.timeIntervalSince1970 * 1000)
-        do {
-            let rows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: """
-                    SELECT COALESCE(model, 'unknown') AS m,
-                           COALESCE(SUM(cost_usd), 0) AS c,
-                           COUNT(*) AS cnt
-                    FROM usage_event
-                    WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
-                    GROUP BY m ORDER BY c DESC
-                    """, arguments: [weekStart])
-            }
-            return rows.map { r in
-                let c: Int64 = r["cnt"]
-                return ModelBreakdown(model: (r["m"] as String?) ?? "?", cost: (r["c"] as Double?) ?? 0, calls: Int(c))
-            }
-        } catch { return [] }
-    }
-
-    // MARK: - Repo breakdown (this week)
+    // MARK: - Repo breakdown
 
     static func repoBreakdown(days: Int = 7, editorMappings: [EditorDetector.Mapping] = []) async -> [RepoBreakdown] {
         let cal = Calendar.current
@@ -201,7 +164,7 @@ enum StatsService {
                 // Collect all subscription sources matching this repo
                 var subSources: [CPLSource] = []
                 for m in certainMappings {
-                    if p.hasSuffix("/\(m.repoPath)") || m.repoPath.hasSuffix("/\(p)") || p == m.repoPath {
+                    if p.hasSuffix(m.repoPath) || m.repoPath.hasSuffix(p) || p == m.repoPath {
                         // Subscription-only CPL: daily cost × days / totalChanges × 1000
                         let subCPL = total > 0 ? m.dailySubscriptionCost * Double(days) * 1000 / Double(total) : 0.0
                         if subCPL > 0 {

@@ -16,7 +16,6 @@ enum EditorDetector {
 
     enum Confidence {
         case certain   // storage.json → git rev-parse confirmed
-        case possible  // storage.json found but not a git repo
     }
 
     // MARK: - Editor definitions
@@ -115,7 +114,8 @@ enum EditorDetector {
         var seenRepos = Set<String>()
         var results: [Mapping] = []
         for uri in folderURIs {
-            let workspacePath = uri.hasPrefix("file://") ? String(uri.dropFirst(7)) : uri
+            let rawPath = uri.hasPrefix("file://") ? String(uri.dropFirst(7)) : uri
+            let workspacePath = rawPath.removingPercentEncoding ?? rawPath
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: workspacePath, isDirectory: &isDir), isDir.boolValue
             else { continue }
@@ -137,6 +137,17 @@ enum EditorDetector {
     // MARK: - Git helpers
 
     private static func gitToplevel(at path: String) -> String? {
+        // Fast path: check for .git directly before spawning a process
+        let gitPath = path.hasSuffix("/.git") ? path : "\(path)/.git"
+        var isDir: ObjCBool = false
+        let hasGit = FileManager.default.fileExists(atPath: gitPath, isDirectory: &isDir)
+        if !hasGit {
+            // Check for .git file (worktree reference)
+            var isFile: ObjCBool = false
+            let gitFile = FileManager.default.fileExists(atPath: gitPath, isDirectory: &isFile)
+            if !gitFile { return nil }
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", path, "rev-parse", "--show-toplevel"]
@@ -148,8 +159,20 @@ enum EditorDetector {
 
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
+            return nil
+        }
+
+        // Timeout: 5 seconds
+        let deadline = DispatchTime.now() + .seconds(5)
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global(qos: .utility).async {
+            process.waitUntilExit()
+            group.leave()
+        }
+        if group.wait(timeout: deadline) == .timedOut {
+            process.terminate()
             return nil
         }
 
