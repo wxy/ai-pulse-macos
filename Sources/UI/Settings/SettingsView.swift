@@ -327,13 +327,9 @@ struct ToolsTab: View {
 // MARK: - Repos
 
 private let repoDirsKey = "repo_search_dirs"
-private var repoCache: [String: [String]] = [:]
 
 struct ReposTab: View {
-    @State private var searchDirs: [String] = []
-    @State private var selectedDir: String? = nil
-    @State private var reposForSelected: [String] = []
-    @State private var counts: [String: Int] = [:]
+    @State private var dirEntries: [DirEntry] = []
     @State private var deleteTarget: String? = nil
     @State private var showDelete = false
 
@@ -341,90 +337,155 @@ struct ReposTab: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(I18n.t("repos.title")).font(.title3).fontWeight(.semibold)
 
-            HStack(spacing: 10) {
-                // Left: directories
-                VStack(alignment: .leading) {
-                    HStack {
-                        Text(I18n.t("repos.directories")).font(.caption).foregroundColor(.secondary)
-                        Spacer()
-                        Button(action: pickDir) {
-                            Label(I18n.t("repos.add"), systemImage: "plus.circle").font(.caption)
-                        }
-                    }
-                    List(selection: $selectedDir) {
-                        ForEach(searchDirs, id: \.self) { dir in
-                            HStack {
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach($dirEntries) { $entry in
+                        VStack(spacing: 0) {
+                            // Directory row
+                            HStack(spacing: 6) {
                                 Image(systemName: "folder").foregroundColor(.accentColor)
-                                Text(dir).font(.caption).lineLimit(1)
+                                Text(entry.path).font(.body).lineLimit(1).truncationMode(.middle)
                                 Spacer()
-                                Text("\(counts[dir, default: 0])").font(.caption2).foregroundColor(.secondary)
-                                    .padding(.horizontal, 5).background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
-                                Button { deleteTarget = dir; showDelete = true } label: {
+                                if entry.isScanning {
+                                    ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
+                                } else {
+                                    Text("\(entry.repoCount)")
+                                        .font(.caption2).foregroundColor(.secondary)
+                                        .padding(.horizontal, 5)
+                                        .background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
+                                }
+                                Image(systemName: entry.isExpanded ? "chevron.down" : "chevron.right")
+                                    .font(.caption2).foregroundColor(.secondary)
+                                    .frame(width: 12)
+                                Button { deleteTarget = entry.path; showDelete = true } label: {
                                     Image(systemName: "xmark.circle").font(.caption).foregroundColor(.secondary)
                                 }.buttonStyle(.plain)
                             }
-                            .padding(.vertical, 1).tag(dir)
-                        }
-                    }
-                    .listStyle(.bordered).frame(minWidth: 200, idealWidth: 220, maxWidth: 240, minHeight: 140, maxHeight: 140)
-                }
+                            .padding(.vertical, 4).padding(.horizontal, 8)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.15)) { entry.isExpanded.toggle() }
+                            }
 
-                // Right: repos
-                VStack(alignment: .leading) {
-                    Text("\(I18n.t("repos.repositories")) (\(reposForSelected.count))").font(.caption).foregroundColor(.secondary)
-                    if reposForSelected.isEmpty {
-                        Text(I18n.t("repos.select_dir")).font(.caption).foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center).padding(.top, 30)
-                    } else {
-                        List(reposForSelected, id: \.self) { repo in
-                            Label(repo, systemImage: "chevron.left.forwardslash.chevron.right").font(.caption)
+                            // Expanded repos — no checkboxes, confirmation only
+                            if entry.isExpanded {
+                                VStack(spacing: 2) {
+                                    if entry.isScanning && entry.repos.isEmpty {
+                                        HStack {
+                                            ProgressView().scaleEffect(0.5)
+                                            Text(I18n.t("onboarding.repos_scanning")).font(.caption2).foregroundColor(.secondary)
+                                            Spacer()
+                                        }.padding(.leading, 30)
+                                    } else if entry.repos.isEmpty {
+                                        Text(I18n.t("repos.no_repos"))
+                                            .font(.caption2).foregroundColor(.secondary)
+                                            .padding(.leading, 30)
+                                    } else {
+                                        ForEach(entry.repos, id: \.self) { name in
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                                                    .font(.caption2).foregroundColor(.secondary)
+                                                Text(name).font(.caption).lineLimit(1)
+                                                Spacer()
+                                            }
+                                            .padding(.vertical, 2).padding(.leading, 30)
+                                        }
+                                    }
+                                }
+                                .padding(.bottom, 4)
+                            }
                         }
-                        .listStyle(.bordered)
+                        .background(Color(nsColor: .quaternarySystemFill).opacity(0.4))
+                        .cornerRadius(6)
                     }
-                }.frame(minWidth: 160, idealWidth: 190, maxWidth: 210, minHeight: 140, maxHeight: 140)
+                }
             }
 
-            Text(String(format: I18n.t("repos.summary"), searchDirs.count, counts.values.reduce(0,+))).font(.caption2).foregroundColor(.secondary)
+            HStack {
+                Button(action: pickDir) {
+                    Label(I18n.t("repos.add"), systemImage: "plus.circle").font(.caption)
+                }
+                Spacer()
+            }
+
+            let totalRepos = dirEntries.reduce(0) { $0 + $1.repoCount }
+            Text(String(format: I18n.t("repos.summary"), dirEntries.count, totalRepos)).font(.caption2).foregroundColor(.secondary)
         }
-        .onAppear {
-            load()
-            refreshAll()
-            if selectedDir == nil || !searchDirs.contains(selectedDir!) { selectedDir = searchDirs.first }
-        }
-        .onChange(of: selectedDir) { _, d in if let d, searchDirs.contains(d) { reposForSelected = scan(d) } else { reposForSelected = [] } }
+        .onAppear { startScan() }
         .alert(I18n.t("repos.delete_title"), isPresented: $showDelete) {
             Button(I18n.t("repos.cancel"), role: .cancel) {}
             Button(I18n.t("repos.remove"), role: .destructive) {
-                if let d = deleteTarget { searchDirs.removeAll { $0 == d }; save(); refreshAll(); if selectedDir == d { selectedDir = searchDirs.first } }
+                if let d = deleteTarget {
+                    dirEntries.removeAll { $0.path == d }
+                    save()
+                }
             }
         } message: { Text(String(format: I18n.t("repos.delete_msg"), deleteTarget ?? "")) }
+    }
+
+    // MARK: - Scanning
+
+    private func startScan() {
+        let dirs = UserDefaults.standard.stringArray(forKey: repoDirsKey) ?? []
+        if dirs.isEmpty {
+            let defaults = ["~/dev", "~/projects", "~/code"]
+            UserDefaults.standard.set(defaults, forKey: repoDirsKey)
+            dirEntries = defaults.map { DirEntry(path: $0) }
+        } else {
+            dirEntries = dirs.map { DirEntry(path: $0) }
+        }
+        Task {
+            for i in dirEntries.indices {
+                await scanOne(at: i)
+            }
+        }
     }
 
     private func pickDir() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.prompt = I18n.t("repos.add")
         if panel.runModal() == .OK, let url = panel.url {
             let p = url.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
-            if !searchDirs.contains(p) { searchDirs.append(p); save(); refreshAll(); if selectedDir == nil { selectedDir = p } }
+            guard !dirEntries.contains(where: { $0.path == p }) else { return }
+            let entry = DirEntry(path: p)
+            dirEntries.append(entry)
+            save()
+            let idx = dirEntries.count - 1
+            Task { await scanOne(at: idx) }
         }
     }
-    private func load() {
-        if let s = UserDefaults.standard.stringArray(forKey: repoDirsKey), !s.isEmpty { searchDirs = s }
-        if searchDirs.isEmpty { searchDirs = ["~/dev", "~/projects", "~/code"]; save() }
-    }
-    private func save() { UserDefaults.standard.set(searchDirs, forKey: repoDirsKey) }
-    private func refreshAll() { counts.removeAll(); for d in searchDirs { counts[d] = scan(d).count } }
-    private func scan(_ dir: String) -> [String] {
-        if let cached = repoCache[dir] { return cached }
-        let expanded = NSString(string: dir).expandingTildeInPath; let fm = FileManager.default
-        guard fm.fileExists(atPath: expanded),
-              let e = fm.enumerator(at: URL(fileURLWithPath: expanded), includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsPackageDescendants])
-        else { return [] }
-        var found: [String] = []
-        for case let url as URL in e {
-            let git = url.appendingPathComponent(".git"); var d: ObjCBool = false
-            if fm.fileExists(atPath: git.path, isDirectory: &d), d.boolValue { found.append(url.lastPathComponent); e.skipDescendants() }
+
+    private func save() { UserDefaults.standard.set(dirEntries.map(\.path), forKey: repoDirsKey) }
+
+    private func scanOne(at idx: Int) async {
+        guard idx < dirEntries.count else { return }
+        let path = dirEntries[idx].path
+        await MainActor.run { dirEntries[idx].isScanning = true }
+        let foundRepos = await Task.detached { () -> [String] in
+            let expanded = NSString(string: path).expandingTildeInPath
+            let fm = FileManager.default
+            var result: [String] = []
+            if fm.fileExists(atPath: expanded),
+               let e = fm.enumerator(at: URL(fileURLWithPath: expanded),
+                                    includingPropertiesForKeys: [.isDirectoryKey],
+                                    options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
+                for case let url as URL in e {
+                    let git = url.appendingPathComponent(".git")
+                    var d: ObjCBool = false
+                    if fm.fileExists(atPath: git.path, isDirectory: &d), d.boolValue {
+                        result.append(url.lastPathComponent)
+                        e.skipDescendants()
+                    }
+                }
+            }
+            result.sort()
+            return result
+        }.value
+        await MainActor.run {
+            guard idx < dirEntries.count else { return }
+            dirEntries[idx].repoCount = foundRepos.count
+            dirEntries[idx].repos = foundRepos
+            dirEntries[idx].isScanning = false
         }
-        let sorted = found.sorted(); repoCache[dir] = sorted; return sorted
     }
 }
 
