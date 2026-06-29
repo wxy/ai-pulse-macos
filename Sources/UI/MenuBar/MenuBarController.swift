@@ -67,46 +67,41 @@ final class MenuBarController: NSObject {
                 }
 
                 // Stats submenus — only shown if they have items
-                let bs = IntegrationRegistry.enabledBGrade()
-                let hasProviderItems = bs.contains { provider in
-                    if let cached = ApiPoller.shared.cachedBalance(for: provider.id),
-                       let bal = cached.balances.first, bal.totalBalance > 0 { return true }
-                    return false
-                }
-                let hasSubmenus = !stats.repos.isEmpty || hasProviderItems
+                let hasSubmenus = !stats.repos.isEmpty || !stats.providerCosts.isEmpty
                 if hasSubmenus { self.menu.addItem(.separator()) }
 
-                // Provider submenu — B-grade balance data from ApiPoller
-                if !bs.isEmpty {
-                    let m = NSMenuItem(title: I18n.t("menu.by_provider"), action: nil, keyEquivalent: "")
+                // Provider submenu — consumption from DB (USD)
+                if !stats.providerCosts.isEmpty {
+                    let m = NSMenuItem(title: I18n.t("menu.by_provider"), action: #selector(self.openDashboard), keyEquivalent: "")
+                    m.target = self
                     let s = NSMenu()
-                    for b in bs {
-                        if let cached = ApiPoller.shared.cachedBalance(for: b.id),
-                           let bal = cached.balances.first {
-                            s.addItem(NSMenuItem(
-                                title: "\(b.displayName) · \(bal.currency) \(String(format: "%.2f", bal.totalBalance))",
-                                action: nil, keyEquivalent: ""
-                            ))
-                        }
+                    for pc in stats.providerCosts {
+                        let name = IntegrationRegistry.all.first(where: { $0.id == pc.providerId })?.displayName ?? pc.providerId
+                        let item = NSMenuItem(
+                            title: "\(name) · $\(String(format: "%.2f", pc.cost))",
+                            action: #selector(self.openDashboard), keyEquivalent: ""
+                        )
+                        item.target = self
+                        s.addItem(item)
                     }
-                    if s.numberOfItems > 0 {
-                        m.submenu = s; self.menu.addItem(m)
-                    }
+                    m.submenu = s; self.menu.addItem(m)
                 }
                 if !stats.repos.isEmpty {
                     let m = NSMenuItem(title: I18n.t("menu.by_repo"), action: #selector(self.openDashboard), keyEquivalent: "")
                     m.target = self
                     let s = NSMenu()
-                    for r in stats.repos { s.addItem(NSMenuItem(title: "\(r.name) · \(r.summary)", action: nil, keyEquivalent: "")) }
+                    for r in stats.repos {
+                        let item = NSMenuItem(title: "\(r.name) · \(r.summary)", action: #selector(self.openDashboard), keyEquivalent: "")
+                        item.target = self
+                        s.addItem(item)
+                    }
                     m.submenu = s; self.menu.addItem(m)
                 }
 
-                // Preferences + Quit
                 self.menu.addItem(.separator())
                 let prefsItem = NSMenuItem(title: I18n.t("menu.preferences"), action: #selector(self.openPreferences), keyEquivalent: ",")
                 prefsItem.target = self; self.menu.addItem(prefsItem)
-                let quitItem = NSMenuItem(title: I18n.t("menu.quit"), action: #selector(self.quit), keyEquivalent: "q")
-                quitItem.target = self; self.menu.addItem(quitItem)
+                // Quit is in the shared menu; applicationDockMenu filters it out
 
                 // Tint: accent color when activity, secondary when idle
                 if let button = self.statusItem.button {
@@ -122,7 +117,7 @@ final class MenuBarController: NSObject {
 
     private struct RepoStat { let name: String; let added: Int; let deleted: Int; let cost: Double
         var summary: String { "$\(String(format: "%.2f", cost)) · +\(added)/-\(deleted) \(I18n.t("menu.lines"))" } }
-    private struct Stats { let todaySummary: String?; let weekSummary: String?; let repos: [RepoStat]; let hasActivity: Bool }
+    private struct Stats { let todaySummary: String?; let weekSummary: String?; let repos: [RepoStat]; let providerCosts: [(providerId: String, cost: Double)]; let hasActivity: Bool }
 
     private func fetchStats() async -> Stats {
         do {
@@ -179,6 +174,13 @@ final class MenuBarController: NSObject {
             }
             for r in rcRows { if let p: String = r["p"], !p.isEmpty { cbr[p] = r["c"] ?? 0 } }
 
+            // Per-provider cost this week (consumption from DB, not balance API)
+            var providerCosts: [(providerId: String, cost: Double)] = []
+            let pcRows: [Row] = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT provider_id AS p, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>') GROUP BY provider_id ORDER BY c DESC", arguments: [weekStart])
+            }
+            for r in pcRows { if let p: String = r["p"], !p.isEmpty, let c: Double = r["c"], c > 0 { providerCosts.append((p, c)) } }
+
             var repos: [RepoStat] = []
             for (path, cost) in cbr {
                 let (a, d) = repoAddDel[path] ?? (0, 0)
@@ -199,11 +201,11 @@ final class MenuBarController: NSObject {
 
             let hasActivity = weekCnt > 0 || !repos.isEmpty || weekAdded > 0 || weekDeleted > 0
             if !hasActivity {
-                return Stats(todaySummary: nil, weekSummary: nil, repos: [], hasActivity: false)
+                return Stats(todaySummary: nil, weekSummary: nil, repos: [], providerCosts: [], hasActivity: false)
             }
-            return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos, hasActivity: true)
+            return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos, providerCosts: providerCosts, hasActivity: true)
         } catch {
-            return Stats(todaySummary: I18n.t("menu.unavailable"), weekSummary: nil, repos: [], hasActivity: false)
+            return Stats(todaySummary: I18n.t("menu.unavailable"), weekSummary: nil, repos: [], providerCosts: [], hasActivity: false)
         }
     }
 

@@ -60,12 +60,12 @@ struct DashboardView: View {
     var cplGuidanceCard: some View {
         VStack(spacing: 12) {
             Image(systemName: "chart.line.uptrend.xyaxis").font(.system(size: 32)).foregroundColor(.secondary)
-            Text("单行成本不可用").font(.headline)
-            Text("启用 Claude Code 或 aider 以解锁 CPL 统计。这些工具会写入本地日志，可精确归因到仓库。")
+            Text(I18n.t("dashboard.cpl_unavailable_title")).font(.headline)
+            Text(I18n.t("dashboard.cpl_unavailable_desc"))
                 .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
             HStack(spacing: 16) {
-                Text("Claude Code：`~/.claude/projects/`").font(.caption2).foregroundColor(.secondary)
-                Text("aider：仓库内 `.aider.llm.history`").font(.caption2).foregroundColor(.secondary)
+                Text(I18n.t("dashboard.cpl_claude_path")).font(.caption2).foregroundColor(.secondary)
+                Text(I18n.t("dashboard.cpl_aider_path")).font(.caption2).foregroundColor(.secondary)
             }
         }
         .padding(24).frame(maxWidth: .infinity)
@@ -73,61 +73,34 @@ struct DashboardView: View {
         .cornerRadius(10)
     }
 
-    // MARK: - Subscription card (C-grade)
-
-    var subscriptionCard: some View {
-        let subs = IntegrationRegistry.enabledCGrade()
-        guard !subs.isEmpty else { return AnyView(EmptyView()) }
+    /// Per-provider API accumulated cost from daily stats (not balance API)
+    var apiBreakdownCard: some View {
+        let grouped = Dictionary(grouping: providerCosts, by: { $0.providerId })
+            .mapValues { $0.reduce(0.0) { $0 + $1.cost } }
+            .sorted(by: { $0.value > $1.value })
+        guard !grouped.isEmpty else { return AnyView(EmptyView()) }
+        let total = grouped.reduce(0.0) { $0 + $1.value }
         return AnyView(
             VStack(alignment: .leading, spacing: 8) {
-                Text("订阅月费").font(.headline)
-                Text("⚠️ 不参与 CPL 计算。可能与 Token 花费重叠。")
-                    .font(.caption).foregroundColor(.secondary)
-                ForEach(subs, id: \.id) { s in
-                    let cfg = IntegrationRegistry.config(for: s.id)
-                    HStack {
-                        Text(s.displayName).font(.body)
-                        Spacer()
-                        Text(cfg.subscriptionTier).font(.callout).foregroundColor(.secondary)
-                        Text("· 日均 $\(String(format: "%.2f", estimatedDailySub(s.id)))")
-                            .font(.caption).foregroundColor(.secondary).monospacedDigit()
-                    }
-                    .padding(.vertical, 2)
+                Text(I18n.t("dashboard.api_total_title")).font(.headline)
+                HStack {
+                    Text(I18n.t("dashboard.total")).font(.body)
+                    Spacer()
+                    Text("$\(String(format: "%.2f", total))").font(.callout).monospacedDigit().fontWeight(.semibold)
                 }
-            }
-            .padding(16)
-            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
-            .cornerRadius(10)
-        )
-    }
-
-    // MARK: - API Balance card (B-grade)
-
-    var apiBalanceCard: some View {
-        let bs = IntegrationRegistry.enabledBGrade()
-        guard !bs.isEmpty else { return AnyView(EmptyView()) }
-        return AnyView(
-            VStack(alignment: .leading, spacing: 8) {
-                Text("API 余额").font(.headline)
-                Text("⚠️ 不参与 CPL。余额变化可能包含 Token 花费中的数据。")
-                    .font(.caption).foregroundColor(.secondary)
-                ForEach(bs, id: \.id) { b in
+                Divider()
+                ForEach(grouped, id: \.key) { providerId, cost in
+                    let name = IntegrationRegistry.all.first(where: { $0.id == providerId })?.displayName ?? providerId
                     HStack {
-                        Text(b.displayName).font(.body)
+                        Text(name).font(.caption)
                         Spacer()
-                        if let cached = ApiPoller.shared.cachedBalance(for: b.id),
-                           let bal = cached.balances.first {
-                            Text("\(bal.currency) \(String(format: "%.2f", bal.totalBalance))")
-                                .font(.callout).monospacedDigit()
-                        } else {
-                            Text("--").foregroundColor(.secondary)
-                        }
+                        Text("$\(String(format: "%.2f", cost))").font(.caption).monospacedDigit()
                     }
                 }
             }
             .padding(16)
-            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
-            .cornerRadius(10)
+            .frame(maxWidth: .infinity)
+            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3)).cornerRadius(10)
         )
     }
 
@@ -142,39 +115,53 @@ struct DashboardView: View {
         return 0
     }
 
-    // MARK: - Summary cards
+    // MARK: - Summary cards (3×2 grid)
 
     var summaryCards: some View {
-        HStack(spacing: 12) {
-            card(title: I18n.t("dashboard.month_spent"),
-                 value: prediction.map { "$\(String(format: "%.2f", $0.monthSoFar))" } ?? "--")
-            card(title: I18n.t("dashboard.month_projected"),
-                 value: prediction.map { "$\(String(format: "%.2f", $0.monthProjected))" } ?? "--")
-            weekAddedDelCard
-            card(title: I18n.t("dashboard.sub_daily"),
-                 value: "$\(String(format: "%.2f", totalSubDaily()))")
+        let apiSpent = dailyStats.reduce(0.0) { $0 + $1.cost }
+        let added = dailyStats.reduce(0) { $0 + max(0, $1.netLines) }
+        let deleted = dailyStats.reduce(0) { $0 + max(0, -$1.netLines) }
+        let periodLabel = dayRange <= 7
+            ? I18n.t("menu.this_week")
+            : I18n.t("dashboard.this_month")
+        return VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                card(title: "\(periodLabel)\(I18n.t("dashboard.api_spent"))",
+                     value: "$\(String(format: "%.2f", apiSpent))")
+                card(title: I18n.t("dashboard.sub_daily"),
+                     value: "$\(String(format: "%.2f", totalSubDaily()))")
+                card(title: "\(periodLabel)\(I18n.t("dashboard.code_added"))",
+                     value: "+\(added)")
+            }
+            HStack(spacing: 8) {
+                card(title: "\(periodLabel)\(I18n.t("dashboard.api_projected"))",
+                     value: prediction.map { "$\(String(format: "%.2f", $0.monthProjected))" } ?? "--")
+                card(title: I18n.t("dashboard.sub_monthly_label"),
+                     value: "$\(String(format: "%.2f", totalSubMonthly()))")
+                card(title: "\(periodLabel)\(I18n.t("dashboard.code_deleted"))",
+                     value: "-\(deleted)")
+            }
         }
     }
 
     func card(title: String, value: String) -> some View {
         VStack(spacing: 4) {
-            Text(value).font(.title3).fontWeight(.bold).monospacedDigit()
-            Text(title).font(.caption2).foregroundColor(.secondary)
+            Text(value).font(.subheadline).fontWeight(.semibold).monospacedDigit()
+            Text(title).font(.caption2).foregroundColor(.secondary).lineLimit(1)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 10)
+        .frame(maxWidth: .infinity).padding(.vertical, 8)
         .background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
     }
 
-    var weekAddedDelCard: some View {
-        let added = codeChanges.reduce(0) { $0 + $1.added }
-        let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
-        return VStack(spacing: 2) {
-            Text("+\(added)").font(.subheadline).fontWeight(.semibold).monospacedDigit()
-            Text("-\(deleted)").font(.subheadline).fontWeight(.semibold).monospacedDigit()
-            Text(I18n.t("dashboard.week_added_del")).font(.caption2).foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity).padding(.vertical, 10)
-        .background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
+    func apiDailyAvg() -> Double {
+        let total = dailyStats.reduce(0.0) { $0 + $1.cost }
+        let days = max(dailyStats.filter { $0.cost > 0.001 }.count, 1)
+        return total / Double(days)
+    }
+
+    func totalSubMonthly() -> Double {
+        let subs = IntegrationRegistry.enabledCGrade()
+        return subs.reduce(0.0) { sum, s in sum + estimatedDailySub(s.id) * 30 }
     }
 
     func totalSubDaily() -> Double {
@@ -260,8 +247,6 @@ struct DashboardView: View {
                             .offset(x: min(max(costHoverX - 40, 0), 560), y: 0)
                     }
                 }
-                Text(I18n.t("dashboard.cost_footnote"))
-                    .font(.caption2).foregroundColor(.secondary)
             }
         }
         .padding(16)
@@ -455,7 +440,7 @@ struct DashboardView: View {
                     HStack {
                         Text(r.repo).font(.caption).lineLimit(1)
                         Spacer()
-                        Text("$\(String(format: "%.2f", r.costPerLine))/\(I18n.t("menu.per_line"))")
+                        Text("$\(String(format: "%.2f", r.costPerLine))\(I18n.t("menu.per_line"))")
                             .font(.caption).monospacedDigit()
                     }
                 }
@@ -473,8 +458,7 @@ struct DashboardView: View {
 
     var bottomCards: some View {
         HStack(alignment: .top, spacing: 16) {
-            apiBalanceCard
-            subscriptionCard
+            apiBreakdownCard
             if hasAGrade {
                 cplInfoCard
             } else {
@@ -534,10 +518,10 @@ struct DashboardView: View {
             } else {
                 Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
                     GridRow {
-                        Text("Repository").font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.col_repo")).font(.caption2).foregroundColor(.secondary)
                         Text(I18n.t("dashboard.cost_usd")).font(.caption2).foregroundColor(.secondary)
                         Text(I18n.t("menu.lines")).font(.caption2).foregroundColor(.secondary)
-                        Text("CPL").font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.col_cpl")).font(.caption2).foregroundColor(.secondary)
                     }
                     Divider()
                     ForEach(repos.prefix(8)) { r in

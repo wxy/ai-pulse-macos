@@ -3,8 +3,8 @@ import AppKit
 /// Dock icon with a "gauge arc" overlay that fills as daily spend grows.
 ///
 /// Arc colors: green (normal), orange (>1.5x daily avg), red (>3x).
-/// The arc fills clockwise from the 7-o'clock position; a full circle
-/// represents 3× the 7-day daily average.
+/// The arc fills clockwise from the X-axis (3-o'clock position); a full circle
+/// represents 3× the 30-day daily average.
 final class DockManager {
     static let shared = DockManager()
     private var timer: Timer?
@@ -20,48 +20,43 @@ final class DockManager {
 
     func stop() { timer?.invalidate(); timer = nil }
 
+    /// 30-day rolling daily average — only counts days with actual cost
+    private func rollingDailyAvg() async -> Double {
+        let stats = await StatsService.dailyStats(days: 30)
+        let daysWithCost = stats.filter { $0.cost > 0.001 }
+        guard !daysWithCost.isEmpty else { return 0 }
+        let total = daysWithCost.reduce(0.0) { $0 + $1.cost }
+        return total / Double(daysWithCost.count)
+    }
+
     private func refresh() {
         Task {
             let stats = await StatsService.dailyStats(days: 1)
             let todayCost = stats.first?.cost ?? 0
-            let prediction = await StatsService.prediction()
+            let dailyAvg = await rollingDailyAvg()
 
             await MainActor.run {
                 let tile = NSApp.dockTile
-                let dailyAvg = prediction.dailyRate
 
-                // No spend today → reset to plain icon, no arc
                 guard todayCost > 0.001 else {
                     tile.badgeLabel = nil
                     NSApp.applicationIconImage = self.baseIcon
                     return
                 }
-                tile.badgeLabel = todayCost < 10
-                    ? "$\(String(format: "%.2f", todayCost))"
-                    : "$\(String(format: "%.0f", todayCost))"
+                tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
 
-                // Gauge arc: how much of the daily budget is spent?
+                // Gauge arc fill = today / (avg × 3), capped at 100%
                 let fillFraction: CGFloat
                 let arcColor: NSColor
-
                 if dailyAvg > 0 {
                     let ratio = todayCost / dailyAvg
-                    if ratio > 3 {
-                        fillFraction = 1.0
-                        arcColor = .systemRed
-                    } else if ratio > 1.5 {
-                        fillFraction = CGFloat(ratio / 3.0)
-                        arcColor = .systemOrange
-                    } else if ratio > 0.01 {
-                        fillFraction = CGFloat(ratio / 3.0)
-                        arcColor = .systemGreen
-                    } else {
-                        fillFraction = 0
-                        arcColor = .clear
-                    }
+                    let fill = min(CGFloat(ratio / 3.0), 1.0)
+                    print("Dock: today=$\(String(format: "%.2f", todayCost)), avg=$\(String(format: "%.2f", dailyAvg)), ratio=\(String(format: "%.2f", ratio)), fill=\(String(format: "%.1f%%", fill*100))")
+                    if ratio > 3 { fillFraction = fill; arcColor = .systemRed }
+                    else if ratio > 1.5 { fillFraction = fill; arcColor = .systemOrange }
+                    else { fillFraction = fill; arcColor = .systemGreen }
                 } else {
-                    fillFraction = 0
-                    arcColor = .clear
+                    fillFraction = 0; arcColor = .clear
                 }
 
                 NSApp.applicationIconImage = iconWithArc(fill: fillFraction, color: arcColor)
@@ -87,11 +82,11 @@ final class DockManager {
             let lineWidth: CGFloat = 48 * scale     // ring stroke width
 
             let path = NSBezierPath()
-            let startAngle: CGFloat = 135           // 7 o'clock
+            let startAngle: CGFloat = 0             // X-axis (3 o'clock)
             let sweepAngle: CGFloat = 360 * fill    // full circle at 3× daily avg
             path.appendArc(
                 withCenter: center, radius: radius,
-                startAngle: startAngle, endAngle: startAngle + sweepAngle,
+                startAngle: startAngle, endAngle: startAngle - sweepAngle,
                 clockwise: true
             )
             color.setStroke()

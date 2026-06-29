@@ -42,19 +42,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    // Dock right-click → same menu as status bar, minus Quit (macOS adds its own)
+    // Dock right-click → shared menu minus Quit, submenus are text-only copies
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         guard let src = menuBarController?.menu else { return nil }
-        let copy = NSMenu()
+        let dock = NSMenu()
         for item in src.items {
-            // Skip the Quit item (macOS Dock automatically appends one)
-            if item.keyEquivalent == "q" && item.action != nil { continue }
-            let dup = NSMenuItem(title: item.title, action: item.action, keyEquivalent: item.keyEquivalent)
-            dup.target = item.target
-            dup.submenu = item.submenu
-            copy.addItem(dup)
+            if item.keyEquivalent == "q" { continue }  // skip Quit (Dock has its own)
+            if item.isSeparatorItem { dock.addItem(.separator()); continue }
+            let copy = NSMenuItem(title: item.title, action: item.action, keyEquivalent: item.keyEquivalent)
+            copy.target = item.target
+            if let sub = item.submenu {
+                let subCopy = NSMenu()
+                for si in sub.items {
+                    if si.isSeparatorItem { subCopy.addItem(.separator()); continue }
+                    let siCopy = NSMenuItem(title: si.title, action: si.action, keyEquivalent: si.keyEquivalent)
+                    siCopy.target = si.target
+                    subCopy.addItem(siCopy)
+                }
+                copy.submenu = subCopy
+            }
+            dock.addItem(copy)
         }
-        return copy
+        return dock
     }
 
     func applicationWillTerminate(_ notification: Notification) {
