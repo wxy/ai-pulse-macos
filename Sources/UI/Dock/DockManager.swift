@@ -30,14 +30,15 @@ final class DockManager {
                 let tile = NSApp.dockTile
                 let dailyAvg = prediction.dailyRate
 
-                // Badge: dollar amount
-                if todayCost > 0.001 {
-                    tile.badgeLabel = todayCost < 10
-                        ? "$\(String(format: "%.2f", todayCost))"
-                        : "$\(String(format: "%.0f", todayCost))"
-                } else {
+                // No spend today → reset to plain icon, no arc
+                guard todayCost > 0.001 else {
                     tile.badgeLabel = nil
+                    NSApp.applicationIconImage = self.baseIcon
+                    return
                 }
+                tile.badgeLabel = todayCost < 10
+                    ? "$\(String(format: "%.2f", todayCost))"
+                    : "$\(String(format: "%.0f", todayCost))"
 
                 // Gauge arc: how much of the daily budget is spent?
                 let fillFraction: CGFloat

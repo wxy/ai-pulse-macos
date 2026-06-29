@@ -42,9 +42,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    // Dock right-click → same menu as status bar
+    // Dock right-click → same menu as status bar, minus Quit (macOS adds its own)
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        menuBarController?.menu
+        guard let src = menuBarController?.menu else { return nil }
+        let copy = NSMenu()
+        for item in src.items {
+            // Skip the Quit item (macOS Dock automatically appends one)
+            if item.keyEquivalent == "q" && item.action != nil { continue }
+            let dup = NSMenuItem(title: item.title, action: item.action, keyEquivalent: item.keyEquivalent)
+            dup.target = item.target
+            dup.submenu = item.submenu
+            copy.addItem(dup)
+        }
+        return copy
     }
 
     func applicationWillTerminate(_ notification: Notification) {
