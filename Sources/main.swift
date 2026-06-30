@@ -1,9 +1,7 @@
 import AppKit
 
-// Menu-bar-only app.
-// .accessory must be set BEFORE NSApp.run() to avoid a race where the
-// system classifies the process as a regular app and ignores the status item.
-// An extra activate() after a short delay ensures the menu bar item responds.
+// Dock app with Dashboard as primary window.
+// .regular gives proper Dock + Cmd+Tab presence.
 autoreleasepool {
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
