@@ -38,6 +38,8 @@ struct DashboardView: View {
     @State private var codeHoverX: CGFloat = 0
     @State private var subDaily: [ChartDataPoint] = []
     @State private var apiDaily: [ChartDataPoint] = []
+    @State private var proxyDaily: [ChartDataPoint] = []
+    @State private var proxyStats: [(hostname: String, bytesSent: Int, bytesReceived: Int)] = []
     @State private var editorMappings: [EditorDetector.Mapping] = []
 
     var hasAGrade: Bool {
@@ -219,13 +221,13 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.cost_chart")).font(.headline)
 
-            if providerCosts.isEmpty && IntegrationRegistry.enabledCGrade().isEmpty {
+            if providerCosts.isEmpty && IntegrationRegistry.enabledCGrade().isEmpty && proxyDaily.isEmpty {
                 Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 30)
             } else {
                 ZStack(alignment: .topLeading) {
                     Chart {
-                        // Single ForEach with sub first (bottom) + api second (top) for auto-stacking
-                        ForEach(subDaily + apiDaily, id: \.id) { item in
+                        // Stacking order (bottom→top): proxy → subscription → API
+                        ForEach(proxyDaily + subDaily + apiDaily, id: \.id) { item in
                             BarMark(
                                 x: .value("Date", item.date, unit: .day),
                                 y: .value("Cost", item.cost)
@@ -597,5 +599,38 @@ struct DashboardView: View {
         paddedChanges = padCodeChanges()
         subDaily = subDailyData()
         apiDaily = apiDailyData()
+        proxyStats = await StatsService.proxyDailyStats(days: timeRange.days)
+        proxyDaily = proxyChartData(proxyStats)
+    }
+
+    /// Map proxy stats to chart data points with provider name labels.
+    func proxyChartData(_ stats: [(hostname: String, bytesSent: Int, bytesReceived: Int)]) -> [ChartDataPoint] {
+        var result: [ChartDataPoint] = []
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        // Flatten per-hostname totals across the date range (proxy stats are totals, not daily)
+        for offset in 0..<chartDays {
+            guard let date = cal.date(byAdding: .day, value: offset, to: chartStart) else { continue }
+            for stat in stats {
+                let name = providerName(for: stat.hostname)
+                // Rough cost estimate from bytes (assume ~$2/M tokens, ~4 bytes/token)
+                let totalBytes = stat.bytesSent + stat.bytesReceived
+                let estCost = Double(totalBytes) / Double(chartDays) * 0.0000005  // distribute across days
+                if estCost > 0.001, date <= today {
+                    result.append(ChartDataPoint(date: date, label: "\(name) Est.", cost: estCost))
+                }
+            }
+        }
+        return result
+    }
+
+    func providerName(for hostname: String) -> String {
+        for p in ProviderRegistry.all {
+            let base = p.baseUrl.replacingOccurrences(of: "https://api.", with: "").replacingOccurrences(of: "https://", with: "")
+            if hostname.contains(base) { return p.name }
+        }
+        return hostname
+            .replacingOccurrences(of: "api.", with: "")
+            .replacingOccurrences(of: ".com", with: "")
     }
 }
