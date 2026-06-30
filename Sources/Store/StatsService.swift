@@ -12,19 +12,26 @@ struct DailyStat: Identifiable {
     let costPerLine: Double
 }
 
-struct ModelBreakdown: Identifiable {
-    var id: String { model }
-    let model: String
-    let cost: Double
-    let calls: Int
+struct CPLSource: Identifiable {
+    var id: String { "\(label)-\(String(format: "%.4f", cpl))" }
+    let label: String        // "Claude Code", "GitHub Copilot"
+    let cpl: Double          // cost per 1000 lines, independent per source
 }
 
 struct RepoBreakdown: Identifiable {
     var id: String { repo }
     let repo: String
     let cost: Double
-    let netLines: Int
-    let costPerLine: Double
+    let added: Int
+    let deleted: Int
+    var totalChanges: Int { added + deleted }
+    let costPerLine: Double                        // API-only CPL (denominator = totalChanges)
+    let subscriptionSources: [CPLSource]            // editor→subscription CPLs (independent)
+    var allSources: [CPLSource] {
+        var srcs = [CPLSource(label: "API", cpl: costPerLine)]
+        srcs.append(contentsOf: subscriptionSources)
+        return srcs.filter { $0.cpl > 0 }
+    }
 }
 
 struct Prediction {
@@ -109,64 +116,68 @@ enum StatsService {
         }
     }
 
-    // MARK: - Model breakdown (this week)
+    // MARK: - Repo breakdown
 
-    /// Calendar with Monday as first weekday.
-    static var mondayCalendar: Calendar {
-        var cal = Calendar.current
-        cal.firstWeekday = 2
-        return cal
-    }
+    static func repoBreakdown(days: Int = 7, editorMappings: [EditorDetector.Mapping] = []) async -> [RepoBreakdown] {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
+        let startMs = Int64(start.timeIntervalSince1970 * 1000)
+        let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
 
-    static func modelBreakdown() async -> [ModelBreakdown] {
-        let cal = StatsService.mondayCalendar
-        let weekStart = Int64(cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!.timeIntervalSince1970 * 1000)
-        do {
-            let rows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: """
-                    SELECT COALESCE(model, 'unknown') AS m,
-                           COALESCE(SUM(cost_usd), 0) AS c,
-                           COUNT(*) AS cnt
-                    FROM usage_event
-                    WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
-                    GROUP BY m ORDER BY c DESC
-                    """, arguments: [weekStart])
-            }
-            return rows.map { r in
-                let c: Int64 = r["cnt"]
-                return ModelBreakdown(model: (r["m"] as String?) ?? "?", cost: (r["c"] as Double?) ?? 0, calls: Int(c))
-            }
-        } catch { return [] }
-    }
-
-    // MARK: - Repo breakdown (this week)
-
-    static func repoBreakdown() async -> [RepoBreakdown] {
-        let cal = StatsService.mondayCalendar
-        let weekStart = Int64(cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!.timeIntervalSince1970 * 1000)
         do {
             let costRows: [Row] = try await AppDatabase.shared.read { db in
                 try Row.fetchAll(db, sql: """
                     SELECT repo_path AS p, COALESCE(SUM(cost_usd), 0) AS c
-                    FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ?
+                    FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? AND ts < ?
                     GROUP BY p
-                    """, arguments: [weekStart])
+                    """, arguments: [startMs, todayMs + 86_400_000])
             }
             let lineRows: [Row] = try await AppDatabase.shared.read { db in
                 try Row.fetchAll(db, sql: """
-                    SELECT repo_path AS p, COALESCE(SUM(added - deleted), 0) AS nl
-                    FROM code_change WHERE is_merge = 0 AND ts >= ?
+                    SELECT repo_path AS p,
+                           COALESCE(SUM(added), 0) AS a,
+                           COALESCE(SUM(deleted), 0) AS d
+                    FROM code_change WHERE is_merge = 0 AND ts >= ? AND ts < ?
                     GROUP BY p
-                    """, arguments: [weekStart])
+                    """, arguments: [startMs, todayMs + 86_400_000])
             }
-            var lineMap = [String: Int]()
-            for r in lineRows { if let p: String = r["p"] { let nl: Int64 = r["nl"]; lineMap[p] = Int(nl) } }
+            var lineMap = [String: (added: Int, deleted: Int)]()
+            for r in lineRows {
+                if let p: String = r["p"] {
+                    let a: Int64 = r["a"] ?? 0; let d: Int64 = r["d"] ?? 0
+                    lineMap[p] = (Int(a), Int(d))
+                }
+            }
+
+            // Build repo path → subscription sources from certain editor detections
+            let certainMappings = editorMappings.filter { $0.confidence == .certain && $0.dailySubscriptionCost > 0 }
 
             return costRows.compactMap { r in
                 guard let p: String = r["p"], !p.isEmpty else { return nil }
-                let c: Double = r["c"]; let nl = lineMap[p] ?? 0
-                // Show repos even if netLines is 0 or negative (still tracks AI cost)
-                return RepoBreakdown(repo: URL(fileURLWithPath: p).lastPathComponent, cost: c, netLines: nl, costPerLine: nl > 0 ? c * 1000 / Double(nl) : 0)
+                let c: Double = r["c"]
+                let (a, d) = lineMap[p] ?? (0, 0)
+                let total = a + d
+                // CPL denominator = total changes (added + deleted), not net lines
+                let cpl = total > 0 ? c * 1000 / Double(total) : 0.0
+
+                // Collect all subscription sources matching this repo
+                var subSources: [CPLSource] = []
+                for m in certainMappings {
+                    if p.hasSuffix(m.repoPath) || m.repoPath.hasSuffix(p) || p == m.repoPath {
+                        // Subscription-only CPL: daily cost × days / totalChanges × 1000
+                        let subCPL = total > 0 ? m.dailySubscriptionCost * Double(days) * 1000 / Double(total) : 0.0
+                        if subCPL > 0 {
+                            subSources.append(CPLSource(label: m.toolName, cpl: subCPL))
+                        }
+                    }
+                }
+
+                return RepoBreakdown(
+                    repo: URL(fileURLWithPath: p).lastPathComponent,
+                    cost: c, added: a, deleted: d, costPerLine: cpl,
+                    subscriptionSources: subSources
+                )
             }
         } catch { return [] }
     }
