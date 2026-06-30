@@ -60,12 +60,17 @@ enum StatsService {
 
     // MARK: - Daily trend
 
-    /// Daily cost + netLines for the last `days` calendar days.
-    static func dailyStats(days: Int) async -> [DailyStat] {
+    /// Daily cost + netLines for the last `days` calendar days, or from `sinceMs` if provided.
+    static func dailyStats(days: Int, sinceMs: Int64? = nil) async -> [DailyStat] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
-        guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
-        let startMs = Int64(start.timeIntervalSince1970 * 1000)
+        let startMs: Int64
+        if let s = sinceMs {
+            startMs = s
+        } else {
+            guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
+            startMs = Int64(start.timeIntervalSince1970 * 1000)
+        }
         let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
@@ -118,11 +123,16 @@ enum StatsService {
 
     // MARK: - Repo breakdown
 
-    static func repoBreakdown(days: Int = 7, editorMappings: [EditorDetector.Mapping] = []) async -> [RepoBreakdown] {
+    static func repoBreakdown(days: Int = 7, editorMappings: [EditorDetector.Mapping] = [], sinceMs: Int64? = nil) async -> [RepoBreakdown] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
-        guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
-        let startMs = Int64(start.timeIntervalSince1970 * 1000)
+        let startMs: Int64
+        if let s = sinceMs {
+            startMs = s
+        } else {
+            guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
+            startMs = Int64(start.timeIntervalSince1970 * 1000)
+        }
         let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {

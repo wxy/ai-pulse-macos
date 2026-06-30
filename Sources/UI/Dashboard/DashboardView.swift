@@ -1,6 +1,29 @@
 import SwiftUI
 import Charts
 
+enum TimeRange: Hashable {
+    case thisWeek
+    case days30
+
+    var days: Int {
+        switch self {
+        case .thisWeek:
+            let cal = Calendar.current
+            var monCal = cal; monCal.firstWeekday = 2
+            let monday = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            return cal.dateComponents([.day], from: monday, to: cal.startOfDay(for: Date())).day! + 1
+        case .days30: return 30
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .thisWeek: return I18n.t("dashboard.this_week")
+        case .days30: return I18n.t("dashboard.days_30")
+        }
+    }
+}
+
 struct DashboardView: View {
     @State private var dailyStats: [DailyStat] = []
     @State private var providerCosts: [ProviderDailyCost] = []
@@ -8,7 +31,7 @@ struct DashboardView: View {
     @State private var paddedChanges: [DailyCodeChange] = []
     @State private var repos: [RepoBreakdown] = []
     @State private var prediction: Prediction?
-    @State private var dayRange = 7
+    @State private var timeRange = TimeRange.thisWeek
     @State private var costHoverDate: Date? = nil
     @State private var codeHoverDate: Date? = nil
     @State private var costHoverX: CGFloat = 0
@@ -30,10 +53,10 @@ struct DashboardView: View {
             HStack {
                 Text(I18n.t("dashboard.title")).font(.title2).fontWeight(.bold)
                 Spacer()
-                Picker("", selection: $dayRange) {
-                    Text(I18n.t("dashboard.days_7")).tag(7)
-                    Text(I18n.t("dashboard.days_30")).tag(30)
-                }.pickerStyle(.segmented).frame(width: 140)
+                Picker("", selection: $timeRange) {
+                    Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
+                    Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
+                }.pickerStyle(.segmented).frame(width: 160)
             }
             .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
 
@@ -56,7 +79,7 @@ struct DashboardView: View {
         .frame(width: 680, height: 640)
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await load() }
-        .onChange(of: dayRange) { _, _ in Task { await load() } }
+        .onChange(of: timeRange) { _, _ in Task { await load() } }
     }
 
     // MARK: - CPL guidance (no A-grade)
@@ -125,9 +148,7 @@ struct DashboardView: View {
         let apiSpent = dailyStats.reduce(0.0) { $0 + $1.cost }
         let added = dailyStats.reduce(0) { $0 + max(0, $1.netLines) }
         let deleted = dailyStats.reduce(0) { $0 + max(0, -$1.netLines) }
-        let periodLabel = dayRange <= 7
-            ? I18n.t("menu.this_week")
-            : I18n.t("dashboard.this_month")
+        let periodLabel = timeRange.label
         return VStack(spacing: 8) {
             HStack(spacing: 8) {
                 card(title: "\(periodLabel)\(I18n.t("dashboard.api_spent"))",
@@ -275,8 +296,8 @@ struct DashboardView: View {
         let today = cal.startOfDay(for: Date())
 
         var result = [ChartDataPoint]()
-        for offset in 0..<dayRange {
-            guard let date = cal.date(byAdding: .day, value: -(dayRange - 1 - offset), to: today) else { continue }
+        for offset in 0..<timeRange.days {
+            guard let date = cal.date(byAdding: .day, value: -(timeRange.days - 1 - offset), to: today) else { continue }
             for s in subs {
                 let cfg = IntegrationRegistry.config(for: s.id)
                 guard !cfg.subscriptionTier.isEmpty else { continue }
@@ -410,8 +431,8 @@ struct DashboardView: View {
         for c in codeChanges { map[cal.startOfDay(for: c.date)] = c }
 
         var result = [DailyCodeChange]()
-        for offset in 0..<dayRange {
-            guard let date = cal.date(byAdding: .day, value: -(dayRange - 1 - offset), to: today) else { continue }
+        for offset in 0..<timeRange.days {
+            guard let date = cal.date(byAdding: .day, value: -(timeRange.days - 1 - offset), to: today) else { continue }
             if let c = map[date] {
                 result.append(c)
             } else {
@@ -499,7 +520,7 @@ struct DashboardView: View {
     // MARK: - Date formatting
 
     var dateStride: AxisMarkValues {
-        if dayRange <= 7 {
+        if timeRange.days <= 7 {
             return .stride(by: .day)
         } else {
             return .stride(by: .day, count: 10)
@@ -544,12 +565,12 @@ struct DashboardView: View {
     }
 
     func load() async {
-        let raw = await StatsService.dailyStats(days: dayRange)
-        dailyStats = padStats(raw, days: dayRange)
-        providerCosts = await StatsService.providerDailyCosts(days: dayRange)
-        codeChanges = await StatsService.dailyCodeChanges(days: dayRange)
+        let raw = await StatsService.dailyStats(days: timeRange.days)
+        dailyStats = padStats(raw, days: timeRange.days)
+        providerCosts = await StatsService.providerDailyCosts(days: timeRange.days)
+        codeChanges = await StatsService.dailyCodeChanges(days: timeRange.days)
         editorMappings = EditorDetector.certainMappings()
-        repos = await StatsService.repoBreakdown(days: dayRange, editorMappings: editorMappings)
+        repos = await StatsService.repoBreakdown(days: timeRange.days, editorMappings: editorMappings)
         prediction = await StatsService.prediction()
         paddedChanges = padCodeChanges()
         subDaily = subDailyData()
