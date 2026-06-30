@@ -38,7 +38,7 @@ struct DashboardView: View {
     @State private var codeHoverX: CGFloat = 0
     @State private var subDaily: [ChartDataPoint] = []
     @State private var apiDaily: [ChartDataPoint] = []
-    @State private var proxyDaily: [ChartDataPoint] = []
+    @State private var proxyStats: [StatsService.ProxyDailyStat] = []
     @State private var editorMappings: [EditorDetector.Mapping] = []
 
     var hasAGrade: Bool {
@@ -69,6 +69,8 @@ struct DashboardView: View {
                         costChart.padding(.horizontal, 20)
                         codeChangeChart.padding(.horizontal, 20)
 
+                        if !proxyStats.isEmpty { proxyActivityCard.padding(.horizontal, 20) }
+
                         // Bottom cards row
                         bottomCards.padding(.horizontal, 20)
                     } else {
@@ -81,6 +83,46 @@ struct DashboardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await load() }
         .onChange(of: timeRange) { _, _ in Task { await load() } }
+    }
+
+    // MARK: - Proxy activity (byte volume, not cost)
+
+    var proxyActivityCard: some View {
+        // Aggregate per-provider byte totals from proxy stats
+        var grouped: [(name: String, bytes: Int)] = []
+        for s in proxyStats {
+            guard let name = providerName(for: s.hostname) else { continue }
+            if let idx = grouped.firstIndex(where: { $0.name == name }) {
+                grouped[idx].bytes += s.bytesSent + s.bytesReceived
+            } else {
+                grouped.append((name, s.bytesSent + s.bytesReceived))
+            }
+        }
+        grouped.sort(by: { $0.bytes > $1.bytes })
+        guard !grouped.isEmpty else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 6) {
+                Text("代理流量").font(.headline)
+                Text("HTTPS 代理截获的 AI API 流量体积（非花费金额）")
+                    .font(.caption2).foregroundColor(.secondary)
+                ForEach(grouped, id: \.name) { item in
+                    HStack {
+                        Text(item.name).font(.caption)
+                        Spacer()
+                        Text(formatBytes(Double(item.bytes))).font(.caption).monospacedDigit().foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(12)
+            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
+            .cornerRadius(8)
+        )
+    }
+
+    func formatBytes(_ bytes: Double) -> String {
+        if bytes >= 1_048_576 { return String(format: "%.1f MB", bytes / 1_048_576) }
+        if bytes >= 1024 { return String(format: "%.0f KB", bytes / 1024) }
+        return "\(Int(bytes)) B"
     }
 
     // MARK: - CPL guidance (no A-grade)
@@ -220,13 +262,13 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.cost_chart")).font(.headline)
 
-            if providerCosts.isEmpty && IntegrationRegistry.enabledCGrade().isEmpty && proxyDaily.isEmpty {
+            if providerCosts.isEmpty && IntegrationRegistry.enabledCGrade().isEmpty {
                 Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 30)
             } else {
                 ZStack(alignment: .topLeading) {
                     Chart {
-                        // Stacking order (bottom→top): proxy → subscription → API
-                        ForEach(proxyDaily + subDaily + apiDaily, id: \.id) { item in
+                        // Stacking order (bottom→top): subscription → API
+                        ForEach(subDaily + apiDaily, id: \.id) { item in
                             BarMark(
                                 x: .value("Date", item.date, unit: .day),
                                 y: .value("Cost", item.cost)
@@ -598,22 +640,7 @@ struct DashboardView: View {
         paddedChanges = padCodeChanges()
         subDaily = subDailyData()
         apiDaily = apiDailyData()
-        let proxyStats = await StatsService.proxyDailyStats(days: timeRange.days)
-        proxyDaily = proxyChartData(proxyStats)
-    }
-
-    /// Map per-day proxy stats to chart data points. Uses bytes→cost estimate:
-    /// ~4 chars/token, input $2/M tokens → $0.0000005/byte, output $8/M tokens → $0.000002/byte.
-    /// Uses a blended rate of ~$0.000001/byte (conservative mid-range estimate).
-    /// Only includes hostnames matching known AI provider API domains.
-    func proxyChartData(_ stats: [StatsService.ProxyDailyStat]) -> [ChartDataPoint] {
-        stats.compactMap { s in
-            guard let name = providerName(for: s.hostname) else { return nil }
-            let totalBytes = s.bytesSent + s.bytesReceived
-            let estCost = Double(totalBytes) * 0.000001  // ~$1/M tokens blended
-            guard estCost > 0.001 else { return nil }
-            return ChartDataPoint(date: s.date, label: "\(name) Est.", cost: estCost)
-        }
+        proxyStats = await StatsService.proxyDailyStats(days: timeRange.days)
     }
 
     /// Returns the provider display name if hostname matches a known AI API domain, nil otherwise.
