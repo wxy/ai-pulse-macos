@@ -299,15 +299,18 @@ struct DashboardView: View {
         var result = [ChartDataPoint]()
         for offset in 0..<chartDays {
             guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
-            // Only generate subscription data for days up to today (future days = 0)
-            guard date <= today else { continue }
-            for s in subs {
-                let cfg = IntegrationRegistry.config(for: s.id)
-                guard !cfg.subscriptionTier.isEmpty else { continue }
-                if let tool = SubscriptionRegistry.tool(forName: toolName(for: s.id)),
-                   let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
-                    result.append(ChartDataPoint(date: date, label: s.displayName, cost: tier.fee / daysInMonth))
+            if date <= today {
+                for s in subs {
+                    let cfg = IntegrationRegistry.config(for: s.id)
+                    guard !cfg.subscriptionTier.isEmpty else { continue }
+                    if let tool = SubscriptionRegistry.tool(forName: toolName(for: s.id)),
+                       let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
+                        result.append(ChartDataPoint(date: date, label: s.displayName, cost: tier.fee / daysInMonth))
+                    }
                 }
+            } else {
+                // Future days: generate a zero placeholder so the chart bar exists
+                result.append(ChartDataPoint(date: date, label: subs.first!.displayName, cost: 0))
             }
         }
         return result
