@@ -13,7 +13,7 @@ struct SettingsView: View {
     }
     let tabs: [(String, String)] = [
         ("General", "gear"), ("Integrations", "square.grid.2x2"), ("Repos", "folder"),
-        ("Pricing", "dollarsign.circle"), ("About", "info.circle"),
+        ("About", "info.circle"),
     ]
 
     var langBinding: Binding<String> {
@@ -25,7 +25,6 @@ struct SettingsView: View {
         case "General": return I18n.t("settings.general")
         case "Integrations": return I18n.t("settings.integrations")
         case "Repos": return I18n.t("settings.repos")
-        case "Pricing": return I18n.t("settings.pricing")
         case "About": return I18n.t("settings.about")
         default: return key
         }
@@ -64,7 +63,6 @@ struct SettingsView: View {
                 case "General":         GeneralTab(lang: langBinding).id("general.\(lang)")
                 case "Integrations":    IntegrationsSettingsTab().id("integrations.\(lang)")
                 case "Repos":          ReposTab().id("repos.\(lang)")
-                case "Pricing":        PricingTab().id("pricing.\(lang)")
                 case "About":          AboutTab().id("about.\(lang)")
                 default: EmptyView()
                 }
@@ -579,34 +577,6 @@ struct SubsTab: View {
                 }
                 await MainActor.run { dbError = nil }
             } catch { await MainActor.run { dbError = "Save: \(error.localizedDescription)" } }
-        }
-    }
-}
-
-// MARK: - Pricing
-
-struct PricingTab: View {
-    struct Row: Identifiable { let id = UUID(); let name: String; let input: Double; let output: Double }
-    let models: [Row] = [
-        Row(name: "DeepSeek V4 Pro", input: 0.5, output: 2.2),
-        Row(name: "Claude Sonnet 4", input: 3.0, output: 15.0),
-        Row(name: "GPT-4o", input: 2.5, output: 10.0),
-        Row(name: "Gemini 2.5 Pro", input: 1.25, output: 10.0),
-    ]
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(I18n.t("pricing.title")).font(.title3).fontWeight(.semibold)
-            Text(I18n.t("pricing.desc")).font(.caption).foregroundColor(.secondary)
-            Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 6) {
-                GridRow { Text(I18n.t("pricing.model")).font(.caption).foregroundColor(.secondary); Text(I18n.t("pricing.input")).font(.caption).foregroundColor(.secondary); Text(I18n.t("pricing.output")).font(.caption).foregroundColor(.secondary) }
-                ForEach(models) { m in
-                    GridRow {
-                        Text(m.name).font(.callout)
-                        Text("$\(String(format: "%.2f", m.input))").monospacedDigit()
-                        Text("$\(String(format: "%.2f", m.output))").monospacedDigit()
-                    }
-                }
-            }
         }
     }
 }
