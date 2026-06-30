@@ -39,7 +39,6 @@ struct DashboardView: View {
     @State private var subDaily: [ChartDataPoint] = []
     @State private var apiDaily: [ChartDataPoint] = []
     @State private var proxyDaily: [ChartDataPoint] = []
-    @State private var proxyStats: [(hostname: String, bytesSent: Int, bytesReceived: Int)] = []
     @State private var editorMappings: [EditorDetector.Mapping] = []
 
     var hasAGrade: Bool {
@@ -599,29 +598,21 @@ struct DashboardView: View {
         paddedChanges = padCodeChanges()
         subDaily = subDailyData()
         apiDaily = apiDailyData()
-        proxyStats = await StatsService.proxyDailyStats(days: timeRange.days)
+        let proxyStats = await StatsService.proxyDailyStats(days: timeRange.days)
         proxyDaily = proxyChartData(proxyStats)
     }
 
-    /// Map proxy stats to chart data points with provider name labels.
-    func proxyChartData(_ stats: [(hostname: String, bytesSent: Int, bytesReceived: Int)]) -> [ChartDataPoint] {
-        var result: [ChartDataPoint] = []
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        // Flatten per-hostname totals across the date range (proxy stats are totals, not daily)
-        for offset in 0..<chartDays {
-            guard let date = cal.date(byAdding: .day, value: offset, to: chartStart) else { continue }
-            for stat in stats {
-                let name = providerName(for: stat.hostname)
-                // Rough cost estimate from bytes (assume ~$2/M tokens, ~4 bytes/token)
-                let totalBytes = stat.bytesSent + stat.bytesReceived
-                let estCost = Double(totalBytes) / Double(chartDays) * 0.0000005  // distribute across days
-                if estCost > 0.001, date <= today {
-                    result.append(ChartDataPoint(date: date, label: "\(name) Est.", cost: estCost))
-                }
-            }
+    /// Map per-day proxy stats to chart data points. Uses bytes→cost estimate:
+    /// ~4 chars/token, input $2/M tokens → $0.0000005/byte, output $8/M tokens → $0.000002/byte.
+    /// Uses a blended rate of ~$0.000001/byte (conservative mid-range estimate).
+    func proxyChartData(_ stats: [StatsService.ProxyDailyStat]) -> [ChartDataPoint] {
+        stats.compactMap { s in
+            let name = providerName(for: s.hostname)
+            let totalBytes = s.bytesSent + s.bytesReceived
+            let estCost = Double(totalBytes) * 0.000001  // ~$1/M tokens blended
+            guard estCost > 0.0001 else { return nil }
+            return ChartDataPoint(date: s.date, label: "\(name) Est.", cost: estCost)
         }
-        return result
     }
 
     func providerName(for hostname: String) -> String {

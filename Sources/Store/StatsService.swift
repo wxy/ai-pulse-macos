@@ -224,8 +224,15 @@ enum StatsService {
 
     // MARK: - Proxy stats
 
-    /// Proxy traffic grouped by hostname for the cost chart (estimate layer).
-    static func proxyDailyStats(days: Int, sinceMs: Int64? = nil) async -> [(hostname: String, bytesSent: Int, bytesReceived: Int)] {
+    struct ProxyDailyStat {
+        let date: Date
+        let hostname: String
+        let bytesSent: Int
+        let bytesReceived: Int
+    }
+
+    /// Proxy traffic grouped by day + hostname for the cost chart (estimate layer).
+    static func proxyDailyStats(days: Int, sinceMs: Int64? = nil) async -> [ProxyDailyStat] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
         let startMs: Int64
@@ -240,19 +247,26 @@ enum StatsService {
         do {
             let rows = try await AppDatabase.shared.read { db -> [Row] in
                 try Row.fetchAll(db, sql: """
-                    SELECT hostname,
+                    SELECT (ts / 86400000) * 86400000 AS day_ts,
+                           hostname,
                            COALESCE(SUM(bytes_sent), 0) AS bs,
                            COALESCE(SUM(bytes_received), 0) AS br
                     FROM proxy_event
                     WHERE ts >= ? AND ts < ?
-                    GROUP BY hostname ORDER BY bs DESC
+                    GROUP BY day_ts, hostname ORDER BY day_ts, bs DESC
                     """, arguments: [startMs, todayMs + 86_400_000])
             }
             return rows.compactMap { r in
-                guard let hn: String = r["hostname"],
+                guard let day: Int64 = r["day_ts"],
+                      let hn: String = r["hostname"],
                       let bs: Int64 = r["bs"],
                       let br: Int64 = r["br"] else { return nil }
-                return (hn, Int(bs), Int(br))
+                return ProxyDailyStat(
+                    date: Date(timeIntervalSince1970: Double(day) / 1000),
+                    hostname: hn,
+                    bytesSent: Int(bs),
+                    bytesReceived: Int(br)
+                )
             }
         } catch { return [] }
     }
