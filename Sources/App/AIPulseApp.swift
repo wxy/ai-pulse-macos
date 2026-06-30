@@ -8,10 +8,14 @@ import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var menuBarController: MenuBarController?
+    private var securityScopedURLs: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set Dock icon immediately — must happen before .activate()
         NSApp.applicationIconImage = AppIconLoader.load()
+
+        // Resolve security-scoped bookmarks for sandbox file access
+        securityScopedURLs = BookmarkManager.resolveAll()
 
         do { try AppDatabase.shared.setup() }
         catch { print("DB setup failed: \(error)") }
@@ -69,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         IntegrationRegistry.stopAll()
         DockManager.shared.stop()
+        BookmarkManager.stopAll(securityScopedURLs)
     }
 
     private func showOnboardingIfNeeded() {
