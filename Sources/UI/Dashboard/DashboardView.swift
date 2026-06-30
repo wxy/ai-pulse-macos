@@ -605,23 +605,29 @@ struct DashboardView: View {
     /// Map per-day proxy stats to chart data points. Uses bytes→cost estimate:
     /// ~4 chars/token, input $2/M tokens → $0.0000005/byte, output $8/M tokens → $0.000002/byte.
     /// Uses a blended rate of ~$0.000001/byte (conservative mid-range estimate).
+    /// Only includes hostnames matching known AI provider API domains.
     func proxyChartData(_ stats: [StatsService.ProxyDailyStat]) -> [ChartDataPoint] {
         stats.compactMap { s in
-            let name = providerName(for: s.hostname)
+            guard let name = providerName(for: s.hostname) else { return nil }
             let totalBytes = s.bytesSent + s.bytesReceived
             let estCost = Double(totalBytes) * 0.000001  // ~$1/M tokens blended
-            guard estCost > 0.0001 else { return nil }
+            guard estCost > 0.001 else { return nil }
             return ChartDataPoint(date: s.date, label: "\(name) Est.", cost: estCost)
         }
     }
 
-    func providerName(for hostname: String) -> String {
+    /// Returns the provider display name if hostname matches a known AI API domain, nil otherwise.
+    func providerName(for hostname: String) -> String? {
         for p in ProviderRegistry.all {
-            let base = p.baseUrl.replacingOccurrences(of: "https://api.", with: "").replacingOccurrences(of: "https://", with: "")
-            if hostname.contains(base) { return p.name }
+            // Strip protocol + api. prefix to get the core domain for matching
+            let base = p.baseUrl
+                .replacingOccurrences(of: "https://api.", with: "")
+                .replacingOccurrences(of: "https://", with: "")
+                .replacingOccurrences(of: "/", with: "")
+            if hostname.hasSuffix(base) || hostname.contains(".\(base)") {
+                return p.name
+            }
         }
-        return hostname
-            .replacingOccurrences(of: "api.", with: "")
-            .replacingOccurrences(of: ".com", with: "")
+        return nil  // Not a known AI provider — exclude from display
     }
 }
