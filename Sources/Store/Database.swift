@@ -55,6 +55,17 @@ final class AppDatabase {
                     t.column("currency", .text).defaults(to: "USD")
                 }
             }),
+            ("proxy_event", { db in
+                try db.create(table: "proxy_event", ifNotExists: true) { t in
+                    t.autoIncrementedPrimaryKey("id")
+                    t.column("ts", .integer).notNull()
+                    t.column("hostname", .text).notNull()
+                    t.column("bytes_sent", .integer).defaults(to: 0)
+                    t.column("bytes_received", .integer).defaults(to: 0)
+                }
+                try? db.create(indexOn: "proxy_event", columns: ["ts"])
+                try? db.create(indexOn: "proxy_event", columns: ["hostname"])
+            }),
         ]
 
         for (name, migration) in tables {

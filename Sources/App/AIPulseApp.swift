@@ -37,6 +37,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         }
 
+        // Proxy: auto-start if previously enabled (Developer ID only)
+        if UserDefaults.standard.bool(forKey: "proxy_enabled") {
+            startProxy()
+        }
+
         // Check for anomalies after each poll cycle
         Timer.scheduledTimer(withTimeInterval: 3660, repeats: true) { _ in
             Task { await AnomalyDetector.shared.check() }
@@ -44,6 +49,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Extra activation after menu bar setup (belt-and-suspenders with main.swift)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func startProxy() {
+        do {
+            try ProxyServer.shared.start()
+            ProxyServer.shared.onEvent = { event in
+                let ts = Int64(event.timestamp.timeIntervalSince1970 * 1000)
+                Task {
+                    do {
+                        try await AppDatabase.shared.write { db in
+                            try db.execute(sql: """
+                                INSERT INTO proxy_event (ts, hostname, bytes_sent, bytes_received)
+                                VALUES (?, ?, ?, ?)
+                                """, arguments: [ts, event.hostname, event.bytesSent, event.bytesReceived])
+                        }
+                    } catch {
+                        print("Proxy event insert failed: \(error)")
+                    }
+                }
+            }
+            UserDefaults.standard.set(true, forKey: "proxy_enabled")
+        } catch {
+            print("Proxy start failed: \(error)")
+        }
+    }
+
+    func stopProxy() {
+        ProxyServer.shared.stop()
+        UserDefaults.standard.set(false, forKey: "proxy_enabled")
     }
 
     // Dock right-click → shared menu minus Quit, submenus are text-only copies

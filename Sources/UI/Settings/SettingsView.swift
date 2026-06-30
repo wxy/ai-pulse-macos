@@ -139,6 +139,9 @@ struct IntegrationsSettingsTab: View {
 
 struct GeneralTab: View {
     @Binding var lang: String
+    @State private var proxyEnabled = UserDefaults.standard.bool(forKey: "proxy_enabled")
+    @State private var proxyPort: UInt16 = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(I18n.t("general.title")).font(.title3).fontWeight(.semibold)
@@ -157,6 +160,31 @@ struct GeneralTab: View {
 
             Divider().padding(.vertical, 8)
 
+            // HTTPS Proxy toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("HTTPS 代理").font(.body)
+                    Text("估算 AI API 花费：\(proxyEnabled && proxyPort > 0 ? "export HTTPS_PROXY=http://127.0.0.1:\(proxyPort)" : "开启后在此查看代理地址")")
+                        .font(.caption2).foregroundColor(.secondary).monospacedDigit()
+                }
+                Spacer()
+                Toggle("", isOn: $proxyEnabled)
+                    .toggleStyle(.switch)
+                    .onChange(of: proxyEnabled) { _, v in
+                        if v {
+                            let delegate = NSApp.delegate as? AppDelegate
+                            delegate?.startProxy()
+                            proxyPort = ProxyServer.shared.port
+                        } else {
+                            let delegate = NSApp.delegate as? AppDelegate
+                            delegate?.stopProxy()
+                            proxyPort = 0
+                        }
+                    }
+            }
+
+            Divider().padding(.vertical, 8)
+
             Text(I18n.t("general.rerun_welcome_desc"))
                 .font(.caption).foregroundColor(.secondary)
             Button(I18n.t("general.rerun_welcome")) {
@@ -170,6 +198,9 @@ struct GeneralTab: View {
                 w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
                 OnboardingWindowManager.shared.window = w
             }
+        }
+        .onAppear {
+            proxyPort = ProxyServer.shared.port
         }
     }
 }
