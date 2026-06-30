@@ -137,6 +137,8 @@ struct IntegrationsSettingsTab: View {
 
 struct GeneralTab: View {
     @Binding var lang: String
+    @State private var coinSoundEnabled = UserDefaults.standard.bool(forKey: "coin_sound_enabled")
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(I18n.t("general.title")).font(.title3).fontWeight(.semibold)
@@ -151,6 +153,23 @@ struct GeneralTab: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 160)
+            }
+
+            Divider().padding(.vertical, 8)
+
+            // Coin sound toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("花费音效").font(.body)
+                    Text("检测到余额消费时播放金币音效")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $coinSoundEnabled)
+                    .toggleStyle(.switch)
+                    .onChange(of: coinSoundEnabled) { _, v in
+                        UserDefaults.standard.set(v, forKey: "coin_sound_enabled")
+                    }
             }
 
             Divider().padding(.vertical, 8)

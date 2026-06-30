@@ -155,8 +155,21 @@ final class ApiPoller {
     private func cacheBalance(pid: String, entries: [BalanceEntry]) {
         var cache = balanceCache()
         let now = Int(Date().timeIntervalSince1970 * 1000)
+
+        // Detect spend: compare new balance with previous cached balance
+        let prevBalance = cache[pid]?.balances.first?.totalBalance
+
         cache[pid] = CachedBalance(balances: entries, lastFetchTimestamp: now, error: nil)
         saveBalanceCache(cache)
+
+        // Play coin sound for detected spend
+        for entry in entries {
+            if let prev = prevBalance, entry.totalBalance < prev {
+                let spend = prev - entry.totalBalance
+                CoinSound.play(for: spend)
+            }
+        }
+
         // Record balance snapshot for daily spend calculation
         for entry in entries {
             Task {
