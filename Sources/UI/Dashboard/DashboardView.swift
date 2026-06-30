@@ -38,7 +38,6 @@ struct DashboardView: View {
     @State private var codeHoverX: CGFloat = 0
     @State private var subDaily: [ChartDataPoint] = []
     @State private var apiDaily: [ChartDataPoint] = []
-    @State private var proxyStats: [StatsService.ProxyDailyStat] = []
     @State private var editorMappings: [EditorDetector.Mapping] = []
 
     var hasAGrade: Bool {
@@ -69,8 +68,6 @@ struct DashboardView: View {
                         costChart.padding(.horizontal, 20)
                         codeChangeChart.padding(.horizontal, 20)
 
-                        if !proxyStats.isEmpty { proxyActivityCard.padding(.horizontal, 20) }
-
                         // Bottom cards row
                         bottomCards.padding(.horizontal, 20)
                     } else {
@@ -83,46 +80,6 @@ struct DashboardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await load() }
         .onChange(of: timeRange) { _, _ in Task { await load() } }
-    }
-
-    // MARK: - Proxy activity (byte volume, not cost)
-
-    var proxyActivityCard: some View {
-        // Aggregate per-provider byte totals from proxy stats
-        var grouped: [(name: String, bytes: Int)] = []
-        for s in proxyStats {
-            guard let name = providerName(for: s.hostname) else { continue }
-            if let idx = grouped.firstIndex(where: { $0.name == name }) {
-                grouped[idx].bytes += s.bytesSent + s.bytesReceived
-            } else {
-                grouped.append((name, s.bytesSent + s.bytesReceived))
-            }
-        }
-        grouped.sort(by: { $0.bytes > $1.bytes })
-        guard !grouped.isEmpty else { return AnyView(EmptyView()) }
-        return AnyView(
-            VStack(alignment: .leading, spacing: 6) {
-                Text("代理流量").font(.headline)
-                Text("HTTPS 代理截获的 AI API 流量体积（非花费金额）")
-                    .font(.caption2).foregroundColor(.secondary)
-                ForEach(grouped, id: \.name) { item in
-                    HStack {
-                        Text(item.name).font(.caption)
-                        Spacer()
-                        Text(formatBytes(Double(item.bytes))).font(.caption).monospacedDigit().foregroundColor(.secondary)
-                    }
-                }
-            }
-            .padding(12)
-            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
-            .cornerRadius(8)
-        )
-    }
-
-    func formatBytes(_ bytes: Double) -> String {
-        if bytes >= 1_048_576 { return String(format: "%.1f MB", bytes / 1_048_576) }
-        if bytes >= 1024 { return String(format: "%.0f KB", bytes / 1024) }
-        return "\(Int(bytes)) B"
     }
 
     // MARK: - CPL guidance (no A-grade)
@@ -640,43 +597,6 @@ struct DashboardView: View {
         paddedChanges = padCodeChanges()
         subDaily = subDailyData()
         apiDaily = apiDailyData()
-        proxyStats = await StatsService.proxyDailyStats(days: timeRange.days)
     }
 
-    /// Returns the provider display name if hostname matches a known AI API domain, nil otherwise.
-    /// Hostname→provider mapping: proxy sees api.* domains, ProviderRegistry has console.*/platform.*.
-    func providerName(for hostname: String) -> String? {
-        // Direct API domain → provider name mapping (proxy sees api.*, not console.*)
-        let apiHostToProvider: [String: String] = [
-            "api.anthropic.com": "Anthropic",
-            "api.openai.com": "OpenAI",
-            "api.deepseek.com": "DeepSeek",
-            "api.moonshot.cn": "Moonshot",
-            "api.zhipu.ai": "Zhipu",
-            "open.bigmodel.cn": "Zhipu",
-            "generativelanguage.googleapis.com": "Google",
-            "api.mistral.ai": "Mistral",
-            "api.x.ai": "xAI",
-            "api.cohere.com": "Cohere",
-            "api.perplexity.ai": "Perplexity",
-            "dashscope.aliyuncs.com": "Qwen",
-            "api.baichuan-ai.com": "Baichuan",
-            "aip.baidubce.com": "ERNIE",
-            "api.githubcopilot.com": "GitHub Copilot",
-        ]
-        if let name = apiHostToProvider[hostname] { return name }
-        // Fuzzy match: hostname contains provider's core domain fragment
-        let fragments: [(String, String)] = [
-            ("anthropic", "Anthropic"), ("openai", "OpenAI"), ("deepseek", "DeepSeek"),
-            ("moonshot", "Moonshot"), ("zhipu", "Zhipu"), ("bigmodel", "Zhipu"),
-            ("googleapis", "Google"), ("mistral", "Mistral"), ("x.ai", "xAI"),
-            ("cohere", "Cohere"), ("perplexity", "Perplexity"),
-            ("aliyuncs", "Qwen"), ("baichuan", "Baichuan"), ("baidubce", "ERNIE"),
-            ("githubcopilot", "GitHub Copilot"),
-        ]
-        for (fragment, name) in fragments {
-            if hostname.contains(fragment) { return name }
-        }
-        return nil
-    }
 }
