@@ -6,6 +6,7 @@ import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var securityScopedURLs: [URL] = []
+    var menuBarController: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.applicationIconImage = AppIconLoader.load()
@@ -15,6 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         do { try AppDatabase.shared.setup() }
         catch { print("DB setup failed: \(error)") }
+
+        // Build shared menu (stats refreshed every 30s, used by Dock right-click)
+        menuBarController = MenuBarController()
+        menuBarController?.start()
 
         // Auto-enable integrations that are detected on first launch
         migrateIntegrationDefaults()
@@ -48,16 +53,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Dock menu
 
+    /// Dock right-click shares the full stats menu (minus Quit, which Dock provides).
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: I18n.t("menu.dashboard"), action: #selector(openDashboardObjc), keyEquivalent: ""))
-        menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: I18n.t("menu.preferences"), action: #selector(openPreferencesObjc), keyEquivalent: ","))
-        return menu
+        guard let src = menuBarController?.menu else { return nil }
+        let dock = NSMenu()
+        for item in src.items {
+            if item.keyEquivalent == "q" { continue }
+            if item.isSeparatorItem { dock.addItem(.separator()); continue }
+            let copy = NSMenuItem(title: item.title, action: item.action, keyEquivalent: item.keyEquivalent)
+            copy.target = item.target
+            if let sub = item.submenu {
+                let subCopy = NSMenu()
+                for si in sub.items {
+                    if si.isSeparatorItem { subCopy.addItem(.separator()); continue }
+                    let siCopy = NSMenuItem(title: si.title, action: si.action, keyEquivalent: si.keyEquivalent)
+                    siCopy.target = si.target
+                    subCopy.addItem(siCopy)
+                }
+                copy.submenu = subCopy
+            }
+            dock.addItem(copy)
+        }
+        return dock
     }
-
-    @objc private func openDashboardObjc() { openDashboard() }
-    @objc private func openPreferencesObjc() { openPreferences() }
 
     // MARK: - Windows
 
