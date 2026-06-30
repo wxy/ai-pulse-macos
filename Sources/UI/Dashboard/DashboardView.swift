@@ -294,10 +294,11 @@ struct DashboardView: View {
         let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
+        let start = chartStart
 
         var result = [ChartDataPoint]()
         for offset in 0..<chartDays {
-            guard let date = cal.date(byAdding: .day, value: -(chartDays - 1 - offset), to: today) else { continue }
+            guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
             // Only generate subscription data for days up to today (future days = 0)
             guard date <= today else { continue }
             for s in subs {
@@ -428,13 +429,13 @@ struct DashboardView: View {
 
     func padCodeChanges() -> [DailyCodeChange] {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
+        let start = chartStart
         var map = [Date: DailyCodeChange]()
         for c in codeChanges { map[cal.startOfDay(for: c.date)] = c }
 
         var result = [DailyCodeChange]()
         for offset in 0..<chartDays {
-            guard let date = cal.date(byAdding: .day, value: -(chartDays - 1 - offset), to: today) else { continue }
+            guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
             if let c = map[date] {
                 result.append(c)
             } else {
@@ -541,15 +542,25 @@ struct DashboardView: View {
         return timeRange.days
     }
 
+    /// First date shown on charts (Monday for thisWeek, rolling start for days30).
+    var chartStart: Date {
+        let cal = Calendar.current
+        if case .thisWeek = timeRange {
+            var monCal = cal; monCal.firstWeekday = 2
+            return monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+        }
+        return cal.date(byAdding: .day, value: -(timeRange.days - 1), to: cal.startOfDay(for: Date()))!
+    }
+
     func padStats(_ raw: [DailyStat], days queryDays: Int) -> [DailyStat] {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
+        let start = chartStart
         var map = [Date: DailyStat]()
         for s in raw { map[cal.startOfDay(for: s.date)] = s }
 
         var result = [DailyStat]()
         for offset in 0..<chartDays {
-            guard let date = cal.date(byAdding: .day, value: -(chartDays - 1 - offset), to: today) else { continue }
+            guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
             if let s = map[date] {
                 result.append(s)
             } else {
