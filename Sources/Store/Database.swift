@@ -55,6 +55,17 @@ final class AppDatabase {
                     t.column("currency", .text).defaults(to: "USD")
                 }
             }),
+            ("balance_snapshot", { db in
+                try db.create(table: "balance_snapshot", ifNotExists: true) { t in
+                    t.autoIncrementedPrimaryKey("id")
+                    t.column("ts", .integer).notNull()
+                    t.column("provider_id", .text).notNull()
+                    t.column("balance", .double).notNull()
+                    t.column("currency", .text).defaults(to: "USD")
+                }
+                try? db.create(indexOn: "balance_snapshot", columns: ["ts"])
+                try? db.create(indexOn: "balance_snapshot", columns: ["provider_id"])
+            }),
         ]
 
         for (name, migration) in tables {

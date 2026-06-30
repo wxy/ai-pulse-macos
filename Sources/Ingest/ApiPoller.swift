@@ -154,8 +154,24 @@ final class ApiPoller {
 
     private func cacheBalance(pid: String, entries: [BalanceEntry]) {
         var cache = balanceCache()
-        cache[pid] = CachedBalance(balances: entries, lastFetchTimestamp: Int(Date().timeIntervalSince1970 * 1000), error: nil)
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        cache[pid] = CachedBalance(balances: entries, lastFetchTimestamp: now, error: nil)
         saveBalanceCache(cache)
+        // Record balance snapshot for daily spend calculation
+        for entry in entries {
+            Task {
+                do {
+                    try await AppDatabase.shared.write { db in
+                        try db.execute(sql: """
+                            INSERT INTO balance_snapshot (ts, provider_id, balance, currency)
+                            VALUES (?, ?, ?, ?)
+                            """, arguments: [now, pid, entry.totalBalance, entry.currency])
+                    }
+                } catch {
+                    print("ApiPoller[\(pid)]: snapshot insert failed: \(error)")
+                }
+            }
+        }
         print("ApiPoller[\(pid)]: ok — \(entries.map { "\($0.currency) \($0.totalBalance)" }.joined(separator: ", "))")
     }
 

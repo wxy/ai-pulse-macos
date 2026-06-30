@@ -222,6 +222,51 @@ enum StatsService {
         }
     }
 
+    // MARK: - Balance spend (daily deltas, top-up filtered)
+
+    /// Daily spend from balance snapshots. Filters out top-ups (balance increases).
+    /// Returns per-provider daily spend estimates.
+    static func balanceDailySpend(days: Int, sinceMs: Int64? = nil) async -> [(providerId: String, date: Date, spend: Double)] {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        let startMs: Int64 = sinceMs ?? {
+            guard let s = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return 0 }
+            return Int64(s.timeIntervalSince1970 * 1000)
+        }()
+        let todayMs = Int64(todayStart.timeIntervalSince1970 * 1000)
+
+        do {
+            let rows = try await AppDatabase.shared.read { db -> [Row] in
+                try Row.fetchAll(db, sql: """
+                    SELECT provider_id, ts, balance FROM balance_snapshot
+                    WHERE ts >= ? AND ts < ?
+                    ORDER BY provider_id, ts
+                    """, arguments: [startMs, todayMs + 86_400_000])
+            }
+            // Group by provider_id and compute positive deltas
+            var results: [(String, Date, Double)] = []
+            var currentPid: String? = nil
+            var prevBalance: Double? = nil
+            var prevTs: Int64? = nil
+            for r in rows {
+                let pid: String = r["provider_id"] ?? ""
+                let ts: Int64 = r["ts"] ?? 0
+                let balance: Double = r["balance"] ?? 0
+
+                if pid == currentPid, let prev = prevBalance, balance < prev {
+                    // Balance decreased → spend occurred
+                    let spend = prev - balance
+                    let date = cal.startOfDay(for: Date(timeIntervalSince1970: Double(ts) / 1000))
+                    results.append((pid, date, spend))
+                }
+                currentPid = pid
+                prevBalance = balance
+                prevTs = ts
+            }
+            return results
+        } catch { return [] }
+    }
+
     // MARK: - Provider daily cost
 
     /// Daily cost grouped by provider_id for the cost chart.

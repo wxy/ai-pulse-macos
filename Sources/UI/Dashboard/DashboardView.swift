@@ -39,6 +39,7 @@ struct DashboardView: View {
     @State private var subDaily: [ChartDataPoint] = []
     @State private var apiDaily: [ChartDataPoint] = []
     @State private var editorMappings: [EditorDetector.Mapping] = []
+    @State private var balanceSpend: [(providerId: String, name: String, spend: Double)] = []
 
     var hasAGrade: Bool {
         IntegrationRegistry.enabledAGrade().contains { $0.detect().found }
@@ -501,12 +502,43 @@ struct DashboardView: View {
     var bottomCards: some View {
         HStack(alignment: .top, spacing: 16) {
             apiBreakdownCard
+            balanceSpendCard
             if hasAGrade || hasCertainEditorMapping {
                 cplInfoCard
             } else {
                 cplGuidanceCard
             }
         }
+    }
+
+    var balanceSpendCard: some View {
+        guard !balanceSpend.isEmpty else { return AnyView(EmptyView()) }
+        let total = balanceSpend.reduce(0.0) { $0 + $1.spend }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 6) {
+                Text("余额消费").font(.headline)
+                Text("基于余额变化计算（已过滤充值）")
+                    .font(.caption2).foregroundColor(.secondary)
+                ForEach(balanceSpend, id: \.providerId) { item in
+                    HStack {
+                        Text(item.name).font(.caption)
+                        Spacer()
+                        Text("$\(String(format: "%.2f", item.spend))").font(.caption).monospacedDigit()
+                    }
+                }
+                if balanceSpend.count > 1 {
+                    Divider()
+                    HStack {
+                        Text(I18n.t("dashboard.total")).font(.caption).fontWeight(.medium)
+                        Spacer()
+                        Text("$\(String(format: "%.2f", total))").font(.caption).monospacedDigit().fontWeight(.medium)
+                    }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3)).cornerRadius(10)
+        )
     }
 
     // MARK: - Empty state (no integrations)
@@ -597,6 +629,22 @@ struct DashboardView: View {
         paddedChanges = padCodeChanges()
         subDaily = subDailyData()
         apiDaily = apiDailyData()
+        let rawSpend = await StatsService.balanceDailySpend(days: timeRange.days)
+        // Aggregate spend by provider
+        var spendMap: [(String, Double)] = []
+        for s in rawSpend {
+            if let idx = spendMap.firstIndex(where: { $0.0 == s.providerId }) {
+                spendMap[idx].1 += s.spend
+            } else {
+                spendMap.append((s.providerId, s.spend))
+            }
+        }
+        let enabledB = Set(IntegrationRegistry.enabledBGrade().map { $0.id })
+        balanceSpend = spendMap.compactMap { (pid, spend) in
+            guard enabledB.contains(pid), spend > 0.001 else { return nil }
+            let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
+            return (pid, name, spend)
+        }.sorted(by: { $0.spend > $1.spend })
     }
 
 }
