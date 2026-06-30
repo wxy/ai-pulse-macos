@@ -617,17 +617,39 @@ struct DashboardView: View {
     }
 
     /// Returns the provider display name if hostname matches a known AI API domain, nil otherwise.
+    /// Hostname→provider mapping: proxy sees api.* domains, ProviderRegistry has console.*/platform.*.
     func providerName(for hostname: String) -> String? {
-        for p in ProviderRegistry.all {
-            // Strip protocol + api. prefix to get the core domain for matching
-            let base = p.baseUrl
-                .replacingOccurrences(of: "https://api.", with: "")
-                .replacingOccurrences(of: "https://", with: "")
-                .replacingOccurrences(of: "/", with: "")
-            if hostname.hasSuffix(base) || hostname.contains(".\(base)") {
-                return p.name
-            }
+        // Direct API domain → provider name mapping (proxy sees api.*, not console.*)
+        let apiHostToProvider: [String: String] = [
+            "api.anthropic.com": "Anthropic",
+            "api.openai.com": "OpenAI",
+            "api.deepseek.com": "DeepSeek",
+            "api.moonshot.cn": "Moonshot",
+            "api.zhipu.ai": "Zhipu",
+            "open.bigmodel.cn": "Zhipu",
+            "generativelanguage.googleapis.com": "Google",
+            "api.mistral.ai": "Mistral",
+            "api.x.ai": "xAI",
+            "api.cohere.com": "Cohere",
+            "api.perplexity.ai": "Perplexity",
+            "dashscope.aliyuncs.com": "Qwen",
+            "api.baichuan-ai.com": "Baichuan",
+            "aip.baidubce.com": "ERNIE",
+            "api.githubcopilot.com": "GitHub Copilot",
+        ]
+        if let name = apiHostToProvider[hostname] { return name }
+        // Fuzzy match: hostname contains provider's core domain fragment
+        let fragments: [(String, String)] = [
+            ("anthropic", "Anthropic"), ("openai", "OpenAI"), ("deepseek", "DeepSeek"),
+            ("moonshot", "Moonshot"), ("zhipu", "Zhipu"), ("bigmodel", "Zhipu"),
+            ("googleapis", "Google"), ("mistral", "Mistral"), ("x.ai", "xAI"),
+            ("cohere", "Cohere"), ("perplexity", "Perplexity"),
+            ("aliyuncs", "Qwen"), ("baichuan", "Baichuan"), ("baidubce", "ERNIE"),
+            ("githubcopilot", "GitHub Copilot"),
+        ]
+        for (fragment, name) in fragments {
+            if hostname.contains(fragment) { return name }
         }
-        return nil  // Not a known AI provider — exclude from display
+        return nil
     }
 }
