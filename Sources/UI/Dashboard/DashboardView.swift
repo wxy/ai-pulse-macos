@@ -1,6 +1,29 @@
 import SwiftUI
 import Charts
 
+enum TimeRange: Hashable {
+    case thisWeek
+    case days30
+
+    var days: Int {
+        switch self {
+        case .thisWeek:
+            let cal = Calendar.current
+            var monCal = cal; monCal.firstWeekday = 2
+            let monday = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            return cal.dateComponents([.day], from: monday, to: cal.startOfDay(for: Date())).day! + 1
+        case .days30: return 30
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .thisWeek: return I18n.t("dashboard.this_week")
+        case .days30: return I18n.t("dashboard.days_30")
+        }
+    }
+}
+
 struct DashboardView: View {
     @State private var dailyStats: [DailyStat] = []
     @State private var providerCosts: [ProviderDailyCost] = []
@@ -8,7 +31,7 @@ struct DashboardView: View {
     @State private var paddedChanges: [DailyCodeChange] = []
     @State private var repos: [RepoBreakdown] = []
     @State private var prediction: Prediction?
-    @State private var dayRange = 7
+    @State private var timeRange = TimeRange.thisWeek
     @State private var costHoverDate: Date? = nil
     @State private var codeHoverDate: Date? = nil
     @State private var costHoverX: CGFloat = 0
@@ -16,6 +39,7 @@ struct DashboardView: View {
     @State private var subDaily: [ChartDataPoint] = []
     @State private var apiDaily: [ChartDataPoint] = []
     @State private var editorMappings: [EditorDetector.Mapping] = []
+    @State private var balanceSpend: [(providerId: String, name: String, spend: Double)] = []
 
     var hasAGrade: Bool {
         IntegrationRegistry.enabledAGrade().contains { $0.detect().found }
@@ -30,10 +54,10 @@ struct DashboardView: View {
             HStack {
                 Text(I18n.t("dashboard.title")).font(.title2).fontWeight(.bold)
                 Spacer()
-                Picker("", selection: $dayRange) {
-                    Text(I18n.t("dashboard.days_7")).tag(7)
-                    Text(I18n.t("dashboard.days_30")).tag(30)
-                }.pickerStyle(.segmented).frame(width: 140)
+                Picker("", selection: $timeRange) {
+                    Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
+                    Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
+                }.pickerStyle(.segmented).frame(width: 160)
             }
             .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
 
@@ -56,7 +80,7 @@ struct DashboardView: View {
         .frame(width: 680, height: 640)
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await load() }
-        .onChange(of: dayRange) { _, _ in Task { await load() } }
+        .onChange(of: timeRange) { _, _ in Task { await load() } }
     }
 
     // MARK: - CPL guidance (no A-grade)
@@ -125,9 +149,7 @@ struct DashboardView: View {
         let apiSpent = dailyStats.reduce(0.0) { $0 + $1.cost }
         let added = dailyStats.reduce(0) { $0 + max(0, $1.netLines) }
         let deleted = dailyStats.reduce(0) { $0 + max(0, -$1.netLines) }
-        let periodLabel = dayRange <= 7
-            ? I18n.t("menu.this_week")
-            : I18n.t("dashboard.this_month")
+        let periodLabel = timeRange.label
         return VStack(spacing: 8) {
             HStack(spacing: 8) {
                 card(title: "\(periodLabel)\(I18n.t("dashboard.api_spent"))",
@@ -203,7 +225,7 @@ struct DashboardView: View {
             } else {
                 ZStack(alignment: .topLeading) {
                     Chart {
-                        // Single ForEach with sub first (bottom) + api second (top) for auto-stacking
+                        // Stacking order (bottom→top): subscription → API
                         ForEach(subDaily + apiDaily, id: \.id) { item in
                             BarMark(
                                 x: .value("Date", item.date, unit: .day),
@@ -270,20 +292,26 @@ struct DashboardView: View {
     func subDailyData() -> [ChartDataPoint] {
         let subs = IntegrationRegistry.enabledCGrade()
         guard !subs.isEmpty else { return [] }
-        let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
+        let start = chartStart
 
         var result = [ChartDataPoint]()
-        for offset in 0..<dayRange {
-            guard let date = cal.date(byAdding: .day, value: -(dayRange - 1 - offset), to: today) else { continue }
-            for s in subs {
-                let cfg = IntegrationRegistry.config(for: s.id)
-                guard !cfg.subscriptionTier.isEmpty else { continue }
-                if let tool = SubscriptionRegistry.tool(forName: toolName(for: s.id)),
-                   let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
-                    result.append(ChartDataPoint(date: date, label: s.displayName, cost: tier.fee / days))
+        for offset in 0..<chartDays {
+            guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
+            if date <= today {
+                for s in subs {
+                    let cfg = IntegrationRegistry.config(for: s.id)
+                    guard !cfg.subscriptionTier.isEmpty else { continue }
+                    if let tool = SubscriptionRegistry.tool(forName: toolName(for: s.id)),
+                       let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
+                        result.append(ChartDataPoint(date: date, label: s.displayName, cost: tier.fee / daysInMonth))
+                    }
                 }
+            } else {
+                // Future days: generate a zero placeholder so the chart bar exists
+                result.append(ChartDataPoint(date: date, label: subs.first!.displayName, cost: 0))
             }
         }
         return result
@@ -405,13 +433,13 @@ struct DashboardView: View {
 
     func padCodeChanges() -> [DailyCodeChange] {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
+        let start = chartStart
         var map = [Date: DailyCodeChange]()
         for c in codeChanges { map[cal.startOfDay(for: c.date)] = c }
 
         var result = [DailyCodeChange]()
-        for offset in 0..<dayRange {
-            guard let date = cal.date(byAdding: .day, value: -(dayRange - 1 - offset), to: today) else { continue }
+        for offset in 0..<chartDays {
+            guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
             if let c = map[date] {
                 result.append(c)
             } else {
@@ -474,12 +502,43 @@ struct DashboardView: View {
     var bottomCards: some View {
         HStack(alignment: .top, spacing: 16) {
             apiBreakdownCard
+            balanceSpendCard
             if hasAGrade || hasCertainEditorMapping {
                 cplInfoCard
             } else {
                 cplGuidanceCard
             }
         }
+    }
+
+    var balanceSpendCard: some View {
+        guard !balanceSpend.isEmpty else { return AnyView(EmptyView()) }
+        let total = balanceSpend.reduce(0.0) { $0 + $1.spend }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 6) {
+                Text("余额消费").font(.headline)
+                Text("基于余额变化计算（已过滤充值）")
+                    .font(.caption2).foregroundColor(.secondary)
+                ForEach(balanceSpend, id: \.providerId) { item in
+                    HStack {
+                        Text(item.name).font(.caption)
+                        Spacer()
+                        Text("$\(String(format: "%.2f", item.spend))").font(.caption).monospacedDigit()
+                    }
+                }
+                if balanceSpend.count > 1 {
+                    Divider()
+                    HStack {
+                        Text(I18n.t("dashboard.total")).font(.caption).fontWeight(.medium)
+                        Spacer()
+                        Text("$\(String(format: "%.2f", total))").font(.caption).monospacedDigit().fontWeight(.medium)
+                    }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3)).cornerRadius(10)
+        )
     }
 
     // MARK: - Empty state (no integrations)
@@ -499,7 +558,7 @@ struct DashboardView: View {
     // MARK: - Date formatting
 
     var dateStride: AxisMarkValues {
-        if dayRange <= 7 {
+        if timeRange.days <= 7 {
             return .stride(by: .day)
         } else {
             return .stride(by: .day, count: 10)
@@ -512,15 +571,31 @@ struct DashboardView: View {
 
     // MARK: - Data padding
 
-    func padStats(_ raw: [DailyStat], days: Int) -> [DailyStat] {
+    /// Number of days to display on charts (full week for thisWeek, rolling for days30).
+    var chartDays: Int {
+        if case .thisWeek = timeRange { return 7 }
+        return timeRange.days
+    }
+
+    /// First date shown on charts (Monday for thisWeek, rolling start for days30).
+    var chartStart: Date {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
+        if case .thisWeek = timeRange {
+            var monCal = cal; monCal.firstWeekday = 2
+            return monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+        }
+        return cal.date(byAdding: .day, value: -(timeRange.days - 1), to: cal.startOfDay(for: Date()))!
+    }
+
+    func padStats(_ raw: [DailyStat], days queryDays: Int) -> [DailyStat] {
+        let cal = Calendar.current
+        let start = chartStart
         var map = [Date: DailyStat]()
         for s in raw { map[cal.startOfDay(for: s.date)] = s }
 
         var result = [DailyStat]()
-        for offset in 0..<days {
-            guard let date = cal.date(byAdding: .day, value: -(days - 1 - offset), to: today) else { continue }
+        for offset in 0..<chartDays {
+            guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
             if let s = map[date] {
                 result.append(s)
             } else {
@@ -544,15 +619,32 @@ struct DashboardView: View {
     }
 
     func load() async {
-        let raw = await StatsService.dailyStats(days: dayRange)
-        dailyStats = padStats(raw, days: dayRange)
-        providerCosts = await StatsService.providerDailyCosts(days: dayRange)
-        codeChanges = await StatsService.dailyCodeChanges(days: dayRange)
+        let raw = await StatsService.dailyStats(days: timeRange.days)
+        dailyStats = padStats(raw, days: timeRange.days)
+        providerCosts = await StatsService.providerDailyCosts(days: timeRange.days)
+        codeChanges = await StatsService.dailyCodeChanges(days: timeRange.days)
         editorMappings = EditorDetector.certainMappings()
-        repos = await StatsService.repoBreakdown(days: dayRange, editorMappings: editorMappings)
+        repos = await StatsService.repoBreakdown(days: timeRange.days, editorMappings: editorMappings)
         prediction = await StatsService.prediction()
         paddedChanges = padCodeChanges()
         subDaily = subDailyData()
         apiDaily = apiDailyData()
+        let rawSpend = await StatsService.balanceDailySpend(days: timeRange.days)
+        // Aggregate spend by provider
+        var spendMap: [(String, Double)] = []
+        for s in rawSpend {
+            if let idx = spendMap.firstIndex(where: { $0.0 == s.providerId }) {
+                spendMap[idx].1 += s.spend
+            } else {
+                spendMap.append((s.providerId, s.spend))
+            }
+        }
+        let enabledB = Set(IntegrationRegistry.enabledBGrade().map { $0.id })
+        balanceSpend = spendMap.compactMap { (pid, spend) in
+            guard enabledB.contains(pid), spend > 0.001 else { return nil }
+            let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
+            return (pid, name, spend)
+        }.sorted(by: { $0.spend > $1.spend })
     }
+
 }

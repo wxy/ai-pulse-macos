@@ -60,12 +60,17 @@ enum StatsService {
 
     // MARK: - Daily trend
 
-    /// Daily cost + netLines for the last `days` calendar days.
-    static func dailyStats(days: Int) async -> [DailyStat] {
+    /// Daily cost + netLines for the last `days` calendar days, or from `sinceMs` if provided.
+    static func dailyStats(days: Int, sinceMs: Int64? = nil) async -> [DailyStat] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
-        guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
-        let startMs = Int64(start.timeIntervalSince1970 * 1000)
+        let startMs: Int64
+        if let s = sinceMs {
+            startMs = s
+        } else {
+            guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
+            startMs = Int64(start.timeIntervalSince1970 * 1000)
+        }
         let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
@@ -118,11 +123,16 @@ enum StatsService {
 
     // MARK: - Repo breakdown
 
-    static func repoBreakdown(days: Int = 7, editorMappings: [EditorDetector.Mapping] = []) async -> [RepoBreakdown] {
+    static func repoBreakdown(days: Int = 7, editorMappings: [EditorDetector.Mapping] = [], sinceMs: Int64? = nil) async -> [RepoBreakdown] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
-        guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
-        let startMs = Int64(start.timeIntervalSince1970 * 1000)
+        let startMs: Int64
+        if let s = sinceMs {
+            startMs = s
+        } else {
+            guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
+            startMs = Int64(start.timeIntervalSince1970 * 1000)
+        }
         let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
@@ -210,6 +220,51 @@ enum StatsService {
         } catch {
             return Prediction(monthProjected: 0, dailyRate: 0, daysRemaining: 0, monthSoFar: 0)
         }
+    }
+
+    // MARK: - Balance spend (daily deltas, top-up filtered)
+
+    /// Daily spend from balance snapshots. Filters out top-ups (balance increases).
+    /// Returns per-provider daily spend estimates.
+    static func balanceDailySpend(days: Int, sinceMs: Int64? = nil) async -> [(providerId: String, date: Date, spend: Double)] {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        let startMs: Int64 = sinceMs ?? {
+            guard let s = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return 0 }
+            return Int64(s.timeIntervalSince1970 * 1000)
+        }()
+        let todayMs = Int64(todayStart.timeIntervalSince1970 * 1000)
+
+        do {
+            let rows = try await AppDatabase.shared.read { db -> [Row] in
+                try Row.fetchAll(db, sql: """
+                    SELECT provider_id, ts, balance FROM balance_snapshot
+                    WHERE ts >= ? AND ts < ?
+                    ORDER BY provider_id, ts
+                    """, arguments: [startMs, todayMs + 86_400_000])
+            }
+            // Group by provider_id and compute positive deltas
+            var results: [(String, Date, Double)] = []
+            var currentPid: String? = nil
+            var prevBalance: Double? = nil
+            var prevTs: Int64? = nil
+            for r in rows {
+                let pid: String = r["provider_id"] ?? ""
+                let ts: Int64 = r["ts"] ?? 0
+                let balance: Double = r["balance"] ?? 0
+
+                if pid == currentPid, let prev = prevBalance, balance < prev {
+                    // Balance decreased → spend occurred
+                    let spend = prev - balance
+                    let date = cal.startOfDay(for: Date(timeIntervalSince1970: Double(ts) / 1000))
+                    results.append((pid, date, spend))
+                }
+                currentPid = pid
+                prevBalance = balance
+                prevTs = ts
+            }
+            return results
+        } catch { return [] }
     }
 
     // MARK: - Provider daily cost

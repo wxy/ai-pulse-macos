@@ -136,49 +136,9 @@ enum EditorDetector {
 
     // MARK: - Git helpers
 
+    /// Find the git repository root containing the given path.
+    /// Uses libgit2-backed GitRepo (sandbox-compatible, no Process fork).
     private static func gitToplevel(at path: String) -> String? {
-        // Fast path: check for .git directly before spawning a process
-        let gitPath = path.hasSuffix("/.git") ? path : "\(path)/.git"
-        var isDir: ObjCBool = false
-        let hasGit = FileManager.default.fileExists(atPath: gitPath, isDirectory: &isDir)
-        if !hasGit {
-            // Check for .git file (worktree reference)
-            var isFile: ObjCBool = false
-            let gitFile = FileManager.default.fileExists(atPath: gitPath, isDirectory: &isFile)
-            if !gitFile { return nil }
-        }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", path, "rev-parse", "--show-toplevel"]
-        process.currentDirectoryURL = URL(fileURLWithPath: path)
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-
-        // Timeout: 5 seconds
-        let deadline = DispatchTime.now() + .seconds(5)
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.global(qos: .utility).async {
-            process.waitUntilExit()
-            group.leave()
-        }
-        if group.wait(timeout: deadline) == .timedOut {
-            process.terminate()
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else { return nil }
-        let data = try? pipe.fileHandleForReading.readToEnd()
-        return data.flatMap { String(data: $0, encoding: .utf8) }?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        GitRepo.findRoot(containing: path)
     }
 }

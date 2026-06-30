@@ -44,39 +44,22 @@ final class GitMonitor {
 
     private func scanRecentCommits(repo: String) {
         let lastHash = lastSeenCommit[repo]
-        // Get all commits we haven't seen yet (last 20)
-        let range = lastHash.map { "\($0)..HEAD" } ?? "HEAD~20..HEAD"
-        guard let output = runGit(repo: repo, args: ["log", "--format=%H %ct %P", range, "--", "."]),
-              !output.isEmpty else { return }
+        let gitRepo = GitRepo(path: repo)
+        let commits = gitRepo.log(since: lastHash)
 
-        for line in output.components(separatedBy: .newlines) {
-            let parts = line.components(separatedBy: " ")
-            guard parts.count >= 2 else { continue }
-            let hash = parts[0]
-            let ts = (Int(parts[1]) ?? 0) * 1000
-            let parentCount = parts.count - 2
-            let isMerge = parentCount >= 2
+        for commit in commits {
+            guard let stats = gitRepo.diffTree(hash: commit.hash) else { continue }
+            let isMerge = commit.parentCount >= 2
 
-            // Get numstat for this commit
-            guard let numstat = runGit(repo: repo, args: ["show", "--numstat", "--format=", hash]),
-                  !numstat.isEmpty else { continue }
-
-            var added = 0
-            var deleted = 0
-            for statLine in numstat.components(separatedBy: .newlines) {
-                let fields = statLine.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-                guard fields.count >= 3, let a = Int(fields[0]), let d = Int(fields[1]) else { continue }
-                let file = fields[2]
-                if isExcluded(file: file) { continue }
-                added += a
-                deleted += d
+            if stats.added > 0 || stats.deleted > 0 {
+                insertChange(CodeChange(
+                    commitHash: commit.hash, ts: commit.ts * 1000,
+                    repoPath: repo, added: stats.added, deleted: stats.deleted,
+                    isMerge: isMerge
+                ))
             }
 
-            if added > 0 || deleted > 0 {
-                insertChange(CodeChange(commitHash: hash, ts: ts, repoPath: repo, added: added, deleted: deleted, isMerge: isMerge))
-            }
-
-            lastSeenCommit[repo] = hash
+            lastSeenCommit[repo] = commit.hash
         }
     }
 
@@ -86,25 +69,6 @@ final class GitMonitor {
         for suffix in Self.excludedSuffixes where file.hasSuffix(suffix) { return true }
         for dir in Self.excludedDirs where file.contains("/\(dir)/") || file.hasPrefix("\(dir)/") { return true }
         return false
-    }
-
-    private func runGit(repo: String, args: [String]) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", repo] + args
-        process.currentDirectoryURL = URL(fileURLWithPath: repo)
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)
-        } catch {
-            print("Git error for \(repo): \(error)")
-            return nil
-        }
     }
 
     private func insertChange(_ change: CodeChange) {

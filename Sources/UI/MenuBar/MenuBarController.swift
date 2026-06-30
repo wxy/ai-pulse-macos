@@ -13,26 +13,13 @@ final class DashboardWindowManager {
 }
 
 final class MenuBarController: NSObject {
-    private var statusItem: NSStatusItem!
     private var timer: Timer?
     private(set) var menu: NSMenu!
 
     func start() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = statusItem.button {
-            let icon = loadAppIcon()
-            let resized = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-                icon.draw(in: rect)
-                return true
-            }
-            // Don't use isTemplate — full-color icon at menu bar size
-            button.image = resized
-        }
-
         menu = NSMenu()
-        statusItem.menu = menu
 
-        // Observe language changes so we can rebuild the menu + window title
+        // Observe language changes so we can rebuild the menu
         NotificationCenter.default.addObserver(
             self, selector: #selector(onLanguageChange),
             name: I18n.didChangeLanguage, object: nil
@@ -101,17 +88,9 @@ final class MenuBarController: NSObject {
                 self.menu.addItem(.separator())
                 let prefsItem = NSMenuItem(title: I18n.t("menu.preferences"), action: #selector(self.openPreferences), keyEquivalent: ",")
                 prefsItem.target = self; self.menu.addItem(prefsItem)
-                // Quit is in the shared menu; applicationDockMenu filters it out
-
-                // Tint: accent color when activity, secondary when idle
-                if let button = self.statusItem.button {
-                    button.contentTintColor = stats.hasActivity ? .controlAccentColor : .secondaryLabelColor
-                }
             }
         }
     }
-
-    private func loadAppIcon() -> NSImage { AppIconLoader.load() }
 
     // MARK: - Data
 
