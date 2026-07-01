@@ -9,7 +9,7 @@
 	<key>CFBundleIconFile</key>
 	<string>AIPulse</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.aipulse.app</string>
+	<string>com.wxy.aipulse</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -17,7 +17,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>0.9.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
@@ -25,11 +25,6 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2026. All data stays on your machine.</string>
-	<key>NSPrivacyCollectedData</key>
-	<dict>
-		<key>NSPrivacyCollectedDataType</key>
-		<array/>
-	</dict>
+	<string>Copyright 2026 Xingyu Wang. Apache 2.0.</string>
 </dict>
 </plist>

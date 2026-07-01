@@ -619,9 +619,17 @@ struct AboutTab: View {
         VStack(spacing: 16) {
             Image(nsImage: AppIconLoader.uiImage(size: 64))
             Text(I18n.t("about.title")).font(.title).fontWeight(.bold)
-            Text(I18n.t("about.version")).font(.caption).foregroundColor(.secondary)
+            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.9.0")").font(.caption).foregroundColor(.secondary)
             Text(I18n.t("about.desc")).multilineTextAlignment(.center)
             Text(I18n.t("about.privacy")).font(.caption2).foregroundColor(.secondary)
+            HStack(spacing: 16) {
+                Button(I18n.t("about.privacy_link")) {
+                    NSWorkspace.shared.open(URL(string: "https://xingyu.wang/apps/ai-pulse/privacy")!)
+                }.buttonStyle(.link)
+                Button(I18n.t("about.website")) {
+                    NSWorkspace.shared.open(URL(string: "https://xingyu.wang/apps/ai-pulse/about")!)
+                }.buttonStyle(.link)
+            }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
