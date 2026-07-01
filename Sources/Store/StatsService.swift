@@ -267,6 +267,58 @@ enum StatsService {
         } catch { return [] }
     }
 
+    // MARK: - Combined spend (API balance spend + subscription amortization)
+
+    /// Per-day subscription amortization: Σ (tier.fee / daysInMonth) across enabled
+    /// C-grade subscriptions. Mirrors the Dashboard "Spend" chart subscription bars.
+    static func subscriptionDailyAmortization() -> Double {
+        let subs = IntegrationRegistry.enabledCGrade()
+        guard !subs.isEmpty else { return 0 }
+        let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        var total = 0.0
+        for s in subs {
+            let cfg = IntegrationRegistry.config(for: s.id)
+            guard !cfg.subscriptionTier.isEmpty else { continue }
+            if let tool = SubscriptionRegistry.tool(forName: subscriptionToolName(for: s.id)),
+               let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
+                total += tier.fee / daysInMonth
+            }
+        }
+        return total
+    }
+
+    private static func subscriptionToolName(for id: String) -> String {
+        switch id {
+        case "cursor": return "Cursor"
+        case "copilot": return "GitHub Copilot"
+        case "windsurf": return "Windsurf"
+        default: return id
+        }
+    }
+
+    /// Combined spend (balance-derived API spend + subscription amortization) for all
+    /// days on/after `sinceMs`, matching the Dashboard "Spend" chart total.
+    ///
+    /// The balance query looks back an extra 14 days before `sinceMs` so the first
+    /// in-range daily delta is measured against a prior snapshot (otherwise it would
+    /// be silently dropped and undercount the boundary day, e.g. "today").
+    static func combinedSpend(sinceMs: Int64) async -> Double {
+        let cal = Calendar.current
+        let filterDay = cal.startOfDay(for: Date(timeIntervalSince1970: Double(sinceMs) / 1000))
+        let queryStart = cal.date(byAdding: .day, value: -14, to: filterDay) ?? filterDay
+        let queryStartMs = Int64(queryStart.timeIntervalSince1970 * 1000)
+
+        let rows = await balanceDailySpend(days: 1, sinceMs: queryStartMs)
+        let filterDayStart = filterDay.timeIntervalSince1970
+        let api = rows
+            .filter { $0.date.timeIntervalSince1970 >= filterDayStart }
+            .reduce(0.0) { $0 + $1.spend }
+
+        let today = cal.startOfDay(for: Date())
+        let dayCount = max((cal.dateComponents([.day], from: filterDay, to: today).day ?? 0) + 1, 1)
+        return api + subscriptionDailyAmortization() * Double(dayCount)
+    }
+
     // MARK: - Provider daily cost
 
     /// Daily cost grouped by provider_id for the cost chart.

@@ -9,7 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var menuBarController: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.applicationIconImage = AppIconLoader.load()
+        // Register defaults (fresh install values)
+        UserDefaults.standard.register(defaults: ["coin_sound_enabled": true])
 
         // Resolve security-scoped bookmarks for sandbox file access
         securityScopedURLs = BookmarkManager.resolveAll()
@@ -27,12 +28,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showOnboardingIfNeeded()
         // Start all enabled, detected integrations via the registry
         IntegrationRegistry.startAllEnabled()
+        // B-grade balance polling
+        ApiPoller.shared.start()
 
         // P3: Dock fuel gauge
         DockManager.shared.start()
 
-        // Show Dashboard as the primary window
-        openDashboard()
+        // Dashboard opens on Dock click or Cmd+Tab — not auto-launched
 
         // Request notification permission (only works in .app bundle, not bare binary)
         if Bundle.main.bundleIdentifier != nil {

@@ -40,6 +40,7 @@ struct DashboardView: View {
     @State private var apiDaily: [ChartDataPoint] = []
     @State private var editorMappings: [EditorDetector.Mapping] = []
     @State private var balanceSpend: [(providerId: String, name: String, spend: Double)] = []
+    @State private var balanceDaily: [ChartDataPoint] = []
 
     var hasAGrade: Bool {
         IntegrationRegistry.enabledAGrade().contains { $0.detect().found }
@@ -81,6 +82,9 @@ struct DashboardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await load() }
         .onChange(of: timeRange) { _, _ in Task { await load() } }
+        .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
+            Task { await load() }
+        }
     }
 
     // MARK: - CPL guidance (no A-grade)
@@ -101,13 +105,10 @@ struct DashboardView: View {
         .cornerRadius(10)
     }
 
-    /// Per-provider API accumulated cost from daily stats (not balance API)
+    /// Per-provider spend from balance API (single source of truth).
     var apiBreakdownCard: some View {
-        let grouped = Dictionary(grouping: providerCosts, by: { $0.providerId })
-            .mapValues { $0.reduce(0.0) { $0 + $1.cost } }
-            .sorted(by: { $0.value > $1.value })
-        guard !grouped.isEmpty else { return AnyView(EmptyView()) }
-        let total = grouped.reduce(0.0) { $0 + $1.value }
+        guard !balanceSpend.isEmpty else { return AnyView(EmptyView()) }
+        let total = balanceSpend.reduce(0.0) { $0 + $1.spend }
         return AnyView(
             VStack(alignment: .leading, spacing: 8) {
                 Text(I18n.t("dashboard.api_total_title")).font(.headline)
@@ -117,12 +118,11 @@ struct DashboardView: View {
                     Text("$\(String(format: "%.2f", total))").font(.callout).monospacedDigit().fontWeight(.semibold)
                 }
                 Divider()
-                ForEach(grouped, id: \.key) { providerId, cost in
-                    let name = IntegrationRegistry.all.first(where: { $0.id == providerId })?.displayName ?? providerId
+                ForEach(balanceSpend, id: \.providerId) { item in
                     HStack {
-                        Text(name).font(.caption)
+                        Text(item.name).font(.caption)
                         Spacer()
-                        Text("$\(String(format: "%.2f", cost))").font(.caption).monospacedDigit()
+                        Text("$\(String(format: "%.2f", item.spend))").font(.caption).monospacedDigit()
                     }
                 }
             }
@@ -146,10 +146,13 @@ struct DashboardView: View {
     // MARK: - Summary cards (3×2 grid)
 
     var summaryCards: some View {
-        let apiSpent = dailyStats.reduce(0.0) { $0 + $1.cost }
-        let added = dailyStats.reduce(0) { $0 + max(0, $1.netLines) }
-        let deleted = dailyStats.reduce(0) { $0 + max(0, -$1.netLines) }
+        let apiSpent = balanceSpend.reduce(0.0) { $0 + $1.spend }
+        let added = codeChanges.reduce(0) { $0 + $1.added }
+        let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
         let periodLabel = timeRange.label
+        // Project: daily rate × remaining days (simplified)
+        let apiDailyRate = apiSpent / max(Double(timeRange.days), 1)
+        let apiProjected = apiSpent + apiDailyRate * Double(30 - timeRange.days)
         return VStack(spacing: 8) {
             HStack(spacing: 8) {
                 card(title: "\(periodLabel)\(I18n.t("dashboard.api_spent"))",
@@ -160,8 +163,8 @@ struct DashboardView: View {
                      value: "+\(added)")
             }
             HStack(spacing: 8) {
-                card(title: "\(periodLabel)\(I18n.t("dashboard.api_projected"))",
-                     value: prediction.map { "$\(String(format: "%.2f", $0.monthProjected))" } ?? "--")
+                card(title: I18n.t("dashboard.api_projected"),
+                     value: "$\(String(format: "%.2f", apiProjected))")
                 card(title: I18n.t("dashboard.sub_monthly_label"),
                      value: "$\(String(format: "%.2f", totalSubMonthly()))")
                 card(title: "\(periodLabel)\(I18n.t("dashboard.code_deleted"))",
@@ -220,13 +223,12 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.cost_chart")).font(.headline)
 
-            if providerCosts.isEmpty && IntegrationRegistry.enabledCGrade().isEmpty {
+            if IntegrationRegistry.enabledCGrade().isEmpty {
                 Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 30)
             } else {
                 ZStack(alignment: .topLeading) {
                     Chart {
-                        // Stacking order (bottom→top): subscription → API
-                        ForEach(subDaily + apiDaily, id: \.id) { item in
+                        ForEach(subDaily + balanceDaily, id: \.id) { item in
                             BarMark(
                                 x: .value("Date", item.date, unit: .day),
                                 y: .value("Cost", item.cost)
@@ -252,25 +254,43 @@ struct DashboardView: View {
                     .chartYAxisLabel(I18n.t("dashboard.cost_usd"))
                     .chartOverlay { proxy in
                         GeometryReader { geo in
-                            Color.clear
+                            Rectangle().fill(.clear).contentShape(Rectangle())
                                 .onContinuousHover { phase in
-                                    if case .active(let loc) = phase,
-                                       let frame = proxy.plotFrame {
-                                        let originX = geo[frame].origin.x
-                                        let plotW = geo[frame].width
-                                        let x = loc.x - originX
-                                        guard x >= 0, x <= plotW else { costHoverDate = nil; return }
-                                        costHoverX = x
-                                        costHoverDate = proxy.value(atX: x)
-                                    } else { costHoverDate = nil }
+                                    switch phase {
+                                    case .active(let loc):
+                                        guard let frame = proxy.plotFrame else { return }
+                                        let x = loc.x - geo[frame].origin.x
+                                        guard x >= 0, x <= geo[frame].width else { return }
+                                        if let date = proxy.value(atX: x) as Date?,
+                                           !Calendar.current.isDate(date, inSameDayAs: costHoverDate ?? Date.distantPast) {
+                                            costHoverX = x
+                                            costHoverDate = date
+                                        }
+                                    case .ended:
+                                        costHoverDate = nil
+                                    }
                                 }
                         }
                     }
                     .frame(height: 200)
 
                     if let hd = costHoverDate {
-                        costTooltip(for: hd)
-                            .offset(x: min(max(costHoverX - 40, 0), 560), y: 0)
+                        let cal = Calendar.current
+                        let daySubs = subDaily.filter { cal.isDate($0.date, inSameDayAs: hd) }
+                        let dayBal = balanceDaily.filter { cal.isDate($0.date, inSameDayAs: hd) }
+                        let total = daySubs.reduce(0) { $0 + $1.cost } + dayBal.reduce(0) { $0 + $1.cost }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(hd, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
+                            Text("$\(String(format: "%.2f", total))").font(.caption2).monospacedDigit()
+                            ForEach(dayBal) { item in
+                                Text("  \(item.label): $\(String(format: "%.2f", item.cost))").font(.caption2).monospacedDigit()
+                            }
+                            ForEach(daySubs) { item in
+                                Text("  \(item.label): $\(String(format: "%.2f", item.cost))").font(.caption2).monospacedDigit()
+                            }
+                        }
+                        .padding(6).background(.regularMaterial).cornerRadius(6)
+                        .offset(x: min(max(costHoverX - 40, 0), 560), y: 0)
                     }
                 }
             }
@@ -327,13 +347,13 @@ struct DashboardView: View {
     func costTooltip(for date: Date) -> some View {
         let cal = Calendar.current
         let subs = subDaily.filter { cal.isDate($0.date, inSameDayAs: date) }
-        let apis = apiDaily.filter { cal.isDate($0.date, inSameDayAs: date) }
-        let totalCost = subs.reduce(0) { $0 + $1.cost } + apis.reduce(0) { $0 + $1.cost }
+        let bal = balanceDaily.filter { cal.isDate($0.date, inSameDayAs: date) }
+        let totalCost = subs.reduce(0) { $0 + $1.cost } + bal.reduce(0) { $0 + $1.cost }
 
         return VStack(alignment: .leading, spacing: 2) {
             Text(date, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
             Text("$\(String(format: "%.2f", totalCost))").font(.caption2).monospacedDigit()
-            ForEach(apis) { item in
+            ForEach(bal) { item in
                 Text("  \(item.label): $\(String(format: "%.2f", item.cost))").font(.caption2).monospacedDigit()
             }
             ForEach(subs) { item in
@@ -502,43 +522,12 @@ struct DashboardView: View {
     var bottomCards: some View {
         HStack(alignment: .top, spacing: 16) {
             apiBreakdownCard
-            balanceSpendCard
             if hasAGrade || hasCertainEditorMapping {
                 cplInfoCard
             } else {
                 cplGuidanceCard
             }
         }
-    }
-
-    var balanceSpendCard: some View {
-        guard !balanceSpend.isEmpty else { return AnyView(EmptyView()) }
-        let total = balanceSpend.reduce(0.0) { $0 + $1.spend }
-        return AnyView(
-            VStack(alignment: .leading, spacing: 6) {
-                Text("余额消费").font(.headline)
-                Text("基于余额变化计算（已过滤充值）")
-                    .font(.caption2).foregroundColor(.secondary)
-                ForEach(balanceSpend, id: \.providerId) { item in
-                    HStack {
-                        Text(item.name).font(.caption)
-                        Spacer()
-                        Text("$\(String(format: "%.2f", item.spend))").font(.caption).monospacedDigit()
-                    }
-                }
-                if balanceSpend.count > 1 {
-                    Divider()
-                    HStack {
-                        Text(I18n.t("dashboard.total")).font(.caption).fontWeight(.medium)
-                        Spacer()
-                        Text("$\(String(format: "%.2f", total))").font(.caption).monospacedDigit().fontWeight(.medium)
-                    }
-                }
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity)
-            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3)).cornerRadius(10)
-        )
     }
 
     // MARK: - Empty state (no integrations)
@@ -630,7 +619,7 @@ struct DashboardView: View {
         subDaily = subDailyData()
         apiDaily = apiDailyData()
         let rawSpend = await StatsService.balanceDailySpend(days: timeRange.days)
-        // Aggregate spend by provider
+        // Aggregate spend by provider for summary cards
         var spendMap: [(String, Double)] = []
         for s in rawSpend {
             if let idx = spendMap.firstIndex(where: { $0.0 == s.providerId }) {
@@ -645,6 +634,18 @@ struct DashboardView: View {
             let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
             return (pid, name, spend)
         }.sorted(by: { $0.spend > $1.spend })
+        // Aggregate balance spend by (date, provider) for chart bars
+        var dailyAgg: [String: (date: Date, label: String, cost: Double)] = [:]
+        for s in rawSpend {
+            guard let name = IntegrationRegistry.all.first(where: { $0.id == s.providerId })?.displayName else { continue }
+            let key = "\(Int(s.date.timeIntervalSince1970))-\(name)"
+            if let existing = dailyAgg[key] {
+                dailyAgg[key] = (s.date, name, existing.cost + s.spend)
+            } else {
+                dailyAgg[key] = (s.date, name, s.spend)
+            }
+        }
+        balanceDaily = dailyAgg.values.map { ChartDataPoint(date: $0.date, label: $0.label, cost: $0.cost) }
     }
 
 }

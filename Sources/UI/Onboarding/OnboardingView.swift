@@ -3,7 +3,7 @@ import SwiftUI
 struct DirEntry: Identifiable {
     let id = UUID()
     let path: String           // e.g. "~/dev"
-    var isChecked: Bool = true
+    var isChecked: Bool = false
     var repoCount: Int = 0
     var repos: [String] = []   // lastPathComponent only
     var isScanning: Bool = false
@@ -84,6 +84,7 @@ struct OnboardingView: View {
 
     var detectionStep: some View {
         let detected = detectionResults.filter(\.1.found)
+        let configurable = detectionResults.filter { !$0.1.found && $0.0.grade == .B }
         return VStack(alignment: .leading, spacing: 12) {
             Text(I18n.t("onboarding.detected")).font(.title3).fontWeight(.semibold)
             Text(I18n.t("onboarding.detected_hint"))
@@ -94,7 +95,13 @@ struct OnboardingView: View {
                     ForEach(detected, id: \.0.id) { (integration, result) in
                         IntegrationRow(integration: integration, detected: result)
                     }
-                    if detected.isEmpty {
+                    if !configurable.isEmpty {
+                        Text(I18n.t("integrations.needs_config")).font(.caption).foregroundColor(.secondary).padding(.top, 8)
+                        ForEach(configurable, id: \.0.id) { (integration, result) in
+                            IntegrationRow(integration: integration, detected: result)
+                        }
+                    }
+                    if detected.isEmpty && configurable.isEmpty {
                         Text(I18n.t("onboarding.no_tools"))
                             .foregroundColor(.secondary).padding()
                     }
@@ -176,10 +183,13 @@ struct OnboardingView: View {
 
             HStack {
                 Button(action: pickDir) {
-                    Label(I18n.t("repos.add"), systemImage: "plus.circle").font(.caption)
+                    Label(I18n.t("repos.add"), systemImage: "plus.circle")
+                        .font(.body).padding(.vertical, 4).padding(.horizontal, 12)
                 }
+                .buttonStyle(.bordered)
                 Spacer()
             }
+            .padding(.bottom, 8)
         }
         .padding(.horizontal, 24)
         .onAppear { startScan() }
@@ -298,6 +308,7 @@ struct OnboardingView: View {
             guard idx < dirEntries.count else { return }
             dirEntries[idx].repoCount = foundRepos.count
             dirEntries[idx].repos = foundRepos
+            if !foundRepos.isEmpty { dirEntries[idx].isChecked = true }
             dirEntries[idx].isScanning = false
         }
     }
@@ -314,11 +325,16 @@ struct OnboardingView: View {
 
     func close() {
         finish()
+        NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
         OnboardingWindowManager.shared.window?.close()
     }
 }
 
 // MARK: - Window Manager
+
+extension Notification.Name {
+    static let dashboardRefresh = Notification.Name("dashboardRefresh")
+}
 
 final class OnboardingWindowManager {
     static let shared = OnboardingWindowManager()

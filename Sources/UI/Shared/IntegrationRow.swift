@@ -41,14 +41,14 @@ struct IntegrationRow: View {
                     Text(integration.displayName).font(.body).fontWeight(.medium)
                     gradeBadge
                 }
-                Text(detected.found ? detected.summary : I18n.t("integrations.not_installed_note"))
+                Text(summaryText)
                     .font(.caption).foregroundColor(.secondary).lineLimit(1)
             }
 
             Spacer()
 
-            // Controls on the right
-            if detected.found {
+            // Controls on the right. B-grade always shows key input (not auto-detectable).
+            if detected.found || integration.grade == .B {
                 controls
             }
         }
@@ -62,6 +62,12 @@ struct IntegrationRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
         )
+    }
+
+    var summaryText: String {
+        if detected.found { return detected.summary }
+        if integration.grade == .B { return I18n.t("integrations.needs_config_note") }
+        return I18n.t("integrations.not_installed_note")
     }
 
     var iconName: String {
@@ -99,19 +105,24 @@ struct IntegrationRow: View {
             if showKey {
                 HStack(spacing: 6) {
                     TextField(I18n.t("integrations.key_placeholder"), text: $keyInput)
-                        .textFieldStyle(.roundedBorder).frame(width: 180)
+                        .textFieldStyle(.roundedBorder).frame(width: 160)
                     Button(I18n.t("integrations.key_save")) {
                         let k = keyInput.trimmingCharacters(in: .whitespaces)
                         guard !k.isEmpty else { return }
                         ApiKeyManager.shared.set(integration.id, key: k)
                         ApiPoller.shared.fetchNow(providerId: integration.id)
                         enabled = true; saved = true; showKey = false; saveConfig()
-                    }.disabled(keyInput.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .frame(minWidth: 40)
+                    .disabled(keyInput.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             } else {
                 HStack(spacing: 6) {
                     Text("••••••••").foregroundColor(.secondary)
-                    Button(I18n.t("integrations.key_change")) { keyInput = ""; showKey = true }.font(.caption)
+                    Button(I18n.t("integrations.key_change")) { keyInput = ""; showKey = true }
+                        .font(.caption).buttonStyle(.borderless).frame(minWidth: 32)
                     if saved { Image(systemName: "checkmark.circle.fill").foregroundColor(.green) }
                 }
             }

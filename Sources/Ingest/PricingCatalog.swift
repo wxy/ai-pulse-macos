@@ -35,7 +35,8 @@ final class PricingManager {
         let searchPaths = [
             Bundle.main.path(forResource: "pricing-catalog", ofType: "json"),
             "../shared/pricing-catalog.json",    // from mac-app/ (swift run cwd)
-            "../../shared/pricing-catalog.json", // from .build/debug/ (actual binary)
+            "../../shared/pricing-catalog.json", // from .build/debug/
+            "../../../../../../shared/pricing-catalog.json", // from .app bundle
             "./shared/pricing-catalog.json",
         ]
         for path in searchPaths {
@@ -92,4 +93,7 @@ final class PricingManager {
         let cacheCost = Double(cacheTokens) / 1_000_000 * p.cachePricePerMtok
         return inCost + outCost + cacheCost
     }
+
+    /// Backfill NULL cost_usd and provider_id in usage_event table.
+    /// One-time fix for events recorded before the pricing catalog was available.
 }

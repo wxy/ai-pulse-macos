@@ -28,6 +28,8 @@ enum I18n {
         "general.title": "通用",
         "general.desc": "应用全局设置。",
         "general.language_label": "显示语言",
+        "general.coin_sound": "花费音效",
+        "general.coin_sound_desc": "检测到余额消费时播放金币音效",
         "tools.title": "编程工具",
         "tools.desc": "自动检测的 AI 编程工具。",
         "tools.no_tools": "未检测到编程工具",
@@ -74,9 +76,11 @@ enum I18n {
         "integrations.title": "集成",
         "integrations.desc": "已检测到的工具显示配置选项。安装未检测到的工具以扩展覆盖范围。",
         "integrations.not_installed": "未安装",
+        "integrations.needs_config": "待配置",
+        "integrations.needs_config_note": "未配置 — 配置后即可跟踪",
         "integrations.redetect": "重新检测",
         "integrations.not_installed_note": "未安装 — 安装后即可追踪",
-        "integrations.key_placeholder": "粘贴 API Key",
+        "integrations.key_placeholder": "粘贴 API 密钥",
         "integrations.key_save": "保存",
         "integrations.key_change": "更换",
         "integrations.select_plan": "选择套餐",
@@ -170,6 +174,8 @@ enum I18n {
         "general.title": "General",
         "general.desc": "Global application settings.",
         "general.language_label": "Display Language",
+        "general.coin_sound": "Coin Sound",
+        "general.coin_sound_desc": "Play coin sound when balance spend is detected",
         "tools.title": "Coding Tools",
         "tools.desc": "AI coding tools auto-detected on your machine.",
         "tools.no_tools": "No coding tools detected.",
@@ -216,6 +222,8 @@ enum I18n {
         "integrations.title": "Integrations",
         "integrations.desc": "Detected tools show configuration controls. Install undetected tools to expand coverage.",
         "integrations.not_installed": "NOT INSTALLED",
+        "integrations.needs_config": "NEEDS CONFIG",
+        "integrations.needs_config_note": "Not configured — configure to enable tracking",
         "integrations.redetect": "Re-detect",
         "integrations.not_installed_note": "Not installed — install to enable tracking",
         "integrations.key_placeholder": "Paste API Key",
@@ -299,7 +307,12 @@ enum I18n {
     static func getLang() -> String {
         if let l = currentLang { return l }
         let saved = UserDefaults.standard.string(forKey: langKey)
-        let lang = saved ?? (Locale.current.language.languageCode?.identifier == "zh" ? "zh" : "en")
+        let lang: String
+        if let s = saved { lang = s }
+        else {
+            let preferred = Locale.preferredLanguages.first ?? ""
+            lang = preferred.hasPrefix("zh") ? "zh" : "en"
+        }
         currentLang = lang
         return lang
     }

@@ -89,7 +89,8 @@ struct IntegrationsSettingsTab: View {
                 .font(.caption).foregroundColor(.secondary)
 
             let detected = results.filter(\.1.found)
-            let notDetected = results.filter { !$0.1.found }
+            let notConfigured = results.filter { !$0.1.found && $0.0.grade == .B }
+            let notInstalled = results.filter { !$0.1.found && $0.0.grade != .B }
 
             ScrollView {
                 VStack(spacing: 6) {
@@ -99,7 +100,18 @@ struct IntegrationsSettingsTab: View {
                         }
                     }
 
-                    if !notDetected.isEmpty {
+                    if !notConfigured.isEmpty {
+                        HStack {
+                            Text(I18n.t("integrations.needs_config")).font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.top, 8)
+                        ForEach(notConfigured, id: \.0.id) { (i, r) in
+                            IntegrationRow(integration: i, detected: r)
+                        }
+                    }
+
+                    if !notInstalled.isEmpty {
                         HStack {
                             Text(I18n.t("integrations.not_installed")).font(.caption).foregroundColor(.secondary)
                             Spacer()
@@ -110,7 +122,7 @@ struct IntegrationsSettingsTab: View {
                             }
                         }
                         .padding(.top, 8)
-                        ForEach(notDetected, id: \.0.id) { (i, r) in
+                        ForEach(notInstalled, id: \.0.id) { (i, r) in
                             IntegrationRow(integration: i, detected: r)
                         }
                     }
@@ -160,8 +172,8 @@ struct GeneralTab: View {
             // Coin sound toggle
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("花费音效").font(.body)
-                    Text("检测到余额消费时播放金币音效")
+                    Text(I18n.t("general.coin_sound")).font(.body)
+                    Text(I18n.t("general.coin_sound_desc"))
                         .font(.caption2).foregroundColor(.secondary)
                 }
                 Spacer()

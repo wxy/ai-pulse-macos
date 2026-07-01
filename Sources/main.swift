@@ -5,6 +5,8 @@ import AppKit
 autoreleasepool {
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
+    // Set dock icon early to avoid gray placeholder during launch transition
+    app.applicationIconImage = AppIconLoader.load()
     let delegate = AppDelegate()
     app.delegate = delegate
 

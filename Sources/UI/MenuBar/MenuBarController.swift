@@ -59,7 +59,7 @@ final class MenuBarController: NSObject {
 
                 // Provider submenu — consumption from DB (USD)
                 if !stats.providerCosts.isEmpty {
-                    let m = NSMenuItem(title: I18n.t("menu.by_provider"), action: #selector(self.openDashboard), keyEquivalent: "")
+                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_provider"))", action: #selector(self.openDashboard), keyEquivalent: "")
                     m.target = self
                     let s = NSMenu()
                     for pc in stats.providerCosts {
@@ -74,7 +74,7 @@ final class MenuBarController: NSObject {
                     m.submenu = s; self.menu.addItem(m)
                 }
                 if !stats.repos.isEmpty {
-                    let m = NSMenuItem(title: I18n.t("menu.by_repo"), action: #selector(self.openDashboard), keyEquivalent: "")
+                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_repo"))", action: #selector(self.openDashboard), keyEquivalent: "")
                     m.target = self
                     let s = NSMenu()
                     for r in stats.repos {
@@ -109,9 +109,8 @@ final class MenuBarController: NSObject {
             let todayCnt: Int = try await AppDatabase.shared.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart]) ?? 0
             }
-            let todayCst: Double? = try await AppDatabase.shared.read { db in
-                try Double.fetchOne(db, sql: "SELECT COALESCE(SUM(cost_usd),0) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart])
-            }
+            // Combined spend (API balance spend + subscription amortization) — matches Dashboard.
+            let todayCst = await StatsService.combinedSpend(sinceMs: Int64(todayStart))
             let todayAdded: Int = try await AppDatabase.shared.read { db in
                 try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [todayStart]) ?? 0
             }
@@ -123,9 +122,7 @@ final class MenuBarController: NSObject {
             let weekCnt: Int = try await AppDatabase.shared.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart]) ?? 0
             }
-            let weekCst: Double? = try await AppDatabase.shared.read { db in
-                try Double.fetchOne(db, sql: "SELECT COALESCE(SUM(cost_usd),0) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart])
-            }
+            let weekCst = await StatsService.combinedSpend(sinceMs: Int64(weekStart))
             let weekAdded: Int = try await AppDatabase.shared.read { db in
                 try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [weekStart]) ?? 0
             }
@@ -146,39 +143,52 @@ final class MenuBarController: NSObject {
                 repoAddDel[path] = (Int(a), Int(d))
             }
 
-            // Repo cost per repo
+            // Per-provider spend this week from balance snapshots
+            let cal2 = Calendar.current
+            let weekDays = cal2.dateComponents([.day], from: cal2.date(from: cal2.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: cal2.startOfDay(for: Date())).day! + 1
+            let rawSpend = await StatsService.balanceDailySpend(days: weekDays, sinceMs: Int64(weekStart))
+            var spendByProvider: [String: Double] = [:]
+            for s in rawSpend { spendByProvider[s.providerId, default: 0] += s.spend }
+            var providerCosts: [(providerId: String, cost: Double)] = []
+            for (pid, cost) in spendByProvider where cost > 0.001 {
+                let enabledB = Set(IntegrationRegistry.enabledBGrade().map { $0.id })
+                if enabledB.contains(pid) { providerCosts.append((pid, cost)) }
+            }
+            providerCosts.sort { $0.cost > $1.cost }
+
+            // Repo cost: attribute total balance spend to repos proportionally by usage_event cost.
+            // Single-provider single-repo use case → same total as provider submenu.
+            let totalBalanceCost = spendByProvider.values.reduce(0, +)
             var cbr: [String: Double] = [:]
             let rcRows: [Row] = try await AppDatabase.shared.read { db in
                 try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? GROUP BY repo_path", arguments: [weekStart])
             }
-            for r in rcRows { if let p: String = r["p"], !p.isEmpty { cbr[p] = r["c"] ?? 0 } }
+            var logTotal: Double = 0
+            for r in rcRows { if let p: String = r["p"], !p.isEmpty, let c: Double = r["c"] { cbr[p] = c; logTotal += c } }
+            // Scale log costs to match balance total
+            let scale = logTotal > 0 ? totalBalanceCost / logTotal : 1.0
 
-            // Per-provider cost this week (consumption from DB, not balance API)
-            var providerCosts: [(providerId: String, cost: Double)] = []
-            let pcRows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT provider_id AS p, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>') GROUP BY provider_id ORDER BY c DESC", arguments: [weekStart])
-            }
-            for r in pcRows { if let p: String = r["p"], !p.isEmpty, let c: Double = r["c"], c > 0 { providerCosts.append((p, c)) } }
-
+            // Repos: scaled cost + code changes from git
             var repos: [RepoStat] = []
-            for (path, cost) in cbr {
+            for (path, logCost) in cbr {
                 let (a, d) = repoAddDel[path] ?? (0, 0)
-                guard a > 0 || d > 0, cost > 0 else { continue }
-                repos.append(RepoStat(name: URL(fileURLWithPath: path).lastPathComponent, added: a, deleted: d, cost: cost))
+                let scaledCost = logCost * scale
+                guard a > 0 || d > 0, scaledCost > 0.001 else { continue }
+                repos.append(RepoStat(name: URL(fileURLWithPath: path).lastPathComponent, added: a, deleted: d, cost: scaledCost))
             }
 
             // --- Helper to format a stats line ---
             func makeSummary(cnt: Int, cost: Double, added: Int, deleted: Int, label: String) -> String? {
-                guard cnt > 0 || added > 0 || deleted > 0 else { return nil }
+                guard cnt > 0 || added > 0 || deleted > 0 || cost > 0.0001 else { return nil }
                 let cS = cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0"
                 let linesStr = "+\(added)/-\(deleted) \(I18n.t("menu.lines"))"
                 return "\(label) · \(cS) · \(linesStr)"
             }
 
-            let todaySum = makeSummary(cnt: todayCnt, cost: todayCst ?? 0, added: todayAdded, deleted: todayDeleted, label: I18n.t("menu.today"))
-            let weekSum  = makeSummary(cnt: weekCnt,  cost: weekCst ?? 0,  added: weekAdded,  deleted: weekDeleted,  label: I18n.t("menu.this_week"))
+            let todaySum = makeSummary(cnt: todayCnt, cost: todayCst, added: todayAdded, deleted: todayDeleted, label: I18n.t("menu.today"))
+            let weekSum  = makeSummary(cnt: weekCnt,  cost: weekCst,  added: weekAdded,  deleted: weekDeleted,  label: I18n.t("menu.this_week"))
 
-            let hasActivity = weekCnt > 0 || !repos.isEmpty || weekAdded > 0 || weekDeleted > 0
+            let hasActivity = weekCnt > 0 || !repos.isEmpty || weekAdded > 0 || weekDeleted > 0 || weekCst > 0.0001
             if !hasActivity {
                 return Stats(todaySummary: nil, weekSummary: nil, repos: [], providerCosts: [], hasActivity: false)
             }
