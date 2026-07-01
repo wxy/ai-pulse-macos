@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 struct CodeChange: Codable {
     let commitHash: String
