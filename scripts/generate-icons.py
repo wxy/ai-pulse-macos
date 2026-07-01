@@ -98,8 +98,8 @@ def make_rounded_icon(source: Image.Image) -> Image.Image:
 
 
 def make_chrome_icon(source: Image.Image, size: int) -> Image.Image:
-    """Crop the robot artwork and place it centered on a transparent square canvas."""
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    """Crop the robot artwork and place it centered on a white square canvas."""
+    canvas = Image.new("RGBA", (size, size), (255, 255, 255, 255))
 
     # Crop robot out of its white margins.
     robot = source.crop(content_bbox(source))
@@ -133,7 +133,7 @@ def main():
     print(f"  Size: {source.size}, Mode: {source.mode}")
 
     if chrome_mode:
-        print("Generating Chrome extension icons (robot-only, transparent bg)...")
+        print("Generating Chrome extension icons (robot-only, white bg)...")
         generate_chrome_icons(source)
         print(f"  → {CHROME_OUTPUT_DIR}/")
         print("Done.")
