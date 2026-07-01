@@ -101,7 +101,7 @@ def make_chrome_icon(source: Image.Image, size: int) -> Image.Image:
     """Crop the robot artwork and place it centered on a transparent square canvas."""
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
 
-    # Crop robot out of its white margins.
+    # Crop robot out of its transparent margins.
     robot = source.crop(content_bbox(source))
     cw, ch = robot.size
 
