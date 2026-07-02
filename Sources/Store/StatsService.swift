@@ -247,7 +247,6 @@ enum StatsService {
             var results: [(String, Date, Double)] = []
             var currentPid: String? = nil
             var prevBalance: Double? = nil
-            var prevTs: Int64? = nil
             for r in rows {
                 let pid: String = r["provider_id"] ?? ""
                 let ts: Int64 = r["ts"] ?? 0
@@ -261,7 +260,6 @@ enum StatsService {
                 }
                 currentPid = pid
                 prevBalance = balance
-                prevTs = ts
             }
             return results
         } catch { return [] }

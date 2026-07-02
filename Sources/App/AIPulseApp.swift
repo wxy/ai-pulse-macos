@@ -1,4 +1,5 @@
 import AppKit
+@preconcurrency import AppKit
 import SwiftUI
 import UserNotifications
 
