@@ -618,7 +618,7 @@
 		C0843E2B2FF555EE00E3F6C4 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "arm64";
+				EXCLUDED_ARCHS = "x86_64";
 					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = ../AIPulse.entitlements;
