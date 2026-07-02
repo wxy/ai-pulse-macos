@@ -16,7 +16,7 @@ struct AiderParser {
         let inTokens = json["input_tokens"] as? Int ?? 0
         let outTokens = json["output_tokens"] as? Int ?? 0
         // Aider tracks its own cost in the JSON
-        let cost = json["cost"] as? Double
+        _ = json["cost"] as? Double
 
         let ts: Int
         if let tsStr = json["timestamp"] as? String {

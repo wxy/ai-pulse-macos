@@ -1,4 +1,5 @@
 import AppKit
+@preconcurrency import AppKit
 
 // Dock app with Dashboard as primary window.
 // .regular gives proper Dock + Cmd+Tab presence.
