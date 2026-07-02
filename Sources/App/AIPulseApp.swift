@@ -57,6 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         }
 
+        // Poll watched git repos for new commits every 5 minutes
+        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+            GitMonitor.shared.poll()
+        }
+
         // Check for anomalies after each poll cycle
         Timer.scheduledTimer(withTimeInterval: 3660, repeats: true) { _ in
             Task { await AnomalyDetector.shared.check() }
