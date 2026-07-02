@@ -43,6 +43,8 @@ final class DockManager {
                     return
                 }
                 tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
+                tile.display()  // force immediate render
+                diagLog("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
 
                 // Green bar fills the icon border as today's spend approaches
                 // 3× the 30-day daily average (capped at 100%).

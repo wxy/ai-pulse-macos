@@ -2,6 +2,20 @@ import AppKit
 import SwiftUI
 import UserNotifications
 
+func diagLog(_ msg: String) {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("aipulse-diag.log")
+    let line = "\(Date()): \(msg)\n"
+    if let data = line.data(using: .utf8) {
+        if let fh = try? FileHandle(forWritingTo: url) {
+            fh.seekToEndOfFile()
+            fh.write(data)
+            fh.closeFile()
+        } else {
+            try? data.write(to: url)
+        }
+    }
+}
+
 /// Dock app. Shows Dashboard as the primary window. No menu bar icon.
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -26,9 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Resolve security-scoped bookmarks for sandbox file access
         securityScopedURLs = BookmarkManager.resolveAll()
+        diagLog("A: bookmarks resolved=\(self.securityScopedURLs.count)")
 
         do { try AppDatabase.shared.setup() }
-        catch { print("DB setup failed: \(error)") }
+        catch { diagLog("DB setup failed: \(error.localizedDescription)") }
 
         // Build shared menu (stats refreshed every 30s, used by Dock right-click)
         menuBarController = MenuBarController()
@@ -40,12 +55,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showOnboardingIfNeeded()
         // Start all enabled, detected integrations via the registry
         IntegrationRegistry.startAllEnabled()
+        diagLog("integrations started, A-grade=\(IntegrationRegistry.enabledAGrade().count) B-grade=\(IntegrationRegistry.enabledBGrade().count) C-grade=\(IntegrationRegistry.enabledCGrade().count)")
         // Git/repo + Claude log monitoring is independent of which integrations are
         // enabled: it must run whenever the user has authorized repo directories or
         // ~/.claude. LogWatcher.start() is safe to call again (idempotent scans).
         LogWatcher.shared.start()
+        diagLog("LogWatcher started")
         // B-grade balance polling
         ApiPoller.shared.start()
+        diagLog("ApiPoller started")
 
         // P3: Dock fuel gauge
         DockManager.shared.start()

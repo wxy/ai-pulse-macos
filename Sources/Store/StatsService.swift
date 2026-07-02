@@ -316,7 +316,9 @@ enum StatsService {
 
         let today = cal.startOfDay(for: Date())
         let dayCount = max((cal.dateComponents([.day], from: filterDay, to: today).day ?? 0) + 1, 1)
-        return api + subscriptionDailyAmortization() * Double(dayCount)
+        let total = api + subscriptionDailyAmortization() * Double(dayCount)
+        diagLog("combinedSpend(sinceMs=\(sinceMs)): rows=\(rows.count) api=\(api) dayCount=\(dayCount) total=\(total)")
+        return total
     }
 
     // MARK: - Provider daily cost
