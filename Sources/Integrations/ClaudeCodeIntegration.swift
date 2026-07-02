@@ -8,7 +8,7 @@ struct ClaudeCodeIntegration: Detectable, Collectable {
     let grade: DataGrade = .A
 
     func detect() -> DetectionResult {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
+        let dir = FileManager.default.realHomeDirectory
             .appendingPathComponent(".claude/projects")
         let exists = FileManager.default.fileExists(atPath: dir.path)
         let sessions = (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.count ?? 0

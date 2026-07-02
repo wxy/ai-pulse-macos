@@ -8,6 +8,10 @@
 
 /* Begin PBXBuildFile section */
 		C0843E2E2FF5561900E3F6C4 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C0843E2D2FF5561900E3F6C4 /* GRDB */; };
+		C0843EA22FF5561900E3F6C4 /* libgit2.1.9.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		C0843EB42FF5561900E3F6C4 /* AIPulse.icns in Resources */ = {isa = PBXBuildFile; fileRef = C0843EB12FF5561900E3F6C4 /* AIPulse.icns */; };
+		C0843EB52FF5561900E3F6C4 /* AIPulse.png in Resources */ = {isa = PBXBuildFile; fileRef = C0843EB22FF5561900E3F6C4 /* AIPulse.png */; };
+		C0843EB62FF5561900E3F6C4 /* pricing-catalog.json in Resources */ = {isa = PBXBuildFile; fileRef = C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */; };
 		C0843E642FF5564500E3F6C4 /* CGradeIntegrations.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E4B2FF5564500E3F6C4 /* CGradeIntegrations.swift */; };
 		C0843E652FF5564500E3F6C4 /* SubscriptionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E472FF5564500E3F6C4 /* SubscriptionRegistry.swift */; };
 		C0843E662FF5564500E3F6C4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E4F2FF5564500E3F6C4 /* main.swift */; };
@@ -45,6 +49,10 @@
 
 /* Begin PBXFileReference section */
 		C0843E1D2FF555ED00E3F6C4 /* AIPulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIPulse.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libgit2.1.9.dylib; path = "../Libraries/libgit2/lib/libgit2.1.9.dylib"; sourceTree = SOURCE_ROOT; };
+		C0843EB12FF5561900E3F6C4 /* AIPulse.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = AIPulse.icns; path = ../Resources/AIPulse.icns; sourceTree = SOURCE_ROOT; };
+		C0843EB22FF5561900E3F6C4 /* AIPulse.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = AIPulse.png; path = ../Resources/AIPulse.png; sourceTree = SOURCE_ROOT; };
+		C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "pricing-catalog.json"; path = "../../shared/pricing-catalog.json"; sourceTree = SOURCE_ROOT; };
 		C0843E312FF5564500E3F6C4 /* AIPulseApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPulseApp.swift; sourceTree = "<group>"; };
 		C0843E332FF5564500E3F6C4 /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
 		C0843E352FF5564500E3F6C4 /* AnomalyDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnomalyDetector.swift; sourceTree = "<group>"; };
@@ -99,6 +107,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C0843EA32FF5561900E3F6C4 /* Embed Libraries */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				C0843EA22FF5561900E3F6C4 /* libgit2.1.9.dylib in Embed Libraries */,
+			);
+			name = "Embed Libraries";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXGroup section */
 		C0843E142FF555ED00E3F6C4 = {
@@ -306,6 +328,7 @@
 			buildPhases = (
 				C0843E192FF555ED00E3F6C4 /* Sources */,
 				C0843E1A2FF555ED00E3F6C4 /* Frameworks */,
+				C0843EA32FF5561900E3F6C4 /* Embed Libraries */,
 				C0843E1B2FF555ED00E3F6C4 /* Resources */,
 			);
 			buildRules = (
@@ -365,6 +388,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0843EB42FF5561900E3F6C4 /* AIPulse.icns in Resources */,
+				C0843EB52FF5561900E3F6C4 /* AIPulse.png in Resources */,
+				C0843EB62FF5561900E3F6C4 /* pricing-catalog.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -539,15 +565,15 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "../AIPulse.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
-				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "/Users/xingyuwang/develop/ai-pulse/mac-app/Libraries/libgit2/include";
+				INFOPLIST_FILE = "AIPulse-Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainNibFile = MainMenu;
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
@@ -582,15 +608,15 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "../AIPulse.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
-				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "/Users/xingyuwang/develop/ai-pulse/mac-app/Libraries/libgit2/include";
+				INFOPLIST_FILE = "AIPulse-Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainNibFile = MainMenu;
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
