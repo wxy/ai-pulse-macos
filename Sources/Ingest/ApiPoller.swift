@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 /// Periodically polls provider balance/usage APIs (Tier B).
 /// Runs every hour by default, same as the Chrome extension.

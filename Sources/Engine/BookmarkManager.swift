@@ -1,12 +1,47 @@
 import Foundation
 import AppKit
 
+extension FileManager {
+    /// The user's REAL home directory (e.g. `/Users/name`).
+    ///
+    /// Under the App Sandbox, both `NSHomeDirectory()` and
+    /// `homeDirectoryForCurrentUser` are redirected to the app's container
+    /// (`~/Library/Containers/<bundle-id>/Data`), which does NOT contain the
+    /// user's real dot-directories like `~/.claude`. `getpwuid` returns the true
+    /// home path and is unaffected by the sandbox redirection, so it is correct
+    /// in both sandboxed and non-sandboxed builds.
+    var realHomeDirectory: URL {
+        if let pw = getpwuid(getuid()) {
+            let path = String(cString: pw.pointee.pw_dir)
+            if !path.isEmpty {
+                return URL(fileURLWithPath: path, isDirectory: true)
+            }
+        }
+        return homeDirectoryForCurrentUser
+    }
+}
+
 /// Manages Security-Scoped Bookmarks for sandbox file access.
 /// Allows the app to persist read access to user-selected directories
 /// across launches, as required by the App Sandbox.
 enum BookmarkManager {
 
     private static let bookmarksKey = "security_scoped_bookmarks"
+
+    // MARK: - Environment
+
+    /// Whether the app is running inside the macOS App Sandbox (MAS / Xcode build).
+    /// Unsandboxed `make run-app` (Developer ID) reads the home directory directly.
+    static var isSandboxed: Bool {
+        ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+    }
+
+    /// Real `~/.claude` directory path. Uses the true home dir (not the sandbox
+    /// container) so detection and bookmark checks match what the user grants.
+    static var claudeDirPath: String {
+        FileManager.default.realHomeDirectory
+            .appendingPathComponent(".claude").path
+    }
 
     // MARK: - Public API
 
@@ -28,6 +63,37 @@ enum BookmarkManager {
 
         createAndSave(for: url)
         return url
+    }
+
+    /// Present an Open Panel pre-pointed at `~/.claude` so the user can grant
+    /// read access to Claude Code logs. Hidden files are shown so the dot-folder
+    /// is visible. Returns the selected URL, or nil if cancelled.
+    @discardableResult
+    static func requestClaudeAccess(message: String) -> URL? {
+        let home = FileManager.default.realHomeDirectory
+        let panel = NSOpenPanel()
+        panel.message = message
+        panel.prompt = "授权访问"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = home.appendingPathComponent(".claude")
+
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+
+        createAndSave(for: url)
+        return url
+    }
+
+    /// Whether any saved bookmark grants access to `path` (i.e. a bookmark whose
+    /// directory is `path` itself or an ancestor of it).
+    static func hasBookmark(covering path: String) -> Bool {
+        let target = URL(fileURLWithPath: path).standardizedFileURL.path
+        return savedBookmarks().keys.contains { key in
+            let k = URL(fileURLWithPath: key).standardizedFileURL.path
+            return target == k || target.hasPrefix(k + "/")
+        }
     }
 
     /// Create and persist a security-scoped bookmark for a URL.

@@ -9,6 +9,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var menuBarController: MenuBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Single-instance: if another copy (same bundle id) is already running,
+        // activate it and quit this one.
+        if let bid = Bundle.main.bundleIdentifier {
+            let others = NSRunningApplication.runningApplications(withBundleIdentifier: bid)
+                .filter { $0 != NSRunningApplication.current }
+            if let other = others.first {
+                other.activate(options: [.activateAllWindows])
+                NSApp.terminate(nil)
+                return
+            }
+        }
+
         // Register defaults (fresh install values)
         UserDefaults.standard.register(defaults: ["coin_sound_enabled": true])
 
@@ -28,6 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showOnboardingIfNeeded()
         // Start all enabled, detected integrations via the registry
         IntegrationRegistry.startAllEnabled()
+        // Git/repo + Claude log monitoring is independent of which integrations are
+        // enabled: it must run whenever the user has authorized repo directories or
+        // ~/.claude. LogWatcher.start() is safe to call again (idempotent scans).
+        LogWatcher.shared.start()
         // B-grade balance polling
         ApiPoller.shared.start()
 

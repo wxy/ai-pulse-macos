@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 struct CodeChange: Codable {
     let commitHash: String
@@ -12,6 +13,10 @@ struct CodeChange: Codable {
 /// Monitors git repositories for new commits and extracts net line changes
 final class GitMonitor {
     static let shared = GitMonitor()
+    /// Guards `watchedRepos` and `lastSeenCommit`. `watch()` can be invoked from
+    /// multiple background contexts (initial scan, FSEvent handlers), so the
+    /// shared state must be synchronized to avoid data races.
+    private let lock = NSLock()
     private var watchedRepos: Set<String> = []
     private var lastSeenCommit: [String: String] = [:] // repo -> last processed commit hash
 
@@ -27,15 +32,20 @@ final class GitMonitor {
 
     /// Start watching a git repo for new commits
     func watch(repoPath: String) {
-        guard !watchedRepos.contains(repoPath) else { return }
-        watchedRepos.insert(repoPath)
+        lock.lock()
+        let inserted = watchedRepos.insert(repoPath).inserted
+        lock.unlock()
+        guard inserted else { return }
         // Scan existing commits
         scanRecentCommits(repo: repoPath)
     }
 
     /// Poll watched repos - called periodically or after log ingestion
     func poll() {
-        for repo in watchedRepos {
+        lock.lock()
+        let repos = watchedRepos
+        lock.unlock()
+        for repo in repos {
             scanRecentCommits(repo: repo)
         }
     }
@@ -43,7 +53,9 @@ final class GitMonitor {
     // MARK: - Private
 
     private func scanRecentCommits(repo: String) {
+        lock.lock()
         let lastHash = lastSeenCommit[repo]
+        lock.unlock()
         let gitRepo = GitRepo(path: repo)
         let commits = gitRepo.log(since: lastHash)
 
@@ -59,7 +71,9 @@ final class GitMonitor {
                 ))
             }
 
+            lock.lock()
             lastSeenCommit[repo] = commit.hash
+            lock.unlock()
         }
     }
 

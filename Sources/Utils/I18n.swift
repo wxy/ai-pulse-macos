@@ -57,9 +57,11 @@ enum I18n {
         "subs.copilot_note": "Copilot 已转为用量计费（AI Credits），超出月配额部分无法追踪。仅统计基础月费。",
         "subs.empty": "未检测到已安装的订阅工具。",
         "about.title": "AI Pulse",
-        "about.version": "版本 M1 (0.1.0)",
+        "about.version": "0.9.0",
         "about.desc": "知道你 AI 编程的真实成本。",
         "about.privacy": "所有数据仅存储在本机。",
+        "about.privacy_link": "隐私政策",
+        "about.website": "网站",
         "anomaly.title": "⚠️ AI 花费异常",
         "onboarding.welcome": "你的 AI 油表",
         "onboarding.desc": "跟踪所有工具、订阅和 API 密钥的 AI 花费。",
@@ -145,6 +147,12 @@ enum I18n {
         "onboarding.repos_count": "%d 个仓库",
         "onboarding.skip": "跳过",
         "onboarding.done_repos_count": "%d 个仓库已配置监控。",
+        "onboarding.grant_claude": "授权 Claude Code 目录",
+        "onboarding.grant_claude_hint": "需要读取 ~/.claude 才能统计 Claude Code 用量。点击后在弹窗中确认授权，数据仅保存在本机。",
+        "bookmark.grant": "授权",
+        "bookmark.claude_message": "AI Pulse 需要读取 ~/.claude 目录以统计 Claude Code 用量。请在此确认授权（仅本机使用）。",
+        "bookmark.repos_message": "选择存放代码仓库的目录（例如 ~/dev），AI Pulse 将扫描其中的 Git 仓库以统计代码变化。建议不要直接选择主目录。",
+        "repos.grant_empty": "尚未授权任何目录。点击“添加目录”选择存放代码仓库的目录（如 ~/dev），授权后即可扫描其中的 Git 仓库。",
     ]
 
     static let en: [String: String] = [
@@ -203,9 +211,11 @@ enum I18n {
         "subs.copilot_note": "Copilot now uses credits-based billing. Over-quota usage cannot be tracked. Base monthly fee only.",
         "subs.empty": "No subscription tools detected.",
         "about.title": "AI Pulse",
-        "about.version": "Version M1 (0.1.0)",
+        "about.version": "0.9.0",
         "about.desc": "Know what AI coding really costs you.",
         "about.privacy": "All data stays on your machine.",
+        "about.privacy_link": "Privacy Policy",
+        "about.website": "Website",
         "anomaly.title": "⚠️ AI Spending Spike",
         "onboarding.welcome": "Your AI Fuel Gauge",
         "onboarding.desc": "Track AI spend across all tools, subscriptions, and API keys.",
@@ -291,6 +301,12 @@ enum I18n {
         "onboarding.repos_count": "%d repos",
         "onboarding.skip": "Skip",
         "onboarding.done_repos_count": "%d repos configured for monitoring.",
+        "onboarding.grant_claude": "Grant Access to Claude Code Folder",
+        "onboarding.grant_claude_hint": "Reading ~/.claude is required to track Claude Code usage. Confirm access in the dialog — data stays on your machine.",
+        "bookmark.grant": "Grant",
+        "bookmark.claude_message": "AI Pulse needs to read the ~/.claude folder to track Claude Code usage. Please grant access here (used locally only).",
+        "bookmark.repos_message": "Choose a directory that holds your code repositories (e.g. ~/dev). AI Pulse will scan it for Git repos to track code changes. Avoid selecting your home folder directly.",
+        "repos.grant_empty": "No directories authorized yet. Click “Add Directory” to choose where your code repositories live (e.g. ~/dev); AI Pulse will scan it for Git repos after you grant access.",
     ]
 
     static let didChangeLanguage = Notification.Name("I18nDidChangeLanguage")

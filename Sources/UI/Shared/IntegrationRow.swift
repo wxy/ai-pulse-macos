@@ -5,6 +5,7 @@ import SwiftUI
 struct IntegrationRow: View {
     let integration: any Detectable
     let detected: DetectionResult
+    let onGrant: (() -> Void)?
     @State private var enabled: Bool
     @State private var keyInput: String
     @State private var tierInput: String
@@ -12,9 +13,10 @@ struct IntegrationRow: View {
     @State private var showKey: Bool = false
     @State private var detecting: Bool = false
 
-    init(integration: any Detectable, detected: DetectionResult) {
+    init(integration: any Detectable, detected: DetectionResult, onGrant: (() -> Void)? = nil) {
         self.integration = integration
         self.detected = detected
+        self.onGrant = onGrant
         let cfg = IntegrationRegistry.config(for: integration.id)
         let hasKey = !(ApiKeyManager.shared.get(integration.id) ?? "").isEmpty
         _enabled = State(initialValue: cfg.enabled)
@@ -22,6 +24,14 @@ struct IntegrationRow: View {
         _tierInput = State(initialValue: cfg.subscriptionTier)
         _saved = State(initialValue: cfg.enabled || hasKey)
         _showKey = State(initialValue: !hasKey)
+    }
+
+    /// Claude Code under sandbox needs an explicit ~/.claude directory grant
+    /// before its logs can be read. Shown inline on the row until granted.
+    var needsGrant: Bool {
+        integration.id == "claude-code"
+            && BookmarkManager.isSandboxed
+            && !BookmarkManager.hasBookmark(covering: BookmarkManager.claudeDirPath)
     }
 
     var body: some View {
@@ -42,13 +52,17 @@ struct IntegrationRow: View {
                     gradeBadge
                 }
                 Text(summaryText)
-                    .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                    .font(.caption).foregroundColor(.secondary).lineLimit(2)
             }
 
             Spacer()
 
-            // Controls on the right. B-grade always shows key input (not auto-detectable).
-            if detected.found || integration.grade == .B {
+            // Controls on the right.
+            if needsGrant {
+                Button(I18n.t("bookmark.grant")) { grantClaude() }
+                    .buttonStyle(.bordered).controlSize(.small)
+            } else if detected.found || integration.grade == .B {
+                // B-grade always shows key input (not auto-detectable).
                 controls
             }
         }
@@ -66,12 +80,14 @@ struct IntegrationRow: View {
 
     var summaryText: String {
         if detected.found { return detected.summary }
+        if needsGrant { return I18n.t("onboarding.grant_claude_hint") }
         if integration.grade == .B { return I18n.t("integrations.needs_config_note") }
         return I18n.t("integrations.not_installed_note")
     }
 
     var iconName: String {
         if detecting { return "arrow.triangle.2.circlepath" }
+        if needsGrant { return "lock.circle" }
         return detected.found ? "checkmark.circle.fill" : "questionmark.circle"
     }
 
@@ -148,6 +164,19 @@ struct IntegrationRow: View {
         IntegrationRegistry.setConfig(for: integration.id, cfg)
         if enabled, let c = integration as? Collectable { c.start() }
         else if !enabled, let c = integration as? Collectable { c.stop() }
+    }
+
+    /// Grant read access to ~/.claude, then enable + start Claude Code so its
+    /// logs are picked up this session (no relaunch needed), and ask the parent
+    /// to re-run detection so the row moves to the "detected" state.
+    private func grantClaude() {
+        guard BookmarkManager.requestClaudeAccess(message: I18n.t("bookmark.claude_message")) != nil
+        else { return }
+        var cfg = IntegrationRegistry.config(for: integration.id)
+        cfg.enabled = true
+        IntegrationRegistry.setConfig(for: integration.id, cfg)
+        (integration as? Collectable)?.start()
+        onGrant?()
     }
 
     private func saveSub(_ tier: String) {

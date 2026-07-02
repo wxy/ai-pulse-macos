@@ -123,7 +123,8 @@ struct IntegrationsSettingsTab: View {
                         }
                         .padding(.top, 8)
                         ForEach(notInstalled, id: \.0.id) { (i, r) in
-                            IntegrationRow(integration: i, detected: r)
+                            IntegrationRow(integration: i, detected: r,
+                                           onGrant: { runDetection() })
                         }
                     }
                 }
@@ -344,7 +345,7 @@ struct ToolsTab: View {
     }
     private func detect() {
         var list: [ToolItem] = []
-        let ccDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+        let ccDir = FileManager.default.realHomeDirectory.appendingPathComponent(".claude/projects")
         if FileManager.default.fileExists(atPath: ccDir.path) {
             let sessions = (try? FileManager.default.contentsOfDirectory(atPath: ccDir.path))?.count ?? 0
             list.append(ToolItem(name: I18n.t("tools.claude_code"), path: "~/.claude/projects/", sessions: sessions, enabled: true))
@@ -368,6 +369,12 @@ struct ReposTab: View {
 
             ScrollView {
                 VStack(spacing: 4) {
+                    if dirEntries.isEmpty {
+                        Text(I18n.t("repos.grant_empty"))
+                            .font(.caption).foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                    }
                     ForEach($dirEntries) { $entry in
                         VStack(spacing: 0) {
                             // Directory row
@@ -457,9 +464,15 @@ struct ReposTab: View {
     private func startScan() {
         let dirs = UserDefaults.standard.stringArray(forKey: repoDirsKey) ?? []
         if dirs.isEmpty {
-            let defaults = ["~/dev", "~/projects", "~/code"]
-            UserDefaults.standard.set(defaults, forKey: repoDirsKey)
-            dirEntries = defaults.map { DirEntry(path: $0) }
+            // Under sandbox, unauthorized guessed defaults can't be read; show an empty
+            // state + Add button instead of persisting/scanning unreadable directories.
+            if BookmarkManager.isSandboxed {
+                dirEntries = []
+            } else {
+                let defaults = ["~/dev", "~/projects", "~/code"]
+                UserDefaults.standard.set(defaults, forKey: repoDirsKey)
+                dirEntries = defaults.map { DirEntry(path: $0) }
+            }
         } else {
             dirEntries = dirs.map { DirEntry(path: $0) }
         }
@@ -471,15 +484,23 @@ struct ReposTab: View {
     }
 
     private func pickDir() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.prompt = I18n.t("repos.add")
+        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.prompt = I18n.t("bookmark.grant")
+        panel.message = I18n.t("bookmark.repos_message")
+        panel.directoryURL = FileManager.default.realHomeDirectory
         if panel.runModal() == .OK, let url = panel.url {
-            let p = url.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+            // Persist a security-scoped bookmark so access survives relaunch (sandbox).
+            BookmarkManager.createAndSave(for: url)
+            // Store the absolute path (see OnboardingView.pickDir for the tilde/sandbox note).
+            let p = url.path
             guard !dirEntries.contains(where: { $0.path == p }) else { return }
             let entry = DirEntry(path: p)
             dirEntries.append(entry)
             save()
             let idx = dirEntries.count - 1
             Task { await scanOne(at: idx) }
+            // Start monitoring the newly authorized directory without a relaunch.
+            LogWatcher.shared.start()
+            NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
         }
     }
 
@@ -619,9 +640,17 @@ struct AboutTab: View {
         VStack(spacing: 16) {
             Image(nsImage: AppIconLoader.uiImage(size: 64))
             Text(I18n.t("about.title")).font(.title).fontWeight(.bold)
-            Text(I18n.t("about.version")).font(.caption).foregroundColor(.secondary)
+            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.9.0")").font(.caption).foregroundColor(.secondary)
             Text(I18n.t("about.desc")).multilineTextAlignment(.center)
             Text(I18n.t("about.privacy")).font(.caption2).foregroundColor(.secondary)
+            HStack(spacing: 16) {
+                Button(I18n.t("about.privacy_link")) {
+                    NSWorkspace.shared.open(URL(string: "https://xingyu.wang/apps/ai-pulse/privacy")!)
+                }.buttonStyle(.link)
+                Button(I18n.t("about.website")) {
+                    NSWorkspace.shared.open(URL(string: "https://xingyu.wang/apps/ai-pulse/about")!)
+                }.buttonStyle(.link)
+            }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

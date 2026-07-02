@@ -10,6 +10,13 @@ final class LogWatcher {
     static let shared = LogWatcher()
     private var claudeSource: DispatchSourceFileSystemObject?
 
+    /// Serial queue for ALL scanning/parsing. Serializing prevents data races on
+    /// the mutable state below (filePositions/partialLines) and on GitMonitor's
+    /// watched-repo set when start() is called from multiple places (launch,
+    /// after granting access, after adding a directory) or when an FSEvent fires
+    /// while an initial scan is still running.
+    private let scanQueue = DispatchQueue(label: "com.wxy.aipulse.logwatcher.scan", qos: .utility)
+
     /// Last-read byte offset per file path.  Persisted in UserDefaults.
     private var filePositions: [String: UInt64] = [:]
     /// Leftover partial line (when a write stops mid-line) per file path.
@@ -23,10 +30,10 @@ final class LogWatcher {
     }
 
     func start() {
-        // Offload the initial scan to a background queue — scanning all git
-        // repos and JSONL files on the main thread blocks the run loop and
-        // makes the menu bar item unresponsive for seconds after launch.
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        // Offload scanning to a serial queue — scanning all git repos and JSONL
+        // files on the main thread blocks the run loop, and running concurrent
+        // scans would race on shared state.
+        scanQueue.async { [weak self] in
             self?.watchClaudeCode()
             self?.discoverAndWatchRepos()
         }
@@ -41,13 +48,17 @@ final class LogWatcher {
     // MARK: - Claude Code
 
     private func watchClaudeCode() {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
+        let dir = FileManager.default.realHomeDirectory
             .appendingPathComponent(".claude/projects")
         guard FileManager.default.fileExists(atPath: dir.path) else {
             print("Claude Code projects dir not found")
             return
         }
         scanClaudeCode(at: dir)
+
+        // Already watching (start() may be called again after granting access
+        // or adding repos) — re-scan above is enough; don't create a 2nd source.
+        guard claudeSource == nil else { return }
 
         let fd = open(dir.path, O_EVTONLY)
         guard fd >= 0 else { return }
@@ -56,7 +67,9 @@ final class LogWatcher {
             eventMask: [.write, .extend, .rename],
             queue: DispatchQueue.global(qos: .utility)
         )
-        claudeSource?.setEventHandler { [weak self] in self?.scanClaudeCode(at: dir) }
+        claudeSource?.setEventHandler { [weak self] in
+            self?.scanQueue.async { self?.scanClaudeCode(at: dir) }
+        }
         claudeSource?.setCancelHandler { close(fd) }
         claudeSource?.resume()
     }

@@ -85,6 +85,13 @@ struct OnboardingView: View {
     var detectionStep: some View {
         let detected = detectionResults.filter(\.1.found)
         let configurable = detectionResults.filter { !$0.1.found && $0.0.grade == .B }
+        // Claude Code that needs a ~/.claude grant (sandbox) is shown as a grantable
+        // row so the authorization prompt lives under the Claude item itself.
+        let grantable = detectionResults.filter {
+            !$0.1.found && $0.0.id == "claude-code"
+                && BookmarkManager.isSandboxed
+                && !BookmarkManager.hasBookmark(covering: BookmarkManager.claudeDirPath)
+        }
         return VStack(alignment: .leading, spacing: 12) {
             Text(I18n.t("onboarding.detected")).font(.title3).fontWeight(.semibold)
             Text(I18n.t("onboarding.detected_hint"))
@@ -95,13 +102,17 @@ struct OnboardingView: View {
                     ForEach(detected, id: \.0.id) { (integration, result) in
                         IntegrationRow(integration: integration, detected: result)
                     }
+                    ForEach(grantable, id: \.0.id) { (integration, result) in
+                        IntegrationRow(integration: integration, detected: result,
+                                       onGrant: { runDetection() })
+                    }
                     if !configurable.isEmpty {
                         Text(I18n.t("integrations.needs_config")).font(.caption).foregroundColor(.secondary).padding(.top, 8)
                         ForEach(configurable, id: \.0.id) { (integration, result) in
                             IntegrationRow(integration: integration, detected: result)
                         }
                     }
-                    if detected.isEmpty && configurable.isEmpty {
+                    if detected.isEmpty && configurable.isEmpty && grantable.isEmpty {
                         Text(I18n.t("onboarding.no_tools"))
                             .foregroundColor(.secondary).padding()
                     }
@@ -121,6 +132,12 @@ struct OnboardingView: View {
 
             ScrollView {
                 VStack(spacing: 4) {
+                    if dirEntries.isEmpty {
+                        Text(I18n.t("repos.grant_empty"))
+                            .font(.caption).foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                    }
                     ForEach($dirEntries) { $entry in
                         VStack(spacing: 0) {
                             // Directory row
@@ -220,10 +237,15 @@ struct OnboardingView: View {
     private func pickDir() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.prompt = I18n.t("repos.add")
+        panel.prompt = I18n.t("bookmark.grant")
+        panel.message = I18n.t("bookmark.repos_message")
+        panel.directoryURL = FileManager.default.realHomeDirectory
         if panel.runModal() == .OK, let url = panel.url {
-            let p = url.path.replacingOccurrences(
-                of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+            // Persist a security-scoped bookmark so access survives relaunch (sandbox).
+            BookmarkManager.createAndSave(for: url)
+            // Store the absolute path: NSString.expandingTildeInPath resolves "~" against
+            // the sandbox container, so a tilde path would break scanning under sandbox.
+            let p = url.path
             guard !dirEntries.contains(where: { $0.path == p }) else { return }
             let entry = DirEntry(path: p)
             dirEntries.append(entry)
@@ -270,7 +292,9 @@ struct OnboardingView: View {
     func startScan() {
         // Load dirs from settings, fall back to defaults
         var dirs = UserDefaults.standard.stringArray(forKey: repoDirsKey) ?? []
-        if dirs.isEmpty { dirs = ["~/dev", "~/projects", "~/code"] }
+        // Under sandbox, unauthorized guessed defaults (~/dev …) can't be read and would
+        // only show "0 repos", confusing the user. Show an empty state + Add button instead.
+        if dirs.isEmpty && !BookmarkManager.isSandboxed { dirs = ["~/dev", "~/projects", "~/code"] }
         dirEntries = dirs.map { DirEntry(path: $0) }
         Task {
             for i in dirEntries.indices {
@@ -325,6 +349,9 @@ struct OnboardingView: View {
 
     func close() {
         finish()
+        // Re-discover repos/logs so directories just authorized during onboarding
+        // start being monitored without requiring an app relaunch.
+        LogWatcher.shared.start()
         NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
         OnboardingWindowManager.shared.window?.close()
     }
