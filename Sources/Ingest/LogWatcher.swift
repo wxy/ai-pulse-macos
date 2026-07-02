@@ -80,6 +80,9 @@ final class LogWatcher {
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return }
         for case let file as URL in enumerator where file.pathExtension == "jsonl" {
+            // Register the repo even for files with no new content — ensures
+            // repos from past sessions are re-watched after an app restart.
+            discoverAndWatchRepo(from: file)
             parseLinesIncremental(from: file) { line in
                 guard let event = ClaudeCodeParser.parse(line: line) else { return nil }
                 // Resolve cwd to git repo root for consistent repo_path
@@ -220,6 +223,24 @@ final class LogWatcher {
             url = url.deletingLastPathComponent()
         }
         return nil
+    }
+
+    /// Read the first line of a Claude Code JSONL file to discover and register
+    /// the associated git repo — regardless of whether the file has new content.
+    /// Failures are silent (the file may be mid-write); the next scan will retry.
+    private func discoverAndWatchRepo(from file: URL) {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 4096),
+              let text = String(data: data, encoding: .utf8),
+              let firstLine = text.components(separatedBy: .newlines).first,
+              !firstLine.isEmpty,
+              let jsonData = firstLine.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let cwd = json["cwd"] as? String,
+              let repoUrl = findGitRepo(containing: cwd)
+        else { return }
+        GitMonitor.shared.watch(repoPath: repoUrl.path)
     }
 
 }

@@ -20,6 +20,18 @@ final class GitMonitor {
     private var watchedRepos: Set<String> = []
     private var lastSeenCommit: [String: String] = [:] // repo -> last processed commit hash
 
+    private static let watchedReposKey = "gitmonitor_watched_repos"
+    private static let lastSeenKey = "gitmonitor_last_seen"
+
+    private init() {
+        if let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) {
+            watchedRepos = Set(saved)
+        }
+        if let saved = UserDefaults.standard.dictionary(forKey: Self.lastSeenKey) as? [String: String] {
+            lastSeenCommit = saved
+        }
+    }
+
     /// Exclusion patterns for non-code files (glob-style)
     static let excludedSuffixes: Set<String> = [
         ".lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
@@ -36,6 +48,7 @@ final class GitMonitor {
         let inserted = watchedRepos.insert(repoPath).inserted
         lock.unlock()
         guard inserted else { return }
+        persistWatchedRepos()
         // Scan existing commits
         scanRecentCommits(repo: repoPath)
     }
@@ -75,6 +88,7 @@ final class GitMonitor {
             lastSeenCommit[repo] = commit.hash
             lock.unlock()
         }
+        persistLastSeen()
     }
 
     /// Check whether a file path matches exclusion patterns (lockfiles,
@@ -83,6 +97,22 @@ final class GitMonitor {
         for suffix in Self.excludedSuffixes where file.hasSuffix(suffix) { return true }
         for dir in Self.excludedDirs where file.contains("/\(dir)/") || file.hasPrefix("\(dir)/") { return true }
         return false
+    }
+
+    // MARK: - Persistence
+
+    private func persistWatchedRepos() {
+        lock.lock()
+        let arr = Array(watchedRepos)
+        lock.unlock()
+        UserDefaults.standard.set(arr, forKey: Self.watchedReposKey)
+    }
+
+    private func persistLastSeen() {
+        lock.lock()
+        let dict = lastSeenCommit
+        lock.unlock()
+        UserDefaults.standard.set(dict, forKey: Self.lastSeenKey)
     }
 
     private func insertChange(_ change: CodeChange) {
