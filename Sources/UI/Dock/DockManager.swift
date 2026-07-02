@@ -9,6 +9,7 @@ import AppKit
 final class DockManager {
     static let shared = DockManager()
     private var timer: Timer?
+    private var currentTask: Task<Void, Never>?
     private let baseIcon: NSImage = AppIconLoader.load()
 
     func start() {
@@ -18,7 +19,10 @@ final class DockManager {
         }
     }
 
-    func stop() { timer?.invalidate(); timer = nil }
+    func stop() {
+        timer?.invalidate(); timer = nil
+        currentTask?.cancel(); currentTask = nil
+    }
 
     /// 30-day rolling daily average of combined spend (API + subscription amortization).
     private func rollingDailyAvg() async -> Double {
@@ -29,7 +33,7 @@ final class DockManager {
     }
 
     private func refresh() {
-        Task {
+        currentTask = Task {
             let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
             let todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
             let dailyAvg = await rollingDailyAvg()
@@ -38,13 +42,11 @@ final class DockManager {
                 let tile = NSApp.dockTile
 
                 guard todayCost > 0.001 else {
-                    tile.badgeLabel = nil
                     NSApp.applicationIconImage = self.baseIcon
+                    tile.badgeLabel = nil
+                    tile.display()
                     return
                 }
-                tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
-                tile.display()  // force immediate render
-                diagLog("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
 
                 // Green bar fills the icon border as today's spend approaches
                 // 3× the 30-day daily average (capped at 100%).
@@ -57,6 +59,9 @@ final class DockManager {
                 }
 
                 NSApp.applicationIconImage = AppIconLoader.load(progress: Double(fillFraction))
+                tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
+                tile.display()
+                diagLog("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
             }
         }
     }
