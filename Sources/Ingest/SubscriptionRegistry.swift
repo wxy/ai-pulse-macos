@@ -29,22 +29,11 @@ enum SubscriptionRegistry {
     /// All known subscription tools.  Displayed in settings only if `installed` is true.
     static let tools: [SubscriptionTool] = {
         let fm = FileManager.default
-        let appDirs = [
-            URL(fileURLWithPath: "/Applications"),
-            URL(fileURLWithPath: "\(NSHomeDirectory())/Applications"),
-        ]
 
         func isInstalled(_ bids: [String]) -> Bool {
             for bid in bids {
                 if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid),
                    fm.fileExists(atPath: url.path) { return true }
-                for dir in appDirs {
-                    guard let contents = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
-                    else { continue }
-                    for app in contents where app.pathExtension == "app" {
-                        if let b = Bundle(url: app)?.bundleIdentifier, b == bid { return true }
-                    }
-                }
             }
             return false
         }
