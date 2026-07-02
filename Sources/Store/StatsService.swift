@@ -25,10 +25,10 @@ struct RepoBreakdown: Identifiable {
     let added: Int
     let deleted: Int
     var totalChanges: Int { added + deleted }
-    let costPerLine: Double                        // API-only CPL (denominator = totalChanges)
-    let subscriptionSources: [CPLSource]            // editor→subscription CPLs (independent)
+    let apiSources: [CPLSource]               // per-source CPLs (Claude Code, aider, etc.)
+    let subscriptionSources: [CPLSource]      // editor→subscription CPLs (independent)
     var allSources: [CPLSource] {
-        var srcs = [CPLSource(label: "API", cpl: costPerLine)]
+        var srcs = apiSources
         srcs.append(contentsOf: subscriptionSources)
         return srcs.filter { $0.cpl > 0 }
     }
@@ -138,9 +138,9 @@ enum StatsService {
         do {
             let costRows: [Row] = try await AppDatabase.shared.read { db in
                 try Row.fetchAll(db, sql: """
-                    SELECT repo_path AS p, COALESCE(SUM(cost_usd), 0) AS c
+                    SELECT repo_path AS p, source AS s, COALESCE(SUM(cost_usd), 0) AS c
                     FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? AND ts < ?
-                    GROUP BY p
+                    GROUP BY p, s
                     """, arguments: [startMs, todayMs + 86_400_000])
             }
             let lineRows: [Row] = try await AppDatabase.shared.read { db in
@@ -160,22 +160,34 @@ enum StatsService {
                 }
             }
 
+            // Build repo path → [(source, cost)] from per-source rows
+            var costMap = [String: [(source: String, cost: Double)]]()
+            for r in costRows {
+                guard let p: String = r["p"], !p.isEmpty else { continue }
+                let s: String = r["s"] ?? "unknown"
+                let c: Double = r["c"]
+                costMap[p, default: []].append((s, c))
+            }
+
             // Build repo path → subscription sources from certain editor detections
             let certainMappings = editorMappings.filter { $0.confidence == .certain && $0.dailySubscriptionCost > 0 }
 
-            return costRows.compactMap { r in
-                guard let p: String = r["p"], !p.isEmpty else { return nil }
-                let c: Double = r["c"]
+            return costMap.compactMap { (p, sourceCosts) in
+                let totalCost = sourceCosts.reduce(0.0) { $0 + $1.cost }
                 let (a, d) = lineMap[p] ?? (0, 0)
                 let total = a + d
-                // CPL denominator = total changes (added + deleted), not net lines
-                let cpl = total > 0 ? c * 1000 / Double(total) : 0.0
+
+                // Per-source API CPLs
+                let apiSources: [CPLSource] = sourceCosts.compactMap { sc in
+                    let cpl = total > 0 ? sc.cost * 1000 / Double(total) : 0.0
+                    guard cpl > 0 else { return nil }
+                    return CPLSource(label: sourceLabel(sc.source), cpl: cpl)
+                }
 
                 // Collect all subscription sources matching this repo
                 var subSources: [CPLSource] = []
                 for m in certainMappings {
                     if p.hasSuffix(m.repoPath) || m.repoPath.hasSuffix(p) || p == m.repoPath {
-                        // Subscription-only CPL: daily cost × days / totalChanges × 1000
                         let subCPL = total > 0 ? m.dailySubscriptionCost * Double(days) * 1000 / Double(total) : 0.0
                         if subCPL > 0 {
                             subSources.append(CPLSource(label: m.toolName, cpl: subCPL))
@@ -185,11 +197,21 @@ enum StatsService {
 
                 return RepoBreakdown(
                     repo: URL(fileURLWithPath: p).lastPathComponent,
-                    cost: c, added: a, deleted: d, costPerLine: cpl,
+                    cost: totalCost, added: a, deleted: d,
+                    apiSources: apiSources,
                     subscriptionSources: subSources
                 )
             }
         } catch { return [] }
+    }
+
+    /// Map usage_event.source to a human-readable label for CPL display.
+    private static func sourceLabel(_ source: String) -> String {
+        switch source {
+        case "claude-code": return "Claude Code"
+        case "aider": return "aider"
+        default: return source
+        }
     }
 
     // MARK: - Prediction
@@ -247,7 +269,6 @@ enum StatsService {
             var results: [(String, Date, Double)] = []
             var currentPid: String? = nil
             var prevBalance: Double? = nil
-            var prevTs: Int64? = nil
             for r in rows {
                 let pid: String = r["provider_id"] ?? ""
                 let ts: Int64 = r["ts"] ?? 0
@@ -261,7 +282,6 @@ enum StatsService {
                 }
                 currentPid = pid
                 prevBalance = balance
-                prevTs = ts
             }
             return results
         } catch { return [] }
@@ -316,7 +336,9 @@ enum StatsService {
 
         let today = cal.startOfDay(for: Date())
         let dayCount = max((cal.dateComponents([.day], from: filterDay, to: today).day ?? 0) + 1, 1)
-        return api + subscriptionDailyAmortization() * Double(dayCount)
+        let total = api + subscriptionDailyAmortization() * Double(dayCount)
+        diagLog("combinedSpend(sinceMs=\(sinceMs)): rows=\(rows.count) api=\(api) dayCount=\(dayCount) total=\(total)")
+        return total
     }
 
     // MARK: - Provider daily cost

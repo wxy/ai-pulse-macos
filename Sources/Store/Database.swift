@@ -81,12 +81,12 @@ final class AppDatabase {
 
     var writer: DatabaseWriter? { dbQueue }
 
-    func write<T>(_ updates: @escaping (Database) throws -> T) async throws -> T {
+    func write<T>(_ updates: @Sendable @escaping (Database) throws -> T) async throws -> T {
         guard let queue = dbQueue else { throw AppDBError.notReady }
         return try await queue.write(updates)
     }
 
-    func read<T>(_ value: @escaping (Database) throws -> T) async throws -> T {
+    func read<T>(_ value: @Sendable @escaping (Database) throws -> T) async throws -> T {
         guard let queue = dbQueue else { throw AppDBError.notReady }
         return try await queue.read(value)
     }

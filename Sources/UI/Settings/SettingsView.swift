@@ -515,15 +515,14 @@ struct ReposTab: View {
             let fm = FileManager.default
             var result: [String] = []
             if fm.fileExists(atPath: expanded),
-               let e = fm.enumerator(at: URL(fileURLWithPath: expanded),
+               let items = (fm.enumerator(at: URL(fileURLWithPath: expanded),
                                     includingPropertiesForKeys: [.isDirectoryKey],
-                                    options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
-                for case let url as URL in e {
+                                    options: [.skipsHiddenFiles, .skipsPackageDescendants])?.allObjects as? [URL]) {
+                for url in items {
                     let git = url.appendingPathComponent(".git")
                     var d: ObjCBool = false
                     if fm.fileExists(atPath: git.path, isDirectory: &d), d.boolValue {
                         result.append(url.lastPathComponent)
-                        e.skipDescendants()
                     }
                 }
             }

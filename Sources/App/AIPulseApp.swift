@@ -1,6 +1,25 @@
 import AppKit
+@preconcurrency import AppKit
 import SwiftUI
 import UserNotifications
+
+private let diagQueue = DispatchQueue(label: "com.wxy.aipulse.diaglog")
+private var diagLogFile: FileHandle?
+
+func diagLog(_ msg: String) {
+    let line = "\(Date()): \(msg)\n"
+    guard let data = line.data(using: .utf8) else { return }
+    diagQueue.async {
+        if diagLogFile == nil {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("aipulse-diag.log")
+            try? data.write(to: url)  // create on first write
+            diagLogFile = try? FileHandle(forWritingTo: url)
+        } else {
+            diagLogFile?.seekToEndOfFile()
+            diagLogFile?.write(data)
+        }
+    }
+}
 
 /// Dock app. Shows Dashboard as the primary window. No menu bar icon.
 
@@ -24,11 +43,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Register defaults (fresh install values)
         UserDefaults.standard.register(defaults: ["coin_sound_enabled": true])
 
+        // One-time libgit2 init (replaces per-call init/shutdown)
+        GitRepo.setup()
+
         // Resolve security-scoped bookmarks for sandbox file access
         securityScopedURLs = BookmarkManager.resolveAll()
+        diagLog("A: bookmarks resolved=\(self.securityScopedURLs.count)")
 
         do { try AppDatabase.shared.setup() }
-        catch { print("DB setup failed: \(error)") }
+        catch { diagLog("DB setup failed: \(error)") }
 
         // Build shared menu (stats refreshed every 30s, used by Dock right-click)
         menuBarController = MenuBarController()
@@ -40,12 +63,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showOnboardingIfNeeded()
         // Start all enabled, detected integrations via the registry
         IntegrationRegistry.startAllEnabled()
+        diagLog("integrations started, A-grade=\(IntegrationRegistry.enabledAGrade().count) B-grade=\(IntegrationRegistry.enabledBGrade().count) C-grade=\(IntegrationRegistry.enabledCGrade().count)")
         // Git/repo + Claude log monitoring is independent of which integrations are
         // enabled: it must run whenever the user has authorized repo directories or
         // ~/.claude. LogWatcher.start() is safe to call again (idempotent scans).
         LogWatcher.shared.start()
+        diagLog("LogWatcher started")
         // B-grade balance polling
         ApiPoller.shared.start()
+        diagLog("ApiPoller started")
 
         // P3: Dock fuel gauge
         DockManager.shared.start()
@@ -55,6 +81,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Request notification permission (only works in .app bundle, not bare binary)
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
+
+        // Poll watched git repos for new commits every 5 minutes
+        DispatchQueue.global(qos: .utility).async { GitMonitor.shared.poll() }
+        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+            DispatchQueue.global(qos: .utility).async { GitMonitor.shared.poll() }
         }
 
         // Check for anomalies after each poll cycle
@@ -130,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         IntegrationRegistry.stopAll()
         DockManager.shared.stop()
         BookmarkManager.stopAll(securityScopedURLs)
+        GitRepo.teardown()
     }
 
     // MARK: - Onboarding

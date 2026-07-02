@@ -6,6 +6,11 @@ import Clibgit2
 struct GitRepo {
     let path: String
 
+    /// Call once at app startup before any GitRepo operations.
+    static func setup() { git_libgit2_init() }
+    /// Call once at app termination.
+    static func teardown() { git_libgit2_shutdown() }
+
     /// Find the git repository root containing the given path.
     /// Returns nil if the path is not inside a git repository.
     static func findRoot(containing path: String) -> String? {
@@ -23,9 +28,6 @@ struct GitRepo {
 
     /// Get recent commits with (hash, timestamp, parent count).
     func log(since lastHash: String?, maxCount: Int = 20) -> [(hash: String, ts: Int, parentCount: Int)] {
-        git_libgit2_init()
-        defer { git_libgit2_shutdown() }
-
         var repoPtr: OpaquePointer?
         guard git_repository_open(&repoPtr, path) == 0, let repo = repoPtr else { return [] }
         defer { git_repository_free(repo) }
@@ -58,9 +60,6 @@ struct GitRepo {
 
     /// Get per-file added/deleted lines for a commit, excluding generated/lock files.
     func diffTree(hash: String) -> (added: Int, deleted: Int)? {
-        git_libgit2_init()
-        defer { git_libgit2_shutdown() }
-
         var repoPtr: OpaquePointer?
         guard git_repository_open(&repoPtr, path) == 0, let repo = repoPtr else { return nil }
         defer { git_repository_free(repo) }
