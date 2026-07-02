@@ -9,7 +9,7 @@ autoreleasepool {
     // Set dock icon early to avoid gray placeholder during launch transition
     app.applicationIconImage = AppIconLoader.load()
     let delegate = AppDelegate()
-    app.delegate = delegate
+    MainActor.assumeIsolated { app.delegate = delegate }
 
     // Delayed activation: gives the window server time to register the
     // .accessory policy before we force-activate, preventing Dock-dance.
