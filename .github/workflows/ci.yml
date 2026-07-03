@@ -11,22 +11,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
-    name: Build & Test
+  test:
+    name: Test
     runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build
-        run: swift build
-
       - name: Run tests
         run: |
-          # The test binary links libgit2.1.9.dylib via @rpath.
-          # SPM's default rpath does not resolve for xctest bundles,
-          # so add the absolute library path before running tests.
+          # Build test target (includes the main target as a dependency).
+          swift test --build-tests
+
+          # SPM's @rpath doesn't resolve for xctest bundles — inject the
+          # absolute path to libgit2 before execution.
           BIN_DIR=$(swift build --show-bin-path)
           TEST_BIN="$BIN_DIR/AIPulsePackageTests.xctest/Contents/MacOS/AIPulsePackageTests"
           install_name_tool -add_rpath "$(pwd)/Libraries/libgit2/lib" "$TEST_BIN"
+
+          # Run tests without rebuilding.
           swift test --skip-build
