@@ -100,7 +100,7 @@
 		C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libgit2.1.9.dylib; path = ../Libraries/libgit2/lib/libgit2.1.9.dylib; sourceTree = SOURCE_ROOT; };
 		C0843EB12FF5561900E3F6C4 /* AIPulse.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = AIPulse.icns; path = ../Resources/AIPulse.icns; sourceTree = SOURCE_ROOT; };
 		C0843EB22FF5561900E3F6C4 /* AIPulse.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = AIPulse.png; path = ../Resources/AIPulse.png; sourceTree = SOURCE_ROOT; };
-		C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "pricing-catalog.json"; path = "../../shared/pricing-catalog.json"; sourceTree = SOURCE_ROOT; };
+		C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "pricing-catalog.json"; path = "../Resources/pricing-catalog.json"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -589,7 +589,7 @@
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/Libraries/libgit2/include";
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/../Libraries/libgit2/include";
 				INFOPLIST_FILE = "AIPulse-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -602,7 +602,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
-					"-L$(SRCROOT)/Libraries/libgit2/lib",
+					"-L$(SRCROOT)/../Libraries/libgit2/lib",
 					"-lgit2",
 					"-Xlinker",
 					"-rpath",
@@ -616,7 +616,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Sources/Clibgit2";
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../Sources/Clibgit2";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -636,7 +636,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/Libraries/libgit2/include";
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/../Libraries/libgit2/include";
 				INFOPLIST_FILE = "AIPulse-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -649,7 +649,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
-					"-L$(SRCROOT)/Libraries/libgit2/lib",
+					"-L$(SRCROOT)/../Libraries/libgit2/lib",
 					"-lgit2",
 					"-Xlinker",
 					"-rpath",
@@ -663,7 +663,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Sources/Clibgit2";
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../Sources/Clibgit2";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
