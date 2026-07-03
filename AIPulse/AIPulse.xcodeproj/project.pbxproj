@@ -106,7 +106,7 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C0843E1F2FF555ED00E3F6C4 /* AIPulse */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = AIPulse;
+			path = ..;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
