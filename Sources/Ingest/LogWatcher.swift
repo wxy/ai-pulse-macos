@@ -223,6 +223,7 @@ final class LogWatcher {
                             cost, event.repoPath, event.sessionId, event.dedupeKey,
                         ])
                 }
+                DataRefreshCoordinator.shared.notifyPhaseIngest()
             } catch {
                 print("Failed to insert: \(error)")
             }

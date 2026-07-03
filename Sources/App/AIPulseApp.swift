@@ -69,10 +69,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ~/.claude. LogWatcher.start() is safe to call again (idempotent scans).
         LogWatcher.shared.start()
         diagLog("LogWatcher started")
-        // B-grade balance polling
-        ApiPoller.shared.start()
-        diagLog("ApiPoller started")
-
         // P3: Dock fuel gauge
         DockManager.shared.start()
 

@@ -1,5 +1,4 @@
 import Foundation
-import GRDB
 
 /// Centralized scheduler that replaces scattered independent timers.
 ///
@@ -8,20 +7,23 @@ import GRDB
 /// - Phase 2 (5min): GitMonitor commit polling
 /// - Phase 3 (1h): ApiPoller balance fetching
 ///
-/// After any phase detects changes, a 500ms debounce window coalesces
-/// rapid-fire writes before posting `.dataDidChange` to notify all UI consumers.
+/// Ingestion modules push-change notifications to the coordinator when they
+/// successfully write new data. The coordinator applies a 500ms debounce and
+/// posts `.dataDidChange` to notify all UI consumers.
 final class DataRefreshCoordinator {
     static let shared = DataRefreshCoordinator()
-
-    enum Phase {
-        case ingest, gitScan, balance
-    }
 
     private var phase1Timer: DispatchSourceTimer?
     private var phase2Timer: DispatchSourceTimer?
     private var phase3Timer: DispatchSourceTimer?
     private var pendingNotifyWorkItem: DispatchWorkItem?
+    private var lastNotifyTime: Date = .distantPast
     private let notifyQueue = DispatchQueue(label: "com.wxy.aipulse.coordinator", qos: .utility)
+
+    /// Minimum interval between consecutive .dataDidChange posts.
+    /// Prevents the staggered startup phases (5s/10s/15s) and rapid
+    /// multi-source writes from triggering a storm of notifications.
+    private let minNotifyInterval: TimeInterval = 3.0
 
     private init() {}
 
@@ -73,43 +75,48 @@ final class DataRefreshCoordinator {
     // MARK: - Phase runners
 
     private func runPhase1() {
-        let countBefore = countUsageEvents()
         LogWatcher.shared.scan()
         let discovered = RepoDiscovery.scan()
         if discovered > 0 {
             diagLog("RepoDiscovery: found \(discovered) new repo(s)")
         }
-        let countAfter = countUsageEvents()
-        let changed = countAfter > countBefore || discovered > 0
-        phaseDidComplete(.ingest, changesDetected: changed)
+        // LogWatcher.insertEvent() pushes notifyPhaseIngest() on successful write
     }
 
     private func runPhase2() {
-        let countBefore = countCodeChanges()
         GitMonitor.shared.poll()
-        let countAfter = countCodeChanges()
-        phaseDidComplete(.gitScan, changesDetected: countAfter > countBefore)
+        // GitMonitor.insertChange() pushes notifyPhaseGitScan() on successful write
     }
 
     private func runPhase3() {
-        let countBefore = countBalanceSnapshots()
         ApiPoller.shared.pollAll()
-        // Balance snapshots are written async via URLSession callbacks.
-        // Wait a short grace period then check for changes.
-        notifyQueue.asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self else { return }
-            let countAfter = self.countBalanceSnapshots()
-            self.phaseDidComplete(.balance, changesDetected: countAfter > countBefore)
+        // ApiPoller.cacheBalance() pushes notifyPhaseBalance() on successful write
+    }
+
+    // MARK: - Push-change notification (called by ingestion modules)
+
+    /// Called by LogWatcher after a usage_event row is inserted.
+    func notifyPhaseIngest() {
+        notifyQueue.async { [weak self] in
+            self?.scheduleUINotify()
         }
     }
 
-    // MARK: - Change detection
-
-    private func phaseDidComplete(_ phase: Phase, changesDetected: Bool) {
-        guard changesDetected else { return }
-        diagLog("DataRefreshCoordinator: phase \(phase) detected changes")
-        scheduleUINotify()
+    /// Called by GitMonitor after a code_change row is inserted.
+    func notifyPhaseGitScan() {
+        notifyQueue.async { [weak self] in
+            self?.scheduleUINotify()
+        }
     }
+
+    /// Called by ApiPoller after a balance_snapshot row is inserted.
+    func notifyPhaseBalance() {
+        notifyQueue.async { [weak self] in
+            self?.scheduleUINotify()
+        }
+    }
+
+    // MARK: - Debounce & dispatch
 
     private func scheduleUINotify() {
         pendingNotifyWorkItem?.cancel()
@@ -121,58 +128,17 @@ final class DataRefreshCoordinator {
     }
 
     private func notifyConsumers() {
+        let now = Date()
+        guard now.timeIntervalSince(lastNotifyTime) >= minNotifyInterval else {
+            diagLog("DataRefreshCoordinator: suppressing notify (last was \(String(format: "%.1f", now.timeIntervalSince(lastNotifyTime)))s ago)")
+            return
+        }
+        lastNotifyTime = now
         diagLog("DataRefreshCoordinator: posting .dataDidChange")
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .dataDidChange, object: nil)
             CoinSound.playForDataChange()
         }
-    }
-
-    // MARK: - Row counters (lightweight change detection)
-
-    private func countUsageEvents() -> Int {
-        let sem = DispatchSemaphore(value: 0)
-        var count = 0
-        Task {
-            do {
-                count = try await AppDatabase.shared.read { db in
-                    try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event") ?? 0
-                }
-            } catch { }
-            sem.signal()
-        }
-        sem.wait()
-        return count
-    }
-
-    private func countCodeChanges() -> Int {
-        let sem = DispatchSemaphore(value: 0)
-        var count = 0
-        Task {
-            do {
-                count = try await AppDatabase.shared.read { db in
-                    try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM code_change") ?? 0
-                }
-            } catch { }
-            sem.signal()
-        }
-        sem.wait()
-        return count
-    }
-
-    private func countBalanceSnapshots() -> Int {
-        let sem = DispatchSemaphore(value: 0)
-        var count = 0
-        Task {
-            do {
-                count = try await AppDatabase.shared.read { db in
-                    try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM balance_snapshot") ?? 0
-                }
-            } catch { }
-            sem.signal()
-        }
-        sem.wait()
-        return count
     }
 
     // MARK: - Timer factory

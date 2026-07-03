@@ -10,6 +10,7 @@ final class DockManager {
     static let shared = DockManager()
     private var lastPulseTime: Date = .distantPast
     private let baseIcon: NSImage = AppIconLoader.load()
+    private var dataChangeObserver: NSObjectProtocol?
 
     func start() {
         Task {
@@ -22,7 +23,7 @@ final class DockManager {
             await setProgressIcon()
         }
         // Observe data-change notifications from the centralized coordinator
-        NotificationCenter.default.addObserver(
+        dataChangeObserver = NotificationCenter.default.addObserver(
             forName: Notification.Name.dataDidChange, object: nil, queue: .main
         ) { [weak self] _ in
             Task { [weak self] in
@@ -38,7 +39,10 @@ final class DockManager {
     }
 
     func stop() {
-        NotificationCenter.default.removeObserver(self)
+        if let token = dataChangeObserver {
+            NotificationCenter.default.removeObserver(token)
+            dataChangeObserver = nil
+        }
     }
 
     // MARK: - Pulse

@@ -131,6 +131,7 @@ final class GitMonitor {
                         VALUES (?, ?, ?, ?, ?, ?)
                         """, arguments: [change.commitHash, change.ts, change.repoPath, change.added, change.deleted, change.isMerge])
                 }
+                DataRefreshCoordinator.shared.notifyPhaseGitScan()
             } catch {
                 print("Failed to insert code change: \(error)")
             }

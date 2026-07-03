@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ai-pulse-macos}",
+            "name": "Debug AIPulse",
+            "target": "AIPulse",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug AIPulse"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:ai-pulse-macos}",
+            "name": "Release AIPulse",
+            "target": "AIPulse",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release AIPulse"
+        }
+    ]
+}

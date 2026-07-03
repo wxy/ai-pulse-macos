@@ -4,8 +4,10 @@ import AppKit
 /// Prefers bundled MP3 files; falls back to synthesized WAV; beep as last resort.
 enum CoinSound {
 
-    /// Keep a strong reference so NSSound doesn't dealloc mid-playback.
-    private static var currentSound: NSSound?
+    /// Keep active sounds alive with strong references so they don't dealloc mid-playback.
+    /// Overlapping sounds (e.g., multi-coin for large spend) each get their own slot;
+    /// cleaned up after their duration elapses.
+    private static var activeSounds = Set<NSSound>()
 
     // MARK: - Public
 
@@ -40,8 +42,15 @@ enum CoinSound {
     private static func playBundleSound(named name: String, ext: String) {
         if let url = Bundle.main.url(forResource: name, withExtension: ext),
            let sound = NSSound(contentsOf: url, byReference: false) {
-            currentSound = sound
+            activeSounds.insert(sound)
             sound.play()
+            // NSSound retains itself during playback, but we keep a reference in
+            // activeSounds to prevent premature deallocation. Clean up after the
+            // sound's natural duration so the set doesn't grow unboundedly.
+            let deadline = DispatchTime.now() + DispatchTimeInterval.milliseconds(Int(sound.duration * 1000) + 50)
+            DispatchQueue.main.asyncAfter(deadline: deadline) {
+                activeSounds.remove(sound)
+            }
             return
         }
         NSSound.beep()
