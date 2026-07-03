@@ -20,8 +20,9 @@ jobs:
 
       - name: Run tests
         run: |
-          # Build test target (includes the main target as a dependency).
-          swift test --build-tests
+          # Build main + test targets without executing (libgit2 rpath
+          # must be fixed on the test binary before it can run).
+          swift build --build-tests
 
           # SPM's @rpath doesn't resolve for xctest bundles — inject the
           # absolute path to libgit2 before execution.
