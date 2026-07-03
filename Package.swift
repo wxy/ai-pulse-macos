@@ -22,8 +22,8 @@ let package = Package(
             exclude: ["Clibgit2"],
             linkerSettings: [
                 .unsafeFlags([
-                    "-L/Users/xingyuwang/develop/ai-pulse/mac-app/Libraries/libgit2/lib",
-                    "-Xlinker", "-rpath", "-Xlinker", "/Users/xingyuwang/develop/ai-pulse/mac-app/Libraries/libgit2/lib",
+                    "-LLibraries/libgit2/lib",
+                    "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Libraries/libgit2/lib",
                 ]),
             ]
         ),
