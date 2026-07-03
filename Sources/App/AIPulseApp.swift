@@ -83,13 +83,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         }
 
-        // Poll watched git repos for new commits every 5 minutes
-        DispatchQueue.global(qos: .utility).async { GitMonitor.shared.poll() }
-        Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
-            DispatchQueue.global(qos: .utility).async { GitMonitor.shared.poll() }
-        }
+        // Centralized data refresh coordinator (replaces scattered timers).
+        // Manages three ingestion phases — Ingest (30s), Git (5min), Balance (1h) —
+        // with change detection, 500ms debounce, and unified .dataDidChange notification.
+        DataRefreshCoordinator.shared.start()
 
-        // Check for anomalies after each poll cycle
+        // Check for anomalies periodically (separate from data refresh — longer cycle)
         Timer.scheduledTimer(withTimeInterval: 3660, repeats: true) { _ in
             Task { await AnomalyDetector.shared.check() }
         }
@@ -159,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        DataRefreshCoordinator.shared.stop()
         IntegrationRegistry.stopAll()
         DockManager.shared.stop()
         BookmarkManager.stopAll(securityScopedURLs)

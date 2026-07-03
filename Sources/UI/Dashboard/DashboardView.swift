@@ -85,6 +85,9 @@ struct DashboardView: View {
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             Task { await load() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .dataDidChange)) { _ in
+            Task { await load() }
+        }
     }
 
     // MARK: - CPL guidance (no A-grade)

@@ -1,5 +1,13 @@
 import Foundation
 
+// MARK: - Notification Names
+
+extension Notification.Name {
+    /// Posted when new data has been ingested (logs, commits, or balance snapshots).
+    /// UI consumers (MenuBar, Dashboard, Dock) should refresh in response.
+    static let dataDidChange = Notification.Name("AIPulseDataDidChange")
+}
+
 // MARK: - Data grade
 
 /// What level of cost data this integration can produce.

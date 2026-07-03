@@ -18,4 +18,17 @@ enum CoinSound {
             }
         }
     }
+
+    /// Play a single coin sound when new data arrives.
+    /// Separate from `play(for:)` which scales by spend amount (used by ApiPoller).
+    /// Attempts to load a bundled "coin.wav" audio file; falls back to system beep.
+    static func playForDataChange() {
+        guard UserDefaults.standard.bool(forKey: "coin_sound_enabled") else { return }
+        if let url = Bundle.main.url(forResource: "coin", withExtension: "wav") {
+            let sound = NSSound(contentsOf: url, byReference: false)
+            sound?.play()
+        } else {
+            NSSound.beep()
+        }
+    }
 }

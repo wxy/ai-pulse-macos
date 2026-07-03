@@ -8,20 +8,44 @@ import AppKit
 /// (API balance spend + subscription amortization) shown on the Dashboard.
 final class DockManager {
     static let shared = DockManager()
-    private var timer: Timer?
     private var currentTask: Task<Void, Never>?
+    private var lastPulseTime: Date = .distantPast
     private let baseIcon: NSImage = AppIconLoader.load()
 
     func start() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        // Observe data-change notifications from the centralized coordinator
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name.dataDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
             self?.refresh()
+            self?.pulseIcon()
         }
     }
 
     func stop() {
-        timer?.invalidate(); timer = nil
         currentTask?.cancel(); currentTask = nil
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    /// Animate the Dock icon with a brief scale pulse to signal new data.
+    /// Throttled to at most once every 2 seconds.
+    func pulseIcon() {
+        let now = Date()
+        guard now.timeIntervalSince(lastPulseTime) >= 2.0 else { return }
+        lastPulseTime = now
+
+        let tile = NSApp.dockTile
+        if let view = tile.contentView {
+            view.wantsLayer = true
+            let anim = CAKeyframeAnimation(keyPath: "transform.scale")
+            anim.values = [1.0, 1.15, 1.0]
+            anim.keyTimes = [0, 0.5, 1.0]
+            anim.duration = 0.3
+            anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            view.layer?.add(anim, forKey: "pulse")
+        }
+        tile.display()
     }
 
     /// 30-day rolling daily average of combined spend (API + subscription amortization).

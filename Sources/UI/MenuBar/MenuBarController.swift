@@ -13,7 +13,6 @@ final class DashboardWindowManager {
 }
 
 final class MenuBarController: NSObject {
-    private var timer: Timer?
     private(set) var menu: NSMenu!
 
     func start() {
@@ -25,13 +24,21 @@ final class MenuBarController: NSObject {
             name: I18n.didChangeLanguage, object: nil
         )
 
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.refreshStats() }
+        // Observe data-change notifications from the centralized coordinator
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onDataChanged),
+            name: .dataDidChange, object: nil
+        )
         refreshStats()
     }
 
     @objc private func onLanguageChange() {
         refreshStats()
         SettingsWindowManager.shared.window?.title = I18n.t("settings.title")
+    }
+
+    @objc private func onDataChanged() {
+        refreshStats()
     }
 
     /// Rebuild the entire menu from scratch each refresh.

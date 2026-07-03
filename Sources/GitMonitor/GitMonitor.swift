@@ -20,6 +20,13 @@ final class GitMonitor {
     private var watchedRepos: Set<String> = []
     private var lastSeenCommit: [String: String] = [:] // repo -> last processed commit hash
 
+    /// Read-only snapshot of currently watched repo paths.
+    /// Used by RepoDiscovery to diff against the filesystem.
+    var watchedRepoPaths: Set<String> {
+        lock.lock(); defer { lock.unlock() }
+        return watchedRepos
+    }
+
     private static let watchedReposKey = "gitmonitor_watched_repos"
     private static let lastSeenKey = "gitmonitor_last_seen"
 
