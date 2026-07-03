@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		C0843E2E2FF5561900E3F6C4 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C0843E2D2FF5561900E3F6C4 /* GRDB */; };
 		C0843E662FF5564500E3F6C4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E4F2FF5564500E3F6C4 /* main.swift */; };
-		C0843EA22FF5561900E3F6C4 /* libgit2.1.9.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -63,10 +62,6 @@
 		C0843E5E2FF5564500E3F6C4 /* AppIconLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconLoader.swift; sourceTree = "<group>"; };
 		C0843E5F2FF5564500E3F6C4 /* IntegrationRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationRow.swift; sourceTree = "<group>"; };
 		C0843E622FF5564500E3F6C4 /* I18n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = I18n.swift; sourceTree = "<group>"; };
-		C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libgit2.1.9.dylib; path = ../Libraries/libgit2/lib/libgit2.1.9.dylib; sourceTree = SOURCE_ROOT; };
-		C0843EB12FF5561900E3F6C4 /* AIPulse.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = AIPulse.icns; path = ../Resources/AIPulse.icns; sourceTree = SOURCE_ROOT; };
-		C0843EB22FF5561900E3F6C4 /* AIPulse.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = AIPulse.png; path = ../Resources/AIPulse.png; sourceTree = SOURCE_ROOT; };
-		C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "pricing-catalog.json"; path = "../Resources/pricing-catalog.json"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -94,17 +89,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		C03CA2B72FF694B600C44E70 /* Recovered References */ = {
-			isa = PBXGroup;
-			children = (
-				C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */,
-				C0843EB12FF5561900E3F6C4 /* AIPulse.icns */,
-				C0843EB22FF5561900E3F6C4 /* AIPulse.png */,
-				C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */,
-			);
-			name = "Recovered References";
-			sourceTree = "<group>";
-		};
 		C0843E142FF555ED00E3F6C4 = {
 			isa = PBXGroup;
 			children = (
@@ -120,7 +104,6 @@
 				C0843E632FF5564500E3F6C4 /* Utils */,
 				C0843E1F2FF555ED00E3F6C4 /* ../Sources */,
 				C0843E1E2FF555ED00E3F6C4 /* Products */,
-				C03CA2B72FF694B600C44E70 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -368,9 +351,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C0843EB42FF5561900E3F6C4 /* AIPulse.icns in Resources */,
-				C0843EB52FF5561900E3F6C4 /* AIPulse.png in Resources */,
-				C0843EB62FF5561900E3F6C4 /* pricing-catalog.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -381,7 +361,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C0843E662FF5564500E3F6C4 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -541,10 +520,6 @@
 				OTHER_LDFLAGS = (
 					"-L$(SRCROOT)/../Libraries/libgit2/lib",
 					"-lgit2",
-					"-Xlinker",
-					"-rpath",
-					"-Xlinker",
-					"@executable_path/../Libraries/libgit2/lib",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -589,10 +564,6 @@
 				OTHER_LDFLAGS = (
 					"-L$(SRCROOT)/../Libraries/libgit2/lib",
 					"-lgit2",
-					"-Xlinker",
-					"-rpath",
-					"-Xlinker",
-					"@executable_path/../Libraries/libgit2/lib",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
