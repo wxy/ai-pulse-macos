@@ -22,6 +22,55 @@ enum AppIconLoader {
         return renderProgress(fraction: CGFloat(min(max(progress, 0), 1)))
     }
 
+    /// Render a pulse frame: artwork scaled up with a gold overlay.
+    /// - Parameter scale: artwork scale multiplier (1.0 = normal, 1.3 = 30% larger)
+    /// - Parameter tintAmount: 0 = no gold, 1 = full gold overlay
+    static func pulseFrame(scale: CGFloat, tintAmount: CGFloat) -> NSImage {
+        let px = Int(size)
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: px, pixelsHigh: px,
+            bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0
+        ) else { return baseTile }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+
+        let body = bodyRect
+        NSBezierPath(roundedRect: body, xRadius: cornerRadius, yRadius: cornerRadius).addClip()
+
+        // White background
+        NSColor.white.setFill()
+        body.fill()
+
+        // Artwork with scale
+        if let art = artwork {
+            let maxDim = max(art.size.width, art.size.height)
+            let baseScale = (coverage * body.width) / maxDim
+            let s = baseScale * scale
+            let w = art.size.width * s
+            let h = art.size.height * s
+            let target = CGRect(x: body.midX - w / 2, y: body.midY - h / 2, width: w, height: h)
+            art.image.draw(in: target)
+        }
+
+        // Gold overlay on top (tintAmount controls opacity)
+        if tintAmount > 0.01 {
+            let gold = NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.08, alpha: tintAmount * 0.55)
+            gold.setFill()
+            body.fill()
+        }
+
+        NSGraphicsContext.restoreGraphicsState()
+
+        let img = NSImage(size: NSSize(width: size, height: size))
+        img.addRepresentation(rep)
+        return img
+    }
+
     static func uiImage(size: CGFloat) -> NSImage {
         let img = baseTile
         return NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in

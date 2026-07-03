@@ -1,34 +1,49 @@
 import AppKit
 
-/// Plays simple coin-like sounds when AI spend is detected.
-/// Uses NSSound (system beep) to avoid AVAudioEngine complexity.
+/// Plays coin sounds when AI spend is detected.
+/// Prefers bundled MP3 files; falls back to synthesized WAV; beep as last resort.
 enum CoinSound {
-    /// Play a coin sound scaled to the spend amount.
+
+    /// Keep a strong reference so NSSound doesn't dealloc mid-playback.
+    private static var currentSound: NSSound?
+
+    // MARK: - Public
+
+    /// Play coin sound(s) scaled to the spend amount.
+    /// Larger spend → multiple-coin sound.
     static func play(for spend: Double) {
         guard UserDefaults.standard.bool(forKey: "coin_sound_enabled") else { return }
-        let count: Int
-        if spend < 0.10 { count = 1 }
-        else if spend < 1.00 { count = 2 }
-        else { count = 3 }
 
-        for i in 0..<count {
-            let delay = Double(i) * 0.15
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                NSSound.beep()
+        if spend >= 1.00 {
+            // Big spend: play the multi-coin sound
+            playBundleSound(named: "coins", ext: "mp3")
+        } else if spend >= 0.10 {
+            // Medium: single coin, twice
+            playBundleSound(named: "coin", ext: "mp3")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                playBundleSound(named: "coin", ext: "mp3")
             }
+        } else {
+            // Small: single coin
+            playBundleSound(named: "coin", ext: "mp3")
         }
     }
 
     /// Play a single coin sound when new data arrives.
-    /// Separate from `play(for:)` which scales by spend amount (used by ApiPoller).
-    /// Attempts to load a bundled "coin.wav" audio file; falls back to system beep.
     static func playForDataChange() {
         guard UserDefaults.standard.bool(forKey: "coin_sound_enabled") else { return }
-        if let url = Bundle.main.url(forResource: "coin", withExtension: "wav") {
-            let sound = NSSound(contentsOf: url, byReference: false)
-            sound?.play()
-        } else {
-            NSSound.beep()
+        playBundleSound(named: "coin", ext: "mp3")
+    }
+
+    // MARK: - Playback
+
+    private static func playBundleSound(named name: String, ext: String) {
+        if let url = Bundle.main.url(forResource: name, withExtension: ext),
+           let sound = NSSound(contentsOf: url, byReference: false) {
+            currentSound = sound
+            sound.play()
+            return
         }
+        NSSound.beep()
     }
 }
