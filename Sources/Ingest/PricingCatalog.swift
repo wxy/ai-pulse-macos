@@ -34,10 +34,8 @@ final class PricingManager {
         // Try multiple paths: bundle resource, relative to package root, relative to cwd
         let searchPaths = [
             Bundle.main.path(forResource: "pricing-catalog", ofType: "json"),
-            "../shared/pricing-catalog.json",    // from mac-app/ (swift run cwd)
-            "../../shared/pricing-catalog.json", // from .build/debug/
-            "../../../../../../shared/pricing-catalog.json", // from .app bundle
-            "./shared/pricing-catalog.json",
+            "../Resources/pricing-catalog.json",   // from .build/debug/ (swift run)
+            "../../Resources/pricing-catalog.json", // from .build/release/
         ]
         for path in searchPaths {
             guard let p = path else { continue }

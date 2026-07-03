@@ -1,0 +1,98 @@
+{
+  "version": "1",
+  "updated": "2026-06-26",
+  "models": {
+    "claude-sonnet-4": {
+      "provider": "anthropic",
+      "name": "Claude Sonnet 4",
+      "in_price_per_mtok": 3.0,
+      "out_price_per_mtok": 15.0,
+      "cache_price_per_mtok": 0.3,
+      "currency": "USD"
+    },
+    "claude-opus-4": {
+      "provider": "anthropic",
+      "name": "Claude Opus 4",
+      "in_price_per_mtok": 15.0,
+      "out_price_per_mtok": 75.0,
+      "cache_price_per_mtok": 1.5,
+      "currency": "USD"
+    },
+    "claude-haiku-4": {
+      "provider": "anthropic",
+      "name": "Claude Haiku 4",
+      "in_price_per_mtok": 0.8,
+      "out_price_per_mtok": 4.0,
+      "cache_price_per_mtok": 0.08,
+      "currency": "USD"
+    },
+    "deepseek-v4-pro": {
+      "provider": "deepseek",
+      "name": "DeepSeek V4 Pro",
+      "in_price_per_mtok": 0.42,
+      "out_price_per_mtok": 0.83,
+      "cache_price_per_mtok": 0.0035,
+      "currency": "USD",
+      "_note": "¥3/¥6 per M tokens, CNY→USD @7.2"
+    },
+    "deepseek-v4-flash": {
+      "provider": "deepseek",
+      "name": "DeepSeek V4 Flash",
+      "in_price_per_mtok": 0.14,
+      "out_price_per_mtok": 0.28,
+      "cache_price_per_mtok": 0.0028,
+      "currency": "USD",
+      "_note": "¥1/¥2 per M tokens, CNY→USD @7.2"
+    },
+    "deepseek-chat": {
+      "provider": "deepseek",
+      "name": "DeepSeek Chat (V3, deprecated Jul 24)",
+      "in_price_per_mtok": 0.14,
+      "out_price_per_mtok": 0.28,
+      "cache_price_per_mtok": 0.0028,
+      "currency": "USD",
+      "_note": "maps to deepseek-v4-flash non-thinking mode"
+    },
+    "deepseek-reasoner": {
+      "provider": "deepseek",
+      "name": "DeepSeek Reasoner (R1, deprecated Jul 24)",
+      "in_price_per_mtok": 0.14,
+      "out_price_per_mtok": 0.28,
+      "cache_price_per_mtok": 0.0028,
+      "currency": "USD",
+      "_note": "maps to deepseek-v4-flash thinking mode"
+    },
+    "gpt-4o": {
+      "provider": "openai",
+      "name": "GPT-4o",
+      "in_price_per_mtok": 2.5,
+      "out_price_per_mtok": 10.0,
+      "cache_price_per_mtok": 1.25,
+      "currency": "USD"
+    },
+    "gpt-4o-mini": {
+      "provider": "openai",
+      "name": "GPT-4o Mini",
+      "in_price_per_mtok": 0.15,
+      "out_price_per_mtok": 0.6,
+      "cache_price_per_mtok": 0.075,
+      "currency": "USD"
+    },
+    "gemini-2.5-pro": {
+      "provider": "google",
+      "name": "Gemini 2.5 Pro",
+      "in_price_per_mtok": 1.25,
+      "out_price_per_mtok": 10.0,
+      "cache_price_per_mtok": 0.25,
+      "currency": "USD"
+    },
+    "gemini-2.5-flash": {
+      "provider": "google",
+      "name": "Gemini 2.5 Flash",
+      "in_price_per_mtok": 0.15,
+      "out_price_per_mtok": 0.6,
+      "cache_price_per_mtok": 0.025,
+      "currency": "USD"
+    }
+  }
+}
