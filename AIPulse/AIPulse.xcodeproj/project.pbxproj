@@ -143,7 +143,6 @@
 				C0843E3E2FF5564500E3F6C4 /* GitMonitor */,
 				C0843E482FF5564500E3F6C4 /* Ingest */,
 				C0843E4D2FF5564500E3F6C4 /* Integrations */,
-				C0843E4E2FF5564500E3F6C4 /* Licensing */,
 				C0843E4F2FF5564500E3F6C4 /* main.swift */,
 				C0843E522FF5564500E3F6C4 /* Store */,
 				C0843E612FF5564500E3F6C4 /* UI */,
@@ -239,13 +238,6 @@
 			name = Integrations;
 			path = ../Sources/Integrations;
 			sourceTree = SOURCE_ROOT;
-		};
-		C0843E4E2FF5564500E3F6C4 /* Licensing */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			name = Licensing;
-			path = ../Sources/Licensing;
 			sourceTree = SOURCE_ROOT;
 		};
 		C0843E522FF5564500E3F6C4 /* Store */ = {
