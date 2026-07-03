@@ -589,7 +589,7 @@
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "/Users/xingyuwang/develop/ai-pulse/mac-app/Libraries/libgit2/include";
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/Libraries/libgit2/include";
 				INFOPLIST_FILE = "AIPulse-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -602,12 +602,12 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
-					"-L/Users/xingyuwang/develop/ai-pulse/mac-app/Libraries/libgit2/lib",
+					"-L$(SRCROOT)/Libraries/libgit2/lib",
 					"-lgit2",
 					"-Xlinker",
 					"-rpath",
 					"-Xlinker",
-					"/Users/xingyuwang/develop/ai-pulse/mac-app/Libraries/libgit2/lib",
+					"@executable_path/../Libraries/libgit2/lib",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -616,7 +616,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = "/Users/xingyuwang/develop/ai-pulse/mac-app/Sources/Clibgit2";
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Sources/Clibgit2";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -636,7 +636,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "/Users/xingyuwang/develop/ai-pulse/mac-app/Libraries/libgit2/include";
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/Libraries/libgit2/include";
 				INFOPLIST_FILE = "AIPulse-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -649,12 +649,12 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
-					"-L/Users/xingyuwang/develop/ai-pulse/mac-app/Libraries/libgit2/lib",
+					"-L$(SRCROOT)/Libraries/libgit2/lib",
 					"-lgit2",
 					"-Xlinker",
 					"-rpath",
 					"-Xlinker",
-					"/Users/xingyuwang/develop/ai-pulse/mac-app/Libraries/libgit2/lib",
+					"@executable_path/../Libraries/libgit2/lib",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -663,7 +663,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = "/Users/xingyuwang/develop/ai-pulse/mac-app/Sources/Clibgit2";
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/Sources/Clibgit2";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
