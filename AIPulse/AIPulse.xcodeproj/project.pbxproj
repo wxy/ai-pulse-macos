@@ -8,16 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		C0843E2E2FF5561900E3F6C4 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C0843E2D2FF5561900E3F6C4 /* GRDB */; };
-		C0843E642FF5564500E3F6C4 /* CGradeIntegrations.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E4B2FF5564500E3F6C4 /* CGradeIntegrations.swift */; };
-		C0843E652FF5564500E3F6C4 /* SubscriptionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E472FF5564500E3F6C4 /* SubscriptionRegistry.swift */; };
 		C0843E662FF5564500E3F6C4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E4F2FF5564500E3F6C4 /* main.swift */; };
-		C0843E672FF5564500E3F6C4 /* ClaudeCodeParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E402FF5564500E3F6C4 /* ClaudeCodeParser.swift */; };
-		C0843E682FF5564500E3F6C4 /* CoinSound.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E372FF5564500E3F6C4 /* CoinSound.swift */; };
-		C0843E692FF5564500E3F6C4 /* ApiPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E432FF5564500E3F6C4 /* ApiPoller.swift */; };
-		C0843E6A2FF5564500E3F6C4 /* BookmarkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E362FF5564500E3F6C4 /* BookmarkManager.swift */; };
-		C0843E6B2FF5564500E3F6C4 /* StatsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E512FF5564500E3F6C4 /* StatsService.swift */; };
-		C0843E6C2FF5564500E3F6C4 /* ApiKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E422FF5564500E3F6C4 /* ApiKeyManager.swift */; };
-		C0843E6D2FF5564500E3F6C4 /* DockManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0843E552FF5564500E3F6C4 /* DockManager.swift */; };
 		C0843EA22FF5561900E3F6C4 /* libgit2.1.9.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -78,21 +69,9 @@
 		C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "pricing-catalog.json"; path = "../Resources/pricing-catalog.json"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		C008319C2FF7EA7600A6E0DF /* Exceptions for ".." folder in "AIPulse" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-			);
-			target = C0843E1C2FF555ED00E3F6C4 /* AIPulse */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		C0843E1F2FF555ED00E3F6C4 /* .. */ = {
+		C0843E1F2FF555ED00E3F6C4 /* ../Sources */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				C008319C2FF7EA7600A6E0DF /* Exceptions for ".." folder in "AIPulse" target */,
-			);
 			path = ../Sources;
 			sourceTree = "<group>";
 		};
@@ -139,7 +118,7 @@
 				C0843E522FF5564500E3F6C4 /* Store */,
 				C0843E612FF5564500E3F6C4 /* UI */,
 				C0843E632FF5564500E3F6C4 /* Utils */,
-				C0843E1F2FF555ED00E3F6C4 /* .. */,
+				C0843E1F2FF555ED00E3F6C4 /* ../Sources */,
 				C0843E1E2FF555ED00E3F6C4 /* Products */,
 				C03CA2B72FF694B600C44E70 /* Recovered References */,
 			);
@@ -538,6 +517,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = ../AIPulse.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -584,6 +564,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = ../AIPulse.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
