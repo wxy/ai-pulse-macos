@@ -1,5 +1,5 @@
 module Clibgit2 {
-    umbrella "../../Libraries/libgit2/include"
+    umbrella header "../../Libraries/libgit2/include/git2.h"
     link "git2"
     export *
 }
