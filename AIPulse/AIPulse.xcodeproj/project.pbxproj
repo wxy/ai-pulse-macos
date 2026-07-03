@@ -342,7 +342,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				C0843E1F2FF555ED00E3F6C4 /* .. */,
+				C0843E1F2FF5564500E3F6C4 /* ../Sources */,
 			);
 			name = AIPulse;
 			packageProductDependencies = (
@@ -400,6 +400,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0843EB42FF5561900E3F6C4 /* AIPulse.icns in Resources */,
+				C0843EB52FF5561900E3F6C4 /* AIPulse.png in Resources */,
+				C0843EB62FF5561900E3F6C4 /* pricing-catalog.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -410,16 +413,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C0843E642FF5564500E3F6C4 /* CGradeIntegrations.swift in Sources */,
-				C0843E652FF5564500E3F6C4 /* SubscriptionRegistry.swift in Sources */,
-				C0843E662FF5564500E3F6C4 /* main.swift in Sources */,
-				C0843E672FF5564500E3F6C4 /* ClaudeCodeParser.swift in Sources */,
-				C0843E682FF5564500E3F6C4 /* CoinSound.swift in Sources */,
-				C0843E692FF5564500E3F6C4 /* ApiPoller.swift in Sources */,
-				C0843E6A2FF5564500E3F6C4 /* BookmarkManager.swift in Sources */,
-				C0843E6B2FF5564500E3F6C4 /* StatsService.swift in Sources */,
-				C0843E6C2FF5564500E3F6C4 /* ApiKeyManager.swift in Sources */,
-				C0843E6D2FF5564500E3F6C4 /* DockManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
