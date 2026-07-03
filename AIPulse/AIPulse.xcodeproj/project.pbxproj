@@ -82,17 +82,6 @@
 		C008319C2FF7EA7600A6E0DF /* Exceptions for ".." folder in "AIPulse" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				"AIPulse/AIPulse-Info.plist",
-				Sources/Engine/BookmarkManager.swift,
-				Sources/Engine/CoinSound.swift,
-				Sources/Ingest/ApiKeyManager.swift,
-				Sources/Ingest/ApiPoller.swift,
-				Sources/Ingest/LogParsers/ClaudeCodeParser.swift,
-				Sources/Ingest/SubscriptionRegistry.swift,
-				Sources/Integrations/CGradeIntegrations.swift,
-				Sources/main.swift,
-				Sources/Store/StatsService.swift,
-				Sources/UI/Dock/DockManager.swift,
 			);
 			target = C0843E1C2FF555ED00E3F6C4 /* AIPulse */;
 		};
