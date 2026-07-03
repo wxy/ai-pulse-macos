@@ -331,7 +331,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				C0843E1F2FF5564500E3F6C4 /* ../Sources */,
+				C0843E1F2FF555ED00E3F6C4 /* ../Sources */,
 			);
 			name = AIPulse;
 			packageProductDependencies = (
@@ -402,6 +402,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C0843E662FF5564500E3F6C4 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
