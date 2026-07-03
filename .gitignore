@@ -1,6 +1,12 @@
+# Xcode
 .build/
+*.xcarchive
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
 DerivedData/
-*.xcodeproj
-xcuserdata/
+
+# SPM
 Packages/
-Package.resolved
+
+# OS
+.DS_Store
