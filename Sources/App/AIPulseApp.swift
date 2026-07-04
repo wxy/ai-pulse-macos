@@ -105,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     // MARK: - Windows
 
+    @MainActor
     private func openDashboard() {
         if let w = DashboardWindowManager.shared.window, w.isVisible {
             w.makeKeyAndOrderFront(nil)
@@ -119,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         DashboardWindowManager.shared.window = w
     }
 
+    @MainActor
     private func openPreferences() {
         NSApp.activate(ignoringOtherApps: true)
         if let w = SettingsWindowManager.shared.window, w.isVisible {
@@ -144,6 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     // MARK: - Onboarding
 
+    @MainActor
     private func showOnboardingIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: "onboarding_completed") else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -151,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
     }
 
+    @MainActor
     private func openOnboarding() {
         NSApp.activate(ignoringOtherApps: true)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
