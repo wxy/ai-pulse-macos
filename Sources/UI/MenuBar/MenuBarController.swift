@@ -218,5 +218,5 @@ final class MenuBarController: NSObject, @unchecked Sendable {
         w.title = I18n.t("settings.title"); w.contentView = NSHostingView(rootView: SettingsView()); w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
         SettingsWindowManager.shared.window = w
     }
-    @objc private func quit() { NSApplication.shared.terminate(nil) }
+    @MainActor @objc private func quit() { NSApplication.shared.terminate(nil) }
 }
