@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 
 /// Aggregates health status across all subsystems and posts
 /// `.appHealthDidChange` when severity changes.
@@ -96,14 +97,21 @@ final class AppHealthMonitor: @unchecked Sendable {
         case .api:   _hasAPIError = true
         case .stats: _hasStatsError = true
         }
-        _messages.append(message)
-        if _messages.count > 20 { _messages.removeFirst(_messages.count - 20) }
+        // Deduplicate: skip if the last message is identical (e.g. 50× notReady)
+        if _messages.last != message {
+            _messages.append(message)
+            if _messages.count > 20 { _messages.removeFirst(_messages.count - 20) }
+        }
         lock.unlock()
 
         if _severity != oldSeverity {
             Logger.warning("HealthMonitor: severity \(oldSeverity) → \(_severity) — \(message)")
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .appHealthDidChange, object: nil)
+            }
+            // Fire a system notification when entering critical state
+            if _severity == .critical {
+                sendCriticalNotification(message: message)
             }
         }
     }
@@ -124,6 +132,19 @@ final class AppHealthMonitor: @unchecked Sendable {
                 NotificationCenter.default.post(name: .appHealthDidChange, object: nil)
             }
         }
+    }
+
+    private func sendCriticalNotification(message: String) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "AI Pulse"
+        content.body = message
+        content.sound = .default
+        let req = UNNotificationRequest(
+            identifier: "ai-pulse-health-critical",
+            content: content, trigger: nil
+        )
+        UNUserNotificationCenter.current().add(req) { _ in }
     }
 
     private func recomputeSeverity() -> Severity {

@@ -70,6 +70,7 @@ final class DockManager: @unchecked Sendable {
     @MainActor
     func pulseIcon() async {
         guard NSApp != nil else { return }
+        guard healthSeverity < .critical else { return }
         let now = Date()
         guard now.timeIntervalSince(lastPulseTime) >= 2.0 else { return }
         lastPulseTime = now
@@ -100,61 +101,64 @@ final class DockManager: @unchecked Sendable {
         let todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
         let dailyAvg = await rollingDailyAvg()
 
-        // Cache progress state so setProgressIcon can recompute later
-        let fillFraction: CGFloat
-        if dailyAvg > 0 {
-            fillFraction = min(CGFloat(todayCost / dailyAvg / 3.0), 1.0)
-        } else {
-            fillFraction = 0
-        }
+        // Linear progress ring: 1.0 = 1× daily average = full circle.
+        // Ring fraction = fillFraction modulo 1.0; lap counter shown bottom-left.
+        let fillFraction = dailyAvg > 0 ? CGFloat(todayCost / dailyAvg) : 0
+        let lap = max(Int(floor(fillFraction)), 0)
+        Logger.debug("Dock progress: todayCost=\(String(format: "%.2f", todayCost)) dailyAvg=\(String(format: "%.2f", dailyAvg)) fillFraction=\(String(format: "%.2f", fillFraction)) lap=\(lap)")
 
         let tile = NSApp.dockTile
 
         guard todayCost > 0.001 else {
-            NSApp.applicationIconImage = self.baseIcon
+            NSApp.applicationIconImage = AppIconLoader.load(healthDot: healthSeverity)
             tile.badgeLabel = nil
             tile.display()
             return
         }
 
         NSApp.applicationIconImage = AppIconLoader.load(
-            progress: Double(fillFraction), barColor: progressBarColor)
+            progress: Double(fillFraction), lap: lap, healthDot: healthSeverity)
         tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
         tile.display()
         Logger.debug("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
 
         _cachedProgressFraction = Double(fillFraction)
+        _cachedLap = lap
     }
 
     private var _cachedProgressFraction: Double = 0
+    private var _cachedLap: Int = 0
 
     /// Re-render the progress icon after a pulse animation completes.
     @MainActor
     private func setProgressIcon() async {
         if _cachedProgressFraction > 0.001 {
             NSApp.applicationIconImage = AppIconLoader.load(
-                progress: _cachedProgressFraction, barColor: progressBarColor)
+                progress: _cachedProgressFraction, lap: _cachedLap, healthDot: healthSeverity)
         } else {
-            NSApp.applicationIconImage = baseIcon
-        }
-    }
-
-    /// Progress bar colour reflects system health so the user can tell at a glance
-    /// whether the data is reliable.
-    private var progressBarColor: NSColor {
-        switch healthSeverity {
-        case .nominal:  return .systemGreen
-        case .degraded: return .systemYellow
-        case .impaired: return .systemOrange
-        case .critical: return .systemRed
+            NSApp.applicationIconImage = AppIconLoader.load(healthDot: healthSeverity)
         }
     }
 
     /// 30-day rolling daily average of combined spend (API + subscription amortization).
     private func rollingDailyAvg() async -> Double {
-        let cal = Calendar.current
-        guard let start = cal.date(byAdding: .day, value: -29, to: cal.startOfDay(for: Date())) else { return 0 }
-        let total = await StatsService.combinedSpend(sinceMs: Int64(start.timeIntervalSince1970 * 1000))
-        return total / 30.0
+        // API portion: average over days that actually have balance snapshots.
+        let spendRows = (try? await StatsService.balanceDailySpend(days: 30)) ?? []
+        var daysWithData = Set<Date>()
+        var apiTotal = 0.0
+        for row in spendRows {
+            daysWithData.insert(row.date)
+            apiTotal += row.spend
+        }
+
+        guard !daysWithData.isEmpty else { return 0 }
+
+        let apiAvg = apiTotal / Double(daysWithData.count)
+        let subDaily = StatsService.subscriptionDailyAmortization()
+        let avg = apiAvg + subDaily
+
+        Logger.debug("Dock avg: uniqueDays=\(daysWithData.count) apiTotal=\(String(format: "%.2f", apiTotal)) apiAvg=\(String(format: "%.2f", apiAvg)) subDaily=\(String(format: "%.2f", subDaily)) result=\(String(format: "%.2f", avg))")
+
+        return avg
     }
 }

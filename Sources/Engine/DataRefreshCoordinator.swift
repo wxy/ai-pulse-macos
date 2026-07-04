@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Centralized scheduler that replaces scattered independent timers.
@@ -19,6 +20,8 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     private var pendingNotifyWorkItem: DispatchWorkItem?
     private var lastNotifyTime: Date = .distantPast
     private let notifyQueue = DispatchQueue(label: "com.wxy.aipulse.coordinator", qos: .utility)
+    private var sleepObserver: NSObjectProtocol?
+    private var wakeObserver: NSObjectProtocol?
 
     /// Minimum interval between consecutive .dataDidChange posts.
     /// Prevents the staggered startup phases (5s/10s/15s) and rapid
@@ -30,31 +33,69 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     // MARK: - Public
 
     func start() {
-        // Phase 1: Ingest (30s, first after 5s)
-        phase1Timer = makeTimer(interval: .seconds(30), firstDeadline: .now() + 5) { [weak self] in
-            self?.runPhase1()
-        }
-
-        // Phase 2: Git scan (5min, first after 15s)
-        phase2Timer = makeTimer(interval: .seconds(300), firstDeadline: .now() + 15) { [weak self] in
-            self?.runPhase2()
-        }
-
-        // Phase 3: Balance poll (1h, first after 10s)
-        phase3Timer = makeTimer(interval: .seconds(3600), firstDeadline: .now() + 10) { [weak self] in
-            self?.runPhase3()
-        }
+        recreateTimers()
 
         Logger.info("DataRefreshCoordinator: started (P1=30s, P2=5min, P3=1h)")
+
+        // Pause timers during sleep to prevent sound storms on wake.
+        let nc = NSWorkspace.shared.notificationCenter
+        sleepObserver = nc.addObserver(forName: NSWorkspace.willSleepNotification,
+                                        object: nil, queue: .main) { [weak self] _ in
+            self?.suspendTimers()
+        }
+        wakeObserver = nc.addObserver(forName: NSWorkspace.didWakeNotification,
+                                       object: nil, queue: .main) { [weak self] _ in
+            self?.resumeTimers()
+        }
     }
 
     func stop() {
+        if let o = sleepObserver { NSWorkspace.shared.notificationCenter.removeObserver(o) }
+        if let o = wakeObserver   { NSWorkspace.shared.notificationCenter.removeObserver(o) }
+        sleepObserver = nil; wakeObserver = nil
+        cancelAllTimers()
+        lastNotifyTime = .distantPast
+        Logger.info("DataRefreshCoordinator: stopped")
+    }
+
+    // MARK: - Sleep / wake
+
+    private var timersSuspended = false
+
+    private func suspendTimers() {
+        guard !timersSuspended else { return }
+        timersSuspended = true
+        cancelAllTimers()
+        Logger.debug("DataRefreshCoordinator: timers suspended (system sleeping)")
+    }
+
+    private func resumeTimers() {
+        guard timersSuspended else { return }
+        timersSuspended = false
+        recreateTimers()
+        Logger.info("DataRefreshCoordinator: timers resumed (system woke)")
+    }
+
+    private func cancelAllTimers() {
         phase1Timer?.cancel(); phase1Timer = nil
         phase2Timer?.cancel(); phase2Timer = nil
         phase3Timer?.cancel(); phase3Timer = nil
         pendingNotifyWorkItem?.cancel(); pendingNotifyWorkItem = nil
-        lastNotifyTime = .distantPast
-        Logger.info("DataRefreshCoordinator: stopped")
+    }
+
+    private func recreateTimers() {
+        // Phase 1: Ingest (30s, first after 5s)
+        phase1Timer = makeTimer(interval: .seconds(30), firstDeadline: .now() + 5) { [weak self] in
+            self?.runPhase1()
+        }
+        // Phase 2: Git scan (5min, first after 15s)
+        phase2Timer = makeTimer(interval: .seconds(300), firstDeadline: .now() + 15) { [weak self] in
+            self?.runPhase2()
+        }
+        // Phase 3: Balance poll (1h, first after 10s)
+        phase3Timer = makeTimer(interval: .seconds(3600), firstDeadline: .now() + 10) { [weak self] in
+            self?.runPhase3()
+        }
     }
 
     /// Called by external triggers (e.g., Settings adds a new directory)

@@ -114,6 +114,7 @@ enum StatsService {
                 let date = Date(timeIntervalSince1970: Double(day) / 1000)
                 result.append(DailyStat(date: date, cost: c, calls: cnt, tokens: Int(tok), netLines: nl, costPerLine: cpl))
             }
+            AppHealthMonitor.shared.clearStatsError()
             return result
         } catch {
             Logger.error("StatsService.dailyStats error: \(error)")
@@ -173,6 +174,7 @@ enum StatsService {
             // Build repo path → subscription sources from certain editor detections
             let certainMappings = editorMappings.filter { $0.confidence == .certain && $0.dailySubscriptionCost > 0 }
 
+            AppHealthMonitor.shared.clearStatsError()
             return costMap.compactMap { (p, sourceCosts) in
                 let totalCost = sourceCosts.reduce(0.0) { $0 + $1.cost }
                 let (a, d) = lineMap[p] ?? (0, 0)
@@ -288,6 +290,7 @@ enum StatsService {
                 currentPid = pid
                 prevBalance = balance
             }
+            AppHealthMonitor.shared.clearStatsError()
             return results
         } catch {
             Logger.error("StatsService.balanceDailySpend error: \(error)")
@@ -379,6 +382,7 @@ enum StatsService {
                 let date = Date(timeIntervalSince1970: Double(day) / 1000)
                 return ProviderDailyCost(date: date, providerId: pid, cost: c)
             }
+            AppHealthMonitor.shared.clearStatsError()
         } catch {
             Logger.error("StatsService.providerDailyCosts error: \(error)")
             AppHealthMonitor.shared.reportStatsError("providerDailyCosts: \(error.localizedDescription)")
@@ -407,6 +411,7 @@ enum StatsService {
                     GROUP BY day_ts ORDER BY day_ts
                     """, arguments: [startMs, todayMs + 86_400_000])
             }
+            AppHealthMonitor.shared.clearStatsError()
             return rows.compactMap { r in
                 guard let day: Int64 = r["day_ts"] else { return nil }
                 let a: Int64 = r["a"] ?? 0

@@ -49,6 +49,23 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             DispatchQueue.main.async {
                 self.menu.removeAllItems()
 
+                // Health status — only shown when not nominal
+                let health = AppHealthMonitor.shared.current
+                if health.severity >= .degraded {
+                    let emoji = health.severity == .critical ? "🔴" :
+                                health.severity == .impaired ? "🟠" : "🟡"
+                    let text: String
+                    switch health.severity {
+                    case .critical: text = I18n.t("health.critical")
+                    case .impaired: text = I18n.t("health.impaired")
+                    default:        text = I18n.t("health.degraded")
+                    }
+                    let item = NSMenuItem(title: "\(emoji)  \(text)", action: #selector(self.openDashboard), keyEquivalent: "")
+                    item.target = self
+                    self.menu.addItem(item)
+                    self.menu.addItem(.separator())
+                }
+
                 // Today line — click opens Dashboard
                 if let today = stats.todaySummary {
                     let item = NSMenuItem(title: today, action: #selector(self.openDashboard), keyEquivalent: "")
