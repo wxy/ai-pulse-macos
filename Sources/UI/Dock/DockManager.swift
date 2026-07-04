@@ -1,18 +1,30 @@
 import AppKit
 
-/// Dock icon with a green progress bar along the rounded-rect border that
-/// fills as daily spend grows.
+/// Dock icon with a progress bar along the rounded-rect border that
+/// fills as daily spend grows. The bar colour reflects system health:
+/// green (ok), yellow (degraded), orange (impaired), red (critical).
 ///
 /// The bar starts at the 3 o'clock position and fills clockwise; a full loop
-/// represents 3× the 30-day daily average. "Spend" here is the combined figure
-/// (API balance spend + subscription amortization) shown on the Dashboard.
+/// represents 3× the 30-day daily average.
 final class DockManager: @unchecked Sendable {
     static let shared = DockManager()
     private var lastPulseTime: Date = .distantPast
     private let baseIcon: NSImage = AppIconLoader.load()
     private var dataChangeObserver: NSObjectProtocol?
+    private var healthObserver: NSObjectProtocol?
+    private var healthSeverity: AppHealthMonitor.Severity = .nominal
 
     func start() {
+        // Observe health changes for progress bar colour
+        healthObserver = NotificationCenter.default.addObserver(
+            forName: .appHealthDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            let snap = AppHealthMonitor.shared.current
+            self.healthSeverity = snap.severity
+            Task { await self.setProgressIcon() }
+        }
+
         Task {
             // Initial refresh sets the progress icon
             await refresh()
@@ -42,6 +54,10 @@ final class DockManager: @unchecked Sendable {
         if let token = dataChangeObserver {
             NotificationCenter.default.removeObserver(token)
             dataChangeObserver = nil
+        }
+        if let token = healthObserver {
+            NotificationCenter.default.removeObserver(token)
+            healthObserver = nil
         }
     }
 
@@ -101,7 +117,8 @@ final class DockManager: @unchecked Sendable {
             return
         }
 
-        NSApp.applicationIconImage = AppIconLoader.load(progress: Double(fillFraction))
+        NSApp.applicationIconImage = AppIconLoader.load(
+            progress: Double(fillFraction), barColor: progressBarColor)
         tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
         tile.display()
         Logger.debug("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
@@ -115,9 +132,21 @@ final class DockManager: @unchecked Sendable {
     @MainActor
     private func setProgressIcon() async {
         if _cachedProgressFraction > 0.001 {
-            NSApp.applicationIconImage = AppIconLoader.load(progress: _cachedProgressFraction)
+            NSApp.applicationIconImage = AppIconLoader.load(
+                progress: _cachedProgressFraction, barColor: progressBarColor)
         } else {
             NSApp.applicationIconImage = baseIcon
+        }
+    }
+
+    /// Progress bar colour reflects system health so the user can tell at a glance
+    /// whether the data is reliable.
+    private var progressBarColor: NSColor {
+        switch healthSeverity {
+        case .nominal:  return .systemGreen
+        case .degraded: return .systemYellow
+        case .impaired: return .systemOrange
+        case .critical: return .systemRed
         }
     }
 

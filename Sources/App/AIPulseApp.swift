@@ -31,8 +31,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         securityScopedURLs = BookmarkManager.resolveAll()
         Logger.debug("A: bookmarks resolved=\(self.securityScopedURLs.count)")
 
-        do { try AppDatabase.shared.setup() }
-        catch { Logger.error("DB setup failed: \(error)") }
+        do { try AppDatabase.shared.setup(); AppHealthMonitor.shared.clearDBError() }
+        catch {
+            Logger.error("DB setup failed: \(error)")
+            AppHealthMonitor.shared.reportDBError("Database setup: \(error.localizedDescription)")
+        }
 
         // Build shared menu (stats refreshed every 30s, used by Dock right-click)
         menuBarController = MenuBarController()

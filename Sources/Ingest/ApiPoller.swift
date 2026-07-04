@@ -184,6 +184,7 @@ final class ApiPoller: @unchecked Sendable {
             }
         }
         Logger.info("ApiPoller[\(pid)]: ok — \(entries.map { "\($0.currency) \($0.totalBalance)" }.joined(separator: ", "))")
+        AppHealthMonitor.shared.clearAPIError()
     }
 
     private func cacheError(pid: String, msg: String) {
@@ -191,6 +192,7 @@ final class ApiPoller: @unchecked Sendable {
         cache[pid] = CachedBalance(balances: [], lastFetchTimestamp: Int(Date().timeIntervalSince1970 * 1000), error: msg)
         saveBalanceCache(cache)
         Logger.warning("ApiPoller[\(pid)]: \(msg)")
+        AppHealthMonitor.shared.reportAPIError("\(pid): \(msg)")
     }
 
     private func balanceCache() -> [String: CachedBalance] {
