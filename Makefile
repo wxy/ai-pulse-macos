@@ -33,5 +33,14 @@ app:
 run-app: app
 	@pkill -f "\.build/AIPulse.app" 2>/dev/null; sleep 1; open .build/AIPulse.app
 
+# Build signed DMG for distribution (requires Xcode).
+# Usage: make release VERSION=1.0.1 BUILD_NUM=2
+release:
+	bash scripts/release.sh
+
+# Build signed DMG + notarize (requires APPLE_ID / APPLE_APP_PASSWORD env vars).
+release-notarize:
+	NOTARIZE=1 bash scripts/release.sh
+
 clean:
 	rm -rf .build
