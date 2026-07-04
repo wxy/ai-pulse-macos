@@ -6,7 +6,7 @@ import AppKit
 /// The bar starts at the 3 o'clock position and fills clockwise; a full loop
 /// represents 3× the 30-day daily average. "Spend" here is the combined figure
 /// (API balance spend + subscription amortization) shown on the Dashboard.
-final class DockManager {
+final class DockManager: @unchecked Sendable {
     static let shared = DockManager()
     private var lastPulseTime: Date = .distantPast
     private let baseIcon: NSImage = AppIconLoader.load()
@@ -102,7 +102,7 @@ final class DockManager {
             NSApp.applicationIconImage = AppIconLoader.load(progress: Double(fillFraction))
             tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
             tile.display()
-            diagLog("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
+            Logger.debug("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
         }
 
         // Store for later restoration

@@ -116,7 +116,7 @@ enum StatsService {
             }
             return result
         } catch {
-            print("StatsService.dailyStats error: \(error)")
+            Logger.error("StatsService.dailyStats error: \(error)")
             return []
         }
     }
@@ -337,7 +337,7 @@ enum StatsService {
         let today = cal.startOfDay(for: Date())
         let dayCount = max((cal.dateComponents([.day], from: filterDay, to: today).day ?? 0) + 1, 1)
         let total = api + subscriptionDailyAmortization() * Double(dayCount)
-        diagLog("combinedSpend(sinceMs=\(sinceMs)): rows=\(rows.count) api=\(api) dayCount=\(dayCount) total=\(total)")
+        Logger.debug("combinedSpend(sinceMs=\(sinceMs)): rows=\(rows.count) api=\(api) dayCount=\(dayCount) total=\(total)")
         return total
     }
 
@@ -371,7 +371,7 @@ enum StatsService {
                 return ProviderDailyCost(date: date, providerId: pid, cost: c)
             }
         } catch {
-            print("StatsService.providerDailyCosts error: \(error)")
+            Logger.error("StatsService.providerDailyCosts error: \(error)")
             return []
         }
     }
@@ -405,7 +405,7 @@ enum StatsService {
                 return DailyCodeChange(date: date, added: Int(a), deleted: Int(d))
             }
         } catch {
-            print("StatsService.dailyCodeChanges error: \(error)")
+            Logger.error("StatsService.dailyCodeChanges error: \(error)")
             return []
         }
     }

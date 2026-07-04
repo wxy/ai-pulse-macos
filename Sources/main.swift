@@ -1,5 +1,4 @@
 import AppKit
-@preconcurrency import AppKit
 
 // Dock app with Dashboard as primary window.
 // .regular gives proper Dock + Cmd+Tab presence.
@@ -24,13 +23,13 @@ autoreleasepool {
         // Resolve the real binary path. CommandLine.arguments[0] is reliable
         // when the binary is invoked directly (not through a symlink chain).
         let execPath = CommandLine.arguments[0]
-        print("AIPulse: SIGHUP received, restarting via \(execPath)")
+        Logger.info("SIGHUP received, restarting via \(execPath)")
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         task.arguments = [execPath]
         // Inherit the same environment so DB / log paths resolve correctly
         task.environment = ProcessInfo.processInfo.environment
-        do { try task.run() } catch { print("AIPulse: SIGHUP restart failed: \(error)") }
+        do { try task.run() } catch { Logger.error("SIGHUP restart failed: \(error)") }
         exit(0)
     }
     sigSource.resume()

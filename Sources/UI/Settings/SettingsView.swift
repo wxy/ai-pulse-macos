@@ -360,7 +360,7 @@ private let repoDirsKey = "repo_search_dirs"
 
 // In-memory cache for repo scans (avoids full filesystem enumeration
 // every time the Repos tab is opened). Invalidated on directory add/remove.
-private var repoScanCache: [String: (timestamp: Date, repos: [String])] = [:]
+private nonisolated(unsafe) var repoScanCache: [String: (timestamp: Date, repos: [String])] = [:]
 private let repoScanCacheTTL: TimeInterval = 300 // 5 minutes
 
 struct ReposTab: View {

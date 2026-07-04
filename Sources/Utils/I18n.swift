@@ -312,7 +312,7 @@ enum I18n {
     static let didChangeLanguage = Notification.Name("I18nDidChangeLanguage")
 
     private static let langKey = "app_language"
-    private static var currentLang: String?
+    private static nonisolated(unsafe) var currentLang: String?
 
     static func setLang(_ lang: String) {
         currentLang = lang

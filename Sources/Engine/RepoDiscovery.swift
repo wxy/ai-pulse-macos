@@ -40,7 +40,7 @@ enum RepoDiscovery {
 
             if !known.contains(url.path) {
                 GitMonitor.shared.watch(repoPath: url.path)
-                diagLog("RepoDiscovery: new repo → \(url.path)")
+                Logger.info("RepoDiscovery: new repo → \(url.path)")
                 count += 1
             }
             enumerator.skipDescendants()

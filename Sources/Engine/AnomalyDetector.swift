@@ -4,7 +4,7 @@ import GRDB
 
 /// Detects spending anomalies: if any hour's spend exceeds 3× the 7-day
 /// hourly baseline, fires a macOS notification.
-final class AnomalyDetector {
+final class AnomalyDetector: @unchecked Sendable {
     static let shared = AnomalyDetector()
     private var notifiedHours = Set<Int>() // prevent duplicate alerts
 
@@ -54,7 +54,7 @@ final class AnomalyDetector {
             await sendNotification(hour: hourKey, cost: latestCost, baseline: baseline)
 
         } catch {
-            print("AnomalyDetector error: \(error)")
+            Logger.error("AnomalyDetector error: \(error)")
         }
     }
 

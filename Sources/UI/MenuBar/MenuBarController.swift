@@ -2,17 +2,17 @@ import AppKit
 import SwiftUI
 import GRDB
 
-final class SettingsWindowManager {
+final class SettingsWindowManager: @unchecked Sendable {
     static let shared = SettingsWindowManager()
     var window: NSWindow?
 }
 
-final class DashboardWindowManager {
+final class DashboardWindowManager: @unchecked Sendable {
     static let shared = DashboardWindowManager()
     var window: NSWindow?
 }
 
-final class MenuBarController: NSObject {
+final class MenuBarController: NSObject, @unchecked Sendable {
     private(set) var menu: NSMenu!
 
     func start() {

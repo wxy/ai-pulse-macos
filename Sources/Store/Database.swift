@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-final class AppDatabase {
+final class AppDatabase: @unchecked Sendable {
     static let shared = AppDatabase()
     private var dbQueue: DatabaseQueue?
 
@@ -13,7 +13,7 @@ final class AppDatabase {
         try FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
         let dbPath = dbDir.appendingPathComponent("aipulse.db").path
         dbQueue = try DatabaseQueue(path: dbPath)
-        print("DB opened at \(dbPath)")
+        Logger.info("DB opened at \(dbPath)")
 
         let tables: [(String, (Database) throws -> Void)] = [
             ("usage_event", { db in
@@ -71,12 +71,12 @@ final class AppDatabase {
         for (name, migration) in tables {
             do {
                 try dbQueue?.write { try migration($0) }
-                print("  ✓ \(name)")
+                Logger.debug("  ✓ \(name)")
             } catch {
-                print("  ✗ \(name): \(error)")
+                Logger.error("  ✗ \(name): \(error)")
             }
         }
-        print("DB migration complete")
+        Logger.info("DB migration complete")
     }
 
     var writer: DatabaseWriter? { dbQueue }

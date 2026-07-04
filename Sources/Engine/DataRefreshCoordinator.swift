@@ -10,7 +10,7 @@ import Foundation
 /// Ingestion modules push-change notifications to the coordinator when they
 /// successfully write new data. The coordinator applies a 500ms debounce and
 /// posts `.dataDidChange` to notify all UI consumers.
-final class DataRefreshCoordinator {
+final class DataRefreshCoordinator: @unchecked Sendable {
     static let shared = DataRefreshCoordinator()
 
     private var phase1Timer: DispatchSourceTimer?
@@ -45,7 +45,7 @@ final class DataRefreshCoordinator {
             self?.runPhase3()
         }
 
-        diagLog("DataRefreshCoordinator: started (P1=30s, P2=5min, P3=1h)")
+        Logger.info("DataRefreshCoordinator: started (P1=30s, P2=5min, P3=1h)")
     }
 
     func stop() {
@@ -53,7 +53,7 @@ final class DataRefreshCoordinator {
         phase2Timer?.cancel(); phase2Timer = nil
         phase3Timer?.cancel(); phase3Timer = nil
         pendingNotifyWorkItem?.cancel(); pendingNotifyWorkItem = nil
-        diagLog("DataRefreshCoordinator: stopped")
+        Logger.info("DataRefreshCoordinator: stopped")
     }
 
     /// Called by external triggers (e.g., Settings adds a new directory)
@@ -78,7 +78,7 @@ final class DataRefreshCoordinator {
         LogWatcher.shared.scan()
         let discovered = RepoDiscovery.scan()
         if discovered > 0 {
-            diagLog("RepoDiscovery: found \(discovered) new repo(s)")
+            Logger.info("RepoDiscovery: found \(discovered) new repo(s)")
         }
         // LogWatcher.insertEvent() pushes notifyPhaseIngest() on successful write
     }
@@ -130,11 +130,11 @@ final class DataRefreshCoordinator {
     private func notifyConsumers() {
         let now = Date()
         guard now.timeIntervalSince(lastNotifyTime) >= minNotifyInterval else {
-            diagLog("DataRefreshCoordinator: suppressing notify (last was \(String(format: "%.1f", now.timeIntervalSince(lastNotifyTime)))s ago)")
+            Logger.debug("DataRefreshCoordinator: suppressing notify (last was \(String(format: "%.1f", now.timeIntervalSince(lastNotifyTime)))s ago)")
             return
         }
         lastNotifyTime = now
-        diagLog("DataRefreshCoordinator: posting .dataDidChange")
+        Logger.debug("DataRefreshCoordinator: posting .dataDidChange")
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .dataDidChange, object: nil)
             CoinSound.playForDataChange()

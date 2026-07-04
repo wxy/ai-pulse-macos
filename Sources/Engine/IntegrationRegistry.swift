@@ -4,7 +4,7 @@ import Foundation
 /// Each integration registers itself via `allIntegrations`.
 enum IntegrationRegistry {
     /// All known integrations — add new ones here.
-    static let all: [any Detectable] = [
+    static nonisolated(unsafe) let all: [any Detectable] = [
         ClaudeCodeIntegration(),
         AiderIntegration(),
         DeepSeekIntegration(),

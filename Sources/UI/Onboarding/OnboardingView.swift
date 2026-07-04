@@ -362,7 +362,7 @@ extension Notification.Name {
     static let dashboardRefresh = Notification.Name("dashboardRefresh")
 }
 
-final class OnboardingWindowManager {
+final class OnboardingWindowManager: @unchecked Sendable {
     static let shared = OnboardingWindowManager()
     var window: NSWindow?
 }

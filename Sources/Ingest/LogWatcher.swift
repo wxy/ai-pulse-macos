@@ -6,7 +6,7 @@ import GRDB
 /// Incremental parsing: tracks per-file byte positions so FSEvent rescans only
 /// read new data (not the whole file).  Positions are persisted to UserDefaults
 /// so they survive restarts.
-final class LogWatcher {
+final class LogWatcher: @unchecked Sendable {
     static let shared = LogWatcher()
     private var claudeSource: DispatchSourceFileSystemObject?
 
@@ -69,7 +69,7 @@ final class LogWatcher {
         let dir = FileManager.default.realHomeDirectory
             .appendingPathComponent(".claude/projects")
         guard FileManager.default.fileExists(atPath: dir.path) else {
-            print("Claude Code projects dir not found")
+            Logger.warning("Claude Code projects dir not found")
             return
         }
         scanClaudeCode(at: dir)
@@ -225,7 +225,7 @@ final class LogWatcher {
                 }
                 DataRefreshCoordinator.shared.notifyPhaseIngest()
             } catch {
-                print("Failed to insert: \(error)")
+                Logger.error("Failed to insert usage_event: \(error)")
             }
         }
     }

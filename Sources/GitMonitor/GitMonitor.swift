@@ -11,7 +11,7 @@ struct CodeChange: Codable {
 }
 
 /// Monitors git repositories for new commits and extracts net line changes
-final class GitMonitor {
+final class GitMonitor: @unchecked Sendable {
     static let shared = GitMonitor()
     /// Guards `watchedRepos` and `lastSeenCommit`. `watch()` can be invoked from
     /// multiple background contexts (initial scan, FSEvent handlers), so the
@@ -133,7 +133,7 @@ final class GitMonitor {
                 }
                 DataRefreshCoordinator.shared.notifyPhaseGitScan()
             } catch {
-                print("Failed to insert code change: \(error)")
+                Logger.error("Failed to insert code_change: \(error)")
             }
         }
     }
