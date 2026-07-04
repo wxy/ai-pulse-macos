@@ -53,6 +53,7 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         phase2Timer?.cancel(); phase2Timer = nil
         phase3Timer?.cancel(); phase3Timer = nil
         pendingNotifyWorkItem?.cancel(); pendingNotifyWorkItem = nil
+        lastNotifyTime = .distantPast
         Logger.info("DataRefreshCoordinator: stopped")
     }
 

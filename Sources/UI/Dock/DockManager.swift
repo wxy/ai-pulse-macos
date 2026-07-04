@@ -69,9 +69,7 @@ final class DockManager: @unchecked Sendable {
         let frameDuration: UInt64 = 80_000_000 // 80ms in nanoseconds
         for img in images {
             try? await Task.sleep(nanoseconds: frameDuration)
-            await MainActor.run {
-                NSApp.applicationIconImage = img
-            }
+            NSApp.applicationIconImage = img
         }
     }
 
