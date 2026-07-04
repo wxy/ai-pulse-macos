@@ -42,6 +42,9 @@ struct DashboardView: View {
     @State private var balanceSpend: [(providerId: String, name: String, spend: Double)] = []
     @State private var balanceDaily: [ChartDataPoint] = []
     @State private var loadError: String? = nil
+    @State private var healthSeverity = AppHealthMonitor.Severity.nominal
+    @State private var healthMessages: [String] = []
+    @State private var showHealthDetails = false
 
     var hasAGrade: Bool {
         IntegrationRegistry.enabledAGrade().contains { $0.detect().found }
@@ -53,6 +56,63 @@ struct DashboardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Error banner — visible when health is not nominal
+            if healthSeverity >= .degraded {
+                VStack(spacing: 0) {
+                    Button {
+                        withAnimation { showHealthDetails.toggle() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: healthSeverity == .critical
+                                  ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                            Text(healthBannerText)
+                                .font(.caption).fontWeight(.medium)
+                            Spacer()
+                            if !healthMessages.isEmpty {
+                                Image(systemName: showHealthDetails
+                                      ? "chevron.up" : "chevron.down")
+                                    .font(.caption2)
+                            }
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .foregroundColor(healthSeverity == .critical ? .white : .primary)
+                    }
+                    .buttonStyle(.plain)
+                    .background(healthBannerColor)
+
+                    if showHealthDetails {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if !healthMessages.isEmpty {
+                                ForEach(healthMessages.suffix(5), id: \.self) { msg in
+                                    Text(msg).font(.caption2).foregroundColor(.secondary)
+                                }
+                            }
+
+                            HStack(spacing: 4) {
+                                Button {
+                                    NSWorkspace.shared.activateFileViewerSelecting(
+                                        [Logger.logFileURL])
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "folder").font(.caption2)
+                                        Text(I18n.t("health.open_log")).font(.caption2)
+                                    }
+                                }
+                                .buttonStyle(.link)
+
+                                Text(I18n.t("health.send_to_dev"))
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 12).padding(.bottom, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(healthBannerColor.opacity(0.3))
+                    }
+                }
+                .cornerRadius(6)
+                .padding(.horizontal).padding(.bottom, 8)
+            }
+
             HStack {
                 Text(I18n.t("dashboard.title")).font(.title2).fontWeight(.bold)
                 Spacer()
@@ -88,6 +148,31 @@ struct DashboardView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .dataDidChange)) { _ in
             Task { await load() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .appHealthDidChange)) { _ in
+            let snap = AppHealthMonitor.shared.current
+            healthSeverity = snap.severity
+            healthMessages = snap.messages
+        }
+    }
+
+    // MARK: - Health banner helpers
+
+    private var healthBannerText: String {
+        switch healthSeverity {
+        case .critical: return I18n.t("health.critical")
+        case .impaired: return I18n.t("health.impaired")
+        case .degraded: return I18n.t("health.degraded")
+        case .nominal:  return ""
+        }
+    }
+
+    private var healthBannerColor: Color {
+        switch healthSeverity {
+        case .critical: return .red
+        case .impaired: return .orange
+        case .degraded: return .yellow
+        case .nominal:  return .clear
         }
     }
 

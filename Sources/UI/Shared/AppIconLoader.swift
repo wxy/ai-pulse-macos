@@ -16,10 +16,13 @@ enum AppIconLoader {
     /// rendered once and reused. Identical to the static `.icns`.
     private static nonisolated(unsafe) let baseTile: NSImage = renderBase()
 
-    /// Load the icon, optionally stroking a green spend bar along the border.
-    static func load(progress: Double = 0) -> NSImage {
+    /// Load the icon, optionally stroking a spend bar along the border.
+    /// - Parameter progress: 0–1 fill fraction of the border bar.
+    /// - Parameter barColor: colour of the progress bar (green by default,
+    ///   overridden by health monitor for error states).
+    static func load(progress: Double = 0, barColor: NSColor = .systemGreen) -> NSImage {
         guard progress > 0.001 else { return baseTile }
-        return renderProgress(fraction: CGFloat(min(max(progress, 0), 1)))
+        return renderProgress(fraction: CGFloat(min(max(progress, 0), 1)), color: barColor)
     }
 
     /// Render a pulse frame: artwork scaled up with a gold overlay.
@@ -121,7 +124,7 @@ enum AppIconLoader {
     }
 
     /// Draw the cached base tile and stroke a green bar along the body border.
-    private static func renderProgress(fraction: CGFloat) -> NSImage {
+    private static func renderProgress(fraction: CGFloat, color: NSColor = .systemGreen) -> NSImage {
         let img = NSImage(size: NSSize(width: size, height: size))
         img.lockFocus()
         baseTile.draw(in: canvasRect)
@@ -131,7 +134,7 @@ enum AppIconLoader {
         let barRect = bodyRect.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
         let barCr = cornerRadius - lineWidth / 2
         let barPath = progressPath(rect: barRect, cornerRadius: max(barCr, 0), fraction: fraction)
-        NSColor.systemGreen.setStroke()
+        color.setStroke()
         barPath.lineWidth = lineWidth
         barPath.lineCapStyle = .round
         barPath.lineJoinStyle = .round

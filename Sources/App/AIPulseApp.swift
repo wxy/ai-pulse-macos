@@ -31,8 +31,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         securityScopedURLs = BookmarkManager.resolveAll()
         Logger.debug("A: bookmarks resolved=\(self.securityScopedURLs.count)")
 
-        do { try AppDatabase.shared.setup() }
-        catch { Logger.error("DB setup failed: \(error)") }
+        do { try AppDatabase.shared.setup(); AppHealthMonitor.shared.clearDBError() }
+        catch {
+            Logger.error("DB setup failed: \(error)")
+            AppHealthMonitor.shared.reportDBError("Database setup: \(error.localizedDescription)")
+        }
 
         // Build shared menu (stats refreshed every 30s, used by Dock right-click)
         menuBarController = MenuBarController()
@@ -64,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // Manages three ingestion phases — Ingest (30s), Git (5min), Balance (1h) —
         // with change detection, 500ms debounce, and unified .dataDidChange notification.
         DataRefreshCoordinator.shared.start()
+
+        // Startup chime — lets the user know the app is alive, bypasses throttle.
+        CoinSound.playForDataChange(bypassThrottle: true)
 
         // Check for anomalies periodically (separate from data refresh — longer cycle)
         Timer.scheduledTimer(withTimeInterval: 3660, repeats: true) { _ in

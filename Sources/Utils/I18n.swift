@@ -153,6 +153,11 @@ enum I18n {
         "bookmark.claude_message": "AI Pulse 需要读取 ~/.claude 目录以统计 Claude Code 用量。请在此确认授权（仅本机使用）。",
         "bookmark.repos_message": "选择存放代码仓库的目录（例如 ~/dev），AI Pulse 将扫描其中的 Git 仓库以统计代码变化。建议不要直接选择主目录。",
         "repos.grant_empty": "尚未授权任何目录。点击“添加目录”选择存放代码仓库的目录（如 ~/dev），授权后即可扫描其中的 Git 仓库。",
+        "health.critical": "数据库异常 — 无法获取任何数据",
+        "health.impaired": "数据不完整 — 部分查询失败，数据可能缺失",
+        "health.degraded": "部分数据不可用 — 某些数据源暂时无法访问",
+        "health.open_log": "打开日志文件",
+        "health.send_to_dev": "可将日志发送给开发者协助定位问题",
     ]
 
     static let en: [String: String] = [
@@ -307,6 +312,11 @@ enum I18n {
         "bookmark.claude_message": "AI Pulse needs to read the ~/.claude folder to track Claude Code usage. Please grant access here (used locally only).",
         "bookmark.repos_message": "Choose a directory that holds your code repositories (e.g. ~/dev). AI Pulse will scan it for Git repos to track code changes. Avoid selecting your home folder directly.",
         "repos.grant_empty": "No directories authorized yet. Click “Add Directory” to choose where your code repositories live (e.g. ~/dev); AI Pulse will scan it for Git repos after you grant access.",
+        "health.critical": "Database Error — no data can be loaded",
+        "health.impaired": "Incomplete Data — some queries failed, data may be missing",
+        "health.degraded": "Partial Outage — some data sources are temporarily unavailable",
+        "health.open_log": "Open Log File",
+        "health.send_to_dev": "You can send this log to the developer for troubleshooting",
     ]
 
     static let didChangeLanguage = Notification.Name("I18nDidChangeLanguage")

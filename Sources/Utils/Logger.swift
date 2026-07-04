@@ -18,6 +18,13 @@ enum Logger {
 
     // MARK: - Public API
 
+    /// Absolute URL of the active log file so users can locate and share it.
+    static var logFileURL: URL {
+        let logDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/AIPulse")
+        return logDir.appendingPathComponent(logFileName)
+    }
+
     /// Detailed diagnostic messages.  Entirely compiled out in Release builds.
     static func debug(_ msg: String,
                       file: String = #fileID,

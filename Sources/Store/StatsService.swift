@@ -117,6 +117,7 @@ enum StatsService {
             return result
         } catch {
             Logger.error("StatsService.dailyStats error: \(error)")
+            AppHealthMonitor.shared.reportStatsError("dailyStats: \(error.localizedDescription)")
             throw error
         }
     }
@@ -202,7 +203,11 @@ enum StatsService {
                     subscriptionSources: subSources
                 )
             }
-        } catch { Logger.error("StatsService.repoBreakdown error: \(error)"); throw error }
+        } catch {
+            Logger.error("StatsService.repoBreakdown error: \(error)")
+            AppHealthMonitor.shared.reportStatsError("repoBreakdown: \(error.localizedDescription)")
+            throw error
+        }
     }
 
     /// Map usage_event.source to a human-readable label for CPL display.
@@ -286,6 +291,7 @@ enum StatsService {
             return results
         } catch {
             Logger.error("StatsService.balanceDailySpend error: \(error)")
+            AppHealthMonitor.shared.reportStatsError("balanceDailySpend: \(error.localizedDescription)")
             throw error
         }
     }
@@ -375,6 +381,7 @@ enum StatsService {
             }
         } catch {
             Logger.error("StatsService.providerDailyCosts error: \(error)")
+            AppHealthMonitor.shared.reportStatsError("providerDailyCosts: \(error.localizedDescription)")
             throw error
         }
     }
@@ -409,6 +416,7 @@ enum StatsService {
             }
         } catch {
             Logger.error("StatsService.dailyCodeChanges error: \(error)")
+            AppHealthMonitor.shared.reportStatsError("dailyCodeChanges: \(error.localizedDescription)")
             throw error
         }
     }
