@@ -16,13 +16,15 @@ enum AppIconLoader {
     /// rendered once and reused. Identical to the static `.icns`.
     private static nonisolated(unsafe) let baseTile: NSImage = renderBase()
 
-    /// Load the icon, optionally stroking a spend bar along the border.
-    /// - Parameter progress: 0–1 fill fraction of the border bar.
-    /// - Parameter barColor: colour of the progress bar (green by default,
-    ///   overridden by health monitor for error states).
-    static func load(progress: Double = 0, barColor: NSColor = .systemGreen) -> NSImage {
-        guard progress > 0.001 else { return baseTile }
-        return renderProgress(fraction: CGFloat(min(max(progress, 0), 1)), color: barColor)
+    /// Load the icon with a linear progress ring, optional lap counter and health dot.
+    /// - Parameter progress: 0+ (1.0 = 1× daily average = full circle).
+    /// - Parameter lap: number of completed laps (first lap = 0). Shown as a small
+    ///   digit in the bottom-left corner when ≥ 1.
+    /// - Parameter healthDot: nil → no dot; non-nil → coloured dot at bottom-right.
+    static func load(progress: Double = 0, lap: Int = 0,
+                     healthDot: AppHealthMonitor.Severity? = nil) -> NSImage {
+        return renderProgress(fraction: CGFloat(max(progress, 0)),
+                              lap: lap, healthDot: healthDot)
     }
 
     /// Render a pulse frame: artwork scaled up with a gold overlay.
@@ -123,41 +125,78 @@ enum AppIconLoader {
         return img
     }
 
-    /// Draw a subtle background track ring, then stroke the progress ring
-    /// on top using a logarithmic scale:
-    ///   1× baseline → 50% of perimeter
-    ///   2× baseline → 75% of perimeter
-    ///   3× baseline → 87.5% of perimeter
-    ///   … asymptotically approaching, but never reaching, 100%.
-    private static func renderProgress(fraction: CGFloat, color: NSColor = .systemGreen) -> NSImage {
+    /// Draw a single-colour linear progress ring (100% = full circle = 1× daily
+    /// average), an optional lap-counter digit in the bottom-left corner (when
+    /// lap ≥ 1), and an optional health dot at the bottom-right corner.
+    private static func renderProgress(fraction: CGFloat,
+                                       lap: Int,
+                                       healthDot: AppHealthMonitor.Severity?,
+                                       ringWidth: CGFloat = 22) -> NSImage {
         let img = NSImage(size: NSSize(width: size, height: size))
         img.lockFocus()
         baseTile.draw(in: canvasRect)
 
-        let lw: CGFloat = 22
-        let inset: CGFloat = lw / 2 + 6
+        // ── Progress ring ──
+        let inset: CGFloat = 10 + ringWidth / 2
         let barRect = bodyRect.insetBy(dx: inset, dy: inset)
         let barCr = max(cornerRadius - inset, 0)
+        let ringFraction = min(fraction, 1.0)
 
-        // Background track — always visible, subtle fill
-        let trackPath = progressPath(rect: barRect, cornerRadius: barCr, fraction: 1.0)
-        NSColor.tertiaryLabelColor.setStroke()
-        trackPath.lineWidth = lw
-        trackPath.lineCapStyle = .round
-        trackPath.lineJoinStyle = .round
-        trackPath.stroke()
+        if ringFraction > 0.001 {
+            let path = progressPath(rect: barRect, cornerRadius: barCr,
+                                    fraction: ringFraction)
+            NSColor.systemGreen.setStroke()
+            path.lineWidth = ringWidth
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            path.stroke()
+        }
 
-        // Progress ring — logarithmic scale
-        let ringFraction = CGFloat(1.0 - pow(0.5, Double(fraction)))
-        guard ringFraction > 0.001 else { img.unlockFocus(); return img }
+        // ── Lap counter (bottom-left corner) ──
+        if lap >= 1 {
+            let text = "\(min(lap, 9))"
+            let fontSize: CGFloat = 80
+            let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)
+            let attr: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: NSColor.white,
+            ]
+            let textSize = (text as NSString).size(withAttributes: attr)
 
-        let ringPath = progressPath(rect: barRect, cornerRadius: barCr,
-                                     fraction: ringFraction)
-        color.setStroke()
-        ringPath.lineWidth = lw
-        ringPath.lineCapStyle = .round
-        ringPath.lineJoinStyle = .round
-        ringPath.stroke()
+            // Bottom-left, halfway between arc centre and corner
+            let cx = bodyRect.minX + cornerRadius * 0.65
+            let cy = bodyRect.minY + cornerRadius * 0.65
+            let r: CGFloat = 52
+
+            let circlePath = NSBezierPath(
+                ovalIn: CGRect(x: cx - r, y: cy - r,
+                               width: r * 2, height: r * 2))
+            NSColor.systemGreen.setFill()
+            circlePath.fill()
+
+            let textRect = CGRect(x: cx - textSize.width / 2,
+                                  y: cy - textSize.height / 2,
+                                  width: textSize.width, height: textSize.height)
+            (text as NSString).draw(in: textRect, withAttributes: attr)
+        }
+
+        // ── Health dot (bottom-right) ──
+        if let sev = healthDot, sev >= .degraded {
+            let dotColor: NSColor = switch sev {
+            case .critical: .systemRed
+            case .impaired: .systemOrange
+            case .degraded: .systemYellow
+            case .nominal:  .systemGreen
+            }
+            let dotR: CGFloat = 28
+            let dotCenter = CGPoint(x: bodyRect.maxX - dotR - 4,
+                                    y: bodyRect.minY + dotR + 4)
+            let dotPath = NSBezierPath(
+                ovalIn: CGRect(x: dotCenter.x - dotR, y: dotCenter.y - dotR,
+                               width: dotR * 2, height: dotR * 2))
+            dotColor.setFill()
+            dotPath.fill()
+        }
 
         img.unlockFocus()
         return img

@@ -101,60 +101,42 @@ final class DockManager: @unchecked Sendable {
         let todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
         let dailyAvg = await rollingDailyAvg()
 
-        // Cache progress state so setProgressIcon can recompute later
-        let fillFraction: CGFloat
-        if dailyAvg > 0 {
-            fillFraction = CGFloat(todayCost / dailyAvg)
-        } else {
-            fillFraction = 0
-        }
-        // When health is non-nominal, ensure a minimum visible segment so the
-        // coloured bar is always noticeable (otherwise <5% fill is invisible).
-        let minFractionForHealth: CGFloat = 0.25  // ≈ 16% ring
-        let effectiveFraction = (healthSeverity >= .degraded && fillFraction < minFractionForHealth)
-            ? minFractionForHealth : fillFraction
-        let ringFraction = CGFloat(1.0 - pow(0.5, Double(effectiveFraction)))
-        Logger.debug("Dock progress: todayCost=\(String(format: "%.2f", todayCost)) dailyAvg=\(String(format: "%.2f", dailyAvg)) fillFraction=\(String(format: "%.3f", fillFraction)) effectiveFraction=\(String(format: "%.3f", effectiveFraction)) ringFraction=\(String(format: "%.1f", ringFraction * 100))%")
+        // Linear progress ring: 1.0 = 1× daily average = full circle.
+        // Ring fraction = fillFraction modulo 1.0; lap counter shown bottom-left.
+        let fillFraction = dailyAvg > 0 ? CGFloat(todayCost / dailyAvg) : 0
+        let lap = max(Int(floor(fillFraction)), 0)
+        Logger.debug("Dock progress: todayCost=\(String(format: "%.2f", todayCost)) dailyAvg=\(String(format: "%.2f", dailyAvg)) fillFraction=\(String(format: "%.2f", fillFraction)) lap=\(lap)")
 
         let tile = NSApp.dockTile
 
         guard todayCost > 0.001 else {
-            NSApp.applicationIconImage = self.baseIcon
+            NSApp.applicationIconImage = AppIconLoader.load(healthDot: healthSeverity)
             tile.badgeLabel = nil
             tile.display()
             return
         }
 
         NSApp.applicationIconImage = AppIconLoader.load(
-            progress: Double(effectiveFraction), barColor: progressBarColor)
+            progress: Double(fillFraction), lap: lap, healthDot: healthSeverity)
         tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
         tile.display()
         Logger.debug("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
 
-        _cachedProgressFraction = Double(effectiveFraction)
+        _cachedProgressFraction = Double(fillFraction)
+        _cachedLap = lap
     }
 
     private var _cachedProgressFraction: Double = 0
+    private var _cachedLap: Int = 0
 
     /// Re-render the progress icon after a pulse animation completes.
     @MainActor
     private func setProgressIcon() async {
         if _cachedProgressFraction > 0.001 {
             NSApp.applicationIconImage = AppIconLoader.load(
-                progress: _cachedProgressFraction, barColor: progressBarColor)
+                progress: _cachedProgressFraction, lap: _cachedLap, healthDot: healthSeverity)
         } else {
-            NSApp.applicationIconImage = baseIcon
-        }
-    }
-
-    /// Progress bar colour reflects system health so the user can tell at a glance
-    /// whether the data is reliable.
-    private var progressBarColor: NSColor {
-        switch healthSeverity {
-        case .nominal:  return .systemGreen
-        case .degraded: return .systemYellow
-        case .impaired: return .systemOrange
-        case .critical: return .systemRed
+            NSApp.applicationIconImage = AppIconLoader.load(healthDot: healthSeverity)
         }
     }
 
