@@ -10,7 +10,7 @@ import Foundation
 /// Ingestion modules push-change notifications to the coordinator when they
 /// successfully write new data. The coordinator applies a 500ms debounce and
 /// posts `.dataDidChange` to notify all UI consumers.
-final class DataRefreshCoordinator {
+final class DataRefreshCoordinator: @unchecked Sendable {
     static let shared = DataRefreshCoordinator()
 
     private var phase1Timer: DispatchSourceTimer?
@@ -45,7 +45,7 @@ final class DataRefreshCoordinator {
             self?.runPhase3()
         }
 
-        diagLog("DataRefreshCoordinator: started (P1=30s, P2=5min, P3=1h)")
+        Logger.info("DataRefreshCoordinator: started (P1=30s, P2=5min, P3=1h)")
     }
 
     func stop() {
@@ -53,7 +53,8 @@ final class DataRefreshCoordinator {
         phase2Timer?.cancel(); phase2Timer = nil
         phase3Timer?.cancel(); phase3Timer = nil
         pendingNotifyWorkItem?.cancel(); pendingNotifyWorkItem = nil
-        diagLog("DataRefreshCoordinator: stopped")
+        lastNotifyTime = .distantPast
+        Logger.info("DataRefreshCoordinator: stopped")
     }
 
     /// Called by external triggers (e.g., Settings adds a new directory)
@@ -75,21 +76,28 @@ final class DataRefreshCoordinator {
     // MARK: - Phase runners
 
     private func runPhase1() {
+        let start = Date()
         LogWatcher.shared.scan()
         let discovered = RepoDiscovery.scan()
+        let elapsed = Date().timeIntervalSince(start)
+        Logger.debug("Phase1 ingest completed in \(String(format: "%.3f", elapsed))s, discovered=\(discovered)")
         if discovered > 0 {
-            diagLog("RepoDiscovery: found \(discovered) new repo(s)")
+            Logger.info("RepoDiscovery: found \(discovered) new repo(s)")
         }
         // LogWatcher.insertEvent() pushes notifyPhaseIngest() on successful write
     }
 
     private func runPhase2() {
+        let start = Date()
         GitMonitor.shared.poll()
+        Logger.debug("Phase2 git scan completed in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
         // GitMonitor.insertChange() pushes notifyPhaseGitScan() on successful write
     }
 
     private func runPhase3() {
+        let start = Date()
         ApiPoller.shared.pollAll()
+        Logger.debug("Phase3 balance poll dispatched in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
         // ApiPoller.cacheBalance() pushes notifyPhaseBalance() on successful write
     }
 
@@ -130,11 +138,11 @@ final class DataRefreshCoordinator {
     private func notifyConsumers() {
         let now = Date()
         guard now.timeIntervalSince(lastNotifyTime) >= minNotifyInterval else {
-            diagLog("DataRefreshCoordinator: suppressing notify (last was \(String(format: "%.1f", now.timeIntervalSince(lastNotifyTime)))s ago)")
+            Logger.debug("DataRefreshCoordinator: suppressing notify (last was \(String(format: "%.1f", now.timeIntervalSince(lastNotifyTime)))s ago)")
             return
         }
         lastNotifyTime = now
-        diagLog("DataRefreshCoordinator: posting .dataDidChange")
+        Logger.debug("DataRefreshCoordinator: posting .dataDidChange")
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .dataDidChange, object: nil)
             CoinSound.playForDataChange()

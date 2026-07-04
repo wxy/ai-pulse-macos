@@ -6,7 +6,12 @@ build:
 	swift build
 
 test:
-	DYLD_LIBRARY_PATH=$(LIBGIT2_LIB) swift test
+	swift build --build-tests -Xcc -I$(PWD)/Libraries/libgit2/include
+	@BIN_DIR=$$(swift build --show-bin-path) && \
+	TEST_BIN="$$BIN_DIR/AIPulsePackageTests.xctest/Contents/MacOS/AIPulsePackageTests" && \
+	otool -l "$$TEST_BIN" | grep -q "$(LIBGIT2_LIB)" || \
+		install_name_tool -add_rpath "$(LIBGIT2_LIB)" "$$TEST_BIN"; \
+	swift test --skip-build -Xcc -I$(PWD)/Libraries/libgit2/include
 
 run:
 	DYLD_LIBRARY_PATH=$(LIBGIT2_LIB) swift run
@@ -32,6 +37,15 @@ app:
 # Rebuild the .app bundle and relaunch it. Use this to see icon changes.
 run-app: app
 	@pkill -f "\.build/AIPulse.app" 2>/dev/null; sleep 1; open .build/AIPulse.app
+
+# Build signed DMG for distribution (requires Xcode).
+# Usage: make release VERSION=1.0.1 BUILD_NUM=2
+release:
+	bash scripts/release.sh
+
+# Build signed DMG + notarize (requires APPLE_ID / APPLE_APP_PASSWORD env vars).
+release-notarize:
+	NOTARIZE=1 bash scripts/release.sh
 
 clean:
 	rm -rf .build

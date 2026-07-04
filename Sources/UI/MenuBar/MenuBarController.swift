@@ -2,17 +2,17 @@ import AppKit
 import SwiftUI
 import GRDB
 
-final class SettingsWindowManager {
+final class SettingsWindowManager: @unchecked Sendable {
     static let shared = SettingsWindowManager()
     var window: NSWindow?
 }
 
-final class DashboardWindowManager {
+final class DashboardWindowManager: @unchecked Sendable {
     static let shared = DashboardWindowManager()
     var window: NSWindow?
 }
 
-final class MenuBarController: NSObject {
+final class MenuBarController: NSObject, @unchecked Sendable {
     private(set) var menu: NSMenu!
 
     func start() {
@@ -32,7 +32,7 @@ final class MenuBarController: NSObject {
         refreshStats()
     }
 
-    @objc private func onLanguageChange() {
+    @MainActor @objc private func onLanguageChange() {
         refreshStats()
         SettingsWindowManager.shared.window?.title = I18n.t("settings.title")
     }
@@ -153,7 +153,7 @@ final class MenuBarController: NSObject {
             // Per-provider spend this week from balance snapshots
             let cal2 = Calendar.current
             let weekDays = cal2.dateComponents([.day], from: cal2.date(from: cal2.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: cal2.startOfDay(for: Date())).day! + 1
-            let rawSpend = await StatsService.balanceDailySpend(days: weekDays, sinceMs: Int64(weekStart))
+            let rawSpend = (try? await StatsService.balanceDailySpend(days: weekDays, sinceMs: Int64(weekStart))) ?? []
             var spendByProvider: [String: Double] = [:]
             for s in rawSpend { spendByProvider[s.providerId, default: 0] += s.spend }
             var providerCosts: [(providerId: String, cost: Double)] = []
@@ -205,18 +205,18 @@ final class MenuBarController: NSObject {
         }
     }
 
-    @objc private func openDashboard() {
+    @MainActor @objc private func openDashboard() {
         NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 520), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         w.title = I18n.t("dashboard.title"); w.contentView = NSHostingView(rootView: DashboardView()); w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
         DashboardWindowManager.shared.window = w
     }
 
-    @objc private func openPreferences() {
+    @MainActor @objc private func openPreferences() {
         NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         w.title = I18n.t("settings.title"); w.contentView = NSHostingView(rootView: SettingsView()); w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
         SettingsWindowManager.shared.window = w
     }
-    @objc private func quit() { NSApplication.shared.terminate(nil) }
+    @MainActor @objc private func quit() { NSApplication.shared.terminate(nil) }
 }

@@ -7,7 +7,7 @@ enum CoinSound {
     /// Keep active sounds alive with strong references so they don't dealloc mid-playback.
     /// Overlapping sounds (e.g., multi-coin for large spend) each get their own slot;
     /// cleaned up after their duration elapses.
-    private static var activeSounds = Set<NSSound>()
+    private static nonisolated(unsafe) var activeSounds = Set<NSSound>()
 
     // MARK: - Public
 

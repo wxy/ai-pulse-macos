@@ -3,7 +3,7 @@ import GRDB
 
 /// Periodically polls provider balance/usage APIs (Tier B).
 /// Runs every hour by default, same as the Chrome extension.
-final class ApiPoller {
+final class ApiPoller: @unchecked Sendable {
     static let shared = ApiPoller()
     private let session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -179,18 +179,18 @@ final class ApiPoller {
                     }
                     DataRefreshCoordinator.shared.notifyPhaseBalance()
                 } catch {
-                    print("ApiPoller[\(pid)]: snapshot insert failed: \(error)")
+                    Logger.error("ApiPoller[\(pid)]: snapshot insert failed: \(error)")
                 }
             }
         }
-        print("ApiPoller[\(pid)]: ok — \(entries.map { "\($0.currency) \($0.totalBalance)" }.joined(separator: ", "))")
+        Logger.info("ApiPoller[\(pid)]: ok — \(entries.map { "\($0.currency) \($0.totalBalance)" }.joined(separator: ", "))")
     }
 
     private func cacheError(pid: String, msg: String) {
         var cache = balanceCache()
         cache[pid] = CachedBalance(balances: [], lastFetchTimestamp: Int(Date().timeIntervalSince1970 * 1000), error: msg)
         saveBalanceCache(cache)
-        print("ApiPoller[\(pid)]: \(msg)")
+        Logger.warning("ApiPoller[\(pid)]: \(msg)")
     }
 
     private func balanceCache() -> [String: CachedBalance] {

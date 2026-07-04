@@ -7,7 +7,7 @@ import Foundation
 /// unacceptable for a menu-bar tool.  These are API keys for read-only
 /// usage/balance checks — not payment credentials — so UserDefaults is an
 /// acceptable trade-off.
-final class ApiKeyManager {
+final class ApiKeyManager: @unchecked Sendable {
     static let shared = ApiKeyManager()
     private let defaults = UserDefaults.standard
     private let prefix = "apikey_"

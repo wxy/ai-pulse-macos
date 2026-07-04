@@ -360,7 +360,7 @@ private let repoDirsKey = "repo_search_dirs"
 
 // In-memory cache for repo scans (avoids full filesystem enumeration
 // every time the Repos tab is opened). Invalidated on directory add/remove.
-private var repoScanCache: [String: (timestamp: Date, repos: [String])] = [:]
+private nonisolated(unsafe) var repoScanCache: [String: (timestamp: Date, repos: [String])] = [:]
 private let repoScanCacheTTL: TimeInterval = 300 // 5 minutes
 
 struct ReposTab: View {
@@ -613,19 +613,22 @@ struct SubsTab: View {
             // Restore saved selections from DB
             Task {
                 do {
-                    let rows = try await AppDatabase.shared.read { db in
-                        try Row.fetchAll(db, sql: "SELECT id, name, monthly_fee, currency FROM subscription_tool")
-                    }
-                    var map = [String: String]()
-                    for r in rows {
-                        let name: String = r["name"] ?? ""
-                        // id is tool name, find matching tool
-                        if let tool = SubscriptionRegistry.tools.first(where: { name.hasPrefix($0.name) }) {
-                            let tierLabel = String(name.dropFirst(tool.name.count + 1))
-                            if tool.tiers.contains(where: { $0.label == tierLabel }) {
-                                map[tool.name] = tierLabel
+                    // Process Row values inside the read closure so only
+                    // Sendable types cross isolation boundaries (Row is not
+                    // Sendable in Swift 6 strict mode).
+                    let map: [String: String] = try await AppDatabase.shared.read { db in
+                        let rows = try Row.fetchAll(db, sql: "SELECT id, name, monthly_fee, currency FROM subscription_tool")
+                        var map = [String: String]()
+                        for r in rows {
+                            let name: String = r["name"] ?? ""
+                            if let tool = SubscriptionRegistry.tools.first(where: { name.hasPrefix($0.name) }) {
+                                let tierLabel = String(name.dropFirst(tool.name.count + 1))
+                                if tool.tiers.contains(where: { $0.label == tierLabel }) {
+                                    map[tool.name] = tierLabel
+                                }
                             }
                         }
+                        return map
                     }
                     await MainActor.run { selections = map; dbError = nil }
                 } catch {

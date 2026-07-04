@@ -22,7 +22,7 @@ struct PricingCatalog: Codable {
     let models: [String: ModelPricing]
 }
 
-final class PricingManager {
+final class PricingManager: @unchecked Sendable {
     static let shared = PricingManager()
     private var catalog: PricingCatalog?
 
@@ -44,14 +44,14 @@ final class PricingManager {
             guard let data = try? Data(contentsOf: url),
                   let catalog = try? JSONDecoder().decode(PricingCatalog.self, from: data)
             else {
-                print("PricingCatalog: failed to load from \(p)")
+                Logger.warning("PricingCatalog: failed to load from \(p)")
                 continue
             }
             self.catalog = catalog
-            print("PricingCatalog: loaded \(catalog.models.count) models from \(p)")
+            Logger.info("PricingCatalog: loaded \(catalog.models.count) models from \(p)")
             return
         }
-        print("PricingCatalog: WARNING — no catalog found, cost data will be missing")
+        Logger.warning("PricingCatalog: no catalog found, cost data will be missing")
     }
 
     func pricing(for model: String?) -> ModelPricing? {
