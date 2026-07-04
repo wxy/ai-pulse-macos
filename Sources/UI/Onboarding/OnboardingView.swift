@@ -351,7 +351,7 @@ struct OnboardingView: View {
         // Re-discover repos/logs so directories just authorized during onboarding
         // start being monitored without requiring an app relaunch.
         LogWatcher.shared.start()
-        NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
+        NotificationCenter.default.post(name: .dataDidChange, object: nil)
         OnboardingWindowManager.shared.window?.close()
     }
 }

@@ -20,6 +20,13 @@ final class GitMonitor {
     private var watchedRepos: Set<String> = []
     private var lastSeenCommit: [String: String] = [:] // repo -> last processed commit hash
 
+    /// Read-only snapshot of currently watched repo paths.
+    /// Used by RepoDiscovery to diff against the filesystem.
+    var watchedRepoPaths: Set<String> {
+        lock.lock(); defer { lock.unlock() }
+        return watchedRepos
+    }
+
     private static let watchedReposKey = "gitmonitor_watched_repos"
     private static let lastSeenKey = "gitmonitor_last_seen"
 
@@ -124,6 +131,7 @@ final class GitMonitor {
                         VALUES (?, ?, ?, ?, ?, ?)
                         """, arguments: [change.commitHash, change.ts, change.repoPath, change.added, change.deleted, change.isMerge])
                 }
+                DataRefreshCoordinator.shared.notifyPhaseGitScan()
             } catch {
                 print("Failed to insert code change: \(error)")
             }

@@ -5,7 +5,6 @@ import GRDB
 /// Runs every hour by default, same as the Chrome extension.
 final class ApiPoller {
     static let shared = ApiPoller()
-    private var timer: Timer?
     private let session: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
@@ -18,17 +17,14 @@ final class ApiPoller {
     // MARK: - Public
 
     func start() {
+        // Initial poll at +10s (coordinator Phase 3 handles periodic polling).
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 10) { [weak self] in
-            self?.pollAll()
-        }
-        timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
             self?.pollAll()
         }
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        // Timer removed — DataRefreshCoordinator owns the periodic schedule.
     }
 
     func pollAll() {
@@ -181,6 +177,7 @@ final class ApiPoller {
                             VALUES (?, ?, ?, ?)
                             """, arguments: [now, pid, entry.totalBalance, entry.currency])
                     }
+                    DataRefreshCoordinator.shared.notifyPhaseBalance()
                 } catch {
                     print("ApiPoller[\(pid)]: snapshot insert failed: \(error)")
                 }

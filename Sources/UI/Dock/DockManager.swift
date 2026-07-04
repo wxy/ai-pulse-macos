@@ -8,20 +8,121 @@ import AppKit
 /// (API balance spend + subscription amortization) shown on the Dashboard.
 final class DockManager {
     static let shared = DockManager()
-    private var timer: Timer?
-    private var currentTask: Task<Void, Never>?
+    private var lastPulseTime: Date = .distantPast
     private let baseIcon: NSImage = AppIconLoader.load()
+    private var dataChangeObserver: NSObjectProtocol?
 
     func start() {
-        refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.refresh()
+        Task {
+            // Initial refresh sets the progress icon
+            await refresh()
+            // Pulse once on launch so the user sees the app is alive
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await pulseIcon()
+            // Restore progress after pulse (pulse overwrites with base frames)
+            await setProgressIcon()
+        }
+        // Observe data-change notifications from the centralized coordinator
+        dataChangeObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name.dataDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { [weak self] in
+                guard let self else { return }
+                // Refresh first to compute the latest progress icon
+                await self.refresh()
+                // Pulse the freshly-set progress icon
+                await self.pulseIcon()
+                // Restore progress icon after pulse animation finishes
+                await self.setProgressIcon()
+            }
         }
     }
 
     func stop() {
-        timer?.invalidate(); timer = nil
-        currentTask?.cancel(); currentTask = nil
+        if let token = dataChangeObserver {
+            NotificationCenter.default.removeObserver(token)
+            dataChangeObserver = nil
+        }
+    }
+
+    // MARK: - Pulse
+
+    /// Animate the Dock icon with a scale-pulse + gold-flash overlay.
+    /// The current `applicationIconImage` (set by refresh) is captured
+    /// and restored after the animation.
+    /// Throttled to at most once every 2 seconds.
+    func pulseIcon() async {
+        let now = Date()
+        guard now.timeIntervalSince(lastPulseTime) >= 2.0 else { return }
+        lastPulseTime = now
+
+        // Pre-render the pulse frames (scale-up + gold tint overlay)
+        let frames: [(scale: CGFloat, tint: CGFloat)] = [
+            (1.00, 0.0),
+            (1.15, 0.3),
+            (1.30, 0.6),
+            (1.15, 0.3),
+        ]
+        let images = frames.map { AppIconLoader.pulseFrame(scale: $0.scale, tintAmount: $0.tint) }
+
+        let frameDuration: UInt64 = 80_000_000 // 80ms in nanoseconds
+        for img in images {
+            try? await Task.sleep(nanoseconds: frameDuration)
+            await MainActor.run {
+                NSApp.applicationIconImage = img
+            }
+        }
+    }
+
+    // MARK: - Refresh
+
+    private func refresh() async {
+        let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+        let todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
+        let dailyAvg = await rollingDailyAvg()
+
+        // Cache progress state so setProgressIcon can recompute later
+        let fillFraction: CGFloat
+        if dailyAvg > 0 {
+            fillFraction = min(CGFloat(todayCost / dailyAvg / 3.0), 1.0)
+        } else {
+            fillFraction = 0
+        }
+
+        await MainActor.run {
+            let tile = NSApp.dockTile
+
+            guard todayCost > 0.001 else {
+                NSApp.applicationIconImage = self.baseIcon
+                tile.badgeLabel = nil
+                tile.display()
+                return
+            }
+
+            NSApp.applicationIconImage = AppIconLoader.load(progress: Double(fillFraction))
+            tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
+            tile.display()
+            diagLog("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
+        }
+
+        // Store for later restoration
+        let fraction = fillFraction
+        await MainActor.run {
+            self._cachedProgressFraction = Double(fraction)
+        }
+    }
+
+    private var _cachedProgressFraction: Double = 0
+
+    /// Re-render the progress icon after a pulse animation completes.
+    private func setProgressIcon() async {
+        await MainActor.run {
+            if _cachedProgressFraction > 0.001 {
+                NSApp.applicationIconImage = AppIconLoader.load(progress: _cachedProgressFraction)
+            } else {
+                NSApp.applicationIconImage = baseIcon
+            }
+        }
     }
 
     /// 30-day rolling daily average of combined spend (API + subscription amortization).
@@ -30,39 +131,5 @@ final class DockManager {
         guard let start = cal.date(byAdding: .day, value: -29, to: cal.startOfDay(for: Date())) else { return 0 }
         let total = await StatsService.combinedSpend(sinceMs: Int64(start.timeIntervalSince1970 * 1000))
         return total / 30.0
-    }
-
-    private func refresh() {
-        currentTask = Task {
-            let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-            let todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
-            let dailyAvg = await rollingDailyAvg()
-
-            await MainActor.run {
-                let tile = NSApp.dockTile
-
-                guard todayCost > 0.001 else {
-                    NSApp.applicationIconImage = self.baseIcon
-                    tile.badgeLabel = nil
-                    tile.display()
-                    return
-                }
-
-                // Green bar fills the icon border as today's spend approaches
-                // 3× the 30-day daily average (capped at 100%).
-                let fillFraction: CGFloat
-                if dailyAvg > 0 {
-                    let ratio = todayCost / dailyAvg
-                    fillFraction = min(CGFloat(ratio / 3.0), 1.0)
-                } else {
-                    fillFraction = 0
-                }
-
-                NSApp.applicationIconImage = AppIconLoader.load(progress: Double(fillFraction))
-                tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
-                tile.display()
-                diagLog("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
-            }
-        }
     }
 }

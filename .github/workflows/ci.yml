@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        env:
+          # SPM strips most env vars, but swift build -Xcc flags aren't
+          # stripped and propagate to the C module compilation.
+          SWIFT_FLAGS: -Xcc -I${{ github.workspace }}/Libraries/libgit2/include
+        run: |
+          # Build main + test targets. The -Xcc -I flag ensures the
+          # Clibgit2 module can find its nested headers (git2/common.h).
+          swift build --build-tests -Xcc -I$(pwd)/Libraries/libgit2/include
+
+          # SPM's @rpath doesn't resolve for xctest bundles — inject the
+          # absolute path to libgit2 before execution.
+          BIN_DIR=$(swift build --show-bin-path)
+          TEST_BIN="$BIN_DIR/AIPulsePackageTests.xctest/Contents/MacOS/AIPulsePackageTests"
+          install_name_tool -add_rpath "$(pwd)/Libraries/libgit2/lib" "$TEST_BIN"
+
+          # Run tests without rebuilding.
+          swift test --skip-build

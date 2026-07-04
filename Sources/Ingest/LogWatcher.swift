@@ -39,6 +39,15 @@ final class LogWatcher {
         }
     }
 
+    /// Perform an incremental scan without setting up FSEvent watchers.
+    /// Safe to call repeatedly; idempotent. Used by DataRefreshCoordinator.
+    func scan() {
+        scanQueue.async { [weak self] in
+            self?.scanClaudeProjectsOnly()
+            self?.discoverAndWatchRepos()
+        }
+    }
+
     func stop() {
         claudeSource?.cancel()
         claudeSource = nil
@@ -46,6 +55,15 @@ final class LogWatcher {
     }
 
     // MARK: - Claude Code
+
+    /// Scan-only variant of watchClaudeCode() — no FSEvent registration.
+    /// Used by DataRefreshCoordinator for periodic incremental scans.
+    private func scanClaudeProjectsOnly() {
+        let dir = FileManager.default.realHomeDirectory
+            .appendingPathComponent(".claude/projects")
+        guard FileManager.default.fileExists(atPath: dir.path) else { return }
+        scanClaudeCode(at: dir)
+    }
 
     private func watchClaudeCode() {
         let dir = FileManager.default.realHomeDirectory
@@ -205,6 +223,7 @@ final class LogWatcher {
                             cost, event.repoPath, event.sessionId, event.dedupeKey,
                         ])
                 }
+                DataRefreshCoordinator.shared.notifyPhaseIngest()
             } catch {
                 print("Failed to insert: \(error)")
             }

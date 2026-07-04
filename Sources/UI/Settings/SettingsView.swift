@@ -358,6 +358,11 @@ struct ToolsTab: View {
 
 private let repoDirsKey = "repo_search_dirs"
 
+// In-memory cache for repo scans (avoids full filesystem enumeration
+// every time the Repos tab is opened). Invalidated on directory add/remove.
+private var repoScanCache: [String: (timestamp: Date, repos: [String])] = [:]
+private let repoScanCacheTTL: TimeInterval = 300 // 5 minutes
+
 struct ReposTab: View {
     @State private var dirEntries: [DirEntry] = []
     @State private var deleteTarget: String? = nil
@@ -453,6 +458,7 @@ struct ReposTab: View {
             Button(I18n.t("repos.remove"), role: .destructive) {
                 if let d = deleteTarget {
                     dirEntries.removeAll { $0.path == d }
+                    repoScanCache.removeValue(forKey: d)
                     save()
                 }
             }
@@ -478,7 +484,19 @@ struct ReposTab: View {
         }
         Task {
             for i in dirEntries.indices {
-                await scanOne(at: i)
+                let path = dirEntries[i].path
+                if let cached = repoScanCache[path],
+                   Date().timeIntervalSince(cached.timestamp) < repoScanCacheTTL {
+                    // Cache hit — populate without filesystem scan
+                    await MainActor.run {
+                        guard i < dirEntries.count else { return }
+                        dirEntries[i].repoCount = cached.repos.count
+                        dirEntries[i].repos = cached.repos
+                        dirEntries[i].isScanning = false
+                    }
+                } else {
+                    await scanOne(at: i)
+                }
             }
         }
     }
@@ -500,7 +518,7 @@ struct ReposTab: View {
             Task { await scanOne(at: idx) }
             // Start monitoring the newly authorized directory without a relaunch.
             LogWatcher.shared.start()
-            NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
+            DataRefreshCoordinator.shared.triggerIngest()
         }
     }
 
@@ -534,6 +552,8 @@ struct ReposTab: View {
             dirEntries[idx].repoCount = foundRepos.count
             dirEntries[idx].repos = foundRepos
             dirEntries[idx].isScanning = false
+            // Update cache
+            repoScanCache[path] = (Date(), foundRepos)
         }
     }
 }
