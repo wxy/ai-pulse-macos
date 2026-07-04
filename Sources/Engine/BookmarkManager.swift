@@ -47,6 +47,7 @@ enum BookmarkManager {
 
     /// Present an Open Panel for the user to grant access to a directory.
     /// Returns the selected URL, or nil if cancelled.
+    @MainActor
     static func requestAccess(
         message: String = "AI Pulse 需要访问此目录以读取 AI 日志和代码仓库",
         defaultDirectory: String = NSHomeDirectory()
@@ -69,6 +70,7 @@ enum BookmarkManager {
     /// read access to Claude Code logs. Hidden files are shown so the dot-folder
     /// is visible. Returns the selected URL, or nil if cancelled.
     @discardableResult
+    @MainActor
     static func requestClaudeAccess(message: String) -> URL? {
         let home = FileManager.default.realHomeDirectory
         let panel = NSOpenPanel()

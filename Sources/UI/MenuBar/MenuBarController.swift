@@ -32,7 +32,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
         refreshStats()
     }
 
-    @objc private func onLanguageChange() {
+    @MainActor @objc private func onLanguageChange() {
         refreshStats()
         SettingsWindowManager.shared.window?.title = I18n.t("settings.title")
     }
@@ -205,14 +205,14 @@ final class MenuBarController: NSObject, @unchecked Sendable {
         }
     }
 
-    @objc private func openDashboard() {
+    @MainActor @objc private func openDashboard() {
         NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 520), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         w.title = I18n.t("dashboard.title"); w.contentView = NSHostingView(rootView: DashboardView()); w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
         DashboardWindowManager.shared.window = w
     }
 
-    @objc private func openPreferences() {
+    @MainActor @objc private func openPreferences() {
         NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         w.title = I18n.t("settings.title"); w.contentView = NSHostingView(rootView: SettingsView()); w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
