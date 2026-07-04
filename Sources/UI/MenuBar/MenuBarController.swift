@@ -153,7 +153,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             // Per-provider spend this week from balance snapshots
             let cal2 = Calendar.current
             let weekDays = cal2.dateComponents([.day], from: cal2.date(from: cal2.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: cal2.startOfDay(for: Date())).day! + 1
-            let rawSpend = await StatsService.balanceDailySpend(days: weekDays, sinceMs: Int64(weekStart))
+            let rawSpend = (try? await StatsService.balanceDailySpend(days: weekDays, sinceMs: Int64(weekStart))) ?? []
             var spendByProvider: [String: Double] = [:]
             for s in rawSpend { spendByProvider[s.providerId, default: 0] += s.spend }
             var providerCosts: [(providerId: String, cost: Double)] = []

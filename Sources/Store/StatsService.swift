@@ -61,7 +61,7 @@ enum StatsService {
     // MARK: - Daily trend
 
     /// Daily cost + netLines for the last `days` calendar days, or from `sinceMs` if provided.
-    static func dailyStats(days: Int, sinceMs: Int64? = nil) async -> [DailyStat] {
+    static func dailyStats(days: Int, sinceMs: Int64? = nil) async throws -> [DailyStat] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
         let startMs: Int64
@@ -117,13 +117,13 @@ enum StatsService {
             return result
         } catch {
             Logger.error("StatsService.dailyStats error: \(error)")
-            return []
+            throw error
         }
     }
 
     // MARK: - Repo breakdown
 
-    static func repoBreakdown(days: Int = 7, editorMappings: [EditorDetector.Mapping] = [], sinceMs: Int64? = nil) async -> [RepoBreakdown] {
+    static func repoBreakdown(days: Int = 7, editorMappings: [EditorDetector.Mapping] = [], sinceMs: Int64? = nil) async throws -> [RepoBreakdown] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
         let startMs: Int64
@@ -202,7 +202,7 @@ enum StatsService {
                     subscriptionSources: subSources
                 )
             }
-        } catch { return [] }
+        } catch { Logger.error("StatsService.repoBreakdown error: \(error)"); throw error }
     }
 
     /// Map usage_event.source to a human-readable label for CPL display.
@@ -248,7 +248,7 @@ enum StatsService {
 
     /// Daily spend from balance snapshots. Filters out top-ups (balance increases).
     /// Returns per-provider daily spend estimates.
-    static func balanceDailySpend(days: Int, sinceMs: Int64? = nil) async -> [(providerId: String, date: Date, spend: Double)] {
+    static func balanceDailySpend(days: Int, sinceMs: Int64? = nil) async throws -> [(providerId: String, date: Date, spend: Double)] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
         let startMs: Int64 = sinceMs ?? {
@@ -284,7 +284,10 @@ enum StatsService {
                 prevBalance = balance
             }
             return results
-        } catch { return [] }
+        } catch {
+            Logger.error("StatsService.balanceDailySpend error: \(error)")
+            throw error
+        }
     }
 
     // MARK: - Combined spend (API balance spend + subscription amortization)
@@ -328,7 +331,7 @@ enum StatsService {
         let queryStart = cal.date(byAdding: .day, value: -14, to: filterDay) ?? filterDay
         let queryStartMs = Int64(queryStart.timeIntervalSince1970 * 1000)
 
-        let rows = await balanceDailySpend(days: 1, sinceMs: queryStartMs)
+        let rows = (try? await balanceDailySpend(days: 1, sinceMs: queryStartMs)) ?? []
         let filterDayStart = filterDay.timeIntervalSince1970
         let api = rows
             .filter { $0.date.timeIntervalSince1970 >= filterDayStart }
@@ -344,7 +347,7 @@ enum StatsService {
     // MARK: - Provider daily cost
 
     /// Daily cost grouped by provider_id for the cost chart.
-    static func providerDailyCosts(days: Int) async -> [ProviderDailyCost] {
+    static func providerDailyCosts(days: Int) async throws -> [ProviderDailyCost] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
         guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
@@ -372,14 +375,14 @@ enum StatsService {
             }
         } catch {
             Logger.error("StatsService.providerDailyCosts error: \(error)")
-            return []
+            throw error
         }
     }
 
     // MARK: - Daily code changes
 
     /// Daily added/deleted lines (separate, not net) for the code-change chart.
-    static func dailyCodeChanges(days: Int) async -> [DailyCodeChange] {
+    static func dailyCodeChanges(days: Int) async throws -> [DailyCodeChange] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
         guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
@@ -406,7 +409,7 @@ enum StatsService {
             }
         } catch {
             Logger.error("StatsService.dailyCodeChanges error: \(error)")
-            return []
+            throw error
         }
     }
 }

@@ -41,6 +41,7 @@ struct DashboardView: View {
     @State private var editorMappings: [EditorDetector.Mapping] = []
     @State private var balanceSpend: [(providerId: String, name: String, spend: Double)] = []
     @State private var balanceDaily: [ChartDataPoint] = []
+    @State private var loadError: String? = nil
 
     var hasAGrade: Bool {
         IntegrationRegistry.enabledAGrade().contains { $0.detect().found }
@@ -611,17 +612,21 @@ struct DashboardView: View {
     }
 
     func load() async {
-        let raw = await StatsService.dailyStats(days: timeRange.days)
-        dailyStats = padStats(raw, days: timeRange.days)
-        providerCosts = await StatsService.providerDailyCosts(days: timeRange.days)
-        codeChanges = await StatsService.dailyCodeChanges(days: timeRange.days)
+        loadError = nil
+        do {
+            let raw = try await StatsService.dailyStats(days: timeRange.days)
+            dailyStats = padStats(raw, days: timeRange.days)
+        } catch { loadError = error.localizedDescription; dailyStats = [] }
+
+        providerCosts = (try? await StatsService.providerDailyCosts(days: timeRange.days)) ?? []
+        codeChanges = (try? await StatsService.dailyCodeChanges(days: timeRange.days)) ?? []
         editorMappings = EditorDetector.certainMappings()
-        repos = await StatsService.repoBreakdown(days: timeRange.days, editorMappings: editorMappings)
+        repos = (try? await StatsService.repoBreakdown(days: timeRange.days, editorMappings: editorMappings)) ?? []
         prediction = await StatsService.prediction()
         paddedChanges = padCodeChanges()
         subDaily = subDailyData()
         apiDaily = apiDailyData()
-        let rawSpend = await StatsService.balanceDailySpend(days: timeRange.days)
+        let rawSpend = (try? await StatsService.balanceDailySpend(days: timeRange.days)) ?? []
         // Aggregate spend by provider for summary cards
         var spendMap: [(String, Double)] = []
         for s in rawSpend {

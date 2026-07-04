@@ -75,8 +75,11 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     // MARK: - Phase runners
 
     private func runPhase1() {
+        let start = Date()
         LogWatcher.shared.scan()
         let discovered = RepoDiscovery.scan()
+        let elapsed = Date().timeIntervalSince(start)
+        Logger.debug("Phase1 ingest completed in \(String(format: "%.3f", elapsed))s, discovered=\(discovered)")
         if discovered > 0 {
             Logger.info("RepoDiscovery: found \(discovered) new repo(s)")
         }
@@ -84,12 +87,16 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     }
 
     private func runPhase2() {
+        let start = Date()
         GitMonitor.shared.poll()
+        Logger.debug("Phase2 git scan completed in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
         // GitMonitor.insertChange() pushes notifyPhaseGitScan() on successful write
     }
 
     private func runPhase3() {
+        let start = Date()
         ApiPoller.shared.pollAll()
+        Logger.debug("Phase3 balance poll dispatched in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
         // ApiPoller.cacheBalance() pushes notifyPhaseBalance() on successful write
     }
 
