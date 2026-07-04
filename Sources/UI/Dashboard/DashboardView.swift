@@ -80,10 +80,28 @@ struct DashboardView: View {
                     .buttonStyle(.plain)
                     .background(healthBannerColor)
 
-                    if showHealthDetails && !healthMessages.isEmpty {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(healthMessages.suffix(5), id: \.self) { msg in
-                                Text(msg).font(.caption2).foregroundColor(.secondary)
+                    if showHealthDetails {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if !healthMessages.isEmpty {
+                                ForEach(healthMessages.suffix(5), id: \.self) { msg in
+                                    Text(msg).font(.caption2).foregroundColor(.secondary)
+                                }
+                            }
+
+                            HStack(spacing: 4) {
+                                Button {
+                                    NSWorkspace.shared.activateFileViewerSelecting(
+                                        [Logger.logFileURL])
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "folder").font(.caption2)
+                                        Text(I18n.t("health.open_log")).font(.caption2)
+                                    }
+                                }
+                                .buttonStyle(.link)
+
+                                Text(I18n.t("health.send_to_dev"))
+                                    .font(.caption2).foregroundColor(.secondary)
                             }
                         }
                         .padding(.horizontal, 12).padding(.bottom, 6)

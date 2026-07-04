@@ -156,6 +156,8 @@ enum I18n {
         "health.critical": "数据库异常 — 无法获取任何数据",
         "health.impaired": "数据不完整 — 部分查询失败，数据可能缺失",
         "health.degraded": "部分数据不可用 — 某些数据源暂时无法访问",
+        "health.open_log": "打开日志文件",
+        "health.send_to_dev": "可将日志发送给开发者协助定位问题",
     ]
 
     static let en: [String: String] = [
@@ -313,6 +315,8 @@ enum I18n {
         "health.critical": "Database Error — no data can be loaded",
         "health.impaired": "Incomplete Data — some queries failed, data may be missing",
         "health.degraded": "Partial Outage — some data sources are temporarily unavailable",
+        "health.open_log": "Open Log File",
+        "health.send_to_dev": "You can send this log to the developer for troubleshooting",
     ]
 
     static let didChangeLanguage = Notification.Name("I18nDidChangeLanguage")
