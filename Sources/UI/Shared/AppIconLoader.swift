@@ -123,22 +123,41 @@ enum AppIconLoader {
         return img
     }
 
-    /// Draw the cached base tile and stroke a green bar along the body border.
+    /// Draw a subtle background track ring, then stroke the progress ring
+    /// on top using a logarithmic scale:
+    ///   1× baseline → 50% of perimeter
+    ///   2× baseline → 75% of perimeter
+    ///   3× baseline → 87.5% of perimeter
+    ///   … asymptotically approaching, but never reaching, 100%.
     private static func renderProgress(fraction: CGFloat, color: NSColor = .systemGreen) -> NSImage {
         let img = NSImage(size: NSSize(width: size, height: size))
         img.lockFocus()
         baseTile.draw(in: canvasRect)
 
-        let lineWidth: CGFloat = 40
-        // Inset by half the stroke width so the bar sits fully inside the body.
-        let barRect = bodyRect.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
-        let barCr = cornerRadius - lineWidth / 2
-        let barPath = progressPath(rect: barRect, cornerRadius: max(barCr, 0), fraction: fraction)
+        let lw: CGFloat = 22
+        let inset: CGFloat = lw / 2 + 6
+        let barRect = bodyRect.insetBy(dx: inset, dy: inset)
+        let barCr = max(cornerRadius - inset, 0)
+
+        // Background track — always visible, subtle fill
+        let trackPath = progressPath(rect: barRect, cornerRadius: barCr, fraction: 1.0)
+        NSColor.tertiaryLabelColor.setStroke()
+        trackPath.lineWidth = lw
+        trackPath.lineCapStyle = .round
+        trackPath.lineJoinStyle = .round
+        trackPath.stroke()
+
+        // Progress ring — logarithmic scale
+        let ringFraction = CGFloat(1.0 - pow(0.5, Double(fraction)))
+        guard ringFraction > 0.001 else { img.unlockFocus(); return img }
+
+        let ringPath = progressPath(rect: barRect, cornerRadius: barCr,
+                                     fraction: ringFraction)
         color.setStroke()
-        barPath.lineWidth = lineWidth
-        barPath.lineCapStyle = .round
-        barPath.lineJoinStyle = .round
-        barPath.stroke()
+        ringPath.lineWidth = lw
+        ringPath.lineCapStyle = .round
+        ringPath.lineJoinStyle = .round
+        ringPath.stroke()
 
         img.unlockFocus()
         return img

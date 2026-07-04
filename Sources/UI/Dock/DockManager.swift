@@ -103,7 +103,9 @@ final class DockManager: @unchecked Sendable {
         // Cache progress state so setProgressIcon can recompute later
         let fillFraction: CGFloat
         if dailyAvg > 0 {
-            fillFraction = min(CGFloat(todayCost / dailyAvg / 3.0), 1.0)
+            fillFraction = CGFloat(todayCost / dailyAvg)
+            let ringFraction = CGFloat(1.0 - pow(0.5, Double(fillFraction)))
+            Logger.debug("Dock progress: todayCost=\(String(format: "%.2f", todayCost)) dailyAvg=\(String(format: "%.2f", dailyAvg)) fillFraction=\(String(format: "%.3f", fillFraction)) ringFraction=\(String(format: "%.1f", ringFraction * 100))%")
         } else {
             fillFraction = 0
         }
@@ -152,14 +154,23 @@ final class DockManager: @unchecked Sendable {
 
     /// 30-day rolling daily average of combined spend (API + subscription amortization).
     private func rollingDailyAvg() async -> Double {
-        // Compute average based on days that actually have spend data,
-        // not a fixed 30-day divisor.  When the user is new (only a few
-        // days of history), dividing by 30 makes the average artificially
-        // tiny → progress bar instantly maxes out.
-        let stats = (try? await StatsService.dailyStats(days: 30)) ?? []
-        let daysWithSpend = stats.filter { $0.cost > 0.001 }.count
-        guard daysWithSpend > 0 else { return 0 }
-        let total = stats.reduce(0.0) { $0 + $1.cost }
-        return total / Double(daysWithSpend)
+        // API portion: average over days that actually have balance snapshots.
+        let spendRows = (try? await StatsService.balanceDailySpend(days: 30)) ?? []
+        var daysWithData = Set<Date>()
+        var apiTotal = 0.0
+        for row in spendRows {
+            daysWithData.insert(row.date)
+            apiTotal += row.spend
+        }
+
+        guard !daysWithData.isEmpty else { return 0 }
+
+        let apiAvg = apiTotal / Double(daysWithData.count)
+        let subDaily = StatsService.subscriptionDailyAmortization()
+        let avg = apiAvg + subDaily
+
+        Logger.debug("Dock avg: uniqueDays=\(daysWithData.count) apiTotal=\(String(format: "%.2f", apiTotal)) apiAvg=\(String(format: "%.2f", apiAvg)) subDaily=\(String(format: "%.2f", subDaily)) result=\(String(format: "%.2f", avg))")
+
+        return avg
     }
 }

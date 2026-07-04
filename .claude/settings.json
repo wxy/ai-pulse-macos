@@ -5,7 +5,9 @@
       "Read(//Users/xingyuwang/Library/Containers/com.wxy.AIPulse/Data/Library/Logs/AIPulse/**)",
       "Bash(ls -la \"/Users/xingyuwang/Library/Containers/com.wxy.AIPulse/Data/Library/Logs/AIPulse/\" 2>/dev/null)",
       "Bash(grep -c \"startup\\\\|bypassThrottle\" \"/Users/xingyuwang/Library/Containers/com.wxy.AIPulse/Data/Library/Logs/AIPulse/aipulse-debug.log\" 2>/dev/null)",
-      "Bash(grep \"startup\\\\|bypassThrottle\" \"/Users/xingyuwang/Library/Containers/com.wxy.AIPulse/Data/Library/Logs/AIPulse/aipulse-debug.log\" 2>/dev/null)"
+      "Bash(grep \"startup\\\\|bypassThrottle\" \"/Users/xingyuwang/Library/Containers/com.wxy.AIPulse/Data/Library/Logs/AIPulse/aipulse-debug.log\" 2>/dev/null)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)"
     ]
   }
 }
