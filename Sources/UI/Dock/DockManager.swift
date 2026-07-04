@@ -51,6 +51,7 @@ final class DockManager: @unchecked Sendable {
     /// The current `applicationIconImage` (set by refresh) is captured
     /// and restored after the animation.
     /// Throttled to at most once every 2 seconds.
+    @MainActor
     func pulseIcon() async {
         let now = Date()
         guard now.timeIntervalSince(lastPulseTime) >= 2.0 else { return }
@@ -76,6 +77,7 @@ final class DockManager: @unchecked Sendable {
 
     // MARK: - Refresh
 
+    @MainActor
     private func refresh() async {
         let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
         let todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
@@ -89,39 +91,32 @@ final class DockManager: @unchecked Sendable {
             fillFraction = 0
         }
 
-        await MainActor.run {
-            let tile = NSApp.dockTile
+        let tile = NSApp.dockTile
 
-            guard todayCost > 0.001 else {
-                NSApp.applicationIconImage = self.baseIcon
-                tile.badgeLabel = nil
-                tile.display()
-                return
-            }
-
-            NSApp.applicationIconImage = AppIconLoader.load(progress: Double(fillFraction))
-            tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
+        guard todayCost > 0.001 else {
+            NSApp.applicationIconImage = self.baseIcon
+            tile.badgeLabel = nil
             tile.display()
-            Logger.debug("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
+            return
         }
 
-        // Store for later restoration
-        let fraction = fillFraction
-        await MainActor.run {
-            self._cachedProgressFraction = Double(fraction)
-        }
+        NSApp.applicationIconImage = AppIconLoader.load(progress: Double(fillFraction))
+        tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
+        tile.display()
+        Logger.debug("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
+
+        _cachedProgressFraction = Double(fillFraction)
     }
 
     private var _cachedProgressFraction: Double = 0
 
     /// Re-render the progress icon after a pulse animation completes.
+    @MainActor
     private func setProgressIcon() async {
-        await MainActor.run {
-            if _cachedProgressFraction > 0.001 {
-                NSApp.applicationIconImage = AppIconLoader.load(progress: _cachedProgressFraction)
-            } else {
-                NSApp.applicationIconImage = baseIcon
-            }
+        if _cachedProgressFraction > 0.001 {
+            NSApp.applicationIconImage = AppIconLoader.load(progress: _cachedProgressFraction)
+        } else {
+            NSApp.applicationIconImage = baseIcon
         }
     }
 
