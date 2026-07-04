@@ -6,9 +6,5 @@
 	<string>AIPulse</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
-	<key>SUFeedURL</key>
-	<string>https://github.com/wxy/ai-pulse-macos/releases/latest/download/appcast.xml</string>
 </dict>
 </plist>

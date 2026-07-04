@@ -17,8 +17,7 @@ jobs:
           VERSION: ${{ github.ref_name }}
           BUILD_NUM: ${{ github.run_number }}
           DEVELOPMENT_TEAM: ${{ vars.DEVELOPMENT_TEAM }}
-        run: |
-          bash scripts/release.sh
+        run: bash scripts/release.sh
 
       - name: Notarize DMG
         env:
@@ -26,23 +25,12 @@ jobs:
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           DEVELOPMENT_TEAM: ${{ vars.DEVELOPMENT_TEAM }}
           NOTARIZE: '1'
-        run: |
-          bash scripts/release.sh
-        # Skip notarization if secrets are not configured yet.
+        run: bash scripts/release.sh
         continue-on-error: true
-
-      - name: Generate Appcast
-        env:
-          VERSION: ${{ github.ref_name }}
-          BUILD_NUM: ${{ github.run_number }}
-        run: |
-          APPCAST=1 bash scripts/release.sh
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
-          files: |
-            .build/AIPulse-*.dmg
-            .build/appcast.xml
+          files: .build/AIPulse-*.dmg
           generate_release_notes: true

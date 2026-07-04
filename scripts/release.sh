@@ -97,34 +97,4 @@ if [ "${NOTARIZE:-0}" = "1" ]; then
   echo "=== Notarization complete ==="
 fi
 
-# ── Appcast (for Sparkle) ──────────────────────────────────────
-if [ "${APPCAST:-0}" = "1" ]; then
-  APPCAST_FILE="./.build/appcast.xml"
-  DMG_SIZE=$(stat -f%z "$DMG_FINAL")
-  DMG_URL="https://github.com/wxy/ai-pulse-macos/releases/download/v${VERSION}/${DMG_NAME}.dmg"
-  RELEASE_NOTES="https://github.com/wxy/ai-pulse-macos/releases/tag/v${VERSION}"
-
-  # Generate minimal Sparkle 2.x appcast item
-  cat > "$APPCAST_FILE" <<APPCASTXML
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-  <channel>
-    <title>${APP_NAME}</title>
-    <item>
-      <title>Version ${VERSION}</title>
-      <sparkle:releaseNotesLink>${RELEASE_NOTES}</sparkle:releaseNotesLink>
-      <pubDate>$(date -u +"%a, %d %b %Y %H:%M:%S GMT")</pubDate>
-      <enclosure
-        url="${DMG_URL}"
-        sparkle:version="${BUILD_NUM}"
-        sparkle:shortVersionString="${VERSION}"
-        length="${DMG_SIZE}"
-        type="application/octet-stream"/>
-    </item>
-  </channel>
-</rss>
-APPCASTXML
-  echo "=== Appcast generated at $APPCAST_FILE ==="
-fi
-
 echo "=== Release build complete: $DMG_FINAL ==="

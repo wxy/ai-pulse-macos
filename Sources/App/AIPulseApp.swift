@@ -50,9 +50,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // ~/.claude. LogWatcher.start() is safe to call again (idempotent scans).
         LogWatcher.shared.start()
         Logger.debug("LogWatcher started")
-        // Auto-update via Sparkle (Release builds only, no-op when framework absent)
-        SparkleSetup.start()
-
         // P3: Dock fuel gauge
         DockManager.shared.start()
 
