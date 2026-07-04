@@ -70,6 +70,7 @@ final class DockManager: @unchecked Sendable {
     @MainActor
     func pulseIcon() async {
         guard NSApp != nil else { return }
+        guard healthSeverity < .critical else { return }
         let now = Date()
         guard now.timeIntervalSince(lastPulseTime) >= 2.0 else { return }
         lastPulseTime = now
@@ -104,11 +105,16 @@ final class DockManager: @unchecked Sendable {
         let fillFraction: CGFloat
         if dailyAvg > 0 {
             fillFraction = CGFloat(todayCost / dailyAvg)
-            let ringFraction = CGFloat(1.0 - pow(0.5, Double(fillFraction)))
-            Logger.debug("Dock progress: todayCost=\(String(format: "%.2f", todayCost)) dailyAvg=\(String(format: "%.2f", dailyAvg)) fillFraction=\(String(format: "%.3f", fillFraction)) ringFraction=\(String(format: "%.1f", ringFraction * 100))%")
         } else {
             fillFraction = 0
         }
+        // When health is non-nominal, ensure a minimum visible segment so the
+        // coloured bar is always noticeable (otherwise <5% fill is invisible).
+        let minFractionForHealth: CGFloat = 0.25  // ≈ 16% ring
+        let effectiveFraction = (healthSeverity >= .degraded && fillFraction < minFractionForHealth)
+            ? minFractionForHealth : fillFraction
+        let ringFraction = CGFloat(1.0 - pow(0.5, Double(effectiveFraction)))
+        Logger.debug("Dock progress: todayCost=\(String(format: "%.2f", todayCost)) dailyAvg=\(String(format: "%.2f", dailyAvg)) fillFraction=\(String(format: "%.3f", fillFraction)) effectiveFraction=\(String(format: "%.3f", effectiveFraction)) ringFraction=\(String(format: "%.1f", ringFraction * 100))%")
 
         let tile = NSApp.dockTile
 
@@ -120,12 +126,12 @@ final class DockManager: @unchecked Sendable {
         }
 
         NSApp.applicationIconImage = AppIconLoader.load(
-            progress: Double(fillFraction), barColor: progressBarColor)
+            progress: Double(effectiveFraction), barColor: progressBarColor)
         tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
         tile.display()
         Logger.debug("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
 
-        _cachedProgressFraction = Double(fillFraction)
+        _cachedProgressFraction = Double(effectiveFraction)
     }
 
     private var _cachedProgressFraction: Double = 0
