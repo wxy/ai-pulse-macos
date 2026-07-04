@@ -152,9 +152,14 @@ final class DockManager: @unchecked Sendable {
 
     /// 30-day rolling daily average of combined spend (API + subscription amortization).
     private func rollingDailyAvg() async -> Double {
-        let cal = Calendar.current
-        guard let start = cal.date(byAdding: .day, value: -29, to: cal.startOfDay(for: Date())) else { return 0 }
-        let total = await StatsService.combinedSpend(sinceMs: Int64(start.timeIntervalSince1970 * 1000))
-        return total / 30.0
+        // Compute average based on days that actually have spend data,
+        // not a fixed 30-day divisor.  When the user is new (only a few
+        // days of history), dividing by 30 makes the average artificially
+        // tiny → progress bar instantly maxes out.
+        let stats = (try? await StatsService.dailyStats(days: 30)) ?? []
+        let daysWithSpend = stats.filter { $0.cost > 0.001 }.count
+        guard daysWithSpend > 0 else { return 0 }
+        let total = stats.reduce(0.0) { $0 + $1.cost }
+        return total / Double(daysWithSpend)
     }
 }
