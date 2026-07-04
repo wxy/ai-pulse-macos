@@ -53,6 +53,7 @@ final class DockManager: @unchecked Sendable {
     /// Throttled to at most once every 2 seconds.
     @MainActor
     func pulseIcon() async {
+        guard NSApp != nil else { return }
         let now = Date()
         guard now.timeIntervalSince(lastPulseTime) >= 2.0 else { return }
         lastPulseTime = now
@@ -77,6 +78,8 @@ final class DockManager: @unchecked Sendable {
 
     @MainActor
     private func refresh() async {
+        // Guard against test environment where NSApp may not be available
+        guard NSApp != nil else { return }
         let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
         let todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
         let dailyAvg = await rollingDailyAvg()

@@ -6,7 +6,12 @@ build:
 	swift build
 
 test:
-	DYLD_LIBRARY_PATH=$(LIBGIT2_LIB) swift test
+	swift build --build-tests -Xcc -I$(PWD)/Libraries/libgit2/include
+	@BIN_DIR=$$(swift build --show-bin-path) && \
+	TEST_BIN="$$BIN_DIR/AIPulsePackageTests.xctest/Contents/MacOS/AIPulsePackageTests" && \
+	otool -l "$$TEST_BIN" | grep -q "$(LIBGIT2_LIB)" || \
+		install_name_tool -add_rpath "$(LIBGIT2_LIB)" "$$TEST_BIN"; \
+	swift test --skip-build -Xcc -I$(PWD)/Libraries/libgit2/include
 
 run:
 	DYLD_LIBRARY_PATH=$(LIBGIT2_LIB) swift run
