@@ -34,18 +34,22 @@ enum CoinSound {
     /// Play a single coin sound when new data arrives.
     /// Throttled to once per minute so rapid ingestion cycles (Phase 1 at 30s)
     /// don't produce a storm of audio cues.
-    static func playForDataChange() {
+    /// - Parameter bypassThrottle: if true, ignores the 60-second cooldown
+    ///   (used for startup chime).
+    static func playForDataChange(bypassThrottle: Bool = false) {
         guard UserDefaults.standard.bool(forKey: "coin_sound_enabled") else {
             Logger.debug("CoinSound: playForDataChange skipped — sound disabled")
             return
         }
         let now = Date()
-        guard now.timeIntervalSince(lastDataChangeSoundTime) >= 60 else {
-            Logger.debug("CoinSound: playForDataChange throttled (last was \(String(format: "%.0f", now.timeIntervalSince(lastDataChangeSoundTime)))s ago)")
-            return
+        if !bypassThrottle {
+            guard now.timeIntervalSince(lastDataChangeSoundTime) >= 60 else {
+                Logger.debug("CoinSound: playForDataChange throttled (last was \(String(format: "%.0f", now.timeIntervalSince(lastDataChangeSoundTime)))s ago)")
+                return
+            }
         }
         lastDataChangeSoundTime = now
-        Logger.debug("CoinSound: playForDataChange → playing")
+        Logger.debug("CoinSound: playForDataChange → playing\(bypassThrottle ? " (startup)" : "")")
         playBundleSound(named: "coin", ext: "mp3")
     }
 

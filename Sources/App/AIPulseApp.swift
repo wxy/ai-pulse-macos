@@ -68,6 +68,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // with change detection, 500ms debounce, and unified .dataDidChange notification.
         DataRefreshCoordinator.shared.start()
 
+        // Startup chime — lets the user know the app is alive, bypasses throttle.
+        CoinSound.playForDataChange(bypassThrottle: true)
+
         // Check for anomalies periodically (separate from data refresh — longer cycle)
         Timer.scheduledTimer(withTimeInterval: 3660, repeats: true) { _ in
             Task { await AnomalyDetector.shared.check() }
