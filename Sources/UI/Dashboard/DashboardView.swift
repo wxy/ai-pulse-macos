@@ -333,22 +333,29 @@ struct DashboardView: View {
 
     func usageBarView(percent: Double) -> some View {
         let clamped = min(max(percent, 0), 100)
-        return HStack(spacing: 0) {
-            Text("\(Int(clamped))%")
-                .font(.system(size: 8)).monospacedDigit().foregroundColor(.secondary)
+        let barColor: Color = switch clamped {
+        case 0..<75:  .green
+        case 75..<90: .yellow
+        default:      .orange
+        }
+        let label = clamped > 100 ? "超量" : "\(Int(clamped))%"
+        return HStack(spacing: 2) {
+            Text(label)
+                .font(.system(size: 8)).monospacedDigit().foregroundColor(barColor)
                 .frame(width: 28, alignment: .trailing)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(Color(nsColor: .quaternarySystemFill))
-                        .frame(height: 6)
+                        .frame(height: 5)
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(clamped > 90 ? Color.orange : Color.green)
-                        .frame(width: geo.size.width * clamped / 100, height: 6)
+                        .fill(barColor)
+                        .frame(width: max(geo.size.width * min(clamped, 100) / 100, 2), height: 5)
                 }
             }
-            .frame(width: 40, height: 6)
+            .frame(width: 40, height: 5)
         }
+        .help(clamped > 90 ? "用量接近上限，可能产生超额费用" : "当月用量百分比")
     }
 
     func confidenceBadge(_ c: CostConfidence) -> some View {

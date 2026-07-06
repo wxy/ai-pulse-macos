@@ -18,6 +18,15 @@ final class UsageMonitor: @unchecked Sendable {
 
     // MARK: - Claude Pro/Max (local cache)
 
+    /// Parse the Claude status cache JSON. Internal for testing.
+    static func parseClaudeStatusCache(_ json: [String: Any]) -> (utilization5h: Double, utilization7d: Double, limitStatus: String)? {
+        guard let usageData = json["usageData"] as? [String: Any] else { return nil }
+        let util5h = usageData["utilization5h"] as? Double ?? 0
+        let util7d = usageData["utilization7d"] as? Double ?? 0
+        let limitStatus = usageData["limitStatus"] as? String ?? ""
+        return (util5h, util7d, limitStatus)
+    }
+
     /// Read Claude rate-limit utilization from the VSCode status cache.
     /// Written by Claude Code's `/statusline` feature.
     func refreshClaudeStatus() {
@@ -26,18 +35,13 @@ final class UsageMonitor: @unchecked Sendable {
 
         guard let data = try? Data(contentsOf: cacheURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let usageData = json["usageData"] as? [String: Any]
+              let status = Self.parseClaudeStatusCache(json)
         else {
             Logger.debug("UsageMonitor: Claude status cache not found or unreadable")
             return
         }
 
-        let util5h: Double = usageData["utilization5h"] as? Double ?? 0
-        let util7d: Double = usageData["utilization7d"] as? Double ?? 0
-        let limitStatus: String = usageData["limitStatus"] as? String ?? ""
-
-        // Use the higher of 5h/7d utilization for the percentage display
-        let usagePercent = max(util5h, util7d) * 100
+        let usagePercent = max(status.utilization5h, status.utilization7d) * 100
 
         Task {
             do {
@@ -45,21 +49,31 @@ final class UsageMonitor: @unchecked Sendable {
                     try db.execute(sql: """
                         UPDATE cost_source SET usage_percent = ?, usage_limit_status = ?
                         WHERE kind = 'subscription' AND id LIKE 'sub:claude-code:%'
-                        """, arguments: [usagePercent, limitStatus])
+                        """, arguments: [usagePercent, status.limitStatus])
                 }
             } catch {
                 Logger.debug("UsageMonitor: claude status update failed: \(error)")
             }
         }
 
-        Logger.debug("UsageMonitor: Claude status 5h=\(String(format: "%.0f", util5h*100))% 7d=\(String(format: "%.0f", util7d*100))% limit=\(limitStatus)")
+        Logger.debug("UsageMonitor: Claude status 5h=\(String(format: "%.0f", status.utilization5h*100))% 7d=\(String(format: "%.0f", status.utilization7d*100))% limit=\(status.limitStatus)")
     }
 
     // MARK: - GitHub Copilot (HTTP)
 
+    /// Parse the Copilot API response JSON. Internal for testing.
+    static func parseCopilotResponse(_ json: [String: Any]) -> (usedPercent: Double, overageCount: Int)? {
+        guard let snapshots = json["quota_snapshots"] as? [String: Any],
+              let premium = snapshots["premium_interactions"] as? [String: Any],
+              let percentRemaining = premium["percent_remaining"] as? Double
+        else { return nil }
+        let overageCount = (premium["overage_count"] as? Int) ?? Int(premium["overage_count"] as? Double ?? 0)
+        let usedPercent = 100 - percentRemaining
+        return (usedPercent, overageCount)
+    }
+
     /// Poll the Copilot internal usage API for premium request quota.
     func refreshCopilotStatus() {
-        // Uses the Copilot OAuth token from VS Code's auth cache
         guard let token = copilotToken() else {
             Logger.debug("UsageMonitor: no Copilot token found")
             return
@@ -78,16 +92,14 @@ final class UsageMonitor: @unchecked Sendable {
                   let httpResp = resp as? HTTPURLResponse,
                   httpResp.statusCode == 200,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let snapshots = json["quota_snapshots"] as? [String: Any],
-                  let premium = snapshots["premium_interactions"] as? [String: Any],
-                  let percentRemaining = premium["percent_remaining"] as? Double
+                  let parsed = Self.parseCopilotResponse(json)
             else {
                 Logger.debug("UsageMonitor: Copilot API unexpected response")
                 return
             }
 
-            let overageCount = premium["overage_count"] as? Int ?? 0
-            let usedPercent = 100 - percentRemaining
+            let usedPercent = parsed.usedPercent
+            let overageCount = parsed.overageCount
 
             Task {
                 do {
@@ -106,7 +118,7 @@ final class UsageMonitor: @unchecked Sendable {
             }
 
             DispatchQueue.main.async {
-                Logger.debug("UsageMonitor: Copilot used \(String(format: "%.0f", usedPercent))% remaining=\(String(format: "%.0f", percentRemaining))% overage=\(overageCount)")
+                Logger.debug("UsageMonitor: Copilot used \(String(format: "%.0f", usedPercent))% overage=\(overageCount)")
             }
         }.resume()
     }
