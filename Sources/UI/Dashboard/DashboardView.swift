@@ -306,7 +306,61 @@ struct DashboardView: View {
                 smallCard(title: "\(timeRange.label)\(I18n.t("dashboard.code_deleted"))",
                           value: "-\(deleted)", color: .orange)
             }
+
+            // Tool summary (compact spending by dev tool)
+            let toolCosts = computeToolCosts()
+            if !toolCosts.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("按开发工具").font(.caption).foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        ForEach(toolCosts.prefix(5), id: \.name) { tc in
+                            VStack(spacing: 2) {
+                                Text(tc.name).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                                Text("$\(String(format: "%.2f", tc.cost))")
+                                    .font(.caption).monospacedDigit()
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color(nsColor: .quaternarySystemFill))
+                            .cornerRadius(6)
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    func computeToolCosts() -> [(name: String, cost: Double)] {
+        // API costs from usage_event grouped by source
+        var map: [String: Double] = [:]
+        for (pid, _, spend) in balanceSpend {
+            map[pid] = (map[pid] ?? 0) + spend
+        }
+        // Add subscription amortization
+        let subSources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
+            .filter { if case .subscription = $0.kind { return true }; return false }
+        for cs in subSources {
+            if case .subscription(let toolId, _, let fee) = cs.kind, fee > 0 {
+                let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+                map[toolId] = (map[toolId] ?? 0) + fee / days * Double(timeRange.days)
+            }
+        }
+        return map.compactMap { (key, cost) in
+            guard cost > 0.001 else { return nil }
+            let label: String = switch key {
+            case "deepseek": "DeepSeek"
+            case "openai": "OpenAI"
+            case "moonshot": "Kimi"
+            case "zhipu": "ChatGLM"
+            case "anthropic": "Anthropic"
+            case "claude-code": "Claude Code"
+            case "aider": "aider"
+            case "cursor": "Cursor"
+            case "copilot": "Copilot"
+            case "windsurf": "Windsurf"
+            default: key
+            }
+            return (name: label, cost: cost)
+        }.sorted { $0.cost > $1.cost }
     }
 
     func costSourceRow(_ item: (source: CostSource, cost: Double, usagePercent: Double?)) -> some View {

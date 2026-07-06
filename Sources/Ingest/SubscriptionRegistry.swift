@@ -31,7 +31,7 @@ enum SubscriptionRegistry {
         let fm = FileManager.default
         let appDirs = [
             URL(fileURLWithPath: "/Applications"),
-            URL(fileURLWithPath: "\(NSHomeDirectory())/Applications"),
+            URL(fileURLWithPath: "\(FileManager.default.realHomeDirectory.path)/Applications"),
         ]
 
         func isInstalled(_ bids: [String]) -> Bool {

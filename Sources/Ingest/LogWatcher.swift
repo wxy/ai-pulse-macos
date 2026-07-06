@@ -21,6 +21,8 @@ final class LogWatcher: @unchecked Sendable {
     private var filePositions: [String: UInt64] = [:]
     /// Leftover partial line (when a write stops mid-line) per file path.
     private var partialLines: [String: String] = [:]
+    /// Last seen model per aider file (survives incremental scans).
+    private var aiderModels: [String: String] = [:]
 
     private init() {
         // Restore saved positions from DB on first access
@@ -143,10 +145,32 @@ final class LogWatcher: @unchecked Sendable {
             guard FileManager.default.fileExists(atPath: expanded) else { continue }
             enumerateGitRepos(in: URL(fileURLWithPath: expanded)) { repoURL in
                 GitMonitor.shared.watch(repoPath: repoURL.path)
+                // aider v0.75+: Markdown chat history
+                let chatMD = repoURL.appendingPathComponent(".aider.chat.history.md")
+                if FileManager.default.fileExists(atPath: chatMD.path) {
+                    Logger.debug("LogWatcher: found aider chat history at \(chatMD.path)")
+                    var parsedCount = 0
+                    let filePath = chatMD.path
+                    parseLinesIncremental(from: chatMD) { line in
+                        // Track model across lines & scans
+                        if let m = AiderParser.parseModelLine(line) { aiderModels[filePath] = m; return nil }
+                        let model = aiderModels[filePath]
+                        if let event = AiderParser.parseMarkdown(line: line, cwd: repoURL.path, model: model) {
+                            parsedCount += 1
+                            return event
+                        }
+                        return nil
+                    }
+                    if parsedCount > 0 {
+                        Logger.info("LogWatcher: parsed \(parsedCount) aider events from \(chatMD.path)")
+                    }
+                }
+                // aider pre-0.75: JSONL format
                 let llmFile = repoURL.appendingPathComponent(".aider.llm.history")
-                guard FileManager.default.fileExists(atPath: llmFile.path) else { return }
-                parseLinesIncremental(from: llmFile) { line in
-                    AiderParser.parseJSONL(line: line, cwd: repoURL.path)
+                if FileManager.default.fileExists(atPath: llmFile.path) {
+                    parseLinesIncremental(from: llmFile) { line in
+                        AiderParser.parseJSONL(line: line, cwd: repoURL.path)
+                    }
                 }
             }
         }
