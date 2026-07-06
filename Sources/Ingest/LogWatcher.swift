@@ -199,28 +199,52 @@ final class LogWatcher: @unchecked Sendable {
 
     private func insertEvent(_ event: UsageEvent) {
         let providerId = PricingManager.shared.providerId(for: event.model) ?? "unknown"
-        let cost = PricingManager.shared.costUSD(
-            model: event.model,
-            inTokens: event.inTokens,
-            outTokens: event.outTokens,
-            cacheTokens: event.cacheTokens
+
+        // CostSource arbitration
+        let sources = IntegrationRegistry.activeCostSources()
+        let preferred = IntegrationRegistry.config(for: event.source).preferredAPIKeyCostSourceId
+        let (csId, confidence) = Arbitrator.resolve(
+            model: event.model, source: event.source,
+            costSources: sources, preferredAPIKeyId: preferred
         )
+
+        // For apiKey sources with balance API, cost_usd is filled later by ApiPoller.
+        // For subscription sources or apiKey without balance API, use token pricing estimate.
+        let cost: Double?
+        if let cs = sources.first(where: { $0.id == csId }),
+           case .apiKey(let pid) = cs.kind,
+           ProviderRegistry.byId(pid)?.canFetchBalance == true {
+            cost = nil  // balance delta fills this later
+        } else {
+            cost = PricingManager.shared.costUSD(
+                model: event.model,
+                inTokens: event.inTokens,
+                outTokens: event.outTokens,
+                cacheTokens: event.cacheTokens
+            )
+        }
+
         Task {
             do {
                 try await AppDatabase.shared.write { db in
                     try db.execute(sql: """
                         INSERT INTO usage_event
-                          (ts, source, provider_id, model, in_tokens, out_tokens, cache_tokens, cost_usd, repo_path, session_id, dedupe_key)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          (ts, source, provider_id, model, in_tokens, out_tokens,
+                           cache_tokens, cost_usd, repo_path, session_id, dedupe_key,
+                           cost_source_id, cost_confidence)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(dedupe_key) DO UPDATE SET
                           provider_id = excluded.provider_id,
                           model       = excluded.model,
                           cost_usd    = excluded.cost_usd,
-                          repo_path   = excluded.repo_path
+                          repo_path   = excluded.repo_path,
+                          cost_source_id = excluded.cost_source_id,
+                          cost_confidence = excluded.cost_confidence
                         """, arguments: [
                             event.ts, event.source, providerId, event.model,
                             event.inTokens, event.outTokens, event.cacheTokens,
                             cost, event.repoPath, event.sessionId, event.dedupeKey,
+                            csId, confidence.rawValue,
                         ])
                 }
                 DataRefreshCoordinator.shared.notifyPhaseIngest()

@@ -172,10 +172,11 @@ final class ApiPoller: @unchecked Sendable {
             Task {
                 do {
                     try await AppDatabase.shared.write { db in
+                        let csId = "api-key:\(pid)"
                         try db.execute(sql: """
-                            INSERT INTO balance_snapshot (ts, provider_id, balance, currency)
-                            VALUES (?, ?, ?, ?)
-                            """, arguments: [now, pid, entry.totalBalance, entry.currency])
+                            INSERT INTO balance_snapshot (ts, provider_id, balance, currency, cost_source_id)
+                            VALUES (?, ?, ?, ?, ?)
+                            """, arguments: [now, pid, entry.totalBalance, entry.currency, csId])
                     }
                     DataRefreshCoordinator.shared.notifyPhaseBalance()
                 } catch {
