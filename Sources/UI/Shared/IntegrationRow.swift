@@ -86,6 +86,7 @@ struct IntegrationRow: View {
                     .buttonStyle(.bordered).controlSize(.small)
             } else if detected.found || isAPIKeyType || isSubscriptionType || isLogTool {
                 controls
+                    .disabled(!detected.found && !isAPIKeyType)
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
