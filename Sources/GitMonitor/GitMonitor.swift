@@ -30,8 +30,12 @@ final class GitMonitor: @unchecked Sendable {
     private static let watchedReposKey = "gitmonitor_watched_repos"
     private static let lastSeenKey = "gitmonitor_last_seen"
 
+    /// Ensures DB state is loaded before the first poll() runs.
+    private let loadGroup = DispatchGroup()
+
     private init() {
-        Task { await loadFromDB() }
+        loadGroup.enter()
+        Task { await loadFromDB(); loadGroup.leave() }
     }
 
     private func loadFromDB() async {
@@ -50,14 +54,23 @@ final class GitMonitor: @unchecked Sendable {
             lock.withLock {
                 if !watched.isEmpty { watchedRepos = watched }
                 if !seen.isEmpty { lastSeenCommit = seen }
+                // Fall back to UserDefaults if DB returned empty (e.g. fresh migration)
+                if watchedRepos.isEmpty, let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) {
+                    watchedRepos = Set(saved)
+                }
+                if lastSeenCommit.isEmpty, let saved = UserDefaults.standard.dictionary(forKey: Self.lastSeenKey) as? [String: String] {
+                    lastSeenCommit = saved
+                }
             }
         } catch {
             // DB not ready; fall back to UserDefaults
-            if let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) {
-                lock.withLock { watchedRepos = Set(saved) }
-            }
-            if let saved = UserDefaults.standard.dictionary(forKey: Self.lastSeenKey) as? [String: String] {
-                lock.withLock { lastSeenCommit = saved }
+            lock.withLock {
+                if let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) {
+                    watchedRepos = Set(saved)
+                }
+                if let saved = UserDefaults.standard.dictionary(forKey: Self.lastSeenKey) as? [String: String] {
+                    lastSeenCommit = saved
+                }
             }
         }
     }
@@ -85,6 +98,7 @@ final class GitMonitor: @unchecked Sendable {
 
     /// Poll watched repos - called periodically or after log ingestion
     func poll() {
+        loadGroup.wait()  // ensure DB state is loaded
         lock.lock()
         let repos = watchedRepos
         lock.unlock()
@@ -147,7 +161,7 @@ final class GitMonitor: @unchecked Sendable {
                             """, arguments: [repo])
                     }
                 }
-            } catch {}
+            } catch { Logger.error("GitMonitor: persist watched repos failed: \(error)") }
         }
     }
 
@@ -165,7 +179,7 @@ final class GitMonitor: @unchecked Sendable {
                             """, arguments: [repo, hash])
                     }
                 }
-            } catch {}
+            } catch { Logger.error("GitMonitor: persist watched repos failed: \(error)") }
         }
     }
 
