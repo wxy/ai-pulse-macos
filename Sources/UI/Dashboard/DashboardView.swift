@@ -125,7 +125,7 @@ struct DashboardView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
-                    summaryCards.padding(.horizontal, 20)
+                    costSourceSummary.padding(.horizontal, 20)
 
                     if hasActiveCostSources || !providerCosts.isEmpty {
                         costChart.padding(.horizontal, 20)
@@ -232,42 +232,124 @@ struct DashboardView: View {
         return 0
     }
 
-    // MARK: - Summary cards (3×2 grid)
+    // MARK: - Cost Source summary
 
-    var summaryCards: some View {
-        let apiSpent = balanceSpend.reduce(0.0) { $0 + $1.spend }
+    /// Active CostSources with their computed spend for the current period.
+    var costSourceBreakdown: [(source: CostSource, cost: Double, usagePercent: Double?)] {
+        let sources = IntegrationRegistry.activeCostSources()
+        var result: [(source: CostSource, cost: Double, usagePercent: Double?)] = []
+        for cs in sources {
+            let cost: Double
+            switch cs.kind {
+            case .apiKey(let pid):
+                // Sum balance spend for this provider
+                cost = balanceSpend
+                    .filter { $0.providerId == pid }
+                    .reduce(0) { $0 + $1.spend }
+            case .subscription(_, _, let fee):
+                let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+                cost = fee / days * Double(timeRange.days)
+            case .unknown:
+                cost = 0
+            }
+            result.append((cs, cost, nil))
+        }
+        return result.sorted { $0.cost > $1.cost }
+    }
+
+    var costSourceSummary: some View {
+        let breakdown = costSourceBreakdown
+        let totalCost = breakdown.reduce(0) { $0 + $1.cost }
         let added = codeChanges.reduce(0) { $0 + $1.added }
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
-        let periodLabel = timeRange.label
-        // Project: daily rate × remaining days (simplified)
-        let apiDailyRate = apiSpent / max(Double(timeRange.days), 1)
-        let apiProjected = apiSpent + apiDailyRate * Double(30 - timeRange.days)
-        return VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                card(title: "\(periodLabel)\(I18n.t("dashboard.api_spent"))",
-                     value: "$\(String(format: "%.2f", apiSpent))")
-                card(title: I18n.t("dashboard.sub_daily"),
-                     value: "$\(String(format: "%.2f", totalSubDaily()))")
-                card(title: "\(periodLabel)\(I18n.t("dashboard.code_added"))",
-                     value: "+\(added)")
+
+        return VStack(spacing: 10) {
+            // Total
+            HStack {
+                Text("\(timeRange.label)\(I18n.t("dashboard.api_spent"))")
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Text("$\(String(format: "%.2f", totalCost))")
+                    .font(.title3).fontWeight(.bold).monospacedDigit()
             }
+            .padding(12)
+            .background(Color(nsColor: .quaternarySystemFill).opacity(0.6))
+            .cornerRadius(8)
+
+            if !breakdown.isEmpty {
+                VStack(spacing: 4) {
+                    ForEach(breakdown, id: \.source.id) { item in
+                        costSourceRow(item)
+                    }
+                }
+                .padding(10)
+                .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
+                .cornerRadius(8)
+            }
+
+            // Code changes at a glance
             HStack(spacing: 8) {
-                card(title: I18n.t("dashboard.api_projected"),
-                     value: "$\(String(format: "%.2f", apiProjected))")
-                card(title: I18n.t("dashboard.sub_monthly_label"),
-                     value: "$\(String(format: "%.2f", totalSubMonthly()))")
-                card(title: "\(periodLabel)\(I18n.t("dashboard.code_deleted"))",
-                     value: "-\(deleted)")
+                smallCard(title: "\(timeRange.label)\(I18n.t("dashboard.code_added"))",
+                          value: "+\(added)", color: .green)
+                smallCard(title: "\(timeRange.label)\(I18n.t("dashboard.code_deleted"))",
+                          value: "-\(deleted)", color: .orange)
             }
         }
     }
 
-    func card(title: String, value: String) -> some View {
-        VStack(spacing: 4) {
+    func costSourceRow(_ item: (source: CostSource, cost: Double, usagePercent: Double?)) -> some View {
+        let cs = item.source
+        let cost = item.cost
+        return HStack(spacing: 6) {
+            // Confidence badge
+            confidenceBadge(cs.confidence)
+
+            Text(cs.label).font(.caption).lineLimit(1)
+            Spacer()
+            Text(cost > 0.001 ? "$\(String(format: "%.2f", cost))" : "--")
+                .font(.caption).monospacedDigit()
+                .foregroundColor(confidenceColor(cs.confidence))
+
+            // Deviation tooltip
+            if !cs.limitations.isEmpty {
+                Image(systemName: "info.circle")
+                    .font(.caption2).foregroundColor(.secondary)
+                    .help(cs.limitations.joined(separator: "\n"))
+            }
+        }
+        .padding(.horizontal, 6).padding(.vertical, 3)
+    }
+
+    func confidenceBadge(_ c: CostConfidence) -> some View {
+        let (label, color): (String, Color) = switch c {
+        case .exact:       ("", .green)
+        case .estimated:   ("~", .blue)
+        case .amortized:   ("", .orange)
+        case .uncertain:   ("?", .yellow)
+        case .incomplete:  ("…", .red)
+        }
+        return Text(label)
+            .font(.caption2).fontWeight(.bold).foregroundColor(color)
+            .frame(width: 16)
+    }
+
+    func confidenceColor(_ c: CostConfidence) -> Color {
+        switch c {
+        case .exact:       return .primary
+        case .estimated:   return .secondary
+        case .amortized:   return .secondary
+        case .uncertain:   return .secondary
+        case .incomplete:  return .secondary
+        }
+    }
+
+    func smallCard(title: String, value: String, color: Color) -> some View {
+        VStack(spacing: 2) {
             Text(value).font(.subheadline).fontWeight(.semibold).monospacedDigit()
+                .foregroundColor(color)
             Text(title).font(.caption2).foregroundColor(.secondary).lineLimit(1)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 8)
+        .frame(maxWidth: .infinity).padding(.vertical, 6)
         .background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
     }
 
@@ -580,11 +662,14 @@ struct DashboardView: View {
                             Text("+\(r.added)/-\(r.deleted)").font(.caption2).foregroundColor(.secondary).monospacedDigit()
                             Spacer()
                         }
+                        // Show CPL contribution per source
                         ForEach(r.allSources) { src in
                             HStack {
                                 Text(src.label).font(.caption2).foregroundColor(.secondary)
                                 Spacer()
-                                Text("$\(String(format: "%.2f", src.cpl))\(I18n.t("menu.per_line"))")
+                                Text(confidencePrefixForCPLLabel(src.label))
+                                    .font(.caption2).foregroundColor(.secondary)
+                                + Text("$\(String(format: "%.2f", src.cpl))\(I18n.t("menu.per_line"))")
                                     .font(.caption2).monospacedDigit()
                             }
                             .padding(.leading, 8)
@@ -602,12 +687,27 @@ struct DashboardView: View {
         .cornerRadius(10)
     }
 
+    /// Show confidence prefix for CPL source labels.
+    func confidencePrefixForCPLLabel(_ label: String) -> String {
+        // Check if this source has estimated/anortized confidence
+        let sources = IntegrationRegistry.activeCostSources()
+        if let cs = sources.first(where: { label.contains($0.label) || $0.label.contains(label) }) {
+            switch cs.confidence {
+            case .estimated: return "~"
+            case .amortized: return ""
+            case .incomplete: return ""
+            default: return ""
+            }
+        }
+        return ""
+    }
+
     // MARK: - Bottom cards row
 
     var bottomCards: some View {
         HStack(alignment: .top, spacing: 16) {
             apiBreakdownCard
-            if hasActiveCostSources || hasCertainEditorMapping {
+            if hasActiveCostSources {
                 cplInfoCard
             } else {
                 cplGuidanceCard

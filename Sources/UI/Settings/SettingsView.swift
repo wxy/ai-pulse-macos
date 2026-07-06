@@ -82,59 +82,70 @@ struct IntegrationsSettingsTab: View {
     @State private var results: [(any Detectable, DetectionResult)] = []
     @State private var isDetecting = false
 
+    /// Classify an integration by its primary CostSource kind.
+    enum Group: String, CaseIterable {
+        case apiKey = "API Key"
+        case subscription = "Subscription"
+        case log = "Log-based"
+        static func label(_ g: Group) -> String {
+            switch g {
+            case .apiKey:       return I18n.t("integrations.group_api_key")
+            case .subscription: return I18n.t("integrations.group_subscription")
+            case .log:          return I18n.t("integrations.group_log")
+            }
+        }
+    }
+
+    func groupFor(_ integration: any Detectable) -> Group {
+        let cs = integration.costSources
+        if cs.contains(where: { if case .apiKey = $0.kind { return true }; return false }) {
+            return .apiKey
+        }
+        if cs.contains(where: { if case .subscription = $0.kind { return true }; return false }) {
+            return .subscription
+        }
+        return .log
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(I18n.t("integrations.title")).font(.title3).fontWeight(.semibold)
+            HStack {
+                Text(I18n.t("integrations.title")).font(.title3).fontWeight(.semibold)
+                Spacer()
+                if isDetecting {
+                    ProgressView().scaleEffect(0.6)
+                } else {
+                    Button(I18n.t("integrations.redetect")) { reDetect() }.font(.caption)
+                }
+            }
             Text(I18n.t("integrations.desc"))
                 .font(.caption).foregroundColor(.secondary)
 
-            let detected = results.filter(\.1.found)
-            let notConfigured = results.filter { r in
-                !r.1.found && r.0.costSources.contains { if case .apiKey = $0.kind { return true }; return false }
-            }
-            let notInstalled = results.filter { r in
-                !r.1.found && !r.0.costSources.contains { if case .apiKey = $0.kind { return true }; return false }
-            }
-
             ScrollView {
-                VStack(spacing: 6) {
-                    if !detected.isEmpty {
-                        ForEach(detected, id: \.0.id) { (i, r) in
-                            IntegrationRow(integration: i, detected: r)
-                        }
-                    }
-
-                    if !notConfigured.isEmpty {
-                        HStack {
-                            Text(I18n.t("integrations.needs_config")).font(.caption).foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        .padding(.top, 8)
-                        ForEach(notConfigured, id: \.0.id) { (i, r) in
-                            IntegrationRow(integration: i, detected: r)
-                        }
-                    }
-
-                    if !notInstalled.isEmpty {
-                        HStack {
-                            Text(I18n.t("integrations.not_installed")).font(.caption).foregroundColor(.secondary)
-                            Spacer()
-                            if isDetecting {
-                                ProgressView().scaleEffect(0.6)
-                            } else {
-                                Button(I18n.t("integrations.redetect")) { reDetect() }.font(.caption)
+                VStack(spacing: 8) {
+                    ForEach(Group.allCases, id: \.self) { group in
+                        let items = results.filter { groupFor($0.0) == group }
+                        if !items.isEmpty {
+                            sectionHeader(Group.label(group), count: items.count)
+                            ForEach(items, id: \.0.id) { (i, r) in
+                                IntegrationRow(integration: i, detected: r,
+                                               onGrant: { runDetection() })
                             }
-                        }
-                        .padding(.top, 8)
-                        ForEach(notInstalled, id: \.0.id) { (i, r) in
-                            IntegrationRow(integration: i, detected: r,
-                                           onGrant: { runDetection() })
                         }
                     }
                 }
             }
         }
         .onAppear { runDetection() }
+    }
+
+    func sectionHeader(_ title: String, count: Int) -> some View {
+        HStack {
+            Text(title).font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+            Text("(\(count))").font(.caption2).foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.top, 4)
     }
 
     func runDetection() {
