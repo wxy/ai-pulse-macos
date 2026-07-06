@@ -69,6 +69,18 @@ final class AppDatabase: @unchecked Sendable {
                 try? db.create(indexOn: "balance_snapshot", columns: ["ts"])
                 try? db.create(indexOn: "balance_snapshot", columns: ["provider_id"])
             }),
+            ("logwatcher_position", { db in
+                try db.create(table: "logwatcher_position", ifNotExists: true) { t in
+                    t.column("file_path", .text).primaryKey()
+                    t.column("byte_offset", .integer).notNull().defaults(to: 0)
+                }
+            }),
+            ("gitmonitor_state", { db in
+                try db.create(table: "gitmonitor_state", ifNotExists: true) { t in
+                    t.column("repo_path", .text).primaryKey()
+                    t.column("last_commit", .text)
+                }
+            }),
             ("cost_source", { db in
                 try db.create(table: "cost_source", ifNotExists: true) { t in
                     t.column("id", .text).primaryKey()

@@ -43,11 +43,17 @@ struct IntegrationRow: View {
     /// Known subscription integration IDs (always show tier picker).
     private static let subscriptionIds: Set<String> = ["claude-code", "cursor", "copilot", "windsurf"]
 
+    /// Log-based dev tools: no subscription, no apiKey, but can use configured API keys.
+    private static let logToolIds: Set<String> = ["aider"]
+
     /// Is this integration primarily an apiKey type?
     var isAPIKeyType: Bool { Self.apiKeyIds.contains(integration.id) }
 
     /// Is this integration primarily a subscription type?
     var isSubscriptionType: Bool { Self.subscriptionIds.contains(integration.id) }
+
+    /// Log-based dev tool: can use API keys but has no subscription tiers.
+    var isLogTool: Bool { Self.logToolIds.contains(integration.id) }
 
 
     /// Claude Code under sandbox needs an explicit ~/.claude directory grant
@@ -78,7 +84,7 @@ struct IntegrationRow: View {
             if needsGrant {
                 Button(I18n.t("bookmark.grant")) { grantClaude() }
                     .buttonStyle(.bordered).controlSize(.small)
-            } else if detected.found || isAPIKeyType || isSubscriptionType {
+            } else if detected.found || isAPIKeyType || isSubscriptionType || isLogTool {
                 controls
             }
         }

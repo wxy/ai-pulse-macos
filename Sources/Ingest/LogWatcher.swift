@@ -23,9 +23,26 @@ final class LogWatcher: @unchecked Sendable {
     private var partialLines: [String: String] = [:]
 
     private init() {
-        // Restore saved positions from previous run
-        if let saved = UserDefaults.standard.dictionary(forKey: "logwatcher_positions") as? [String: UInt64] {
-            filePositions = saved
+        // Restore saved positions from DB on first access
+        Task {
+            await loadPositionsFromDB()
+        }
+    }
+
+    private func loadPositionsFromDB() async {
+        do {
+            let rows = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT file_path, byte_offset FROM logwatcher_position")
+            }
+            var map = [String: UInt64]()
+            for r in rows {
+                if let path: String = r["file_path"], let offset: Int64 = r["byte_offset"] {
+                    map[path] = UInt64(offset)
+                }
+            }
+            if !map.isEmpty { filePositions = map }
+        } catch {
+            // DB not ready yet; will retry on next scan
         }
     }
 
@@ -179,7 +196,21 @@ final class LogWatcher: @unchecked Sendable {
     }
 
     private func persistPositions() {
-        UserDefaults.standard.set(filePositions, forKey: "logwatcher_positions")
+        let positions = filePositions
+        Task {
+            do {
+                try await AppDatabase.shared.write { db in
+                    for (path, offset) in positions {
+                        try db.execute(sql: """
+                            INSERT OR REPLACE INTO logwatcher_position (file_path, byte_offset)
+                            VALUES (?, ?)
+                            """, arguments: [path, Int64(offset)])
+                    }
+                }
+            } catch {
+                // DB not ready — positions will be persisted on next successful write
+            }
+        }
     }
 
     private func enumerateGitRepos(in dir: URL, handler: (URL) -> Void) {

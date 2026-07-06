@@ -174,6 +174,30 @@ enum StatsService {
             // Build repo path → subscription sources from certain editor detections
             let certainMappings = editorMappings.filter { $0.confidence == .certain && $0.dailySubscriptionCost > 0 }
 
+            // Collect CostSource subscription attribution: which repos does each sub tool touch?
+            let subSources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
+                .filter { if case .subscription = $0.kind { return true }; return false }
+            var subRepoMap = [String: [(label: String, dailyCost: Double)]]()
+            for cs in subSources {
+                guard case .subscription(let toolId, _, let monthlyFee) = cs.kind, monthlyFee > 0 else { continue }
+                let daily = monthlyFee / Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+                // Find repos associated with this subscription tool via usage_event
+                let repos = try? await AppDatabase.shared.read { db in
+                    try String.fetchAll(db, sql: """
+                        SELECT DISTINCT repo_path FROM usage_event
+                        WHERE source = ? AND repo_path IS NOT NULL
+                        AND ts >= ? AND ts < ?
+                        """, arguments: [toolId, startMs, todayMs + 86_400_000])
+                }
+                for r in repos ?? [] {
+                    subRepoMap[r, default: []].append((cs.label, daily))
+                }
+            }
+            // Also include editor-detected mappings
+            for m in certainMappings {
+                subRepoMap[m.repoPath, default: []].append((m.toolName, m.dailySubscriptionCost))
+            }
+
             AppHealthMonitor.shared.clearStatsError()
             return costMap.compactMap { (p, sourceCosts) in
                 let totalCost = sourceCosts.reduce(0.0) { $0 + $1.cost }
@@ -187,22 +211,18 @@ enum StatsService {
                     return CPLSource(label: sourceLabel(sc.source), cpl: cpl)
                 }
 
-                // Collect all subscription sources matching this repo
-                var subSources: [CPLSource] = []
-                for m in certainMappings {
-                    if p.hasSuffix(m.repoPath) || m.repoPath.hasSuffix(p) || p == m.repoPath {
-                        let subCPL = total > 0 ? m.dailySubscriptionCost * Double(days) * 1000 / Double(total) : 0.0
-                        if subCPL > 0 {
-                            subSources.append(CPLSource(label: m.toolName, cpl: subCPL))
-                        }
-                    }
+                // Subscription CPLs for this repo
+                let subSourceList: [CPLSource] = (subRepoMap[p] ?? []).compactMap { entry in
+                    let subCPL = total > 0 ? entry.dailyCost * Double(days) * 1000 / Double(total) : 0.0
+                    guard subCPL > 0 else { return nil }
+                    return CPLSource(label: entry.label, cpl: subCPL)
                 }
 
                 return RepoBreakdown(
                     repo: URL(fileURLWithPath: p).lastPathComponent,
                     cost: totalCost, added: a, deleted: d,
                     apiSources: apiSources,
-                    subscriptionSources: subSources
+                    subscriptionSources: subSourceList
                 )
             }
         } catch {
