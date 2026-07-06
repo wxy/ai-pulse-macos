@@ -82,29 +82,27 @@ struct IntegrationsSettingsTab: View {
     @State private var results: [(any Detectable, DetectionResult)] = []
     @State private var isDetecting = false
 
-    /// Classify an integration by its primary CostSource kind.
+    /// Group integrations by their nature: API Keys (balance polling) vs Editors & Tools.
+    /// Editors/Tools may produce logs, subscriptions, or both — they belong together.
     enum Group: String, CaseIterable {
-        case apiKey = "API Key"
-        case subscription = "Subscription"
-        case log = "Log-based"
+        case editors = "Editors & Tools"
+        case apiKeys = "API Keys"
         static func label(_ g: Group) -> String {
             switch g {
-            case .apiKey:       return I18n.t("integrations.group_api_key")
-            case .subscription: return I18n.t("integrations.group_subscription")
-            case .log:          return I18n.t("integrations.group_log")
+            case .editors: return I18n.t("integrations.group_editors")
+            case .apiKeys: return I18n.t("integrations.group_api_key")
             }
         }
     }
 
     func groupFor(_ integration: any Detectable) -> Group {
-        let cs = integration.costSources
-        if cs.contains(where: { if case .apiKey = $0.kind { return true }; return false }) {
-            return .apiKey
+        // API-key-only integrations: pure balance polling, no editor/tool association
+        let apiKeyOnlyIds = Set(["deepseek", "openai", "moonshot", "zhipu", "anthropic"])
+        if apiKeyOnlyIds.contains(integration.id) {
+            return .apiKeys
         }
-        if cs.contains(where: { if case .subscription = $0.kind { return true }; return false }) {
-            return .subscription
-        }
-        return .log
+        // Everything else is an editor or tool
+        return .editors
     }
 
     var body: some View {

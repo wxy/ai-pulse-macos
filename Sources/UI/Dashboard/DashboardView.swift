@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import GRDB
 
 enum TimeRange: Hashable {
     case thisWeek
@@ -45,6 +46,7 @@ struct DashboardView: View {
     @State private var healthSeverity = AppHealthMonitor.Severity.nominal
     @State private var healthMessages: [String] = []
     @State private var showHealthDetails = false
+    @State private var usageData: [String: (percent: Double, limitStatus: String)] = [:]  // costSourceId → (usage%, status)
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources().isEmpty
@@ -252,7 +254,8 @@ struct DashboardView: View {
             case .unknown:
                 cost = 0
             }
-            result.append((cs, cost, nil))
+            let usage = usageData[cs.id]
+            result.append((cs, cost, usage?.percent))
         }
         return result.sorted { $0.cost > $1.cost }
     }
@@ -300,24 +303,49 @@ struct DashboardView: View {
     func costSourceRow(_ item: (source: CostSource, cost: Double, usagePercent: Double?)) -> some View {
         let cs = item.source
         let cost = item.cost
-        return HStack(spacing: 6) {
-            // Confidence badge
-            confidenceBadge(cs.confidence)
+        let usage = item.usagePercent
+        return VStack(spacing: 2) {
+            HStack(spacing: 6) {
+                confidenceBadge(cs.confidence)
+                Text(cs.label).font(.caption).lineLimit(1)
+                Spacer()
+                Text(cost > 0.001 ? "$\(String(format: "%.2f", cost))" : "--")
+                    .font(.caption).monospacedDigit()
+                    .foregroundColor(confidenceColor(cs.confidence))
 
-            Text(cs.label).font(.caption).lineLimit(1)
-            Spacer()
-            Text(cost > 0.001 ? "$\(String(format: "%.2f", cost))" : "--")
-                .font(.caption).monospacedDigit()
-                .foregroundColor(confidenceColor(cs.confidence))
-
-            // Deviation tooltip
-            if !cs.limitations.isEmpty {
-                Image(systemName: "info.circle")
-                    .font(.caption2).foregroundColor(.secondary)
-                    .help(cs.limitations.joined(separator: "\n"))
+                if !cs.limitations.isEmpty {
+                    Image(systemName: "info.circle")
+                        .font(.caption2).foregroundColor(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                        .help(cs.limitations.joined(separator: "\n"))
+                }
+                if let usage, usage > 0 {
+                    usageBarView(percent: usage)
+                }
             }
+            .padding(.horizontal, 6).padding(.vertical, 3)
         }
-        .padding(.horizontal, 6).padding(.vertical, 3)
+    }
+
+    func usageBarView(percent: Double) -> some View {
+        let clamped = min(max(percent, 0), 100)
+        return HStack(spacing: 0) {
+            Text("\(Int(clamped))%")
+                .font(.system(size: 8)).monospacedDigit().foregroundColor(.secondary)
+                .frame(width: 28, alignment: .trailing)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color(nsColor: .quaternarySystemFill))
+                        .frame(height: 6)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(clamped > 90 ? Color.orange : Color.green)
+                        .frame(width: geo.size.width * clamped / 100, height: 6)
+                }
+            }
+            .frame(width: 40, height: 6)
+        }
     }
 
     func confidenceBadge(_ c: CostConfidence) -> some View {
@@ -667,10 +695,8 @@ struct DashboardView: View {
                             HStack {
                                 Text(src.label).font(.caption2).foregroundColor(.secondary)
                                 Spacer()
-                                Text(confidencePrefixForCPLLabel(src.label))
-                                    .font(.caption2).foregroundColor(.secondary)
-                                + Text("$\(String(format: "%.2f", src.cpl))\(I18n.t("menu.per_line"))")
-                                    .font(.caption2).monospacedDigit()
+                                Text("\(confidencePrefixForCPLLabel(src.label))$\(String(format: "%.2f", src.cpl))\(I18n.t("menu.per_line"))")
+                                    .font(.caption2).foregroundColor(.secondary).monospacedDigit()
                             }
                             .padding(.leading, 8)
                         }
@@ -837,6 +863,24 @@ struct DashboardView: View {
             }
         }
         balanceDaily = dailyAgg.values.map { ChartDataPoint(date: $0.date, label: $0.label, cost: $0.cost) }
+
+        // Load usage data for subscription CostSources
+        do {
+            let rows = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT id, usage_percent, usage_limit_status FROM cost_source WHERE usage_percent IS NOT NULL")
+            }
+            var map: [String: (Double, String)] = [:]
+            for r in rows {
+                if let id: String = r["id"],
+                   let pct: Double = r["usage_percent"] {
+                    let status: String = r["usage_limit_status"] ?? ""
+                    map[id] = (pct, status)
+                }
+            }
+            usageData = map
+        } catch {
+            // Usage data is optional; ignore failures
+        }
     }
 
 }

@@ -99,11 +99,15 @@ final class UsageMonitor: @unchecked Sendable {
                             """, arguments: [usedPercent, limitStatus])
                     }
                 } catch {
-                    Logger.debug("UsageMonitor: copilot status update failed: \(error)")
+                    DispatchQueue.main.async {
+                        Logger.debug("UsageMonitor: copilot status update failed: \(error)")
+                    }
                 }
             }
 
-            Logger.debug("UsageMonitor: Copilot used \(String(format: "%.0f", usedPercent))% remaining=\(String(format: "%.0f", percentRemaining))% overage=\(overageCount)")
+            DispatchQueue.main.async {
+                Logger.debug("UsageMonitor: Copilot used \(String(format: "%.0f", usedPercent))% remaining=\(String(format: "%.0f", percentRemaining))% overage=\(overageCount)")
+            }
         }.resume()
     }
 
