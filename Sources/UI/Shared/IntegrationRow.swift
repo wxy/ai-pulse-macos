@@ -36,19 +36,21 @@ struct IntegrationRow: View {
             .map { ($0.id, $0.label) }
     }
 
+    /// Known apiKey-only integration IDs (always show key input).
+    private static let apiKeyIds: Set<String> = ["deepseek", "openai", "moonshot", "zhipu", "anthropic"]
+
+    /// Known subscription integration IDs (always show tier picker).
+    private static let subscriptionIds: Set<String> = ["cursor", "copilot", "windsurf"]
+
     /// Is this integration primarily an apiKey type?
-    var isAPIKeyType: Bool {
-        integration.costSources.contains { if case .apiKey = $0.kind { return true }; return false }
-    }
+    var isAPIKeyType: Bool { Self.apiKeyIds.contains(integration.id) }
 
     /// Is this integration primarily a subscription type?
-    var isSubscriptionType: Bool {
-        integration.costSources.contains { if case .subscription = $0.kind { return true }; return false }
-    }
+    var isSubscriptionType: Bool { Self.subscriptionIds.contains(integration.id) }
 
     /// Does this integration exclusively parse logs (no CostSource of its own)?
     var isLogOnly: Bool {
-        integration.costSources.isEmpty && integration is any Collectable
+        !isAPIKeyType && !isSubscriptionType && integration is any Collectable
     }
 
     /// Claude Code under sandbox needs an explicit ~/.claude directory grant
@@ -193,12 +195,12 @@ struct IntegrationRow: View {
                 if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
             }
 
-            // Preferred API Key dropdown (only for subscription IDEs)
+            // Preferred API Key dropdown: use configured API keys instead of subscription
             if !availableAPIKeySources.isEmpty {
                 HStack(spacing: 4) {
-                    Text("优先使用 API Key:").font(.caption2).foregroundColor(.secondary)
+                    Text("或使用 API Key:").font(.caption2).foregroundColor(.secondary)
                     Picker("", selection: $preferredKeyId) {
-                        Text("(不覆盖此工具)").tag("")
+                        Text("(使用套餐)").tag("")
                         ForEach(availableAPIKeySources, id: \.id) { src in
                             Text(src.label).tag(src.id)
                         }
