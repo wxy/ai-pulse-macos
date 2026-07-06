@@ -3,11 +3,13 @@ import Charts
 import GRDB
 
 enum TimeRange: Hashable {
+    case today
     case thisWeek
     case days30
 
     var days: Int {
         switch self {
+        case .today: return 1
         case .thisWeek:
             let cal = Calendar.current
             var monCal = cal; monCal.firstWeekday = 2
@@ -19,6 +21,7 @@ enum TimeRange: Hashable {
 
     var label: String {
         switch self {
+        case .today: return I18n.t("dashboard.today")
         case .thisWeek: return I18n.t("dashboard.this_week")
         case .days30: return I18n.t("dashboard.days_30")
         }
@@ -119,9 +122,10 @@ struct DashboardView: View {
                 Text(I18n.t("dashboard.title")).font(.title2).fontWeight(.bold)
                 Spacer()
                 Picker("", selection: $timeRange) {
+                    Text(I18n.t("dashboard.today")).tag(TimeRange.today)
                     Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
                     Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
-                }.pickerStyle(.segmented).frame(width: 160)
+                }.pickerStyle(.segmented).frame(width: 240)
             }
             .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
 
@@ -130,8 +134,10 @@ struct DashboardView: View {
                     costSourceSummary.padding(.horizontal, 20)
 
                     if hasActiveCostSources || !providerCosts.isEmpty {
-                        costChart.padding(.horizontal, 20)
-                        codeChangeChart.padding(.horizontal, 20)
+                        if timeRange != .today {
+                            costChart.padding(.horizontal, 20)
+                            codeChangeChart.padding(.horizontal, 20)
+                        }
 
                         // Bottom cards row
                         bottomCards.padding(.horizontal, 20)
