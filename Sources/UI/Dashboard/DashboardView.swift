@@ -882,18 +882,18 @@ struct DashboardView: View {
 
         // Load usage data for subscription CostSources
         do {
-            let rows = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT id, usage_percent, usage_limit_status FROM cost_source WHERE usage_percent IS NOT NULL")
-            }
-            var map: [String: (Double, String)] = [:]
-            for r in rows {
-                if let id: String = r["id"],
-                   let pct: Double = r["usage_percent"] {
-                    let status: String = r["usage_limit_status"] ?? ""
-                    map[id] = (pct, status)
+            usageData = try await AppDatabase.shared.read { db in
+                let rows = try Row.fetchAll(db, sql: "SELECT id, usage_percent, usage_limit_status FROM cost_source WHERE usage_percent IS NOT NULL")
+                var map: [String: (Double, String)] = [:]
+                for r in rows {
+                    if let id: String = r["id"],
+                       let pct: Double = r["usage_percent"] {
+                        let status: String = r["usage_limit_status"] ?? ""
+                        map[id] = (pct, status)
+                    }
                 }
+                return map
             }
-            usageData = map
         } catch {
             // Usage data is optional; ignore failures
         }
