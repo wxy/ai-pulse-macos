@@ -77,7 +77,8 @@ final class GitMonitor: @unchecked Sendable {
         let lastHash = lastSeenCommit[repo]
         lock.unlock()
         let gitRepo = GitRepo(path: repo)
-        let commits = gitRepo.log(since: lastHash)
+        let authorEmail = gitRepo.userEmail()  // only count user's own commits
+        let commits = gitRepo.log(since: lastHash, authorEmail: authorEmail)
 
         for commit in commits {
             guard let stats = gitRepo.diffTree(hash: commit.hash) else { continue }

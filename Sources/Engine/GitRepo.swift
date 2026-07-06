@@ -27,7 +27,10 @@ struct GitRepo {
     }
 
     /// Get recent commits with (hash, timestamp, parent count).
-    func log(since lastHash: String?, maxCount: Int = 20) -> [(hash: String, ts: Int, parentCount: Int)] {
+    /// - Parameter authorEmail: If non-nil, only commits whose author email
+    ///   matches are returned. Used to exclude collaborators' commits.
+    func log(since lastHash: String?, maxCount: Int = 20,
+             authorEmail: String? = nil) -> [(hash: String, ts: Int, parentCount: Int)] {
         var repoPtr: OpaquePointer?
         guard git_repository_open(&repoPtr, path) == 0, let repo = repoPtr else { return [] }
         defer { git_repository_free(repo) }
@@ -50,12 +53,37 @@ struct GitRepo {
             guard git_commit_lookup(&commitPtr, repo, &oid) == 0, let commit = commitPtr else { continue }
             defer { git_commit_free(commit) }
 
+            // Filter by author email when specified (exclude collaborators)
+            if let authorEmail {
+                guard let sig = git_commit_author(commit) else { continue }
+                let email = String(cString: sig.pointee.email)
+                if email != authorEmail { continue }
+            }
+
             let hash = String(cString: git_oid_tostr_s(git_commit_id(commit)))
             let ts = Int(git_commit_time(commit))
             let parentCount = Int(git_commit_parentcount(commit))
             results.append((hash, ts, parentCount))
         }
         return results
+    }
+
+    /// Read the git `user.email` for this repository (local config, falls back to global).
+    func userEmail() -> String? {
+        var repoPtr: OpaquePointer?
+        guard git_repository_open(&repoPtr, path) == 0, let repo = repoPtr else { return nil }
+        defer { git_repository_free(repo) }
+
+        var cfgPtr: OpaquePointer?
+        guard git_repository_config(&cfgPtr, repo) == 0, let cfg = cfgPtr else { return nil }
+
+        // Use git_config_get_string which reads the key from the config.
+        // The returned buffer is owned by the config object — we copy it to a String.
+        var cValue: UnsafePointer<CChar>?
+        guard git_config_get_string(&cValue, cfg, "user.email") == 0, let ptr = cValue else {
+            return nil
+        }
+        return String(cString: ptr)
     }
 
     /// Get per-file added/deleted lines for a commit, excluding generated/lock files.
