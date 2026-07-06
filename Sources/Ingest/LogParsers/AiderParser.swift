@@ -48,26 +48,43 @@ struct AiderParser {
         )
     }
 
+    /// Extract model name from aider markdown line.
+    /// Format: `Model: deepseek/deepseek-chat with diff edit format, prompt cache, infinite output`
+    static func parseModelLine(_ line: String) -> String? {
+        guard line.hasPrefix("Model: ") else { return nil }
+        // Extract model id: "deepseek/deepseek-chat"
+        guard let match = try? NSRegularExpression(
+            pattern: #"^Model:\s*([^\s]+)"#,
+            options: []
+        ).firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
+        return (line as NSString).substring(with: match.range(at: 1))
+    }
+
     /// Parse Markdown format from `.aider.chat.history.md`
-    /// Token format: `#### tokens: 1,234 input, 567 output`
-    static func parseMarkdown(line: String, cwd: String?, previousModel: String?) -> UsageEvent? {
-        // Look for token usage line
-        guard line.contains("#### tokens:"),
-              let tokensMatch = try? NSRegularExpression(
-                pattern: #"tokens:\s*([\d,]+)\s*input\w*\s*,\s*([\d,]+)\s*output"#,
-                options: .caseInsensitive
-              ).firstMatch(in: line, range: NSRange(line.startIndex..., in: line))
-        else { return nil }
+    /// Token format: `> Tokens: 12k sent, 47 received. Cost: $0.0034 message, $0.0034 session.`
+    static func parseMarkdown(line: String, cwd: String?, model: String?) -> UsageEvent? {
+        // Only parse token usage lines (they contain cost data)
+        guard line.hasPrefix("> Tokens:") || line.hasPrefix("> Tokens: ") else { return nil }
 
-        let inStr = (line as NSString).substring(with: tokensMatch.range(at: 1))
-            .replacingOccurrences(of: ",", with: "")
-        let outStr = (line as NSString).substring(with: tokensMatch.range(at: 2))
-            .replacingOccurrences(of: ",", with: "")
+        // Extract numbers using regex: e.g. "12k sent, 47 received"
+        guard let match = try? NSRegularExpression(
+            pattern: #"([\d.]+k?)\s*sent\w*\s*,\s*([\d.]+k?)\s*received"#,
+            options: .caseInsensitive
+        ).firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
 
-        guard let inTokens = Int(inStr), let outTokens = Int(outStr) else { return nil }
+        let inStr = (line as NSString).substring(with: match.range(at: 1))
+        let outStr = (line as NSString).substring(with: match.range(at: 2))
 
-        // Model is usually on the previous line: `#### model: gpt-4o`
-        let model = previousModel
+        func parseK(_ s: String) -> Int {
+            if s.hasSuffix("k") {
+                let num = Double(s.dropLast()) ?? 0
+                return Int(num * 1000)
+            }
+            return Int(s) ?? 0
+        }
+
+        let inTokens = parseK(inStr)
+        let outTokens = parseK(outStr)
 
         return UsageEvent(
             ts: Int(Date().timeIntervalSince1970 * 1000),

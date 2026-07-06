@@ -24,8 +24,12 @@ struct AiderIntegration: Detectable {
                 let git = url.appendingPathComponent(".git")
                 var isDir: ObjCBool = false
                 if FileManager.default.fileExists(atPath: git.path, isDirectory: &isDir), isDir.boolValue {
-                    let llm = url.appendingPathComponent(".aider.llm.history")
-                    if FileManager.default.fileExists(atPath: llm.path) { count += 1 }
+                    // aider v0.75+: Markdown format
+                    let chatMD = url.appendingPathComponent(".aider.chat.history.md")
+                    // aider pre-0.75: JSONL format
+                    let llmJSONL = url.appendingPathComponent(".aider.llm.history")
+                    if FileManager.default.fileExists(atPath: chatMD.path) ||
+                       FileManager.default.fileExists(atPath: llmJSONL.path) { count += 1 }
                     e.skipDescendants()
                 }
             }

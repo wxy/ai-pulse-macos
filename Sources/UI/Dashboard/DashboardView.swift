@@ -50,6 +50,8 @@ struct DashboardView: View {
     @State private var healthMessages: [String] = []
     @State private var showHealthDetails = false
     @State private var usageData: [String: (percent: Double, limitStatus: String)] = [:]  // costSourceId → (usage%, status)
+    @State private var trendHoverDate: Date? = nil
+    @State private var trendHoverX: CGFloat = 0
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -131,16 +133,12 @@ struct DashboardView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
-                    costSourceSummary.padding(.horizontal, 20)
-
                     if hasActiveCostSources || !providerCosts.isEmpty {
+                        spendingOverview.padding(.horizontal, 20)
+                        outputSection.padding(.horizontal, 20)
                         if timeRange != .today {
-                            costChart.padding(.horizontal, 20)
-                            codeChangeChart.padding(.horizontal, 20)
+                            trendSection.padding(.horizontal, 20)
                         }
-
-                        // Bottom cards row
-                        bottomCards.padding(.horizontal, 20)
                     } else {
                         emptyStateCard.padding(.horizontal, 20)
                     }
@@ -149,6 +147,7 @@ struct DashboardView: View {
         }
         .frame(width: 680, height: 640)
         .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.locale, Locale(identifier: I18n.getLang() == "zh" ? "zh_CN" : "en_US"))
         .task {
             ApiPoller.shared.pollAll()
             await load()
@@ -304,9 +303,67 @@ struct DashboardView: View {
                 smallCard(title: "\(timeRange.label)\(I18n.t("dashboard.code_added"))",
                           value: "+\(added)", color: .green)
                 smallCard(title: "\(timeRange.label)\(I18n.t("dashboard.code_deleted"))",
-                          value: "-\(deleted)", color: .orange)
+                          value: "-\(deleted)", color: .red)
+            }
+
+            // Tool summary (compact spending by dev tool)
+            let toolCosts = computeToolCosts()
+            if !toolCosts.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("按开发工具").font(.caption).foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        ForEach(toolCosts.prefix(5), id: \.name) { tc in
+                            VStack(spacing: 2) {
+                                Text(tc.name).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                                Text("$\(String(format: "%.2f", tc.cost))")
+                                    .font(.caption).monospacedDigit()
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color(nsColor: .quaternarySystemFill))
+                            .cornerRadius(6)
+                        }
+                    }
+                }
             }
         }
+    }
+
+    func computeToolCosts() -> [(name: String, cost: Double)] {
+        var map: [String: Double] = [:]
+        // API costs from usage_event grouped by source (matches menu bar query)
+        for stat in dailyStats {
+            guard stat.cost > 0 else { continue }
+            // Use providerCosts to get per-source breakdown (same as menu)
+            // dailyStats merges by day, not source. Use providerCosts instead.
+        }
+        // Sum from providerCosts which has per-provider-id costs
+        for pc in providerCosts where pc.cost > 0 {
+            let label = providerDisplayName(pc.providerId)
+            map[label] = (map[label] ?? 0) + pc.cost
+        }
+        // Add subscription amortization (same as menu: query activeCostSources)
+        for cs in IntegrationRegistry.activeCostSources(editorMappings: editorMappings) {
+            if case .subscription(let toolId, _, let fee) = cs.kind, fee > 0 {
+                let daily = fee / Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+                map[toolId] = (map[toolId] ?? 0) + daily * Double(timeRange.days)
+            }
+        }
+        return map.compactMap { (key, cost) in
+            guard cost > 0.001 else { return nil }
+            let label: String = switch key {
+            case "claude-code": "Claude Code"
+            case "aider":       "aider"
+            case "cursor":      "Cursor"
+            case "copilot":     "Copilot"
+            case "windsurf":    "Windsurf"
+            default:            key  // provider name already set above
+            }
+            return (name: label, cost: cost)
+        }.sorted { $0.cost > $1.cost }
+    }
+
+    func providerDisplayName(_ pid: String) -> String {
+        IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
     }
 
     func costSourceRow(_ item: (source: CostSource, cost: Double, usagePercent: Double?)) -> some View {
@@ -757,6 +814,361 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: - Spend overview
+
+    var spendingOverview: some View {
+        let breakdown = costSourceBreakdown
+        let totalCost = breakdown.reduce(0) { $0 + $1.cost }
+        let toolCosts = computeToolCosts()
+
+        return VStack(spacing: 16) {
+            // Big total
+            VStack(spacing: 4) {
+                Text("$\(String(format: "%.2f", totalCost))")
+                    .font(.largeTitle).fontWeight(.bold).monospacedDigit()
+                Text("\(timeRange.label)\(I18n.t("dashboard.api_spent"))")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 12)
+                .fill(Color(nsColor: .quaternarySystemFill).opacity(0.6)))
+
+            // Tool bars + API donut
+            HStack(alignment: .top, spacing: 16) {
+                // Left: Tool spending bars
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("按开发工具").font(.caption).foregroundColor(.secondary)
+                    if toolCosts.isEmpty {
+                        Text("--").font(.caption).foregroundColor(.secondary)
+                    } else {
+                        ForEach(toolCosts.prefix(6), id: \.name) { tc in
+                            toolBarRow(name: tc.name, cost: tc.cost, total: totalCost)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+
+                // Right: API donut
+                let apiData = apiDonutData()
+                if !apiData.isEmpty {
+                    VStack(spacing: 6) {
+                        Text("按 API 提供商").font(.caption).foregroundColor(.secondary)
+                        Chart(apiData) { item in
+                            SectorMark(
+                                angle: .value("Cost", item.cost),
+                                innerRadius: .ratio(0.5),
+                                angularInset: 1
+                            )
+                            .foregroundStyle(by: .value("Provider", item.label))
+                        }
+                        .chartLegend(.hidden)
+                        .chartForegroundStyleScale(domain: apiData.map(\.label), range: [.green, .mint, .teal, .indigo, .orange, .pink])
+                        .frame(width: 120, height: 120)
+
+                        // Legend
+                        VStack(spacing: 2) {
+                            ForEach(apiData) { item in
+                                HStack(spacing: 4) {
+                                    Circle().fill(item.color).frame(width: 6, height: 6)
+                                    Text(item.label).font(.caption2).foregroundColor(.secondary)
+                                    Spacer()
+                                    Text("\(Int(item.pct))%").font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: 140)
+                }
+            }
+        }
+        .padding(16)
+        .background(Color(nsColor: .quaternarySystemFill).opacity(0.5))
+        .cornerRadius(10)
+    }
+
+    func toolBarRow(name: String, cost: Double, total: Double) -> some View {
+        let w = total > 0 ? cost / total : 0
+        return VStack(spacing: 2) {
+            HStack {
+                Text(name).font(.caption).lineLimit(1)
+                Spacer()
+                Text("$\(String(format: "%.2f", cost))").font(.caption).monospacedDigit()
+                Text("\(Int(w * 100))%").font(.caption2).foregroundColor(.secondary).frame(width: 30, alignment: .trailing)
+            }
+            GeometryReader { geo in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.green.opacity(0.7))
+                    .frame(width: max(geo.size.width * w, 2), height: 6)
+            }
+            .frame(height: 6)
+        }
+    }
+
+    struct DonutItem: Identifiable { let id = UUID(); let label: String; let cost: Double; let pct: Double; let color: Color }
+    func apiDonutData() -> [DonutItem] {
+        var map: [String: Double] = [:]
+        for (pid, _, spend) in balanceSpend where spend > 0.001 {
+            let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
+            map[name] = (map[name] ?? 0) + spend
+        }
+        let total = map.values.reduce(0, +)
+        let colors: [Color] = [.green, .teal, .mint, .cyan, .indigo, .orange]
+        return map.sorted(by: { $0.value > $1.value }).enumerated().map { (i, kv) in
+            DonutItem(label: kv.key, cost: kv.value,
+                      pct: total > 0 ? kv.value / total * 100 : 0,
+                      color: colors[i % colors.count])
+        }
+    }
+
+    // MARK: - Output section
+
+    var outputSection: some View {
+        let added = codeChanges.reduce(0) { $0 + $1.added }
+        let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
+        let netLines = added - deleted
+
+        return VStack(spacing: 12) {
+            // Code line cards
+            HStack(spacing: 8) {
+                smallCard(title: "净增行", value: "\(netLines)", color: netLines >= 0 ? .green : .red)
+                smallCard(title: I18n.t("dashboard.code_added"), value: "+\(added)", color: .green)
+                smallCard(title: I18n.t("dashboard.code_deleted"), value: "-\(deleted)", color: .red)
+            }
+
+            // Repo list with cost + CPL
+            let cplRepos = repos.filter { $0.totalChanges > 0 }
+            if !cplRepos.isEmpty {
+                let maxCost = cplRepos.map(\.cost).max() ?? 1
+                let maxCPL = cplRepos.compactMap { r in r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : nil }.max() ?? 1
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("按仓库").font(.caption).foregroundColor(.secondary)
+                    ForEach(cplRepos.prefix(8)) { r in
+                        let combinedCPL = r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : 0
+                        let costRatio = maxCost > 0 ? r.cost / maxCost : 0
+                        let cplRatio = maxCPL > 0 ? combinedCPL / maxCPL : 0
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
+                                Spacer()
+                                Text("+\(r.added)/-\(r.deleted)")
+                                    .font(.caption2).foregroundColor(.secondary).monospacedDigit()
+                            }
+                            HStack(spacing: 6) {
+                                Text("$\(String(format: "%.2f", r.cost))")
+                                    .font(.caption2).monospacedDigit().frame(width: 64, alignment: .leading)
+                                GeometryReader { geo in
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(Color.accentColor.opacity(0.6))
+                                        .frame(width: max(geo.size.width * costRatio, 2), height: 8)
+                                }
+                                .frame(height: 8)
+                            }
+                            HStack(spacing: 6) {
+                                Text("CPL $\(String(format: "%.2f", combinedCPL))")
+                                    .font(.caption2).monospacedDigit().foregroundColor(.secondary).frame(width: 64, alignment: .leading)
+                                GeometryReader { geo in
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(Color.mint.opacity(0.7))
+                                        .frame(width: max(geo.size.width * cplRatio, 2), height: 6)
+                                }
+                                .frame(height: 6)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        if r.id != cplRepos.prefix(8).last?.id {
+                            Divider()
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
+                .cornerRadius(10)
+            }
+        }
+        .padding(16)
+        .background(Color(nsColor: .quaternarySystemFill).opacity(0.5))
+        .cornerRadius(10)
+    }
+
+    // MARK: - Trend section (dual-axis stacked bar: spend vs code)
+
+    /// Target grid-line count — both axes share the same number of sections.
+    private let targetGrid = 4.0
+
+    /// Left axis: cost (USD).
+    private var trendSpendAxis: (max: Double, step: Double, values: [Double], sections: Int) {
+        let padded = padStats(dailyStats, days: timeRange.days)
+        let rawMax = padded.map(\.cost).max() ?? 5
+        let step = niceStep(rawMax / targetGrid)
+        let max = ceil(rawMax / step) * step
+        let sections = Int(max / step)
+        var vals = [Double](); var v = 0.0
+        while v <= max + step / 2 { vals.append(v); v += step }
+        return (max, step, vals, sections)
+    }
+
+    /// Right axis: code lines. Same section count as left.
+    private var trendCodeAxis: (max: Double, step: Double, values: [Double], scale: Double) {
+        let padded = padCodeChanges()
+        let rawMax = Double(padded.map { $0.added + $0.deleted }.max() ?? 1)
+        let sections = Double(trendSpendAxis.sections)
+        guard rawMax > 0, trendSpendAxis.max > 0, sections > 0 else { return (10, 2, [0, 2, 4, 6, 8, 10], 1) }
+        var step = niceStep(rawMax / sections)
+        while step * sections < rawMax { step = nextNiceStep(step) }
+        let max = step * sections
+        var vals = [Double](); var v = 0.0
+        while v <= max + step / 2 { vals.append(v); v += step }
+        let scale = trendSpendAxis.max / max
+        return (max, step, vals, scale)
+    }
+
+    var trendSection: some View {
+        let padStats = padStats(dailyStats, days: timeRange.days)
+        let padCode = padCodeChanges()
+        let noData = padStats.allSatisfy({ $0.cost == 0 }) && padCode.allSatisfy({ $0.added == 0 })
+        let scale = trendCodeAxis.scale
+        let leftMax = trendSpendAxis.max
+        let leftValues = trendSpendAxis.values
+        let rightVals = trendCodeAxis.values
+        let rightMax = trendCodeAxis.max
+
+        return VStack(spacing: 12) {
+            Text("每日趋势").font(.headline)
+
+            if noData {
+                Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 20)
+            } else {
+                let subDaily = StatsService.subscriptionDailyAmortization()
+                let now = Date()
+
+                Chart {
+                    // API spend bars
+                    ForEach(padStats) { s in
+                        BarMark(x: .value("Date", s.date, unit: .day), y: .value("Spend", s.cost))
+                            .foregroundStyle(Color.green.opacity(0.8))
+                            .position(by: .value("Series", "花费"))
+                    }
+                    // Subscription bars (only up to today)
+                    ForEach(padStats.filter { $0.date <= now }) { s in
+                        BarMark(x: .value("Date", s.date, unit: .day), y: .value("Sub", subDaily))
+                            .foregroundStyle(Color.mint.opacity(0.7))
+                            .position(by: .value("Series", "花费"))
+                    }
+                    // Added lines
+                    ForEach(padCode) { c in
+                        BarMark(x: .value("Date", c.date, unit: .day), y: .value("Added", Double(c.added) * scale))
+                            .foregroundStyle(Color.green.opacity(0.6))
+                            .position(by: .value("Series", "代码"))
+                    }
+                    // Deleted lines
+                    ForEach(padCode) { c in
+                        BarMark(x: .value("Date", c.date, unit: .day), y: .value("Deleted", Double(c.deleted) * scale))
+                            .foregroundStyle(Color.red.opacity(0.35))
+                            .position(by: .value("Series", "代码"))
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks(values: dateStride) { _ in
+                        AxisValueLabel(format: dateLabelFormat, orientation: .horizontal)
+                    }
+                }
+                .chartYScale(domain: 0...leftMax)
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: leftValues) { value in
+                        AxisGridLine()
+                        if let v = value.as(Double.self) { AxisValueLabel("$\(String(format: "%.1f", v))") }
+                    }
+                    AxisMarks(position: .trailing,
+                              values: rightVals.map { $0 * leftMax / rightMax }) { value in
+                        let idx = value.index
+                        if idx < rightVals.count {
+                            AxisValueLabel("\(Int(rightVals[idx]))")
+                        }
+                    }
+                }
+                .chartOverlay { proxy in
+                    GeometryReader { geo in
+                        Color.clear
+                            .onContinuousHover { phase in
+                                if case .active(let loc) = phase,
+                                   let frame = proxy.plotFrame {
+                                    let x = loc.x - geo[frame].origin.x
+                                    guard x >= 0, x <= geo[frame].width else { trendHoverDate = nil; return }
+                                    trendHoverX = x
+                                    trendHoverDate = proxy.value(atX: x)
+                                } else { trendHoverDate = nil }
+                            }
+                    }
+                }
+                .frame(height: 180)
+                .overlay(alignment: .topLeading) {
+                    if let hd = trendHoverDate,
+                       let stat = padStats.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
+                       let code = padCode.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
+                       stat.cost > 0 || code.added > 0 || code.deleted > 0 {
+                        let subCost = hd <= now ? subDaily : 0
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(hd, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
+                            Text("API: $\(String(format: "%.2f", stat.cost))").font(.caption2).monospacedDigit()
+                            Text("订阅: $\(String(format: "%.2f", subCost))").font(.caption2).monospacedDigit()
+                            Text("新增: +\(code.added) 行").font(.caption2).monospacedDigit()
+                            Text("删除: -\(code.deleted) 行").font(.caption2).monospacedDigit()
+                        }
+                        .padding(6).background(.regularMaterial).cornerRadius(6)
+                        .offset(x: trendHoverX > 300 ? trendHoverX - 140 : trendHoverX + 16, y: 0)
+                    }
+                }
+
+                // Legend
+                HStack(spacing: 16) {
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 2).fill(Color.green.opacity(0.8)).frame(width: 10, height: 10)
+                        Text("API 花费").font(.caption2).foregroundColor(.secondary)
+                    }
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 2).fill(Color.mint.opacity(0.7)).frame(width: 10, height: 10)
+                        Text("订阅").font(.caption2).foregroundColor(.secondary)
+                    }
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 2).fill(Color.green.opacity(0.6)).frame(width: 10, height: 10)
+                        Text("新增行").font(.caption2).foregroundColor(.secondary)
+                    }
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 2).fill(Color.red.opacity(0.35)).frame(width: 10, height: 10)
+                        Text("删除行").font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(Color(nsColor: .quaternarySystemFill).opacity(0.5))
+        .cornerRadius(10)
+    }
+
+    // MARK: - Axis helpers
+
+    func niceStep(_ rough: Double) -> Double {
+        let magnitude = pow(10, floor(log10(max(rough, 1))))
+        let normalized = rough / magnitude
+        let nice: Double
+        if normalized <= 1.5 { nice = 1 }
+        else if normalized <= 3 { nice = 2 }
+        else if normalized <= 7 { nice = 5 }
+        else { nice = 10 }
+        return nice * magnitude
+    }
+
+    func nextNiceStep(_ step: Double) -> Double {
+        let niceSteps: [Double] = [1, 2, 5, 10]
+        let magnitude = pow(10, floor(log10(max(step, 1))))
+        let mantissa = step / magnitude
+        if let idx = niceSteps.firstIndex(where: { $0 > mantissa + 0.001 }) {
+            return niceSteps[idx] * magnitude
+        }
+        return 10 * magnitude
+    }
+
     // MARK: - Empty state (no integrations)
 
     var emptyStateCard: some View {
@@ -782,7 +1194,7 @@ struct DashboardView: View {
     }
 
     var dateLabelFormat: Date.FormatStyle {
-        .dateTime.month(.abbreviated).day()
+        .dateTime.month(.abbreviated).day().locale(Locale(identifier: I18n.getLang() == "zh" ? "zh_CN" : "en_US"))
     }
 
     // MARK: - Data padding

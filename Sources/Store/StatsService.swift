@@ -182,14 +182,20 @@ enum StatsService {
                 guard case .subscription(let toolId, _, let monthlyFee) = cs.kind, monthlyFee > 0 else { continue }
                 let daily = monthlyFee / Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
                 // Find repos associated with this subscription tool via usage_event
-                let repos = try? await AppDatabase.shared.read { db in
-                    try String.fetchAll(db, sql: """
-                        SELECT DISTINCT repo_path FROM usage_event
-                        WHERE source = ? AND repo_path IS NOT NULL
-                        AND ts >= ? AND ts < ?
-                        """, arguments: [toolId, startMs, todayMs + 86_400_000])
+                let repos: [String]
+                do {
+                    repos = try await AppDatabase.shared.read { db in
+                        try String.fetchAll(db, sql: """
+                            SELECT DISTINCT repo_path FROM usage_event
+                            WHERE source = ? AND repo_path IS NOT NULL
+                            AND ts >= ? AND ts < ?
+                            """, arguments: [toolId, startMs, todayMs + 86_400_000])
+                    }
+                } catch {
+                    Logger.error("StatsService.repoBreakdown: subscription repo query failed for \(toolId): \(error)")
+                    continue
                 }
-                for r in repos ?? [] {
+                for r in repos {
                     subRepoMap[r, default: []].append((cs.label, daily))
                 }
             }
@@ -211,8 +217,14 @@ enum StatsService {
                     return CPLSource(label: sourceLabel(sc.source), cpl: cpl)
                 }
 
-                // Subscription CPLs for this repo
-                let subSourceList: [CPLSource] = (subRepoMap[p] ?? []).compactMap { entry in
+                // Subscription CPLs for this repo (fuzzy match on path)
+                var subEntries: [(label: String, dailyCost: Double)] = []
+                for (rpath, entries) in subRepoMap {
+                    if p.hasSuffix(rpath) || rpath.hasSuffix(p) || p == rpath {
+                        subEntries.append(contentsOf: entries)
+                    }
+                }
+                let subSourceList: [CPLSource] = subEntries.compactMap { entry in
                     let subCPL = total > 0 ? entry.dailyCost * Double(days) * 1000 / Double(total) : 0.0
                     guard subCPL > 0 else { return nil }
                     return CPLSource(label: entry.label, cpl: subCPL)

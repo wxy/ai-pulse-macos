@@ -78,8 +78,24 @@ final class MenuBarController: NSObject, @unchecked Sendable {
                 }
 
                 // Stats submenus — only shown if they have items
-                let hasSubmenus = !stats.repos.isEmpty || !stats.providerCosts.isEmpty
+                let hasSubmenus = !stats.repos.isEmpty || !stats.providerCosts.isEmpty || !stats.toolCosts.isEmpty
                 if hasSubmenus { self.menu.addItem(.separator()) }
+
+                // Tool submenu — by dev tool
+                if !stats.toolCosts.isEmpty {
+                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_tool"))", action: #selector(self.openDashboard), keyEquivalent: "")
+                    m.target = self
+                    let s = NSMenu()
+                    for tc in stats.toolCosts {
+                        let item = NSMenuItem(
+                            title: "\(tc.name) · $\(String(format: "%.2f", tc.cost))",
+                            action: #selector(self.openDashboard), keyEquivalent: ""
+                        )
+                        item.target = self
+                        s.addItem(item)
+                    }
+                    m.submenu = s; self.menu.addItem(m)
+                }
 
                 // Provider submenu — consumption from DB (USD)
                 if !stats.providerCosts.isEmpty {
@@ -120,7 +136,8 @@ final class MenuBarController: NSObject, @unchecked Sendable {
 
     private struct RepoStat { let name: String; let added: Int; let deleted: Int; let cost: Double
         var summary: String { "$\(String(format: "%.2f", cost)) · +\(added)/-\(deleted) \(I18n.t("menu.lines"))" } }
-    private struct Stats { let todaySummary: String?; let weekSummary: String?; let repos: [RepoStat]; let providerCosts: [(providerId: String, cost: Double)]; let hasActivity: Bool }
+    private struct ToolCost { let name: String; let cost: Double }
+    private struct Stats { let todaySummary: String?; let weekSummary: String?; let repos: [RepoStat]; let providerCosts: [(providerId: String, cost: Double)]; let toolCosts: [ToolCost]; let hasActivity: Bool }
 
     private func fetchStats() async -> Stats {
         do {
@@ -203,6 +220,37 @@ final class MenuBarController: NSObject, @unchecked Sendable {
                 repos.append(RepoStat(name: URL(fileURLWithPath: path).lastPathComponent, added: a, deleted: d, cost: scaledCost))
             }
 
+            // Per-tool cost this week (from usage_event + subscription amortization)
+            let toolRows: [Row] = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [weekStart])
+            }
+            var toolCostMap: [String: Double] = [:]
+            for r in toolRows {
+                if let s: String = r["s"], let c: Double = r["c"], c > 0 { toolCostMap[s] = c }
+            }
+            // Add subscription amortization
+            for cs in IntegrationRegistry.activeCostSources() {
+                if case .subscription(let toolId, _, let fee) = cs.kind, fee > 0 {
+                    let daily = fee / Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+                    let weekSubCost = daily * Double(weekDays)
+                    toolCostMap[toolId, default: 0] += weekSubCost
+                }
+            }
+            var toolCosts: [ToolCost] = toolCostMap.compactMap { (key, cost) in
+                guard cost > 0.001 else { return nil }
+                let label: String
+                switch key {
+                case "claude-code": label = "Claude Code"
+                case "aider":       label = "aider"
+                case "cursor":      label = "Cursor"
+                case "copilot":     label = "Copilot"
+                case "windsurf":    label = "Windsurf"
+                default:            label = key
+                }
+                return ToolCost(name: label, cost: cost)
+            }
+            toolCosts.sort { $0.cost > $1.cost }
+
             // --- Helper to format a stats line ---
             func makeSummary(cnt: Int, cost: Double, added: Int, deleted: Int, label: String, vsAvg: Double? = nil) -> String? {
                 guard cnt > 0 || added > 0 || deleted > 0 || cost > 0.0001 else { return nil }
@@ -226,11 +274,11 @@ final class MenuBarController: NSObject, @unchecked Sendable {
 
             let hasActivity = weekCnt > 0 || !repos.isEmpty || weekAdded > 0 || weekDeleted > 0 || weekCst > 0.0001
             if !hasActivity {
-                return Stats(todaySummary: nil, weekSummary: nil, repos: [], providerCosts: [], hasActivity: false)
+                return Stats(todaySummary: nil, weekSummary: nil, repos: [], providerCosts: [], toolCosts: [], hasActivity: false)
             }
-            return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos, providerCosts: providerCosts, hasActivity: true)
+            return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos, providerCosts: providerCosts, toolCosts: toolCosts, hasActivity: true)
         } catch {
-            return Stats(todaySummary: I18n.t("menu.unavailable"), weekSummary: nil, repos: [], providerCosts: [], hasActivity: false)
+            return Stats(todaySummary: I18n.t("menu.unavailable"), weekSummary: nil, repos: [], providerCosts: [], toolCosts: [], hasActivity: false)
         }
     }
 

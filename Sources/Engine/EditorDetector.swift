@@ -57,7 +57,7 @@ enum EditorDetector {
     // MARK: - Per-editor detection
 
     private static func detectEditor(_ editor: EditorDef) -> [Mapping] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = FileManager.default.realHomeDirectory
         let storagePath = home
             .appendingPathComponent("Library/Application Support/\(editor.appSupportDir)/User/globalStorage/storage.json")
             .path

@@ -21,12 +21,17 @@ final class LogWatcher: @unchecked Sendable {
     private var filePositions: [String: UInt64] = [:]
     /// Leftover partial line (when a write stops mid-line) per file path.
     private var partialLines: [String: String] = [:]
+    /// Last seen model per aider file (survives incremental scans).
+    private var aiderModels: [String: String] = [:]
+
+    /// Ensures positions are loaded before the first scan() runs.
+    private let loadGroup = DispatchGroup()
+    /// Tracks in-flight persist tasks so stop() can wait for them.
+    private let persistGroup = DispatchGroup()
 
     private init() {
-        // Restore saved positions from DB on first access
-        Task {
-            await loadPositionsFromDB()
-        }
+        loadGroup.enter()
+        Task { await loadPositionsFromDB(); loadGroup.leave() }
     }
 
     private func loadPositionsFromDB() async {
@@ -40,17 +45,22 @@ final class LogWatcher: @unchecked Sendable {
                     map[path] = UInt64(offset)
                 }
             }
-            if !map.isEmpty { filePositions = map }
+            if !map.isEmpty {
+                filePositions = map
+            } else if let saved = UserDefaults.standard.dictionary(forKey: "logwatcher_positions") as? [String: UInt64], !saved.isEmpty {
+                // One-time migration from UserDefaults to DB
+                filePositions = saved
+                persistPositions()
+                UserDefaults.standard.removeObject(forKey: "logwatcher_positions")
+            }
         } catch {
             // DB not ready yet; will retry on next scan
         }
     }
 
     func start() {
-        // Offload scanning to a serial queue — scanning all git repos and JSONL
-        // files on the main thread blocks the run loop, and running concurrent
-        // scans would race on shared state.
         scanQueue.async { [weak self] in
+            self?.loadGroup.wait()  // ensure positions are loaded
             self?.watchClaudeCode()
             self?.discoverAndWatchRepos()
         }
@@ -60,6 +70,7 @@ final class LogWatcher: @unchecked Sendable {
     /// Safe to call repeatedly; idempotent. Used by DataRefreshCoordinator.
     func scan() {
         scanQueue.async { [weak self] in
+            self?.loadGroup.wait()  // ensure positions are loaded
             self?.scanClaudeProjectsOnly()
             self?.discoverAndWatchRepos()
         }
@@ -69,6 +80,7 @@ final class LogWatcher: @unchecked Sendable {
         claudeSource?.cancel()
         claudeSource = nil
         persistPositions()
+        persistGroup.wait()
     }
 
     // MARK: - Claude Code
@@ -143,10 +155,32 @@ final class LogWatcher: @unchecked Sendable {
             guard FileManager.default.fileExists(atPath: expanded) else { continue }
             enumerateGitRepos(in: URL(fileURLWithPath: expanded)) { repoURL in
                 GitMonitor.shared.watch(repoPath: repoURL.path)
+                // aider v0.75+: Markdown chat history
+                let chatMD = repoURL.appendingPathComponent(".aider.chat.history.md")
+                if FileManager.default.fileExists(atPath: chatMD.path) {
+                    Logger.debug("LogWatcher: found aider chat history at \(chatMD.path)")
+                    var parsedCount = 0
+                    let filePath = chatMD.path
+                    parseLinesIncremental(from: chatMD) { line in
+                        // Track model across lines & scans
+                        if let m = AiderParser.parseModelLine(line) { aiderModels[filePath] = m; return nil }
+                        let model = aiderModels[filePath]
+                        if let event = AiderParser.parseMarkdown(line: line, cwd: repoURL.path, model: model) {
+                            parsedCount += 1
+                            return event
+                        }
+                        return nil
+                    }
+                    if parsedCount > 0 {
+                        Logger.info("LogWatcher: parsed \(parsedCount) aider events from \(chatMD.path)")
+                    }
+                }
+                // aider pre-0.75: JSONL format
                 let llmFile = repoURL.appendingPathComponent(".aider.llm.history")
-                guard FileManager.default.fileExists(atPath: llmFile.path) else { return }
-                parseLinesIncremental(from: llmFile) { line in
-                    AiderParser.parseJSONL(line: line, cwd: repoURL.path)
+                if FileManager.default.fileExists(atPath: llmFile.path) {
+                    parseLinesIncremental(from: llmFile) { line in
+                        AiderParser.parseJSONL(line: line, cwd: repoURL.path)
+                    }
                 }
             }
         }
@@ -197,7 +231,9 @@ final class LogWatcher: @unchecked Sendable {
 
     private func persistPositions() {
         let positions = filePositions
+        persistGroup.enter()
         Task {
+            defer { persistGroup.leave() }
             do {
                 try await AppDatabase.shared.write { db in
                     for (path, offset) in positions {
@@ -208,7 +244,7 @@ final class LogWatcher: @unchecked Sendable {
                     }
                 }
             } catch {
-                // DB not ready — positions will be persisted on next successful write
+                Logger.error("LogWatcher: persist positions failed: \(error)")
             }
         }
     }

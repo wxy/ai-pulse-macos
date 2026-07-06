@@ -14,7 +14,9 @@
       "Bash(git -C /Users/xingyuwang/develop/ai-pulse-macos add Sources/Engine/GitRepo.swift Sources/GitMonitor/GitMonitor.swift)",
       "Bash(git -C /Users/xingyuwang/develop/ai-pulse-macos commit -m \"feat: filter git commits by author email to exclude collaborators\")",
       "Bash(xcodebuild -workspace /Users/xingyuwang/develop/ai-pulse-macos/AIPulse.xcworkspace -scheme AIPulse -configuration Debug -derivedDataPath /tmp/ai-pulse-xcode-build -skipPackageResolution build)",
-      "Bash(xcodebuild -workspace /Users/xingyuwang/develop/ai-pulse-macos/AIPulse.xcworkspace -scheme AIPulse -configuration Debug -derivedDataPath /tmp/ai-pulse-xcode-build -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile build)"
+      "Bash(xcodebuild -workspace /Users/xingyuwang/develop/ai-pulse-macos/AIPulse.xcworkspace -scheme AIPulse -configuration Debug -derivedDataPath /tmp/ai-pulse-xcode-build -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile build)",
+      "Bash(sqlite3 '/Users/xingyuwang/Library/Containers/com.wxy.AIPulse/Data/Library/Application Support/AIPulse/aipulse.db' 'SELECT COUNT\\(*\\), SUM\\(cost_usd\\), COUNT\\(DISTINCT cost_source_id\\) FROM usage_event WHERE source = '\\\\''aider'\\\\'';')",
+      "Bash(sqlite3 '/Users/xingyuwang/Library/Containers/com.wxy.AIPulse/Data/Library/Application Support/AIPulse/aipulse.db' 'SELECT source, model, in_tokens, out_tokens, cost_usd, cost_source_id, repo_path FROM usage_event WHERE source = '\\\\''aider'\\\\'' LIMIT 5;')"
     ]
   }
 }

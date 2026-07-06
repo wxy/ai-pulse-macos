@@ -46,6 +46,8 @@ enum IntegrationRegistry {
             }
         )
         for m in editorMappings where m.dailySubscriptionCost > 0 {
+            let integId = editorMappingToIntegrationId(m)
+            guard config(for: integId).enabled else { continue }
             let toolId = toolIdForEditorMapping(m)
             let sourceId = "sub:\(toolId):editor-detected"
             if !configuredToolIds.contains(toolId)
@@ -104,6 +106,15 @@ enum IntegrationRegistry {
     }
 
     // MARK: - Helpers
+
+    private static func editorMappingToIntegrationId(_ m: EditorDetector.Mapping) -> String {
+        switch m.toolName {
+        case "Cursor":           return "cursor"
+        case "GitHub Copilot":   return "copilot"
+        case "Windsurf":         return "windsurf"
+        default:                 return m.toolName.lowercased().replacingOccurrences(of: " ", with: "-")
+        }
+    }
 
     private static func toolIdForEditorMapping(_ m: EditorDetector.Mapping) -> String {
         switch m.toolName {

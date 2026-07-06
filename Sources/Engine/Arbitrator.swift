@@ -33,7 +33,7 @@ enum Arbitrator {
         // Find all CostSources whose coveredModels match this model
         let matching = costSources.filter { cs in
             cs.coveredModels.contains { covered in
-                normalized.hasPrefix(covered) || covered.hasPrefix(normalized)
+                normalized.hasPrefix(covered)
             }
         }
 
