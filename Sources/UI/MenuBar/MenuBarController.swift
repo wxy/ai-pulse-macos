@@ -173,9 +173,11 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             let rawSpend = (try? await StatsService.balanceDailySpend(days: weekDays, sinceMs: Int64(weekStart))) ?? []
             var spendByProvider: [String: Double] = [:]
             for s in rawSpend { spendByProvider[s.providerId, default: 0] += s.spend }
+            let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
+                if case .apiKey(let pid) = cs.kind { return pid }; return nil
+            })
             var providerCosts: [(providerId: String, cost: Double)] = []
             for (pid, cost) in spendByProvider where cost > 0.001 {
-                let enabledB = Set(IntegrationRegistry.enabledBGrade().map { $0.id })
                 if enabledB.contains(pid) { providerCosts.append((pid, cost)) }
             }
             providerCosts.sort { $0.cost > $1.cost }
@@ -202,14 +204,24 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             }
 
             // --- Helper to format a stats line ---
-            func makeSummary(cnt: Int, cost: Double, added: Int, deleted: Int, label: String) -> String? {
+            func makeSummary(cnt: Int, cost: Double, added: Int, deleted: Int, label: String, vsAvg: Double? = nil) -> String? {
                 guard cnt > 0 || added > 0 || deleted > 0 || cost > 0.0001 else { return nil }
                 let cS = cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0"
                 let linesStr = "+\(added)/-\(deleted) \(I18n.t("menu.lines"))"
-                return "\(label) · \(cS) · \(linesStr)"
+                var result = "\(label) · \(cS) · \(linesStr)"
+                if let avg = vsAvg, avg > 0.001, cost > 0.001 {
+                    let pct = Int(round(cost / avg * 100))
+                    result += " (\(pct)%)"
+                }
+                return result
             }
 
-            let todaySum = makeSummary(cnt: todayCnt, cost: todayCst, added: todayAdded, deleted: todayDeleted, label: I18n.t("menu.today"))
+            // 7-day average for comparison (matches Dock calculation)
+            let sevenDaysAgo = cal.startOfDay(for: cal.date(byAdding: .day, value: -6, to: Date())!).timeIntervalSince1970 * 1000
+            let weekTotal7d = await StatsService.combinedSpend(sinceMs: Int64(sevenDaysAgo))
+            let weekAvgCst = weekTotal7d / 7.0
+
+            let todaySum = makeSummary(cnt: todayCnt, cost: todayCst, added: todayAdded, deleted: todayDeleted, label: I18n.t("menu.today"), vsAvg: weekAvgCst)
             let weekSum  = makeSummary(cnt: weekCnt,  cost: weekCst,  added: weekAdded,  deleted: weekDeleted,  label: I18n.t("menu.this_week"))
 
             let hasActivity = weekCnt > 0 || !repos.isEmpty || weekAdded > 0 || weekDeleted > 0 || weekCst > 0.0001

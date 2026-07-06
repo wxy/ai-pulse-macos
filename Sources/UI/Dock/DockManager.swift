@@ -101,10 +101,9 @@ final class DockManager: @unchecked Sendable {
         let todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
         let dailyAvg = await rollingDailyAvg()
 
-        // Linear progress ring: 1.0 = 1× daily average = full circle.
-        // Ring fraction = fillFraction modulo 1.0; lap counter shown bottom-left.
+        // Linear progress ring: 1.0 = 1× 7-day daily average = full circle.
         let fillFraction = dailyAvg > 0 ? CGFloat(todayCost / dailyAvg) : 0
-        let lap = max(Int(floor(fillFraction)), 0)
+        let lap = max(Int(floor(fillFraction - 0.0001)), 0)
         Logger.debug("Dock progress: todayCost=\(String(format: "%.2f", todayCost)) dailyAvg=\(String(format: "%.2f", dailyAvg)) fillFraction=\(String(format: "%.2f", fillFraction)) lap=\(lap)")
 
         let tile = NSApp.dockTile
@@ -140,25 +139,12 @@ final class DockManager: @unchecked Sendable {
         }
     }
 
-    /// 30-day rolling daily average of combined spend (API + subscription amortization).
+    /// 7-day rolling daily average (matches MenuBar calculation).
     private func rollingDailyAvg() async -> Double {
-        // API portion: average over days that actually have balance snapshots.
-        let spendRows = (try? await StatsService.balanceDailySpend(days: 30)) ?? []
-        var daysWithData = Set<Date>()
-        var apiTotal = 0.0
-        for row in spendRows {
-            daysWithData.insert(row.date)
-            apiTotal += row.spend
-        }
-
-        guard !daysWithData.isEmpty else { return 0 }
-
-        let apiAvg = apiTotal / Double(daysWithData.count)
-        let subDaily = StatsService.subscriptionDailyAmortization()
-        let avg = apiAvg + subDaily
-
-        Logger.debug("Dock avg: uniqueDays=\(daysWithData.count) apiTotal=\(String(format: "%.2f", apiTotal)) apiAvg=\(String(format: "%.2f", apiAvg)) subDaily=\(String(format: "%.2f", subDaily)) result=\(String(format: "%.2f", avg))")
-
-        return avg
+        let cal = Calendar.current
+        let sevenDaysAgo = cal.startOfDay(for: cal.date(byAdding: .day, value: -6, to: Date())!).timeIntervalSince1970 * 1000
+        let total = await StatsService.combinedSpend(sinceMs: Int64(sevenDaysAgo))
+        let days = 7.0
+        return total / days
     }
 }

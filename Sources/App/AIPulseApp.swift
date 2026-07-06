@@ -47,7 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         showOnboardingIfNeeded()
         // Start all enabled, detected integrations via the registry
         IntegrationRegistry.startAllEnabled()
-        Logger.debug("integrations started, A-grade=\(IntegrationRegistry.enabledAGrade().count) B-grade=\(IntegrationRegistry.enabledBGrade().count) C-grade=\(IntegrationRegistry.enabledCGrade().count)")
+        // Sync active CostSources to database for StatsService queries
+        CostSource.syncToDatabase(IntegrationRegistry.activeCostSources())
+        Logger.debug("integrations started, costSources synced")
         // Git/repo + Claude log monitoring is independent of which integrations are
         // enabled: it must run whenever the user has authorized repo directories or
         // ~/.claude. LogWatcher.start() is safe to call again (idempotent scans).

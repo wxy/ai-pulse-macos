@@ -1,12 +1,15 @@
 import SwiftUI
 import Charts
+import GRDB
 
 enum TimeRange: Hashable {
+    case today
     case thisWeek
     case days30
 
     var days: Int {
         switch self {
+        case .today: return 1
         case .thisWeek:
             let cal = Calendar.current
             var monCal = cal; monCal.firstWeekday = 2
@@ -18,6 +21,7 @@ enum TimeRange: Hashable {
 
     var label: String {
         switch self {
+        case .today: return I18n.t("dashboard.today")
         case .thisWeek: return I18n.t("dashboard.this_week")
         case .days30: return I18n.t("dashboard.days_30")
         }
@@ -45,9 +49,10 @@ struct DashboardView: View {
     @State private var healthSeverity = AppHealthMonitor.Severity.nominal
     @State private var healthMessages: [String] = []
     @State private var showHealthDetails = false
+    @State private var usageData: [String: (percent: Double, limitStatus: String)] = [:]  // costSourceId → (usage%, status)
 
-    var hasAGrade: Bool {
-        IntegrationRegistry.enabledAGrade().contains { $0.detect().found }
+    var hasActiveCostSources: Bool {
+        !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
     }
 
     var hasCertainEditorMapping: Bool {
@@ -117,19 +122,22 @@ struct DashboardView: View {
                 Text(I18n.t("dashboard.title")).font(.title2).fontWeight(.bold)
                 Spacer()
                 Picker("", selection: $timeRange) {
+                    Text(I18n.t("dashboard.today")).tag(TimeRange.today)
                     Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
                     Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
-                }.pickerStyle(.segmented).frame(width: 160)
+                }.pickerStyle(.segmented).frame(width: 240)
             }
             .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
 
             ScrollView {
                 VStack(spacing: 16) {
-                    summaryCards.padding(.horizontal, 20)
+                    costSourceSummary.padding(.horizontal, 20)
 
-                    if hasAGrade || !providerCosts.isEmpty {
-                        costChart.padding(.horizontal, 20)
-                        codeChangeChart.padding(.horizontal, 20)
+                    if hasActiveCostSources || !providerCosts.isEmpty {
+                        if timeRange != .today {
+                            costChart.padding(.horizontal, 20)
+                            codeChangeChart.padding(.horizontal, 20)
+                        }
 
                         // Bottom cards row
                         bottomCards.padding(.horizontal, 20)
@@ -141,7 +149,10 @@ struct DashboardView: View {
         }
         .frame(width: 680, height: 640)
         .background(Color(nsColor: .windowBackgroundColor))
-        .task { await load() }
+        .task {
+            ApiPoller.shared.pollAll()
+            await load()
+        }
         .onChange(of: timeRange) { _, _ in Task { await load() } }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             Task { await load() }
@@ -232,42 +243,157 @@ struct DashboardView: View {
         return 0
     }
 
-    // MARK: - Summary cards (3×2 grid)
+    // MARK: - Cost Source summary
 
-    var summaryCards: some View {
-        let apiSpent = balanceSpend.reduce(0.0) { $0 + $1.spend }
+    /// Active CostSources with their computed spend for the current period.
+    var costSourceBreakdown: [(source: CostSource, cost: Double, usagePercent: Double?)] {
+        let sources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
+        var result: [(source: CostSource, cost: Double, usagePercent: Double?)] = []
+        for cs in sources {
+            let cost: Double
+            switch cs.kind {
+            case .apiKey(let pid):
+                // Sum balance spend for this provider
+                cost = balanceSpend
+                    .filter { $0.providerId == pid }
+                    .reduce(0) { $0 + $1.spend }
+            case .subscription(_, _, let fee):
+                let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+                cost = fee / days * Double(timeRange.days)
+            case .unknown:
+                cost = 0
+            }
+            let usage = usageData[cs.id]
+            result.append((cs, cost, usage?.percent))
+        }
+        return result.sorted { $0.cost > $1.cost }
+    }
+
+    var costSourceSummary: some View {
+        let breakdown = costSourceBreakdown
+        let totalCost = breakdown.reduce(0) { $0 + $1.cost }
         let added = codeChanges.reduce(0) { $0 + $1.added }
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
-        let periodLabel = timeRange.label
-        // Project: daily rate × remaining days (simplified)
-        let apiDailyRate = apiSpent / max(Double(timeRange.days), 1)
-        let apiProjected = apiSpent + apiDailyRate * Double(30 - timeRange.days)
-        return VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                card(title: "\(periodLabel)\(I18n.t("dashboard.api_spent"))",
-                     value: "$\(String(format: "%.2f", apiSpent))")
-                card(title: I18n.t("dashboard.sub_daily"),
-                     value: "$\(String(format: "%.2f", totalSubDaily()))")
-                card(title: "\(periodLabel)\(I18n.t("dashboard.code_added"))",
-                     value: "+\(added)")
+
+        return VStack(spacing: 10) {
+            // Total
+            HStack {
+                Text("\(timeRange.label)\(I18n.t("dashboard.api_spent"))")
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Text("$\(String(format: "%.2f", totalCost))")
+                    .font(.title3).fontWeight(.bold).monospacedDigit()
             }
+            .padding(12)
+            .background(Color(nsColor: .quaternarySystemFill).opacity(0.6))
+            .cornerRadius(8)
+
+            if !breakdown.isEmpty {
+                VStack(spacing: 4) {
+                    ForEach(breakdown, id: \.source.id) { item in
+                        costSourceRow(item)
+                    }
+                }
+                .padding(10)
+                .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
+                .cornerRadius(8)
+            }
+
+            // Code changes at a glance
             HStack(spacing: 8) {
-                card(title: I18n.t("dashboard.api_projected"),
-                     value: "$\(String(format: "%.2f", apiProjected))")
-                card(title: I18n.t("dashboard.sub_monthly_label"),
-                     value: "$\(String(format: "%.2f", totalSubMonthly()))")
-                card(title: "\(periodLabel)\(I18n.t("dashboard.code_deleted"))",
-                     value: "-\(deleted)")
+                smallCard(title: "\(timeRange.label)\(I18n.t("dashboard.code_added"))",
+                          value: "+\(added)", color: .green)
+                smallCard(title: "\(timeRange.label)\(I18n.t("dashboard.code_deleted"))",
+                          value: "-\(deleted)", color: .orange)
             }
         }
     }
 
-    func card(title: String, value: String) -> some View {
-        VStack(spacing: 4) {
+    func costSourceRow(_ item: (source: CostSource, cost: Double, usagePercent: Double?)) -> some View {
+        let cs = item.source
+        let cost = item.cost
+        let usage = item.usagePercent
+        return VStack(spacing: 2) {
+            HStack(spacing: 6) {
+                confidenceBadge(cs.confidence)
+                Text(cs.label).font(.caption).lineLimit(1)
+                Spacer()
+                Text(cost > 0.001 ? "$\(String(format: "%.2f", cost))" : "--")
+                    .font(.caption).monospacedDigit()
+                    .foregroundColor(confidenceColor(cs.confidence))
+
+                if !cs.limitations.isEmpty {
+                    Image(systemName: "info.circle")
+                        .font(.caption2).foregroundColor(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                        .help(cs.limitations.joined(separator: "\n"))
+                }
+                if let usage, usage > 0 {
+                    usageBarView(percent: usage)
+                }
+            }
+            .padding(.horizontal, 6).padding(.vertical, 3)
+        }
+    }
+
+    func usageBarView(percent: Double) -> some View {
+        let clamped = min(max(percent, 0), 100)
+        let barColor: Color = switch clamped {
+        case 0..<75:  .green
+        case 75..<90: .yellow
+        default:      .orange
+        }
+        let label = clamped > 100 ? "超量" : "\(Int(clamped))%"
+        return HStack(spacing: 2) {
+            Text(label)
+                .font(.system(size: 8)).monospacedDigit().foregroundColor(barColor)
+                .frame(width: 28, alignment: .trailing)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color(nsColor: .quaternarySystemFill))
+                        .frame(height: 5)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(barColor)
+                        .frame(width: max(geo.size.width * min(clamped, 100) / 100, 2), height: 5)
+                }
+            }
+            .frame(width: 40, height: 5)
+        }
+        .help(clamped > 90 ? "用量接近上限，可能产生超额费用" : "当月用量百分比")
+    }
+
+    func confidenceBadge(_ c: CostConfidence) -> some View {
+        let (label, color): (String, Color) = switch c {
+        case .exact:       ("", .green)
+        case .estimated:   ("~", .blue)
+        case .amortized:   ("", .orange)
+        case .uncertain:   ("?", .yellow)
+        case .incomplete:  ("…", .red)
+        }
+        return Text(label)
+            .font(.caption2).fontWeight(.bold).foregroundColor(color)
+            .frame(width: 16)
+    }
+
+    func confidenceColor(_ c: CostConfidence) -> Color {
+        switch c {
+        case .exact:       return .primary
+        case .estimated:   return .secondary
+        case .amortized:   return .secondary
+        case .uncertain:   return .secondary
+        case .incomplete:  return .secondary
+        }
+    }
+
+    func smallCard(title: String, value: String, color: Color) -> some View {
+        VStack(spacing: 2) {
             Text(value).font(.subheadline).fontWeight(.semibold).monospacedDigit()
+                .foregroundColor(color)
             Text(title).font(.caption2).foregroundColor(.secondary).lineLimit(1)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 8)
+        .frame(maxWidth: .infinity).padding(.vertical, 6)
         .background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
     }
 
@@ -277,24 +403,25 @@ struct DashboardView: View {
         return total / Double(days)
     }
 
+    var subSources: [CostSource] {
+        IntegrationRegistry.activeCostSources(editorMappings: editorMappings).filter {
+            if case .subscription(_, _, _) = $0.kind { return true }; return false
+        }
+    }
+
     func totalSubMonthly() -> Double {
-        let subs = IntegrationRegistry.enabledCGrade()
-        return subs.reduce(0.0) { sum, s in sum + estimatedDailySub(s.id) * 30 }
+        subSources.reduce(0.0) { sum, cs in
+            if case .subscription(_, _, let fee) = cs.kind { return sum + fee }
+            return sum
+        }
     }
 
     func totalSubDaily() -> Double {
-        let subs = IntegrationRegistry.enabledCGrade()
         let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        var total: Double = 0
-        for s in subs {
-            let cfg = IntegrationRegistry.config(for: s.id)
-            guard !cfg.subscriptionTier.isEmpty else { continue }
-            if let tool = SubscriptionRegistry.tool(forName: toolName(for: s.id)),
-               let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
-                total += tier.fee / days
-            }
+        return subSources.reduce(0.0) { sum, cs in
+            if case .subscription(_, _, let fee) = cs.kind { return sum + fee / days }
+            return sum
         }
-        return total
     }
 
     func toolName(for id: String) -> String {
@@ -312,7 +439,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.cost_chart")).font(.headline)
 
-            if IntegrationRegistry.enabledCGrade().isEmpty {
+            if subSources.isEmpty {
                 Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 30)
             } else {
                 ZStack(alignment: .topLeading) {
@@ -399,8 +526,7 @@ struct DashboardView: View {
     }
 
     func subDailyData() -> [ChartDataPoint] {
-        let subs = IntegrationRegistry.enabledCGrade()
-        guard !subs.isEmpty else { return [] }
+        guard !subSources.isEmpty else { return [] }
         let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
@@ -410,17 +536,13 @@ struct DashboardView: View {
         for offset in 0..<chartDays {
             guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
             if date <= today {
-                for s in subs {
-                    let cfg = IntegrationRegistry.config(for: s.id)
-                    guard !cfg.subscriptionTier.isEmpty else { continue }
-                    if let tool = SubscriptionRegistry.tool(forName: toolName(for: s.id)),
-                       let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
-                        result.append(ChartDataPoint(date: date, label: s.displayName, cost: tier.fee / daysInMonth))
+                for cs in subSources {
+                    if case .subscription(_, _, let fee) = cs.kind, fee > 0 {
+                        result.append(ChartDataPoint(date: date, label: cs.label, cost: fee / daysInMonth))
                     }
                 }
             } else {
-                // Future days: generate a zero placeholder so the chart bar exists
-                result.append(ChartDataPoint(date: date, label: subs.first!.displayName, cost: 0))
+                result.append(ChartDataPoint(date: date, label: subSources.first!.label, cost: 0))
             }
         }
         return result
@@ -584,12 +706,13 @@ struct DashboardView: View {
                             Text("+\(r.added)/-\(r.deleted)").font(.caption2).foregroundColor(.secondary).monospacedDigit()
                             Spacer()
                         }
+                        // Show CPL contribution per source
                         ForEach(r.allSources) { src in
                             HStack {
                                 Text(src.label).font(.caption2).foregroundColor(.secondary)
                                 Spacer()
-                                Text("$\(String(format: "%.2f", src.cpl))\(I18n.t("menu.per_line"))")
-                                    .font(.caption2).monospacedDigit()
+                                Text("\(confidencePrefixForCPLLabel(src.label))$\(String(format: "%.2f", src.cpl))\(I18n.t("menu.per_line"))")
+                                    .font(.caption2).foregroundColor(.secondary).monospacedDigit()
                             }
                             .padding(.leading, 8)
                         }
@@ -606,12 +729,27 @@ struct DashboardView: View {
         .cornerRadius(10)
     }
 
+    /// Show confidence prefix for CPL source labels.
+    func confidencePrefixForCPLLabel(_ label: String) -> String {
+        // Check if this source has estimated/anortized confidence
+        let sources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
+        if let cs = sources.first(where: { label.contains($0.label) || $0.label.contains(label) }) {
+            switch cs.confidence {
+            case .estimated: return "~"
+            case .amortized: return ""
+            case .incomplete: return ""
+            default: return ""
+            }
+        }
+        return ""
+    }
+
     // MARK: - Bottom cards row
 
     var bottomCards: some View {
         HStack(alignment: .top, spacing: 16) {
             apiBreakdownCard
-            if hasAGrade || hasCertainEditorMapping {
+            if hasActiveCostSources {
                 cplInfoCard
             } else {
                 cplGuidanceCard
@@ -721,7 +859,9 @@ struct DashboardView: View {
                 spendMap.append((s.providerId, s.spend))
             }
         }
-        let enabledB = Set(IntegrationRegistry.enabledBGrade().map { $0.id })
+        let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
+            if case .apiKey(let pid) = cs.kind { return pid }; return nil
+        })
         balanceSpend = spendMap.compactMap { (pid, spend) in
             guard enabledB.contains(pid), spend > 0.001 else { return nil }
             let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
@@ -739,6 +879,24 @@ struct DashboardView: View {
             }
         }
         balanceDaily = dailyAgg.values.map { ChartDataPoint(date: $0.date, label: $0.label, cost: $0.cost) }
+
+        // Load usage data for subscription CostSources
+        do {
+            usageData = try await AppDatabase.shared.read { db in
+                let rows = try Row.fetchAll(db, sql: "SELECT id, usage_percent, usage_limit_status FROM cost_source WHERE usage_percent IS NOT NULL")
+                var map: [String: (Double, String)] = [:]
+                for r in rows {
+                    if let id: String = r["id"],
+                       let pct: Double = r["usage_percent"] {
+                        let status: String = r["usage_limit_status"] ?? ""
+                        map[id] = (pct, status)
+                    }
+                }
+                return map
+            }
+        } catch {
+            // Usage data is optional; ignore failures
+        }
     }
 
 }

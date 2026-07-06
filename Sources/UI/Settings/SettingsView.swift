@@ -82,55 +82,72 @@ struct IntegrationsSettingsTab: View {
     @State private var results: [(any Detectable, DetectionResult)] = []
     @State private var isDetecting = false
 
+    /// Group integrations by their nature: API Keys (balance polling) vs Editors & Tools.
+    /// Editors/Tools may produce logs, subscriptions, or both — they belong together.
+    /// Groups shown in order: API first (configure keys), then Dev Tools (can reference those keys)
+    enum Group: String, CaseIterable {
+        case apiKeys = "API"
+        case editors = "Dev Tools"
+        static func label(_ g: Group) -> String {
+            switch g {
+            case .apiKeys: return I18n.t("integrations.group_api_key")
+            case .editors: return I18n.t("integrations.group_editors")
+            }
+        }
+    }
+
+    func groupFor(_ integration: any Detectable) -> Group {
+        // API-key-only integrations: pure balance polling, no editor/tool association
+        let apiKeyOnlyIds = Set(["deepseek", "openai", "moonshot", "zhipu", "anthropic"])
+        if apiKeyOnlyIds.contains(integration.id) {
+            return .apiKeys
+        }
+        // Everything else is an editor or tool
+        return .editors
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(I18n.t("integrations.title")).font(.title3).fontWeight(.semibold)
+            HStack {
+                Text(I18n.t("integrations.title")).font(.title3).fontWeight(.semibold)
+                Spacer()
+                if isDetecting {
+                    ProgressView().scaleEffect(0.6)
+                } else {
+                    Button(I18n.t("integrations.redetect")) { reDetect() }.font(.caption)
+                }
+            }
             Text(I18n.t("integrations.desc"))
                 .font(.caption).foregroundColor(.secondary)
 
-            let detected = results.filter(\.1.found)
-            let notConfigured = results.filter { !$0.1.found && $0.0.grade == .B }
-            let notInstalled = results.filter { !$0.1.found && $0.0.grade != .B }
-
             ScrollView {
-                VStack(spacing: 6) {
-                    if !detected.isEmpty {
-                        ForEach(detected, id: \.0.id) { (i, r) in
-                            IntegrationRow(integration: i, detected: r)
-                        }
-                    }
-
-                    if !notConfigured.isEmpty {
-                        HStack {
-                            Text(I18n.t("integrations.needs_config")).font(.caption).foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        .padding(.top, 8)
-                        ForEach(notConfigured, id: \.0.id) { (i, r) in
-                            IntegrationRow(integration: i, detected: r)
-                        }
-                    }
-
-                    if !notInstalled.isEmpty {
-                        HStack {
-                            Text(I18n.t("integrations.not_installed")).font(.caption).foregroundColor(.secondary)
-                            Spacer()
-                            if isDetecting {
-                                ProgressView().scaleEffect(0.6)
-                            } else {
-                                Button(I18n.t("integrations.redetect")) { reDetect() }.font(.caption)
+                VStack(spacing: 8) {
+                    ForEach(Group.allCases, id: \.self) { group in
+                        let items = results.filter { groupFor($0.0) == group }
+                        if !items.isEmpty {
+                            sectionHeader(Group.label(group), count: items.count)
+                            ForEach(items, id: \.0.id) { (i, r) in
+                                IntegrationRow(integration: i, detected: r,
+                                               onGrant: { runDetection() })
                             }
-                        }
-                        .padding(.top, 8)
-                        ForEach(notInstalled, id: \.0.id) { (i, r) in
-                            IntegrationRow(integration: i, detected: r,
-                                           onGrant: { runDetection() })
                         }
                     }
                 }
             }
         }
-        .onAppear { runDetection() }
+        .onAppear {
+            runDetection()
+            ApiPoller.shared.pollAll()
+        }
+    }
+
+    func sectionHeader(_ title: String, count: Int) -> some View {
+        HStack {
+            Text(title).font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
+            Text("(\(count))").font(.caption2).foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.top, 4)
     }
 
     func runDetection() {

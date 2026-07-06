@@ -172,10 +172,11 @@ final class ApiPoller: @unchecked Sendable {
             Task {
                 do {
                     try await AppDatabase.shared.write { db in
+                        let csId = "api-key:\(pid)"
                         try db.execute(sql: """
-                            INSERT INTO balance_snapshot (ts, provider_id, balance, currency)
-                            VALUES (?, ?, ?, ?)
-                            """, arguments: [now, pid, entry.totalBalance, entry.currency])
+                            INSERT INTO balance_snapshot (ts, provider_id, balance, currency, cost_source_id)
+                            VALUES (?, ?, ?, ?, ?)
+                            """, arguments: [now, pid, entry.totalBalance, entry.currency, csId])
                     }
                     DataRefreshCoordinator.shared.notifyPhaseBalance()
                 } catch {
@@ -184,7 +185,7 @@ final class ApiPoller: @unchecked Sendable {
             }
         }
         Logger.info("ApiPoller[\(pid)]: ok — \(entries.map { "\($0.currency) \($0.totalBalance)" }.joined(separator: ", "))")
-        AppHealthMonitor.shared.clearAPIError()
+        AppHealthMonitor.shared.clearAPIError(providerId: pid)
     }
 
     private func cacheError(pid: String, msg: String) {
@@ -192,7 +193,7 @@ final class ApiPoller: @unchecked Sendable {
         cache[pid] = CachedBalance(balances: [], lastFetchTimestamp: Int(Date().timeIntervalSince1970 * 1000), error: msg)
         saveBalanceCache(cache)
         Logger.warning("ApiPoller[\(pid)]: \(msg)")
-        AppHealthMonitor.shared.reportAPIError("\(pid): \(msg)")
+        AppHealthMonitor.shared.reportAPIError(providerId: pid, message: "\(pid): \(msg)")
     }
 
     private func balanceCache() -> [String: CachedBalance] {

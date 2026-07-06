@@ -140,7 +140,9 @@ enum AppIconLoader {
         let inset: CGFloat = 10 + ringWidth / 2
         let barRect = bodyRect.insetBy(dx: inset, dy: inset)
         let barCr = max(cornerRadius - inset, 0)
-        let ringFraction = min(fraction, 1.0)
+        // Use remainder so lap 2 starts fresh from 0% instead of staying at 100%
+        let remainder = fraction.truncatingRemainder(dividingBy: 1.0)
+        let ringFraction = (remainder == 0 && fraction >= 1.0) ? 1.0 : remainder
 
         if ringFraction > 0.001 {
             let path = progressPath(rect: barRect, cornerRadius: barCr,

@@ -95,4 +95,33 @@ final class PricingManager: @unchecked Sendable {
 
     /// Backfill NULL cost_usd and provider_id in usage_event table.
     /// One-time fix for events recorded before the pricing catalog was available.
+
+    // MARK: - Model → Provider mapping (for CostSource arbitration)
+
+    /// All model keys in the catalog belonging to a given provider.
+    func modelsForProvider(_ providerId: String) -> Set<String> {
+        guard let cat = catalog else { return [] }
+        return Set(cat.models.filter { $0.value.provider == providerId }.keys)
+    }
+
+    /// Models covered by a subscription tool's plan.
+    func modelsForTool(_ toolId: String) -> Set<String> {
+        switch toolId {
+        case "claude-code":
+            return claudeModels()
+        case "cursor":
+            return claudeModels().union(modelsForProvider("openai"))
+        case "copilot":
+            return modelsForProvider("openai")
+        case "windsurf":
+            return claudeModels()
+        default:
+            return []
+        }
+    }
+
+    /// Claude-family models (provider == "anthropic" pricing keys).
+    func claudeModels() -> Set<String> {
+        return modelsForProvider("anthropic")
+    }
 }

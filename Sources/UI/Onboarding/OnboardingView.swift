@@ -84,7 +84,9 @@ struct OnboardingView: View {
 
     var detectionStep: some View {
         let detected = detectionResults.filter(\.1.found)
-        let configurable = detectionResults.filter { !$0.1.found && $0.0.grade == .B }
+        let configurable = detectionResults.filter { r in
+            !r.1.found && r.0.costSources.contains { if case .apiKey = $0.kind { return true }; return false }
+        }
         // Claude Code that needs a ~/.claude grant (sandbox) is shown as a grantable
         // row so the authorization prompt lives under the Claude item itself.
         let grantable = detectionResults.filter {
@@ -225,7 +227,11 @@ struct OnboardingView: View {
                 Text(String(format: I18n.t("onboarding.done_repos_count"), totalCheckedRepos))
                     .font(.caption).foregroundColor(.secondary)
             }
-            if detectionResults.contains(where: { $0.1.found && $0.0.grade == .A }) {
+            // Show CPL hint if any log-parsing integration is detected
+            let hasLogSource = detectionResults.contains { r in
+                r.1.found && r.0.costSources.isEmpty && r.0 is any Collectable
+            }
+            if hasLogSource {
                 Text(I18n.t("onboarding.done_cpl"))
                     .font(.caption).foregroundColor(.secondary)
             }
@@ -257,22 +263,10 @@ struct OnboardingView: View {
         }
     }
 
-    func gradeBadge(_ g: DataGrade) -> some View {
-        Text("[\(g.rawValue)] \(gradeLabel(g))")
-            .font(.caption2).foregroundColor(.secondary)
-    }
-
-    func gradeLabel(_ g: DataGrade) -> String {
-        switch g {
-        case .A: return "CPL"
-        case .B: return "Balance"
-        case .C: return "Sub"
-        }
-    }
-
     func runDetection() {
         detectionResults = IntegrationRegistry.all.map { ($0, $0.detect()) }
-        for (i, r) in detectionResults where r.found && i.grade == .A {
+        // Auto-enable log-based integrations that are detected
+        for (i, r) in detectionResults where r.found && i.costSources.isEmpty && i is any Collectable {
             enabledIds.insert(i.id)
         }
     }

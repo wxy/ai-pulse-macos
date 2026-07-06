@@ -174,6 +174,30 @@ enum StatsService {
             // Build repo path → subscription sources from certain editor detections
             let certainMappings = editorMappings.filter { $0.confidence == .certain && $0.dailySubscriptionCost > 0 }
 
+            // Collect CostSource subscription attribution: which repos does each sub tool touch?
+            let subSources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
+                .filter { if case .subscription = $0.kind { return true }; return false }
+            var subRepoMap = [String: [(label: String, dailyCost: Double)]]()
+            for cs in subSources {
+                guard case .subscription(let toolId, _, let monthlyFee) = cs.kind, monthlyFee > 0 else { continue }
+                let daily = monthlyFee / Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+                // Find repos associated with this subscription tool via usage_event
+                let repos = try? await AppDatabase.shared.read { db in
+                    try String.fetchAll(db, sql: """
+                        SELECT DISTINCT repo_path FROM usage_event
+                        WHERE source = ? AND repo_path IS NOT NULL
+                        AND ts >= ? AND ts < ?
+                        """, arguments: [toolId, startMs, todayMs + 86_400_000])
+                }
+                for r in repos ?? [] {
+                    subRepoMap[r, default: []].append((cs.label, daily))
+                }
+            }
+            // Also include editor-detected mappings
+            for m in certainMappings {
+                subRepoMap[m.repoPath, default: []].append((m.toolName, m.dailySubscriptionCost))
+            }
+
             AppHealthMonitor.shared.clearStatsError()
             return costMap.compactMap { (p, sourceCosts) in
                 let totalCost = sourceCosts.reduce(0.0) { $0 + $1.cost }
@@ -187,28 +211,36 @@ enum StatsService {
                     return CPLSource(label: sourceLabel(sc.source), cpl: cpl)
                 }
 
-                // Collect all subscription sources matching this repo
-                var subSources: [CPLSource] = []
-                for m in certainMappings {
-                    if p.hasSuffix(m.repoPath) || m.repoPath.hasSuffix(p) || p == m.repoPath {
-                        let subCPL = total > 0 ? m.dailySubscriptionCost * Double(days) * 1000 / Double(total) : 0.0
-                        if subCPL > 0 {
-                            subSources.append(CPLSource(label: m.toolName, cpl: subCPL))
-                        }
-                    }
+                // Subscription CPLs for this repo
+                let subSourceList: [CPLSource] = (subRepoMap[p] ?? []).compactMap { entry in
+                    let subCPL = total > 0 ? entry.dailyCost * Double(days) * 1000 / Double(total) : 0.0
+                    guard subCPL > 0 else { return nil }
+                    return CPLSource(label: entry.label, cpl: subCPL)
                 }
 
                 return RepoBreakdown(
                     repo: URL(fileURLWithPath: p).lastPathComponent,
                     cost: totalCost, added: a, deleted: d,
                     apiSources: apiSources,
-                    subscriptionSources: subSources
+                    subscriptionSources: subSourceList
                 )
             }
         } catch {
             Logger.error("StatsService.repoBreakdown error: \(error)")
             AppHealthMonitor.shared.reportStatsError("repoBreakdown: \(error.localizedDescription)")
             throw error
+        }
+    }
+
+    /// Simple currency → USD conversion (approximate rates, updated periodically).
+    static func toUSD(currency: String) -> Double {
+        switch currency.uppercased() {
+        case "USD": return 1.0
+        case "CNY": return 0.14
+        case "EUR": return 1.08
+        case "GBP": return 1.27
+        case "JPY": return 0.0067
+        default:    return 1.0
         }
     }
 
@@ -254,7 +286,7 @@ enum StatsService {
     // MARK: - Balance spend (daily deltas, top-up filtered)
 
     /// Daily spend from balance snapshots. Filters out top-ups (balance increases).
-    /// Returns per-provider daily spend estimates.
+    /// Returns per-provider daily spend estimates, converted to USD.
     static func balanceDailySpend(days: Int, sinceMs: Int64? = nil) async throws -> [(providerId: String, date: Date, spend: Double)] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
@@ -267,12 +299,12 @@ enum StatsService {
         do {
             let rows = try await AppDatabase.shared.read { db -> [Row] in
                 try Row.fetchAll(db, sql: """
-                    SELECT provider_id, ts, balance FROM balance_snapshot
+                    SELECT provider_id, ts, balance, currency FROM balance_snapshot
                     WHERE ts >= ? AND ts < ?
                     ORDER BY provider_id, ts
                     """, arguments: [startMs, todayMs + 86_400_000])
             }
-            // Group by provider_id and compute positive deltas
+            // Group by provider_id and compute positive deltas, converting to USD
             var results: [(String, Date, Double)] = []
             var currentPid: String? = nil
             var prevBalance: Double? = nil
@@ -280,10 +312,11 @@ enum StatsService {
                 let pid: String = r["provider_id"] ?? ""
                 let ts: Int64 = r["ts"] ?? 0
                 let balance: Double = r["balance"] ?? 0
+                let currency: String = r["currency"] ?? "USD"
 
                 if pid == currentPid, let prev = prevBalance, balance < prev {
                     // Balance decreased → spend occurred
-                    let spend = prev - balance
+                    let spend = (prev - balance) * toUSD(currency: currency)
                     let date = cal.startOfDay(for: Date(timeIntervalSince1970: Double(ts) / 1000))
                     results.append((pid, date, spend))
                 }
@@ -301,30 +334,20 @@ enum StatsService {
 
     // MARK: - Combined spend (API balance spend + subscription amortization)
 
-    /// Per-day subscription amortization: Σ (tier.fee / daysInMonth) across enabled
-    /// C-grade subscriptions. Mirrors the Dashboard "Spend" chart subscription bars.
+    /// Per-day subscription amortization: Σ (monthlyFee / daysInMonth) across
+    /// active subscription CostSources.
     static func subscriptionDailyAmortization() -> Double {
-        let subs = IntegrationRegistry.enabledCGrade()
-        guard !subs.isEmpty else { return 0 }
-        let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        var total = 0.0
-        for s in subs {
-            let cfg = IntegrationRegistry.config(for: s.id)
-            guard !cfg.subscriptionTier.isEmpty else { continue }
-            if let tool = SubscriptionRegistry.tool(forName: subscriptionToolName(for: s.id)),
-               let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
-                total += tier.fee / daysInMonth
-            }
+        let subSources = IntegrationRegistry.activeCostSources().filter {
+            if case .subscription(_, _, let fee) = $0.kind, fee > 0 { return true }
+            return false
         }
-        return total
-    }
-
-    private static func subscriptionToolName(for id: String) -> String {
-        switch id {
-        case "cursor": return "Cursor"
-        case "copilot": return "GitHub Copilot"
-        case "windsurf": return "Windsurf"
-        default: return id
+        guard !subSources.isEmpty else { return 0 }
+        let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        return subSources.reduce(0.0) { total, cs in
+            if case .subscription(_, _, let fee) = cs.kind {
+                return total + fee / daysInMonth
+            }
+            return total
         }
     }
 
@@ -374,7 +397,7 @@ enum StatsService {
                     GROUP BY day_ts, pid ORDER BY day_ts, c DESC
                     """, arguments: [startMs, todayMs + 86_400_000])
             }
-            return rows.compactMap { r in
+            let result: [ProviderDailyCost] = rows.compactMap { r in
                 guard let day: Int64 = r["day_ts"],
                       let pid: String = r["pid"],
                       let c: Double = r["c"],
@@ -383,6 +406,7 @@ enum StatsService {
                 return ProviderDailyCost(date: date, providerId: pid, cost: c)
             }
             AppHealthMonitor.shared.clearStatsError()
+            return result
         } catch {
             Logger.error("StatsService.providerDailyCosts error: \(error)")
             AppHealthMonitor.shared.reportStatsError("providerDailyCosts: \(error.localizedDescription)")

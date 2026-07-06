@@ -31,11 +31,34 @@ final class GitMonitor: @unchecked Sendable {
     private static let lastSeenKey = "gitmonitor_last_seen"
 
     private init() {
-        if let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) {
-            watchedRepos = Set(saved)
-        }
-        if let saved = UserDefaults.standard.dictionary(forKey: Self.lastSeenKey) as? [String: String] {
-            lastSeenCommit = saved
+        Task { await loadFromDB() }
+    }
+
+    private func loadFromDB() async {
+        do {
+            let rows = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT repo_path, last_commit FROM gitmonitor_state")
+            }
+            var seen = [String: String]()
+            var watched = Set<String>()
+            for r in rows {
+                if let path: String = r["repo_path"] {
+                    watched.insert(path)
+                    if let hash: String = r["last_commit"] { seen[path] = hash }
+                }
+            }
+            lock.withLock {
+                if !watched.isEmpty { watchedRepos = watched }
+                if !seen.isEmpty { lastSeenCommit = seen }
+            }
+        } catch {
+            // DB not ready; fall back to UserDefaults
+            if let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) {
+                lock.withLock { watchedRepos = Set(saved) }
+            }
+            if let saved = UserDefaults.standard.dictionary(forKey: Self.lastSeenKey) as? [String: String] {
+                lock.withLock { lastSeenCommit = saved }
+            }
         }
     }
 
@@ -77,7 +100,8 @@ final class GitMonitor: @unchecked Sendable {
         let lastHash = lastSeenCommit[repo]
         lock.unlock()
         let gitRepo = GitRepo(path: repo)
-        let commits = gitRepo.log(since: lastHash)
+        let authorEmail = gitRepo.userEmail()  // only count user's own commits
+        let commits = gitRepo.log(since: lastHash, authorEmail: authorEmail)
 
         for commit in commits {
             guard let stats = gitRepo.diffTree(hash: commit.hash) else { continue }
@@ -109,17 +133,40 @@ final class GitMonitor: @unchecked Sendable {
     // MARK: - Persistence
 
     private func persistWatchedRepos() {
+        // Write watched repos to DB (best-effort)
         lock.lock()
         let arr = Array(watchedRepos)
         lock.unlock()
-        UserDefaults.standard.set(arr, forKey: Self.watchedReposKey)
+        UserDefaults.standard.set(arr, forKey: Self.watchedReposKey)  // keep as fallback
+        Task {
+            do {
+                try await AppDatabase.shared.write { db in
+                    for repo in arr {
+                        try db.execute(sql: """
+                            INSERT OR IGNORE INTO gitmonitor_state (repo_path) VALUES (?)
+                            """, arguments: [repo])
+                    }
+                }
+            } catch {}
+        }
     }
 
     private func persistLastSeen() {
         lock.lock()
         let dict = lastSeenCommit
         lock.unlock()
-        UserDefaults.standard.set(dict, forKey: Self.lastSeenKey)
+        UserDefaults.standard.set(dict, forKey: Self.lastSeenKey)  // keep as fallback
+        Task {
+            do {
+                try await AppDatabase.shared.write { db in
+                    for (repo, hash) in dict {
+                        try db.execute(sql: """
+                            INSERT OR REPLACE INTO gitmonitor_state (repo_path, last_commit) VALUES (?, ?)
+                            """, arguments: [repo, hash])
+                    }
+                }
+            } catch {}
+        }
     }
 
     private func insertChange(_ change: CodeChange) {

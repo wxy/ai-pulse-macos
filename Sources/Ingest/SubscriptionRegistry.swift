@@ -50,21 +50,23 @@ enum SubscriptionRegistry {
         }
 
         let defs: [(name: String, bundleIds: [String], tiers: [(String, Double)])] = [
+            ("Claude Code", ["com.anthropic.claude"], [
+                ("Pro", 20), ("Max 5x", 100), ("Max 20x", 200),
+            ]),
             ("Cursor",   ["com.todesktop.230313mzl4w4u92"], [
-                ("Pro", 20), ("Business", 40), ("第三方 API", 0),
+                ("Pro", 20), ("Business", 40),
             ]),
             ("Windsurf", ["com.codeium.windsurf"], [
-                ("Pro", 15), ("第三方 API", 0),
+                ("Pro", 15),
             ]),
             ("Trae",     ["com.trae.app"], [
-                ("Pro", 10), ("第三方 API", 0),
+                ("Pro", 10),
             ]),
-            // Copilot works in both VS Code stable + insiders — one subscription
             ("GitHub Copilot", ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"], [
-                ("Pro", 10), ("Pro+", 39), ("Business", 19), ("Enterprise", 39), ("第三方 API", 0),
+                ("Pro", 10), ("Pro+", 39), ("Business", 19), ("Enterprise", 39),
             ]),
             ("Augment Code", ["com.augmentcode.augmentcode"], [
-                ("Pro", 30), ("Business", 60), ("第三方 API", 0),
+                ("Pro", 30), ("Business", 60),
             ]),
         ]
 

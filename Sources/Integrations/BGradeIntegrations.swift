@@ -1,28 +1,49 @@
 import Foundation
 
-// MARK: - DeepSeek (B)
+// MARK: - DeepSeek (apiKey)
 
 struct DeepSeekIntegration: Detectable, Collectable {
     let id = "deepseek"
     let displayName = "DeepSeek"
-    let grade: DataGrade = .B
+
+    var costSources: [CostSource] {
+        guard ApiKeyManager.shared.get(id) != nil else { return [] }
+        return [CostSource(
+            id: "api-key:deepseek",
+            label: "DeepSeek API",
+            kind: .apiKey(providerId: "deepseek"),
+            coveredModels: PricingManager.shared.modelsForProvider("deepseek"),
+            confidence: .exact,
+            limitations: ["假设此 Key 仅用于编程任务"]
+        )]
+    }
 
     func detect() -> DetectionResult {
-        let hasKey = ApiPoller.shared.cachedBalance(for: id) != nil
-            || ApiKeyManager.shared.get(id) != nil
+        let hasKey = ApiKeyManager.shared.get(id) != nil
         return DetectionResult(found: hasKey, summary: I18n.t(hasKey ? "detect.key_configured" : "detect.key_missing"))
     }
 
-    func start() {}  // ApiPoller handles all B-grade
+    func start() {}
     func stop()  {}
 }
 
-// MARK: - OpenAI (B)
+// MARK: - OpenAI (apiKey)
 
 struct OpenAI_Integration: Detectable, Collectable {
     let id = "openai"
     let displayName = "OpenAI"
-    let grade: DataGrade = .B
+
+    var costSources: [CostSource] {
+        guard ApiKeyManager.shared.get(id) != nil else { return [] }
+        return [CostSource(
+            id: "api-key:openai",
+            label: "OpenAI API",
+            kind: .apiKey(providerId: "openai"),
+            coveredModels: PricingManager.shared.modelsForProvider("openai"),
+            confidence: .exact,
+            limitations: ["假设此 Key 仅用于编程任务"]
+        )]
+    }
 
     func detect() -> DetectionResult {
         let hasKey = ApiKeyManager.shared.get(id) != nil
@@ -33,12 +54,23 @@ struct OpenAI_Integration: Detectable, Collectable {
     func stop()  {}
 }
 
-// MARK: - Kimi / Moonshot (B)
+// MARK: - Kimi / Moonshot (apiKey)
 
 struct KimiIntegration: Detectable, Collectable {
     let id = "moonshot"
     let displayName = "Kimi"
-    let grade: DataGrade = .B
+
+    var costSources: [CostSource] {
+        guard ApiKeyManager.shared.get(id) != nil else { return [] }
+        return [CostSource(
+            id: "api-key:moonshot",
+            label: "Kimi API",
+            kind: .apiKey(providerId: "moonshot"),
+            coveredModels: PricingManager.shared.modelsForProvider("moonshot"),
+            confidence: .exact,
+            limitations: ["假设此 Key 仅用于编程任务"]
+        )]
+    }
 
     func detect() -> DetectionResult {
         let hasKey = ApiKeyManager.shared.get(id) != nil
@@ -49,12 +81,50 @@ struct KimiIntegration: Detectable, Collectable {
     func stop()  {}
 }
 
-// MARK: - Zhipu / ChatGLM (B)
+// MARK: - Zhipu / ChatGLM (apiKey)
 
 struct ZhipuIntegration: Detectable, Collectable {
     let id = "zhipu"
     let displayName = "ChatGLM"
-    let grade: DataGrade = .B
+
+    var costSources: [CostSource] {
+        guard ApiKeyManager.shared.get(id) != nil else { return [] }
+        return [CostSource(
+            id: "api-key:zhipu",
+            label: "ChatGLM API",
+            kind: .apiKey(providerId: "zhipu"),
+            coveredModels: PricingManager.shared.modelsForProvider("zhipu"),
+            confidence: .exact,
+            limitations: ["假设此 Key 仅用于编程任务"]
+        )]
+    }
+
+    func detect() -> DetectionResult {
+        let hasKey = ApiKeyManager.shared.get(id) != nil
+        return DetectionResult(found: hasKey, summary: I18n.t(hasKey ? "detect.key_configured" : "detect.key_missing"))
+    }
+
+    func start() {}
+    func stop()  {}
+}
+
+// MARK: - Anthropic (apiKey, no balance API)
+
+struct AnthropicIntegration: Detectable, Collectable {
+    let id = "anthropic"
+    let displayName = "Anthropic"
+
+    var costSources: [CostSource] {
+        guard ApiKeyManager.shared.get(id) != nil else { return [] }
+        return [CostSource(
+            id: "api-key:anthropic",
+            label: "Anthropic API",
+            kind: .apiKey(providerId: "anthropic"),
+            coveredModels: PricingManager.shared.claudeModels(),
+            confidence: .estimated,
+            limitations: ["无余额 API，按 token × 定价表估算"]
+        )]
+    }
 
     func detect() -> DetectionResult {
         let hasKey = ApiKeyManager.shared.get(id) != nil

@@ -23,9 +23,26 @@ final class LogWatcher: @unchecked Sendable {
     private var partialLines: [String: String] = [:]
 
     private init() {
-        // Restore saved positions from previous run
-        if let saved = UserDefaults.standard.dictionary(forKey: "logwatcher_positions") as? [String: UInt64] {
-            filePositions = saved
+        // Restore saved positions from DB on first access
+        Task {
+            await loadPositionsFromDB()
+        }
+    }
+
+    private func loadPositionsFromDB() async {
+        do {
+            let rows = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT file_path, byte_offset FROM logwatcher_position")
+            }
+            var map = [String: UInt64]()
+            for r in rows {
+                if let path: String = r["file_path"], let offset: Int64 = r["byte_offset"] {
+                    map[path] = UInt64(offset)
+                }
+            }
+            if !map.isEmpty { filePositions = map }
+        } catch {
+            // DB not ready yet; will retry on next scan
         }
     }
 
@@ -179,7 +196,21 @@ final class LogWatcher: @unchecked Sendable {
     }
 
     private func persistPositions() {
-        UserDefaults.standard.set(filePositions, forKey: "logwatcher_positions")
+        let positions = filePositions
+        Task {
+            do {
+                try await AppDatabase.shared.write { db in
+                    for (path, offset) in positions {
+                        try db.execute(sql: """
+                            INSERT OR REPLACE INTO logwatcher_position (file_path, byte_offset)
+                            VALUES (?, ?)
+                            """, arguments: [path, Int64(offset)])
+                    }
+                }
+            } catch {
+                // DB not ready — positions will be persisted on next successful write
+            }
+        }
     }
 
     private func enumerateGitRepos(in dir: URL, handler: (URL) -> Void) {
@@ -199,28 +230,56 @@ final class LogWatcher: @unchecked Sendable {
 
     private func insertEvent(_ event: UsageEvent) {
         let providerId = PricingManager.shared.providerId(for: event.model) ?? "unknown"
+
+        // CostSource arbitration
+        let sources = IntegrationRegistry.activeCostSources()
+        let preferred = IntegrationRegistry.config(for: event.source).preferredAPIKeyCostSourceId
+        let (csId, confidence) = Arbitrator.resolve(
+            model: event.model, source: event.source,
+            costSources: sources, preferredAPIKeyId: preferred
+        )
+
+        // Always compute token-pricing cost for per-repo CPL attribution.
+        // Balance delta (ApiPoller) gives the exact total but can't be attributed per-repo.
         let cost = PricingManager.shared.costUSD(
             model: event.model,
             inTokens: event.inTokens,
             outTokens: event.outTokens,
             cacheTokens: event.cacheTokens
         )
+
+        // For apiKey balance-tracked sources, the per-event cost is token-pricing (estimated),
+        // while the CostSource itself is .exact (from balance delta).
+        let effectiveConfidence: CostConfidence
+        if let cs = sources.first(where: { $0.id == csId }),
+           case .apiKey(let pid) = cs.kind,
+           ProviderRegistry.byId(pid)?.canFetchBalance == true {
+            effectiveConfidence = .estimated
+        } else {
+            effectiveConfidence = confidence
+        }
+
         Task {
             do {
                 try await AppDatabase.shared.write { db in
                     try db.execute(sql: """
                         INSERT INTO usage_event
-                          (ts, source, provider_id, model, in_tokens, out_tokens, cache_tokens, cost_usd, repo_path, session_id, dedupe_key)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          (ts, source, provider_id, model, in_tokens, out_tokens,
+                           cache_tokens, cost_usd, repo_path, session_id, dedupe_key,
+                           cost_source_id, cost_confidence)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(dedupe_key) DO UPDATE SET
                           provider_id = excluded.provider_id,
                           model       = excluded.model,
                           cost_usd    = excluded.cost_usd,
-                          repo_path   = excluded.repo_path
+                          repo_path   = excluded.repo_path,
+                          cost_source_id = excluded.cost_source_id,
+                          cost_confidence = excluded.cost_confidence
                         """, arguments: [
                             event.ts, event.source, providerId, event.model,
                             event.inTokens, event.outTokens, event.cacheTokens,
                             cost, event.repoPath, event.sessionId, event.dedupeKey,
+                            csId, effectiveConfidence.rawValue,
                         ])
                 }
                 DataRefreshCoordinator.shared.notifyPhaseIngest()

@@ -30,6 +30,8 @@ final class AppDatabase: @unchecked Sendable {
                     t.column("repo_path", .text)
                     t.column("session_id", .text)
                     t.column("dedupe_key", .text).unique()
+                    t.column("cost_source_id", .text)
+                    t.column("cost_confidence", .text).defaults(to: "estimated")
                 }
                 try? db.create(indexOn: "usage_event", columns: ["ts"])
                 try? db.create(indexOn: "usage_event", columns: ["repo_path"])
@@ -62,9 +64,33 @@ final class AppDatabase: @unchecked Sendable {
                     t.column("provider_id", .text).notNull()
                     t.column("balance", .double).notNull()
                     t.column("currency", .text).defaults(to: "USD")
+                    t.column("cost_source_id", .text)
                 }
                 try? db.create(indexOn: "balance_snapshot", columns: ["ts"])
                 try? db.create(indexOn: "balance_snapshot", columns: ["provider_id"])
+            }),
+            ("logwatcher_position", { db in
+                try db.create(table: "logwatcher_position", ifNotExists: true) { t in
+                    t.column("file_path", .text).primaryKey()
+                    t.column("byte_offset", .integer).notNull().defaults(to: 0)
+                }
+            }),
+            ("gitmonitor_state", { db in
+                try db.create(table: "gitmonitor_state", ifNotExists: true) { t in
+                    t.column("repo_path", .text).primaryKey()
+                    t.column("last_commit", .text)
+                }
+            }),
+            ("cost_source", { db in
+                try db.create(table: "cost_source", ifNotExists: true) { t in
+                    t.column("id", .text).primaryKey()
+                    t.column("label", .text).notNull()
+                    t.column("kind", .text).notNull()
+                    t.column("confidence", .text).notNull()
+                    t.column("monthly_fee", .double)
+                    t.column("usage_percent", .double)
+                    t.column("usage_limit_status", .text)
+                }
             }),
         ]
 

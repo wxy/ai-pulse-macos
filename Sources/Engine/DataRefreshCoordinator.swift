@@ -120,6 +120,7 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         let start = Date()
         LogWatcher.shared.scan()
         let discovered = RepoDiscovery.scan()
+        UsageMonitor.shared.refreshClaudeStatus()
         let elapsed = Date().timeIntervalSince(start)
         Logger.debug("Phase1 ingest completed in \(String(format: "%.3f", elapsed))s, discovered=\(discovered)")
         if discovered > 0 {
@@ -138,6 +139,7 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     private func runPhase3() {
         let start = Date()
         ApiPoller.shared.pollAll()
+        UsageMonitor.shared.refreshCopilotStatus()
         Logger.debug("Phase3 balance poll dispatched in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
         // ApiPoller.cacheBalance() pushes notifyPhaseBalance() on successful write
     }
