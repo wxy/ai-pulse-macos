@@ -301,30 +301,20 @@ enum StatsService {
 
     // MARK: - Combined spend (API balance spend + subscription amortization)
 
-    /// Per-day subscription amortization: Σ (tier.fee / daysInMonth) across enabled
-    /// C-grade subscriptions. Mirrors the Dashboard "Spend" chart subscription bars.
+    /// Per-day subscription amortization: Σ (monthlyFee / daysInMonth) across
+    /// active subscription CostSources.
     static func subscriptionDailyAmortization() -> Double {
-        let subs = IntegrationRegistry.enabledCGradeCompat()
-        guard !subs.isEmpty else { return 0 }
-        let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        var total = 0.0
-        for s in subs {
-            let cfg = IntegrationRegistry.config(for: s.id)
-            guard !cfg.subscriptionTier.isEmpty else { continue }
-            if let tool = SubscriptionRegistry.tool(forName: subscriptionToolName(for: s.id)),
-               let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
-                total += tier.fee / daysInMonth
-            }
+        let subSources = IntegrationRegistry.activeCostSources().filter {
+            if case .subscription(_, _, let fee) = $0.kind, fee > 0 { return true }
+            return false
         }
-        return total
-    }
-
-    private static func subscriptionToolName(for id: String) -> String {
-        switch id {
-        case "cursor": return "Cursor"
-        case "copilot": return "GitHub Copilot"
-        case "windsurf": return "Windsurf"
-        default: return id
+        guard !subSources.isEmpty else { return 0 }
+        let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        return subSources.reduce(0.0) { total, cs in
+            if case .subscription(_, _, let fee) = cs.kind {
+                return total + fee / daysInMonth
+            }
+            return total
         }
     }
 

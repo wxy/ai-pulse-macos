@@ -46,8 +46,8 @@ struct DashboardView: View {
     @State private var healthMessages: [String] = []
     @State private var showHealthDetails = false
 
-    var hasAGrade: Bool {
-        IntegrationRegistry.enabledAGradeCompat().contains { $0.detect().found }
+    var hasActiveCostSources: Bool {
+        !IntegrationRegistry.activeCostSources().isEmpty
     }
 
     var hasCertainEditorMapping: Bool {
@@ -127,7 +127,7 @@ struct DashboardView: View {
                 VStack(spacing: 16) {
                     summaryCards.padding(.horizontal, 20)
 
-                    if hasAGrade || !providerCosts.isEmpty {
+                    if hasActiveCostSources || !providerCosts.isEmpty {
                         costChart.padding(.horizontal, 20)
                         codeChangeChart.padding(.horizontal, 20)
 
@@ -277,24 +277,25 @@ struct DashboardView: View {
         return total / Double(days)
     }
 
+    var subSources: [CostSource] {
+        IntegrationRegistry.activeCostSources().filter {
+            if case .subscription(_, _, _) = $0.kind { return true }; return false
+        }
+    }
+
     func totalSubMonthly() -> Double {
-        let subs = IntegrationRegistry.enabledCGradeCompat()
-        return subs.reduce(0.0) { sum, s in sum + estimatedDailySub(s.id) * 30 }
+        subSources.reduce(0.0) { sum, cs in
+            if case .subscription(_, _, let fee) = cs.kind { return sum + fee }
+            return sum
+        }
     }
 
     func totalSubDaily() -> Double {
-        let subs = IntegrationRegistry.enabledCGradeCompat()
         let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        var total: Double = 0
-        for s in subs {
-            let cfg = IntegrationRegistry.config(for: s.id)
-            guard !cfg.subscriptionTier.isEmpty else { continue }
-            if let tool = SubscriptionRegistry.tool(forName: toolName(for: s.id)),
-               let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
-                total += tier.fee / days
-            }
+        return subSources.reduce(0.0) { sum, cs in
+            if case .subscription(_, _, let fee) = cs.kind { return sum + fee / days }
+            return sum
         }
-        return total
     }
 
     func toolName(for id: String) -> String {
@@ -312,7 +313,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.cost_chart")).font(.headline)
 
-            if IntegrationRegistry.enabledCGradeCompat().isEmpty {
+            if subSources.isEmpty {
                 Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 30)
             } else {
                 ZStack(alignment: .topLeading) {
@@ -399,8 +400,7 @@ struct DashboardView: View {
     }
 
     func subDailyData() -> [ChartDataPoint] {
-        let subs = IntegrationRegistry.enabledCGradeCompat()
-        guard !subs.isEmpty else { return [] }
+        guard !subSources.isEmpty else { return [] }
         let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
@@ -410,17 +410,13 @@ struct DashboardView: View {
         for offset in 0..<chartDays {
             guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
             if date <= today {
-                for s in subs {
-                    let cfg = IntegrationRegistry.config(for: s.id)
-                    guard !cfg.subscriptionTier.isEmpty else { continue }
-                    if let tool = SubscriptionRegistry.tool(forName: toolName(for: s.id)),
-                       let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
-                        result.append(ChartDataPoint(date: date, label: s.displayName, cost: tier.fee / daysInMonth))
+                for cs in subSources {
+                    if case .subscription(_, _, let fee) = cs.kind, fee > 0 {
+                        result.append(ChartDataPoint(date: date, label: cs.label, cost: fee / daysInMonth))
                     }
                 }
             } else {
-                // Future days: generate a zero placeholder so the chart bar exists
-                result.append(ChartDataPoint(date: date, label: subs.first!.displayName, cost: 0))
+                result.append(ChartDataPoint(date: date, label: subSources.first!.label, cost: 0))
             }
         }
         return result
@@ -611,7 +607,7 @@ struct DashboardView: View {
     var bottomCards: some View {
         HStack(alignment: .top, spacing: 16) {
             apiBreakdownCard
-            if hasAGrade || hasCertainEditorMapping {
+            if hasActiveCostSources || hasCertainEditorMapping {
                 cplInfoCard
             } else {
                 cplGuidanceCard
@@ -721,7 +717,9 @@ struct DashboardView: View {
                 spendMap.append((s.providerId, s.spend))
             }
         }
-        let enabledB = Set(IntegrationRegistry.enabledBGradeCompat().map { $0.id })
+        let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
+            if case .apiKey(let pid) = cs.kind { return pid }; return nil
+        })
         balanceSpend = spendMap.compactMap { (pid, spend) in
             guard enabledB.contains(pid), spend > 0.001 else { return nil }
             let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid

@@ -103,40 +103,6 @@ enum IntegrationRegistry {
         }
     }
 
-    // MARK: - Temporary backward-compat (will be removed when UI is migrated)
-
-    /// Legacy: returns integrations whose costSources are subscription type.
-    /// Used by DashboardView/StatsService — migrate to activeCostSources().
-    static func enabledCGradeCompat() -> [any Detectable] {
-        all.filter { i in
-            config(for: i.id).enabled
-            && i.costSources.contains { if case .subscription = $0.kind { return true }; return false }
-            && i.detect().found
-        }
-    }
-
-    /// Legacy: returns apiKey integrations that are enabled.
-    static func enabledBGradeCompat() -> [any Detectable & Collectable] {
-        all.compactMap { i in
-            guard config(for: i.id).enabled,
-                  i.costSources.contains(where: { if case .apiKey = $0.kind { return true }; return false }),
-                  !i.costSources.contains(where: { if case .subscription = $0.kind { return true }; return false }),
-                  let c = i as? (any Detectable & Collectable) else { return nil }
-            return c
-        }
-    }
-
-    /// Legacy: returns log-based integrations that are enabled and detected.
-    static func enabledAGradeCompat() -> [any Detectable & Collectable] {
-        all.compactMap { i in
-            guard config(for: i.id).enabled,
-                  i.costSources.isEmpty,
-                  i is any Collectable,
-                  let c = i as? (any Detectable & Collectable) else { return nil }
-            return c
-        }
-    }
-
     // MARK: - Helpers
 
     private static func toolIdForEditorMapping(_ m: EditorDetector.Mapping) -> String {

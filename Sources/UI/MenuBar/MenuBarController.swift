@@ -173,9 +173,11 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             let rawSpend = (try? await StatsService.balanceDailySpend(days: weekDays, sinceMs: Int64(weekStart))) ?? []
             var spendByProvider: [String: Double] = [:]
             for s in rawSpend { spendByProvider[s.providerId, default: 0] += s.spend }
+            let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
+                if case .apiKey(let pid) = cs.kind { return pid }; return nil
+            })
             var providerCosts: [(providerId: String, cost: Double)] = []
             for (pid, cost) in spendByProvider where cost > 0.001 {
-                let enabledB = Set(IntegrationRegistry.enabledBGradeCompat().map { $0.id })
                 if enabledB.contains(pid) { providerCosts.append((pid, cost)) }
             }
             providerCosts.sort { $0.cost > $1.cost }
