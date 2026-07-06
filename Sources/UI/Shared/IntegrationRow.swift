@@ -14,6 +14,7 @@ struct IntegrationRow: View {
     @State private var showKey: Bool = false
     @State private var detecting: Bool = false
     @State private var preferredKeyId: String
+    @State private var balanceText: String? = nil
 
     init(integration: any Detectable, detected: DetectionResult, onGrant: (() -> Void)? = nil) {
         self.integration = integration
@@ -40,7 +41,7 @@ struct IntegrationRow: View {
     private static let apiKeyIds: Set<String> = ["deepseek", "openai", "moonshot", "zhipu", "anthropic"]
 
     /// Known subscription integration IDs (always show tier picker).
-    private static let subscriptionIds: Set<String> = ["cursor", "copilot", "windsurf"]
+    private static let subscriptionIds: Set<String> = ["claude-code", "cursor", "copilot", "windsurf"]
 
     /// Is this integration primarily an apiKey type?
     var isAPIKeyType: Bool { Self.apiKeyIds.contains(integration.id) }
@@ -48,10 +49,6 @@ struct IntegrationRow: View {
     /// Is this integration primarily a subscription type?
     var isSubscriptionType: Bool { Self.subscriptionIds.contains(integration.id) }
 
-    /// Does this integration exclusively parse logs (no CostSource of its own)?
-    var isLogOnly: Bool {
-        !isAPIKeyType && !isSubscriptionType && integration is any Collectable
-    }
 
     /// Claude Code under sandbox needs an explicit ~/.claude directory grant
     var needsGrant: Bool {
@@ -71,10 +68,7 @@ struct IntegrationRow: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(integration.displayName).font(.body).fontWeight(.medium)
-                    costSourceBadge
-                }
+                Text(integration.displayName).font(.body).fontWeight(.medium)
                 Text(summaryText)
                     .font(.caption).foregroundColor(.secondary).lineLimit(2)
             }
@@ -84,11 +78,12 @@ struct IntegrationRow: View {
             if needsGrant {
                 Button(I18n.t("bookmark.grant")) { grantClaude() }
                     .buttonStyle(.bordered).controlSize(.small)
-            } else if detected.found || isAPIKeyType || isLogOnly {
+            } else if detected.found || isAPIKeyType || isSubscriptionType {
                 controls
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
+        .opacity(detected.found ? 1 : 0.5)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(detected.found ? Color(nsColor: .controlBackgroundColor) : Color(nsColor: .controlBackgroundColor).opacity(0.4))
@@ -98,13 +93,33 @@ struct IntegrationRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
         )
+        .onAppear { refreshBalance() }
     }
 
     var summaryText: String {
-        if detected.found { return detected.summary }
+        if detected.found {
+            if isAPIKeyType, let bal = balanceText { return bal }
+            return detected.summary
+        }
         if needsGrant { return I18n.t("onboarding.grant_claude_hint") }
         if isAPIKeyType { return I18n.t("integrations.needs_config_note") }
         return I18n.t("integrations.not_installed_note")
+    }
+
+    func refreshBalance() {
+        guard isAPIKeyType else { return }
+        if let cb = ApiPoller.shared.cachedBalance(for: integration.id) {
+            if let err = cb.error {
+                balanceText = I18n.t("apikeys.error") + ": \(err)"
+            } else if let b = cb.balances.first {
+                let usd = b.totalBalance * StatsService.toUSD(currency: b.currency)
+                if b.currency == "USD" {
+                    balanceText = "$\(String(format: "%.2f", usd))"
+                } else {
+                    balanceText = "$\(String(format: "%.2f", usd)) (\(b.currency) \(String(format: "%.2f", b.totalBalance)))"
+                }
+            }
+        }
     }
 
     var iconName: String {
@@ -117,40 +132,46 @@ struct IntegrationRow: View {
         detecting ? .blue : (detected.found ? .green : .orange)
     }
 
-    var costSourceBadge: some View {
+    @ViewBuilder
+    var controls: some View {
         if isAPIKeyType {
-            return AnyView(
-                Text("API Key").font(.caption2).fontWeight(.medium)
-                    .foregroundColor(.blue)
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(Color.blue.opacity(0.12)).cornerRadius(4)
-            )
-        } else if isSubscriptionType {
-            return AnyView(
-                Text("Sub").font(.caption2).fontWeight(.medium)
-                    .foregroundColor(.orange)
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(Color.orange.opacity(0.12)).cornerRadius(4)
-            )
+            apiKeyControls
         } else {
-            return AnyView(
-                Text("Log").font(.caption2).fontWeight(.medium)
-                    .foregroundColor(.green)
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(Color.green.opacity(0.12)).cornerRadius(4)
-            )
+            VStack(alignment: .leading, spacing: 4) {
+                if isSubscriptionType {
+                    labeledPicker(label: "订阅套餐", selection: $tierInput) {
+                        Text(I18n.t("integrations.select_plan")).tag("")
+                        ForEach(SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? [], id: \.label) { t in
+                            Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
+                        }
+                    }
+                    .onChange(of: tierInput) { _, v in
+                        if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
+                    }
+                }
+                if !availableAPIKeySources.isEmpty {
+                    labeledPicker(label: "API", selection: $preferredKeyId) {
+                        Text("不使用").tag("")
+                        ForEach(availableAPIKeySources, id: \.id) { src in
+                            Text(src.label).tag(src.id)
+                        }
+                    }
+                    .onChange(of: preferredKeyId) { _, v in
+                        savePreferredKey(v)
+                    }
+                }
+            }
         }
     }
 
-    @ViewBuilder
-    var controls: some View {
-        if isLogOnly {
-            Toggle("", isOn: $enabled)
-                .toggleStyle(.switch).onChange(of: enabled) { _, v in saveConfig() }
-        } else if isAPIKeyType {
-            apiKeyControls
-        } else if isSubscriptionType {
-            subscriptionControls
+    func labeledPicker<C: View, V: Hashable>(label: String, selection: Binding<V>,
+                                               @ViewBuilder content: () -> C) -> some View {
+        HStack(spacing: 4) {
+            Text(label).font(.caption).foregroundColor(.secondary)
+                .frame(width: 56, alignment: .leading)
+            Picker("", selection: selection) { content() }
+                .pickerStyle(.menu)
+                .frame(width: 184, alignment: .leading)
         }
     }
 
@@ -159,7 +180,7 @@ struct IntegrationRow: View {
         if showKey {
             HStack(spacing: 6) {
                 TextField(I18n.t("integrations.key_placeholder"), text: $keyInput)
-                    .textFieldStyle(.roundedBorder).frame(width: 160)
+                    .textFieldStyle(.roundedBorder).frame(width: 180)
                 Button(I18n.t("integrations.key_save")) {
                     let k = keyInput.trimmingCharacters(in: .whitespaces)
                     guard !k.isEmpty else { return }
@@ -176,38 +197,6 @@ struct IntegrationRow: View {
                 Button(I18n.t("integrations.key_change")) { keyInput = ""; showKey = true }
                     .font(.caption).buttonStyle(.borderless).frame(minWidth: 32)
                 if saved { Image(systemName: "checkmark.circle.fill").foregroundColor(.green) }
-            }
-        }
-    }
-
-    @ViewBuilder
-    var subscriptionControls: some View {
-        VStack(alignment: .trailing, spacing: 6) {
-            let tiers = SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? []
-            Picker("", selection: $tierInput) {
-                Text(I18n.t("integrations.select_plan")).tag("")
-                ForEach(tiers, id: \.label) { t in
-                    Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
-                }
-            }
-            .pickerStyle(.menu).frame(width: 180)
-            .onChange(of: tierInput) { _, v in
-                if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
-            }
-
-            // Preferred API Key dropdown: use configured API keys instead of subscription
-            if !availableAPIKeySources.isEmpty {
-                HStack(spacing: 4) {
-                    Text("或使用 API Key:").font(.caption2).foregroundColor(.secondary)
-                    Picker("", selection: $preferredKeyId) {
-                        Text("(使用套餐)").tag("")
-                        ForEach(availableAPIKeySources, id: \.id) { src in
-                            Text(src.label).tag(src.id)
-                        }
-                    }
-                    .pickerStyle(.menu).frame(width: 160)
-                    .onChange(of: preferredKeyId) { _, v in savePreferredKey(v) }
-                }
             }
         }
     }

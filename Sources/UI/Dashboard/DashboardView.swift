@@ -49,7 +49,7 @@ struct DashboardView: View {
     @State private var usageData: [String: (percent: Double, limitStatus: String)] = [:]  // costSourceId → (usage%, status)
 
     var hasActiveCostSources: Bool {
-        !IntegrationRegistry.activeCostSources().isEmpty
+        !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
     }
 
     var hasCertainEditorMapping: Bool {
@@ -143,7 +143,10 @@ struct DashboardView: View {
         }
         .frame(width: 680, height: 640)
         .background(Color(nsColor: .windowBackgroundColor))
-        .task { await load() }
+        .task {
+            ApiPoller.shared.pollAll()
+            await load()
+        }
         .onChange(of: timeRange) { _, _ in Task { await load() } }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             Task { await load() }
@@ -238,7 +241,7 @@ struct DashboardView: View {
 
     /// Active CostSources with their computed spend for the current period.
     var costSourceBreakdown: [(source: CostSource, cost: Double, usagePercent: Double?)] {
-        let sources = IntegrationRegistry.activeCostSources()
+        let sources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
         var result: [(source: CostSource, cost: Double, usagePercent: Double?)] = []
         for cs in sources {
             let cost: Double
@@ -388,7 +391,7 @@ struct DashboardView: View {
     }
 
     var subSources: [CostSource] {
-        IntegrationRegistry.activeCostSources().filter {
+        IntegrationRegistry.activeCostSources(editorMappings: editorMappings).filter {
             if case .subscription(_, _, _) = $0.kind { return true }; return false
         }
     }
@@ -716,7 +719,7 @@ struct DashboardView: View {
     /// Show confidence prefix for CPL source labels.
     func confidencePrefixForCPLLabel(_ label: String) -> String {
         // Check if this source has estimated/anortized confidence
-        let sources = IntegrationRegistry.activeCostSources()
+        let sources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
         if let cs = sources.first(where: { label.contains($0.label) || $0.label.contains(label) }) {
             switch cs.confidence {
             case .estimated: return "~"

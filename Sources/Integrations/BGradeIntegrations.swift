@@ -10,7 +10,7 @@ struct DeepSeekIntegration: Detectable, Collectable {
         guard ApiKeyManager.shared.get(id) != nil else { return [] }
         return [CostSource(
             id: "api-key:deepseek",
-            label: "DeepSeek API Key",
+            label: "DeepSeek API",
             kind: .apiKey(providerId: "deepseek"),
             coveredModels: PricingManager.shared.modelsForProvider("deepseek"),
             confidence: .exact,
@@ -37,7 +37,7 @@ struct OpenAI_Integration: Detectable, Collectable {
         guard ApiKeyManager.shared.get(id) != nil else { return [] }
         return [CostSource(
             id: "api-key:openai",
-            label: "OpenAI API Key",
+            label: "OpenAI API",
             kind: .apiKey(providerId: "openai"),
             coveredModels: PricingManager.shared.modelsForProvider("openai"),
             confidence: .exact,
@@ -64,7 +64,7 @@ struct KimiIntegration: Detectable, Collectable {
         guard ApiKeyManager.shared.get(id) != nil else { return [] }
         return [CostSource(
             id: "api-key:moonshot",
-            label: "Kimi API Key",
+            label: "Kimi API",
             kind: .apiKey(providerId: "moonshot"),
             coveredModels: PricingManager.shared.modelsForProvider("moonshot"),
             confidence: .exact,
@@ -91,7 +91,7 @@ struct ZhipuIntegration: Detectable, Collectable {
         guard ApiKeyManager.shared.get(id) != nil else { return [] }
         return [CostSource(
             id: "api-key:zhipu",
-            label: "ChatGLM API Key",
+            label: "ChatGLM API",
             kind: .apiKey(providerId: "zhipu"),
             coveredModels: PricingManager.shared.modelsForProvider("zhipu"),
             confidence: .exact,
@@ -118,7 +118,7 @@ struct AnthropicIntegration: Detectable, Collectable {
         guard ApiKeyManager.shared.get(id) != nil else { return [] }
         return [CostSource(
             id: "api-key:anthropic",
-            label: "Anthropic API Key",
+            label: "Anthropic API",
             kind: .apiKey(providerId: "anthropic"),
             coveredModels: PricingManager.shared.claudeModels(),
             confidence: .estimated,

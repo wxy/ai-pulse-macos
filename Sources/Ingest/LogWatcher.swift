@@ -208,20 +208,24 @@ final class LogWatcher: @unchecked Sendable {
             costSources: sources, preferredAPIKeyId: preferred
         )
 
-        // For apiKey sources with balance API, cost_usd is filled later by ApiPoller.
-        // For subscription sources or apiKey without balance API, use token pricing estimate.
-        let cost: Double?
+        // Always compute token-pricing cost for per-repo CPL attribution.
+        // Balance delta (ApiPoller) gives the exact total but can't be attributed per-repo.
+        let cost = PricingManager.shared.costUSD(
+            model: event.model,
+            inTokens: event.inTokens,
+            outTokens: event.outTokens,
+            cacheTokens: event.cacheTokens
+        )
+
+        // For apiKey balance-tracked sources, the per-event cost is token-pricing (estimated),
+        // while the CostSource itself is .exact (from balance delta).
+        let effectiveConfidence: CostConfidence
         if let cs = sources.first(where: { $0.id == csId }),
            case .apiKey(let pid) = cs.kind,
            ProviderRegistry.byId(pid)?.canFetchBalance == true {
-            cost = nil  // balance delta fills this later
+            effectiveConfidence = .estimated
         } else {
-            cost = PricingManager.shared.costUSD(
-                model: event.model,
-                inTokens: event.inTokens,
-                outTokens: event.outTokens,
-                cacheTokens: event.cacheTokens
-            )
+            effectiveConfidence = confidence
         }
 
         Task {
@@ -244,7 +248,7 @@ final class LogWatcher: @unchecked Sendable {
                             event.ts, event.source, providerId, event.model,
                             event.inTokens, event.outTokens, event.cacheTokens,
                             cost, event.repoPath, event.sessionId, event.dedupeKey,
-                            csId, confidence.rawValue,
+                            csId, effectiveConfidence.rawValue,
                         ])
                 }
                 DataRefreshCoordinator.shared.notifyPhaseIngest()

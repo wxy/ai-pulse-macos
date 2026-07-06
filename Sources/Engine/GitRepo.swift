@@ -29,8 +29,11 @@ struct GitRepo {
     /// Get recent commits with (hash, timestamp, parent count).
     /// - Parameter authorEmail: If non-nil, only commits whose author email
     ///   matches are returned. Used to exclude collaborators' commits.
+    ///   When filtering by author, `maxCount` is multiplied by 10 to ensure
+    ///   we can walk past collaborator commits to find the user's own.
     func log(since lastHash: String?, maxCount: Int = 20,
              authorEmail: String? = nil) -> [(hash: String, ts: Int, parentCount: Int)] {
+        let effectiveMax = authorEmail != nil ? maxCount * 10 : maxCount
         var repoPtr: OpaquePointer?
         guard git_repository_open(&repoPtr, path) == 0, let repo = repoPtr else { return [] }
         defer { git_repository_free(repo) }
@@ -48,7 +51,7 @@ struct GitRepo {
 
         var results: [(String, Int, Int)] = []
         var oid = git_oid()
-        while git_revwalk_next(&oid, walk) == 0, results.count < maxCount {
+        while git_revwalk_next(&oid, walk) == 0, results.count < effectiveMax {
             var commitPtr: OpaquePointer?
             guard git_commit_lookup(&commitPtr, repo, &oid) == 0, let commit = commitPtr else { continue }
             defer { git_commit_free(commit) }
@@ -64,21 +67,24 @@ struct GitRepo {
             let ts = Int(git_commit_time(commit))
             let parentCount = Int(git_commit_parentcount(commit))
             results.append((hash, ts, parentCount))
+            // Stop early when we have enough matching commits
+            if results.count >= maxCount { break }
         }
         return results
     }
 
-    /// Read the git `user.email` for this repository (local config, falls back to global).
+    /// Read the git `user.email` for this repository.
+    /// Checks repo-local config first, then global `~/.gitconfig`.
     func userEmail() -> String? {
         var repoPtr: OpaquePointer?
         guard git_repository_open(&repoPtr, path) == 0, let repo = repoPtr else { return nil }
         defer { git_repository_free(repo) }
 
+        // Use config snapshot: merges local + global + system levels
         var cfgPtr: OpaquePointer?
-        guard git_repository_config(&cfgPtr, repo) == 0, let cfg = cfgPtr else { return nil }
+        guard git_repository_config_snapshot(&cfgPtr, repo) == 0, let cfg = cfgPtr else { return nil }
+        defer { git_config_free(cfg) }
 
-        // Use git_config_get_string which reads the key from the config.
-        // The returned buffer is owned by the config object — we copy it to a String.
         var cValue: UnsafePointer<CChar>?
         guard git_config_get_string(&cValue, cfg, "user.email") == 0, let ptr = cValue else {
             return nil

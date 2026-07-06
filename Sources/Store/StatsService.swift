@@ -212,6 +212,18 @@ enum StatsService {
         }
     }
 
+    /// Simple currency → USD conversion (approximate rates, updated periodically).
+    static func toUSD(currency: String) -> Double {
+        switch currency.uppercased() {
+        case "USD": return 1.0
+        case "CNY": return 0.14
+        case "EUR": return 1.08
+        case "GBP": return 1.27
+        case "JPY": return 0.0067
+        default:    return 1.0
+        }
+    }
+
     /// Map usage_event.source to a human-readable label for CPL display.
     private static func sourceLabel(_ source: String) -> String {
         switch source {
@@ -254,7 +266,7 @@ enum StatsService {
     // MARK: - Balance spend (daily deltas, top-up filtered)
 
     /// Daily spend from balance snapshots. Filters out top-ups (balance increases).
-    /// Returns per-provider daily spend estimates.
+    /// Returns per-provider daily spend estimates, converted to USD.
     static func balanceDailySpend(days: Int, sinceMs: Int64? = nil) async throws -> [(providerId: String, date: Date, spend: Double)] {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
@@ -267,12 +279,12 @@ enum StatsService {
         do {
             let rows = try await AppDatabase.shared.read { db -> [Row] in
                 try Row.fetchAll(db, sql: """
-                    SELECT provider_id, ts, balance FROM balance_snapshot
+                    SELECT provider_id, ts, balance, currency FROM balance_snapshot
                     WHERE ts >= ? AND ts < ?
                     ORDER BY provider_id, ts
                     """, arguments: [startMs, todayMs + 86_400_000])
             }
-            // Group by provider_id and compute positive deltas
+            // Group by provider_id and compute positive deltas, converting to USD
             var results: [(String, Date, Double)] = []
             var currentPid: String? = nil
             var prevBalance: Double? = nil
@@ -280,10 +292,11 @@ enum StatsService {
                 let pid: String = r["provider_id"] ?? ""
                 let ts: Int64 = r["ts"] ?? 0
                 let balance: Double = r["balance"] ?? 0
+                let currency: String = r["currency"] ?? "USD"
 
                 if pid == currentPid, let prev = prevBalance, balance < prev {
                     // Balance decreased → spend occurred
-                    let spend = prev - balance
+                    let spend = (prev - balance) * toUSD(currency: currency)
                     let date = cal.startOfDay(for: Date(timeIntervalSince1970: Double(ts) / 1000))
                     results.append((pid, date, spend))
                 }

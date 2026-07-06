@@ -104,7 +104,8 @@ final class DockManager: @unchecked Sendable {
         // Linear progress ring: 1.0 = 1× daily average = full circle.
         // Ring fraction = fillFraction modulo 1.0; lap counter shown bottom-left.
         let fillFraction = dailyAvg > 0 ? CGFloat(todayCost / dailyAvg) : 0
-        let lap = max(Int(floor(fillFraction)), 0)
+        // lap = completed full circles (not counting the current partial one)
+        let lap = max(Int(floor(fillFraction - 0.0001)), 0)
         Logger.debug("Dock progress: todayCost=\(String(format: "%.2f", todayCost)) dailyAvg=\(String(format: "%.2f", dailyAvg)) fillFraction=\(String(format: "%.2f", fillFraction)) lap=\(lap)")
 
         let tile = NSApp.dockTile
@@ -141,8 +142,8 @@ final class DockManager: @unchecked Sendable {
     }
 
     /// 30-day rolling daily average of combined spend (API + subscription amortization).
+    /// Subscription amortization always contributes, even without API balance history.
     private func rollingDailyAvg() async -> Double {
-        // API portion: average over days that actually have balance snapshots.
         let spendRows = (try? await StatsService.balanceDailySpend(days: 30)) ?? []
         var daysWithData = Set<Date>()
         var apiTotal = 0.0
@@ -151,9 +152,7 @@ final class DockManager: @unchecked Sendable {
             apiTotal += row.spend
         }
 
-        guard !daysWithData.isEmpty else { return 0 }
-
-        let apiAvg = apiTotal / Double(daysWithData.count)
+        let apiAvg = daysWithData.isEmpty ? 0 : apiTotal / Double(daysWithData.count)
         let subDaily = StatsService.subscriptionDailyAmortization()
         let avg = apiAvg + subDaily
 

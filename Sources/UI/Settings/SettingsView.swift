@@ -84,13 +84,14 @@ struct IntegrationsSettingsTab: View {
 
     /// Group integrations by their nature: API Keys (balance polling) vs Editors & Tools.
     /// Editors/Tools may produce logs, subscriptions, or both — they belong together.
+    /// Groups shown in order: API first (configure keys), then Dev Tools (can reference those keys)
     enum Group: String, CaseIterable {
-        case editors = "Editors & Tools"
-        case apiKeys = "API Keys"
+        case apiKeys = "API"
+        case editors = "Dev Tools"
         static func label(_ g: Group) -> String {
             switch g {
-            case .editors: return I18n.t("integrations.group_editors")
             case .apiKeys: return I18n.t("integrations.group_api_key")
+            case .editors: return I18n.t("integrations.group_editors")
             }
         }
     }
@@ -134,7 +135,10 @@ struct IntegrationsSettingsTab: View {
                 }
             }
         }
-        .onAppear { runDetection() }
+        .onAppear {
+            runDetection()
+            ApiPoller.shared.pollAll()
+        }
     }
 
     func sectionHeader(_ title: String, count: Int) -> some View {
