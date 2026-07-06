@@ -14,7 +14,7 @@ enum AppIconLoader {
 
     /// The base tile (white rounded body + centered artwork, no progress),
     /// rendered once and reused. Identical to the static `.icns`.
-    private static let baseTile: NSImage = renderBase()
+    private static nonisolated(unsafe) let baseTile: NSImage = renderBase()
 
     /// Load the icon with a linear progress ring, optional lap counter and health dot.
     /// - Parameter progress: 0+ (1.0 = 1× daily average = full circle).
@@ -277,7 +277,7 @@ enum AppIconLoader {
     /// The artwork cropped to its visible (non-white) bounds, computed once.
     /// Cropping removes the source PNG's wide white margins so the robot fills
     /// the tile like a normal app-icon glyph instead of floating in white.
-    private static let artwork: (image: NSImage, size: CGSize)? = loadArtwork()
+    private static nonisolated(unsafe) let artwork: (image: NSImage, size: CGSize)? = loadArtwork()
 
     private static func loadArtwork() -> (image: NSImage, size: CGSize)? {
         guard let src = findArtwork(),
