@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Integration row — used in Onboarding and Settings.
-/// Grade-adaptive: A=toggle, B=key+save, C=plan picker.
+/// Adaptive: apiKey integrations show key input, subscription show plan picker,
+/// log-based (no apiKey) show toggle.
 struct IntegrationRow: View {
     let integration: any Detectable
     let detected: DetectionResult
@@ -12,6 +13,7 @@ struct IntegrationRow: View {
     @State private var saved: Bool
     @State private var showKey: Bool = false
     @State private var detecting: Bool = false
+    @State private var preferredKeyId: String
 
     init(integration: any Detectable, detected: DetectionResult, onGrant: (() -> Void)? = nil) {
         self.integration = integration
@@ -24,10 +26,32 @@ struct IntegrationRow: View {
         _tierInput = State(initialValue: cfg.subscriptionTier)
         _saved = State(initialValue: cfg.enabled || hasKey)
         _showKey = State(initialValue: !hasKey)
+        _preferredKeyId = State(initialValue: cfg.preferredAPIKeyCostSourceId ?? "")
+    }
+
+    /// Returns the available API Key CostSource ids for the "preferred key" dropdown.
+    var availableAPIKeySources: [(id: String, label: String)] {
+        IntegrationRegistry.activeCostSources()
+            .filter { if case .apiKey = $0.kind { return true }; return false }
+            .map { ($0.id, $0.label) }
+    }
+
+    /// Is this integration primarily an apiKey type?
+    var isAPIKeyType: Bool {
+        integration.costSources.contains { if case .apiKey = $0.kind { return true }; return false }
+    }
+
+    /// Is this integration primarily a subscription type?
+    var isSubscriptionType: Bool {
+        integration.costSources.contains { if case .subscription = $0.kind { return true }; return false }
+    }
+
+    /// Does this integration exclusively parse logs (no CostSource of its own)?
+    var isLogOnly: Bool {
+        integration.costSources.isEmpty && integration is any Collectable
     }
 
     /// Claude Code under sandbox needs an explicit ~/.claude directory grant
-    /// before its logs can be read. Shown inline on the row until granted.
     var needsGrant: Bool {
         integration.id == "claude-code"
             && BookmarkManager.isSandboxed
@@ -36,7 +60,6 @@ struct IntegrationRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Icon
             if detecting {
                 ProgressView().scaleEffect(0.6).frame(width: 20)
             } else {
@@ -45,11 +68,10 @@ struct IntegrationRow: View {
                     .font(.title3).frame(width: 20)
             }
 
-            // Name + badge + summary
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(integration.displayName).font(.body).fontWeight(.medium)
-                    gradeBadge
+                    costSourceBadge
                 }
                 Text(summaryText)
                     .font(.caption).foregroundColor(.secondary).lineLimit(2)
@@ -57,12 +79,10 @@ struct IntegrationRow: View {
 
             Spacer()
 
-            // Controls on the right.
             if needsGrant {
                 Button(I18n.t("bookmark.grant")) { grantClaude() }
                     .buttonStyle(.bordered).controlSize(.small)
-            } else if detected.found || integration.grade == .B {
-                // B-grade always shows key input (not auto-detectable).
+            } else if detected.found || isAPIKeyType || isLogOnly {
                 controls
             }
         }
@@ -81,12 +101,12 @@ struct IntegrationRow: View {
     var summaryText: String {
         if detected.found { return detected.summary }
         if needsGrant { return I18n.t("onboarding.grant_claude_hint") }
-        if integration.grade == .B { return I18n.t("integrations.needs_config_note") }
+        if isAPIKeyType { return I18n.t("integrations.needs_config_note") }
         return I18n.t("integrations.not_installed_note")
     }
 
     var iconName: String {
-        if detecting { return "arrow.triangle.2.circlepath" }
+        if detecting { return "arrow.triangle.2circlepath" }
         if needsGrant { return "lock.circle" }
         return detected.found ? "checkmark.circle.fill" : "questionmark.circle"
     }
@@ -95,56 +115,73 @@ struct IntegrationRow: View {
         detecting ? .blue : (detected.found ? .green : .orange)
     }
 
-    var gradeBadge: some View {
-        let (label, color): (String, Color) = {
-            switch integration.grade {
-            case .A: return ("CPL", .green)
-            case .B: return ("Balance", .blue)
-            case .C: return ("Sub", .orange)
-            }
-        }()
-        return Text(label).font(.caption2).fontWeight(.medium)
-            .foregroundColor(color)
-            .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(color.opacity(0.12))
-            .cornerRadius(4)
+    var costSourceBadge: some View {
+        if isAPIKeyType {
+            return AnyView(
+                Text("API Key").font(.caption2).fontWeight(.medium)
+                    .foregroundColor(.blue)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(Color.blue.opacity(0.12)).cornerRadius(4)
+            )
+        } else if isSubscriptionType {
+            return AnyView(
+                Text("Sub").font(.caption2).fontWeight(.medium)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(Color.orange.opacity(0.12)).cornerRadius(4)
+            )
+        } else {
+            return AnyView(
+                Text("Log").font(.caption2).fontWeight(.medium)
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(Color.green.opacity(0.12)).cornerRadius(4)
+            )
+        }
     }
 
     @ViewBuilder
     var controls: some View {
-        switch integration.grade {
-        case .A:
+        if isLogOnly {
             Toggle("", isOn: $enabled)
                 .toggleStyle(.switch).onChange(of: enabled) { _, v in saveConfig() }
+        } else if isAPIKeyType {
+            apiKeyControls
+        } else if isSubscriptionType {
+            subscriptionControls
+        }
+    }
 
-        case .B:
-            if showKey {
-                HStack(spacing: 6) {
-                    TextField(I18n.t("integrations.key_placeholder"), text: $keyInput)
-                        .textFieldStyle(.roundedBorder).frame(width: 160)
-                    Button(I18n.t("integrations.key_save")) {
-                        let k = keyInput.trimmingCharacters(in: .whitespaces)
-                        guard !k.isEmpty else { return }
-                        ApiKeyManager.shared.set(integration.id, key: k)
-                        ApiPoller.shared.fetchNow(providerId: integration.id)
-                        enabled = true; saved = true; showKey = false; saveConfig()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .frame(minWidth: 40)
-                    .disabled(keyInput.trimmingCharacters(in: .whitespaces).isEmpty)
+    @ViewBuilder
+    var apiKeyControls: some View {
+        if showKey {
+            HStack(spacing: 6) {
+                TextField(I18n.t("integrations.key_placeholder"), text: $keyInput)
+                    .textFieldStyle(.roundedBorder).frame(width: 160)
+                Button(I18n.t("integrations.key_save")) {
+                    let k = keyInput.trimmingCharacters(in: .whitespaces)
+                    guard !k.isEmpty else { return }
+                    ApiKeyManager.shared.set(integration.id, key: k)
+                    ApiPoller.shared.fetchNow(providerId: integration.id)
+                    enabled = true; saved = true; showKey = false; saveConfig()
                 }
-            } else {
-                HStack(spacing: 6) {
-                    Text("••••••••").foregroundColor(.secondary)
-                    Button(I18n.t("integrations.key_change")) { keyInput = ""; showKey = true }
-                        .font(.caption).buttonStyle(.borderless).frame(minWidth: 32)
-                    if saved { Image(systemName: "checkmark.circle.fill").foregroundColor(.green) }
-                }
+                .buttonStyle(.bordered).controlSize(.small).frame(minWidth: 40)
+                .disabled(keyInput.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+        } else {
+            HStack(spacing: 6) {
+                Text("••••••••").foregroundColor(.secondary)
+                Button(I18n.t("integrations.key_change")) { keyInput = ""; showKey = true }
+                    .font(.caption).buttonStyle(.borderless).frame(minWidth: 32)
+                if saved { Image(systemName: "checkmark.circle.fill").foregroundColor(.green) }
+            }
+        }
+    }
 
-        case .C:
-            let tiers = SubscriptionRegistry.tool(forName: integration.displayName)?.tiers ?? []
+    @ViewBuilder
+    var subscriptionControls: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            let tiers = SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? []
             Picker("", selection: $tierInput) {
                 Text(I18n.t("integrations.select_plan")).tag("")
                 ForEach(tiers, id: \.label) { t in
@@ -155,6 +192,30 @@ struct IntegrationRow: View {
             .onChange(of: tierInput) { _, v in
                 if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
             }
+
+            // Preferred API Key dropdown (only for subscription IDEs)
+            if !availableAPIKeySources.isEmpty {
+                HStack(spacing: 4) {
+                    Text("优先使用 API Key:").font(.caption2).foregroundColor(.secondary)
+                    Picker("", selection: $preferredKeyId) {
+                        Text("(不覆盖此工具)").tag("")
+                        ForEach(availableAPIKeySources, id: \.id) { src in
+                            Text(src.label).tag(src.id)
+                        }
+                    }
+                    .pickerStyle(.menu).frame(width: 160)
+                    .onChange(of: preferredKeyId) { _, v in savePreferredKey(v) }
+                }
+            }
+        }
+    }
+
+    private var toolDisplayName: String {
+        switch integration.id {
+        case "cursor":   return "Cursor"
+        case "copilot":  return "GitHub Copilot"
+        case "windsurf": return "Windsurf"
+        default:         return integration.displayName
         }
     }
 
@@ -166,9 +227,6 @@ struct IntegrationRow: View {
         else if !enabled, let c = integration as? Collectable { c.stop() }
     }
 
-    /// Grant read access to ~/.claude, then enable + start Claude Code so its
-    /// logs are picked up this session (no relaunch needed), and ask the parent
-    /// to re-run detection so the row moves to the "detected" state.
     private func grantClaude() {
         guard BookmarkManager.requestClaudeAccess(message: I18n.t("bookmark.claude_message")) != nil
         else { return }
@@ -182,6 +240,12 @@ struct IntegrationRow: View {
     private func saveSub(_ tier: String) {
         var cfg = IntegrationRegistry.config(for: integration.id)
         cfg.subscriptionTier = tier
+        IntegrationRegistry.setConfig(for: integration.id, cfg)
+    }
+
+    private func savePreferredKey(_ keyId: String) {
+        var cfg = IntegrationRegistry.config(for: integration.id)
+        cfg.preferredAPIKeyCostSourceId = keyId.isEmpty ? nil : keyId
         IntegrationRegistry.setConfig(for: integration.id, cfg)
     }
 }

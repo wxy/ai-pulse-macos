@@ -8,16 +8,6 @@ extension Notification.Name {
     static let dataDidChange = Notification.Name("AIPulseDataDidChange")
 }
 
-// MARK: - Data grade
-
-/// What level of cost data this integration can produce.
-/// Maps to COST_ATTRIBUTION L1/L2/L3.
-enum DataGrade: String {
-    case A = "A"  // full CPL: token + model + cwd → cost + repo + netLines
-    case B = "B"  // spend only: balance/usage API → dollar amount, no repo
-    case C = "C"  // subscription: flat monthly fee, no per-call tracking
-}
-
 // MARK: - Detection
 
 /// Result of a `detect()` call — what did we find on this machine?
@@ -32,12 +22,16 @@ struct DetectionResult {
 protocol Detectable {
     var id: String { get }
     var displayName: String { get }
-    var grade: DataGrade { get }
+
+    /// The CostSources this integration can produce.
+    /// Returns empty array if this integration is not a billing source
+    /// (e.g. Aider — its log entries are attributed to apiKey CostSources).
+    var costSources: [CostSource] { get }
+
     func detect() -> DetectionResult
 }
 
-/// A-grade (log watcher) and B-grade (API poller) can be start/stopped.
-/// C-grade integrations do NOT implement this (static config only).
+/// Integrations that can be started/stopped (log watchers, API pollers).
 protocol Collectable {
     func start()
     func stop()
@@ -49,5 +43,10 @@ protocol Collectable {
 struct IntegrationConfig: Codable {
     var enabled: Bool = false
     var apiKey: String = ""
-    var subscriptionTier: String = ""  // C-grade
+    var subscriptionTier: String = ""
+
+    /// When the user uses their own API Key inside this subscription-based IDE,
+    /// select the preferred apiKey CostSource to attribute usage to.
+    /// `nil` means no override — the subscription CostSource applies normally.
+    var preferredAPIKeyCostSourceId: String? = nil
 }

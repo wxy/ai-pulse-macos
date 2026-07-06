@@ -47,7 +47,7 @@ struct DashboardView: View {
     @State private var showHealthDetails = false
 
     var hasAGrade: Bool {
-        IntegrationRegistry.enabledAGrade().contains { $0.detect().found }
+        IntegrationRegistry.enabledAGradeCompat().contains { $0.detect().found }
     }
 
     var hasCertainEditorMapping: Bool {
@@ -278,12 +278,12 @@ struct DashboardView: View {
     }
 
     func totalSubMonthly() -> Double {
-        let subs = IntegrationRegistry.enabledCGrade()
+        let subs = IntegrationRegistry.enabledCGradeCompat()
         return subs.reduce(0.0) { sum, s in sum + estimatedDailySub(s.id) * 30 }
     }
 
     func totalSubDaily() -> Double {
-        let subs = IntegrationRegistry.enabledCGrade()
+        let subs = IntegrationRegistry.enabledCGradeCompat()
         let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         var total: Double = 0
         for s in subs {
@@ -312,7 +312,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.cost_chart")).font(.headline)
 
-            if IntegrationRegistry.enabledCGrade().isEmpty {
+            if IntegrationRegistry.enabledCGradeCompat().isEmpty {
                 Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 30)
             } else {
                 ZStack(alignment: .topLeading) {
@@ -399,7 +399,7 @@ struct DashboardView: View {
     }
 
     func subDailyData() -> [ChartDataPoint] {
-        let subs = IntegrationRegistry.enabledCGrade()
+        let subs = IntegrationRegistry.enabledCGradeCompat()
         guard !subs.isEmpty else { return [] }
         let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         let cal = Calendar.current
@@ -721,7 +721,7 @@ struct DashboardView: View {
                 spendMap.append((s.providerId, s.spend))
             }
         }
-        let enabledB = Set(IntegrationRegistry.enabledBGrade().map { $0.id })
+        let enabledB = Set(IntegrationRegistry.enabledBGradeCompat().map { $0.id })
         balanceSpend = spendMap.compactMap { (pid, spend) in
             guard enabledB.contains(pid), spend > 0.001 else { return nil }
             let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid

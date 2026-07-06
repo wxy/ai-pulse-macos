@@ -304,7 +304,7 @@ enum StatsService {
     /// Per-day subscription amortization: Σ (tier.fee / daysInMonth) across enabled
     /// C-grade subscriptions. Mirrors the Dashboard "Spend" chart subscription bars.
     static func subscriptionDailyAmortization() -> Double {
-        let subs = IntegrationRegistry.enabledCGrade()
+        let subs = IntegrationRegistry.enabledCGradeCompat()
         guard !subs.isEmpty else { return 0 }
         let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         var total = 0.0

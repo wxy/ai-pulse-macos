@@ -175,7 +175,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             for s in rawSpend { spendByProvider[s.providerId, default: 0] += s.spend }
             var providerCosts: [(providerId: String, cost: Double)] = []
             for (pid, cost) in spendByProvider where cost > 0.001 {
-                let enabledB = Set(IntegrationRegistry.enabledBGrade().map { $0.id })
+                let enabledB = Set(IntegrationRegistry.enabledBGradeCompat().map { $0.id })
                 if enabledB.contains(pid) { providerCosts.append((pid, cost)) }
             }
             providerCosts.sort { $0.cost > $1.cost }

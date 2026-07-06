@@ -1,14 +1,14 @@
 import Foundation
 
-/// A-grade: aider log parsing.
+/// aider log parsing.
 /// Data source: `<repo>/.aider.llm.history` in watched repos.
+/// Not a CostSource itself — log entries are attributed to apiKey CostSources.
 struct AiderIntegration: Detectable {
     let id = "aider"
     let displayName = "aider"
-    let grade: DataGrade = .A
+    var costSources: [CostSource] { [] }
 
     func detect() -> DetectionResult {
-        // aider is detected if any watched repo has .aider.llm.history
         let dirs = UserDefaults.standard.stringArray(forKey: "repo_search_dirs")
             ?? ["~/dev", "~/projects", "~/code"]
         var count = 0
@@ -37,6 +37,4 @@ struct AiderIntegration: Detectable {
                 : I18n.t("detect.aider_not_found")
         )
     }
-
-    // Collectable is handled by LogWatcher (shared with ClaudeCode)
 }

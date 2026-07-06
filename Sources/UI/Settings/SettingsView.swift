@@ -89,8 +89,12 @@ struct IntegrationsSettingsTab: View {
                 .font(.caption).foregroundColor(.secondary)
 
             let detected = results.filter(\.1.found)
-            let notConfigured = results.filter { !$0.1.found && $0.0.grade == .B }
-            let notInstalled = results.filter { !$0.1.found && $0.0.grade != .B }
+            let notConfigured = results.filter { r in
+                !r.1.found && r.0.costSources.contains { if case .apiKey = $0.kind { return true }; return false }
+            }
+            let notInstalled = results.filter { r in
+                !r.1.found && !r.0.costSources.contains { if case .apiKey = $0.kind { return true }; return false }
+            }
 
             ScrollView {
                 VStack(spacing: 6) {
