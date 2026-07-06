@@ -14,7 +14,7 @@ struct ClaudeCodeIntegration: Detectable, Collectable {
            let tool = SubscriptionRegistry.tool(forName: "Claude Code"),
            let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }),
            tier.fee > 0 {
-            let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+            _ = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
             sources.append(CostSource(
                 id: "sub:claude-code:\(tier.label.lowercased())",
                 label: "Claude \(tier.label)",

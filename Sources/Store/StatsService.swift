@@ -374,7 +374,7 @@ enum StatsService {
                     GROUP BY day_ts, pid ORDER BY day_ts, c DESC
                     """, arguments: [startMs, todayMs + 86_400_000])
             }
-            return rows.compactMap { r in
+            let result: [ProviderDailyCost] = rows.compactMap { r in
                 guard let day: Int64 = r["day_ts"],
                       let pid: String = r["pid"],
                       let c: Double = r["c"],
@@ -383,6 +383,7 @@ enum StatsService {
                 return ProviderDailyCost(date: date, providerId: pid, cost: c)
             }
             AppHealthMonitor.shared.clearStatsError()
+            return result
         } catch {
             Logger.error("StatsService.providerDailyCosts error: \(error)")
             AppHealthMonitor.shared.reportStatsError("providerDailyCosts: \(error.localizedDescription)")

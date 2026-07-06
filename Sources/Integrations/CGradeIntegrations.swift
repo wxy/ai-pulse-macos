@@ -13,7 +13,7 @@ struct CursorIntegration: Detectable {
         guard let tool = SubscriptionRegistry.tool(forName: "Cursor"),
               let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }),
               tier.fee > 0 else { return [] }
-        let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        _ = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         return [CostSource(
             id: "sub:cursor:\(tier.label.lowercased())",
             label: "Cursor \(tier.label)",
@@ -43,7 +43,7 @@ struct CopilotIntegration: Detectable {
         guard let tool = SubscriptionRegistry.tool(forName: "GitHub Copilot"),
               let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }),
               tier.fee > 0 else { return [] }
-        let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        _ = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         return [CostSource(
             id: "sub:copilot:\(tier.label.lowercased())",
             label: "Copilot \(tier.label)",
@@ -73,7 +73,7 @@ struct WindsurfIntegration: Detectable {
         guard let tool = SubscriptionRegistry.tool(forName: "Windsurf"),
               let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }),
               tier.fee > 0 else { return [] }
-        let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        _ = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         return [CostSource(
             id: "sub:windsurf:\(tier.label.lowercased())",
             label: "Windsurf \(tier.label)",

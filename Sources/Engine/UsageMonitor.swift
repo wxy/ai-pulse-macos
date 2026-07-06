@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 /// Monitors subscription IDE usage percentages:
 /// - Claude Pro/Max: reads `~/.claude/vscode-claude-status-cache.json` (local, zero network)
@@ -68,8 +69,7 @@ final class UsageMonitor: @unchecked Sendable {
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 10
 
-        session.dataTask(with: req) { [weak self] data, resp, error in
-            guard let self else { return }
+        session.dataTask(with: req) { data, resp, error in
             if let error {
                 Logger.debug("UsageMonitor: Copilot API error: \(error.localizedDescription)")
                 return

@@ -137,7 +137,7 @@ enum Logger {
             fileHandle = nil
             currentFileSize = 0
             openLogFile()
-            try? fileHandle?.seekToEnd()
+            _ = try? fileHandle?.seekToEnd()
             try? fileHandle?.write(contentsOf: data)
         }
     }

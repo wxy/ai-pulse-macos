@@ -32,7 +32,7 @@ final class AppHealthMonitor: @unchecked Sendable {
     private var _severity: Severity = .nominal
     private var _messages: [String] = []
     private var _hasDBError = false
-    private var _hasAPIError = false
+    private var _apiErrors = Set<String>()  // provider IDs currently failing
     private var _hasStatsError = false
 
     /// Thread-safe read of the current snapshot.
@@ -42,7 +42,7 @@ final class AppHealthMonitor: @unchecked Sendable {
             severity: _severity,
             messages: _messages,
             hasDBError: _hasDBError,
-            hasAPIError: _hasAPIError,
+            hasAPIError: !_apiErrors.isEmpty,
             hasStatsError: _hasStatsError
         )
     }
@@ -56,9 +56,10 @@ final class AppHealthMonitor: @unchecked Sendable {
         update(severity: .critical, message: message, category: .db)
     }
 
-    /// Report an API-level error (balance fetch failed for a provider).
-    func reportAPIError(_ message: String) {
-        update(severity: .degraded, message: message, category: .api)
+    /// Report an API-level error (balance fetch failed for a specific provider).
+    /// Pass the provider ID (e.g. "deepseek") so errors are tracked per-provider.
+    func reportAPIError(providerId: String, message: String) {
+        update(severity: .degraded, providerId: providerId, message: message, category: .api)
     }
 
     /// Report a stats query failure.
@@ -68,7 +69,8 @@ final class AppHealthMonitor: @unchecked Sendable {
 
     /// Clear a specific category (called when things recover).
     func clearDBError()  { clear(category: .db) }
-    func clearAPIError() { clear(category: .api) }
+    func clearAPIError(providerId: String) { clear(category: .api, providerId: providerId) }
+    func clearAPIErrors() { clear(category: .api) }  // clear all
     func clearStatsError() { clear(category: .stats) }
 
     /// Reset everything to nominal (call on startup).
@@ -77,7 +79,7 @@ final class AppHealthMonitor: @unchecked Sendable {
         _severity = .nominal
         _messages = []
         _hasDBError = false
-        _hasAPIError = false
+        _apiErrors.removeAll()
         _hasStatsError = false
         lock.unlock()
     }
@@ -86,41 +88,55 @@ final class AppHealthMonitor: @unchecked Sendable {
 
     private enum Category { case db, api, stats }
 
-    private func update(severity newSeverity: Severity, message: String,
-                        category: Category) {
+    private func update(severity newSeverity: Severity, providerId: String = "",
+                        message: String, category: Category) {
         let oldSeverity: Severity
+        let severityChanged: Bool
         lock.lock()
         oldSeverity = _severity
         _severity = max(_severity, newSeverity)
         switch category {
         case .db:    _hasDBError = true
-        case .api:   _hasAPIError = true
+        case .api:   _apiErrors.insert(providerId)
         case .stats: _hasStatsError = true
         }
-        // Deduplicate: skip if the last message is identical (e.g. 50× notReady)
+        // Deduplicate: skip if the last message is identical
         if _messages.last != message {
             _messages.append(message)
             if _messages.count > 20 { _messages.removeFirst(_messages.count - 20) }
         }
+        severityChanged = (_severity != oldSeverity)
         lock.unlock()
 
-        if _severity != oldSeverity {
+        if severityChanged {
             Logger.warning("HealthMonitor: severity \(oldSeverity) → \(_severity) — \(message)")
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .appHealthDidChange, object: nil)
             }
-            // Fire a system notification when entering critical state
             if _severity == .critical {
                 sendCriticalNotification(message: message)
             }
         }
+        // Even if severity didn't change, new messages should refresh the UI
+        if !severityChanged {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .appHealthDidChange, object: nil)
+            }
+        }
     }
 
-    private func clear(category: Category) {
+    private func clear(category: Category, providerId: String = "") {
         lock.lock()
         switch category {
         case .db:    _hasDBError = false
-        case .api:   _hasAPIError = false
+        case .api:
+            if providerId.isEmpty {
+                _apiErrors.removeAll()
+            } else {
+                _apiErrors.remove(providerId)
+                // Remove stale messages for this provider
+                _messages.removeAll { $0.hasPrefix("\(providerId):") }
+            }
         case .stats: _hasStatsError = false
         }
         let prev = _severity
@@ -128,9 +144,10 @@ final class AppHealthMonitor: @unchecked Sendable {
         lock.unlock()
         if _severity != prev {
             Logger.info("HealthMonitor: severity \(prev) → \(_severity) (cleared)")
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .appHealthDidChange, object: nil)
-            }
+        }
+        // Always notify so the UI refreshes (messages may have changed)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .appHealthDidChange, object: nil)
         }
     }
 
@@ -150,7 +167,7 @@ final class AppHealthMonitor: @unchecked Sendable {
     private func recomputeSeverity() -> Severity {
         if _hasDBError { return .critical }
         if _hasStatsError { return .impaired }
-        if _hasAPIError { return .degraded }
+        if !_apiErrors.isEmpty { return .degraded }
         return .nominal
     }
 }
