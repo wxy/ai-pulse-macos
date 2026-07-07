@@ -1290,20 +1290,22 @@ struct DashboardView: View {
         // Compute tool cost breakdown (unified scaling: same as menu bar)
         do {
             let startMs = Int64(chartStart.timeIntervalSince1970 * 1000)
-            let toolRows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [startMs])
+            let toolData: [(String, Double)] = try await AppDatabase.shared.read { db in
+                let rows = try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [startMs])
+                return rows.compactMap { r in
+                    guard let s: String = r["s"], let c: Double = r["c"], c > 0 else { return nil }
+                    return (s, c)
+                }
             }
-            let toolAPITotal = toolRows.reduce(0.0) { $0 + ($1["c"] as Double? ?? 0) }
+            let toolAPITotal = toolData.reduce(0.0) { $0 + $1.1 }
             let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
             let subTotal = StatsService.subscriptionDailyAmortization() * Double(timeRange.days)
             let totalCost = apiSpend + subTotal
             let toolScale = toolAPITotal > 0 ? totalCost / toolAPITotal : 1.0
 
             var tmap: [String: Double] = [:]
-            for r in toolRows {
-                if let s: String = r["s"], let c: Double = r["c"], c > 0 {
-                    tmap[s] = c * toolScale
-                }
+            for (s, c) in toolData {
+                tmap[s] = c * toolScale
             }
             toolCostBreakdown = tmap.compactMap { (key, cost) -> (String, Double)? in
                 guard cost > 0.001 else { return nil }
