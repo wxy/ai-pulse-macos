@@ -163,7 +163,6 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             let weekCnt: Int = try await AppDatabase.shared.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart]) ?? 0
             }
-            let weekCst = await StatsService.combinedSpend(sinceMs: Int64(weekStart))
             let weekAdded: Int = try await AppDatabase.shared.read { db in
                 try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [weekStart]) ?? 0
             }
@@ -185,55 +184,56 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             }
 
             // Per-provider spend this week from balance snapshots
-            let cal2 = Calendar.current
+            var cal2 = Calendar.current; cal2.firstWeekday = 2
             let weekDays = cal2.dateComponents([.day], from: cal2.date(from: cal2.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: cal2.startOfDay(for: Date())).day! + 1
             let rawSpend = (try? await StatsService.balanceDailySpend(days: weekDays, sinceMs: Int64(weekStart))) ?? []
+            // --- Unified cost computation ---
+            // API total: from balance deltas, filtered to active providers
             var spendByProvider: [String: Double] = [:]
             for s in rawSpend { spendByProvider[s.providerId, default: 0] += s.spend }
             let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
                 if case .apiKey(let pid) = cs.kind { return pid }; return nil
             })
             var providerCosts: [(providerId: String, cost: Double)] = []
+            var apiSpend = 0.0
             for (pid, cost) in spendByProvider where cost > 0.001 {
-                if enabledB.contains(pid) { providerCosts.append((pid, cost)) }
+                if enabledB.contains(pid) { providerCosts.append((pid, cost)); apiSpend += cost }
             }
             providerCosts.sort { $0.cost > $1.cost }
+            let subAmortization = StatsService.subscriptionDailyAmortization()
+            let weekSubTotal = subAmortization * Double(weekDays)
+            let weekCst = apiSpend + weekSubTotal
 
-            // Repo cost: attribute total balance spend to repos proportionally by usage_event cost.
-            // Single-provider single-repo use case → same total as provider submenu.
-            let totalBalanceCost = spendByProvider.values.reduce(0, +)
+            // --- Repo breakdown: scaled API + subscription ---
             var cbr: [String: Double] = [:]
             let rcRows: [Row] = try await AppDatabase.shared.read { db in
                 try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? GROUP BY repo_path", arguments: [weekStart])
             }
             var logTotal: Double = 0
             for r in rcRows { if let p: String = r["p"], !p.isEmpty, let c: Double = r["c"] { cbr[p] = c; logTotal += c } }
-            // Scale log costs to match balance total
-            let scale = logTotal > 0 ? totalBalanceCost / logTotal : 1.0
+            let apiScale = logTotal > 0 ? apiSpend / logTotal : 1.0
+            let subScale = logTotal > 0 ? weekSubTotal / logTotal : 0.0
 
-            // Repos: scaled cost + code changes from git
             var repos: [RepoStat] = []
             for (path, logCost) in cbr {
                 let (a, d) = repoAddDel[path] ?? (0, 0)
-                let scaledCost = logCost * scale
-                guard a > 0 || d > 0, scaledCost > 0.001 else { continue }
-                repos.append(RepoStat(name: URL(fileURLWithPath: path).lastPathComponent, added: a, deleted: d, cost: scaledCost))
+                let cost = logCost * apiScale + logCost * subScale
+                guard a > 0 || d > 0 || cost > 0.001 else { continue }
+                repos.append(RepoStat(name: URL(fileURLWithPath: path).lastPathComponent, added: a, deleted: d, cost: cost))
             }
 
-            // Per-tool cost this week (from usage_event + subscription amortization)
+            // Per-tool cost: same unified scaling as repos (API + subscription from usage_event proportions)
             let toolRows: [Row] = try await AppDatabase.shared.read { db in
                 try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [weekStart])
             }
+            let toolAPITotal = toolRows.reduce(0.0) { $0 + ($1["c"] as Double? ?? 0) }
+            let toolApiScale = toolAPITotal > 0 ? apiSpend / toolAPITotal : 1.0
+            let toolSubScale = toolAPITotal > 0 ? weekSubTotal / toolAPITotal : 0.0
+
             var toolCostMap: [String: Double] = [:]
             for r in toolRows {
-                if let s: String = r["s"], let c: Double = r["c"], c > 0 { toolCostMap[s] = c }
-            }
-            // Add subscription amortization
-            for cs in IntegrationRegistry.activeCostSources() {
-                if case .subscription(let toolId, _, let fee) = cs.kind, fee > 0 {
-                    let daily = fee / Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-                    let weekSubCost = daily * Double(weekDays)
-                    toolCostMap[toolId, default: 0] += weekSubCost
+                if let s: String = r["s"], let c: Double = r["c"], c > 0 {
+                    toolCostMap[s] = c * toolApiScale + c * toolSubScale
                 }
             }
             var toolCosts: [ToolCost] = toolCostMap.compactMap { (key, cost) in
@@ -264,10 +264,9 @@ final class MenuBarController: NSObject, @unchecked Sendable {
                 return result
             }
 
-            // 7-day average for comparison (matches Dock calculation)
+            // 7-day average for percentage comparison
             let sevenDaysAgo = cal.startOfDay(for: cal.date(byAdding: .day, value: -6, to: Date())!).timeIntervalSince1970 * 1000
-            let weekTotal7d = await StatsService.combinedSpend(sinceMs: Int64(sevenDaysAgo))
-            let weekAvgCst = weekTotal7d / 7.0
+            let weekAvgCst = (apiSpend + subAmortization * 7.0) / 7.0
 
             let todaySum = makeSummary(cnt: todayCnt, cost: todayCst, added: todayAdded, deleted: todayDeleted, label: I18n.t("menu.today"), vsAvg: weekAvgCst)
             let weekSum  = makeSummary(cnt: weekCnt,  cost: weekCst,  added: weekAdded,  deleted: weekDeleted,  label: I18n.t("menu.this_week"))
