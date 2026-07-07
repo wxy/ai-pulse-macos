@@ -147,7 +147,7 @@ struct DashboardView: View {
                 }.padding(.bottom, 20)
             }
         }
-        .frame(width: 680, height: 640)
+        .frame(width: 700, height: 660)
         .background(Color(nsColor: .windowBackgroundColor))
         .environment(\.locale, Locale(identifier: I18n.getLang() == "zh" ? "zh_CN" : "en_US"))
         .task {
@@ -423,8 +423,8 @@ struct DashboardView: View {
                 .foregroundColor(color)
             Text(title).font(.caption2).foregroundColor(.secondary).lineLimit(1)
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 6)
-        .background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
+        .frame(maxWidth: .infinity).padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
     func apiDailyAvg() -> Double {
@@ -796,22 +796,24 @@ struct DashboardView: View {
         let totalCost = apiSpend + subTotal
         let toolCosts = computeToolCosts()
 
+        let apiData = apiDonutData()
         return VStack(spacing: 16) {
             // Big total
             VStack(spacing: 4) {
                 Text("$\(String(format: "%.2f", totalCost))")
-                    .font(.largeTitle).fontWeight(.bold).monospacedDigit()
+                    .font(.system(size: 48, weight: .bold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(LinearGradient(colors: [.green, .teal], startPoint: .leading, endPoint: .trailing))
                 Text("\(timeRange.label)\(I18n.t("dashboard.api_spent"))")
                     .font(.caption).foregroundColor(.secondary)
             }
-            .padding(.vertical, 12)
+            .padding(.vertical, 16)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 12)
-                .fill(Color(nsColor: .quaternarySystemFill).opacity(0.6)))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
 
             // Tool bars + API donut
             HStack(alignment: .top, spacing: 16) {
-                // Left: Tool spending bars
                 VStack(alignment: .leading, spacing: 6) {
                     Text("按开发工具").font(.caption).foregroundColor(.secondary)
                     if toolCosts.isEmpty {
@@ -824,24 +826,20 @@ struct DashboardView: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                // Right: API donut
-                let apiData = apiDonutData()
                 if !apiData.isEmpty {
                     VStack(spacing: 6) {
                         Text("按 API 提供商").font(.caption).foregroundColor(.secondary)
-                        Chart(apiData) { item in
-                            SectorMark(
-                                angle: .value("Cost", item.cost),
-                                innerRadius: .ratio(0.5),
-                                angularInset: 1
-                            )
-                            .foregroundStyle(by: .value("Provider", item.label))
+                        ZStack {
+                            Chart(apiData) { item in
+                                SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                                    .foregroundStyle(by: .value("Provider", item.label))
+                            }
+                            .chartLegend(.hidden)
+                            .chartForegroundStyleScale(domain: apiData.map(\.label), range: [.teal, .mint, .green, .indigo, .orange, .pink])
+                            .frame(width: 120, height: 120)
+                            Text("$\(String(format: "%.2f", apiSpend))")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded)).monospacedDigit()
                         }
-                        .chartLegend(.hidden)
-                        .chartForegroundStyleScale(domain: apiData.map(\.label), range: [.green, .mint, .teal, .indigo, .orange, .pink])
-                        .frame(width: 120, height: 120)
-
-                        // Legend
                         VStack(spacing: 2) {
                             ForEach(apiData) { item in
                                 HStack(spacing: 4) {
@@ -858,25 +856,25 @@ struct DashboardView: View {
             }
         }
         .padding(16)
-        .background(Color(nsColor: .quaternarySystemFill).opacity(0.5))
-        .cornerRadius(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
     func toolBarRow(name: String, cost: Double, total: Double) -> some View {
         let w = total > 0 ? cost / total : 0
-        return VStack(spacing: 2) {
+        return VStack(spacing: 3) {
             HStack {
                 Text(name).font(.caption).lineLimit(1)
                 Spacer()
                 Text("$\(String(format: "%.2f", cost))").font(.caption).monospacedDigit()
-                Text("\(Int(w * 100))%").font(.caption2).foregroundColor(.secondary).frame(width: 30, alignment: .trailing)
             }
             GeometryReader { geo in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.green.opacity(0.7))
-                    .frame(width: max(geo.size.width * w, 2), height: 6)
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: max(geo.size.width * w, 4), height: 10)
             }
-            .frame(height: 6)
+            .frame(height: 10)
         }
     }
 
@@ -942,21 +940,21 @@ struct DashboardView: View {
                                 Text("$\(String(format: "%.2f", totalCost))")
                                     .font(.caption2).monospacedDigit().frame(width: 64, alignment: .leading)
                                 GeometryReader { geo in
-                                    RoundedRectangle(cornerRadius: 2)
-                                        .fill(Color.accentColor.opacity(0.6))
-                                        .frame(width: max(geo.size.width * costRatio, 2), height: 8)
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .fill(LinearGradient(colors: [.teal, .mint], startPoint: .leading, endPoint: .trailing))
+                                        .frame(width: max(geo.size.width * costRatio, 4), height: 10)
                                 }
-                                .frame(height: 8)
+                                .frame(height: 10)
                             }
                             HStack(spacing: 6) {
                                 Text("CPL $\(String(format: "%.2f", combinedCPL))")
                                     .font(.caption2).monospacedDigit().foregroundColor(.secondary).frame(width: 64, alignment: .leading)
                                 GeometryReader { geo in
-                                    RoundedRectangle(cornerRadius: 2)
-                                        .fill(Color.mint.opacity(0.7))
-                                        .frame(width: max(geo.size.width * cplRatio, 2), height: 6)
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(LinearGradient(colors: [.orange, .pink], startPoint: .leading, endPoint: .trailing))
+                                        .frame(width: max(geo.size.width * cplRatio, 3), height: 8)
                                 }
-                                .frame(height: 6)
+                                .frame(height: 8)
                             }
                         }
                         .padding(.vertical, 4)
@@ -966,16 +964,16 @@ struct DashboardView: View {
                     }
                 }
                 .padding(12)
-                .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
-                .cornerRadius(10)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
             }
         }
         .padding(16)
-        .background(Color(nsColor: .quaternarySystemFill).opacity(0.5))
-        .cornerRadius(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
-    // MARK: - Trend section (dual-axis stacked bar: spend vs code)
+    // MARK: - Trend section
 
     /// Target grid-line count — both axes share the same number of sections.
     private let targetGrid = 4.0
@@ -984,9 +982,10 @@ struct DashboardView: View {
     private var trendSpendAxis: (max: Double, step: Double, values: [Double], sections: Int) {
         let padded = padStats(dailyStats, days: timeRange.days)
         let cal = Calendar.current
+        let subDaily = StatsService.subscriptionDailyAmortization()
         let rawMax = padded.map { s -> Double in
             let d = cal.startOfDay(for: s.date)
-            return dailyBalanceSpend[d] ?? 0
+            return (dailyBalanceSpend[d] ?? 0) + subDaily  // stacked total
         }.max() ?? 5
         let step = niceStep(rawMax / targetGrid)
         let max = ceil(rawMax / step) * step
@@ -1132,8 +1131,9 @@ struct DashboardView: View {
             }
         }
         .padding(16)
-        .background(Color(nsColor: .quaternarySystemFill).opacity(0.5))
-        .cornerRadius(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
     // MARK: - Axis helpers
