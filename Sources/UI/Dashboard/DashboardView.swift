@@ -52,6 +52,8 @@ struct DashboardView: View {
     @State private var usageData: [String: (percent: Double, limitStatus: String)] = [:]  // costSourceId → (usage%, status)
     @State private var trendHoverDate: Date? = nil
     @State private var trendHoverX: CGFloat = 0
+    @State private var toolCostBreakdown: [(name: String, cost: Double)] = []
+    @State private var dailyBalanceSpend: [Date: Double] = [:]  // date → USD spend
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -247,18 +249,21 @@ struct DashboardView: View {
     /// Active CostSources with their computed spend for the current period.
     var costSourceBreakdown: [(source: CostSource, cost: Double, usagePercent: Double?)] {
         let sources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
+        let subTotal = StatsService.subscriptionDailyAmortization() * Double(timeRange.days)
+        // sum of monthly fees of all subscription sources (for proportional split)
+        let totalSubFee = sources.reduce(0.0) { total, cs in
+            if case .subscription(_, _, let fee) = cs.kind { return total + fee }; return total
+        }
         var result: [(source: CostSource, cost: Double, usagePercent: Double?)] = []
         for cs in sources {
             let cost: Double
             switch cs.kind {
             case .apiKey(let pid):
-                // Sum balance spend for this provider
                 cost = balanceSpend
                     .filter { $0.providerId == pid }
                     .reduce(0) { $0 + $1.spend }
             case .subscription(_, _, let fee):
-                let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-                cost = fee / days * Double(timeRange.days)
+                cost = totalSubFee > 0 ? subTotal * fee / totalSubFee : 0
             case .unknown:
                 cost = 0
             }
@@ -328,39 +333,7 @@ struct DashboardView: View {
         }
     }
 
-    func computeToolCosts() -> [(name: String, cost: Double)] {
-        var map: [String: Double] = [:]
-        // API costs from usage_event grouped by source (matches menu bar query)
-        for stat in dailyStats {
-            guard stat.cost > 0 else { continue }
-            // Use providerCosts to get per-source breakdown (same as menu)
-            // dailyStats merges by day, not source. Use providerCosts instead.
-        }
-        // Sum from providerCosts which has per-provider-id costs
-        for pc in providerCosts where pc.cost > 0 {
-            let label = providerDisplayName(pc.providerId)
-            map[label] = (map[label] ?? 0) + pc.cost
-        }
-        // Add subscription amortization (same as menu: query activeCostSources)
-        for cs in IntegrationRegistry.activeCostSources(editorMappings: editorMappings) {
-            if case .subscription(let toolId, _, let fee) = cs.kind, fee > 0 {
-                let daily = fee / Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-                map[toolId] = (map[toolId] ?? 0) + daily * Double(timeRange.days)
-            }
-        }
-        return map.compactMap { (key, cost) in
-            guard cost > 0.001 else { return nil }
-            let label: String = switch key {
-            case "claude-code": "Claude Code"
-            case "aider":       "aider"
-            case "cursor":      "Cursor"
-            case "copilot":     "Copilot"
-            case "windsurf":    "Windsurf"
-            default:            key  // provider name already set above
-            }
-            return (name: label, cost: cost)
-        }.sorted { $0.cost > $1.cost }
-    }
+    func computeToolCosts() -> [(name: String, cost: Double)] { toolCostBreakdown }
 
     func providerDisplayName(_ pid: String) -> String {
         IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
@@ -818,7 +791,9 @@ struct DashboardView: View {
 
     var spendingOverview: some View {
         let breakdown = costSourceBreakdown
-        let totalCost = breakdown.reduce(0) { $0 + $1.cost }
+        let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
+        let subTotal = StatsService.subscriptionDailyAmortization() * Double(timeRange.days)
+        let totalCost = apiSpend + subTotal
         let toolCosts = computeToolCosts()
 
         return VStack(spacing: 16) {
@@ -939,13 +914,22 @@ struct DashboardView: View {
             // Repo list with cost + CPL
             let cplRepos = repos.filter { $0.totalChanges > 0 }
             if !cplRepos.isEmpty {
-                let maxCost = cplRepos.map(\.cost).max() ?? 1
+                let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
+                let logTotal = cplRepos.map(\.cost).reduce(0, +)
+                let subTotal = StatsService.subscriptionDailyAmortization() * Double(timeRange.days)
+                let scale = logTotal > 0 ? apiSpend / logTotal : 1.0
+                let reposWithSub = cplRepos.map { r -> (RepoBreakdown, Double) in
+                    let repoAPI = r.cost * scale
+                    let subPortion = logTotal > 0 ? subTotal * r.cost / logTotal : 0
+                    return (r, repoAPI + subPortion)
+                }
+                let maxCost = reposWithSub.map(\.1).max() ?? 1
                 let maxCPL = cplRepos.compactMap { r in r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : nil }.max() ?? 1
                 VStack(alignment: .leading, spacing: 6) {
                     Text("按仓库").font(.caption).foregroundColor(.secondary)
-                    ForEach(cplRepos.prefix(8)) { r in
+                    ForEach(reposWithSub.prefix(8), id: \.0.id) { (r, totalCost) in
                         let combinedCPL = r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : 0
-                        let costRatio = maxCost > 0 ? r.cost / maxCost : 0
+                        let costRatio = maxCost > 0 ? totalCost / maxCost : 0
                         let cplRatio = maxCPL > 0 ? combinedCPL / maxCPL : 0
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
@@ -955,7 +939,7 @@ struct DashboardView: View {
                                     .font(.caption2).foregroundColor(.secondary).monospacedDigit()
                             }
                             HStack(spacing: 6) {
-                                Text("$\(String(format: "%.2f", r.cost))")
+                                Text("$\(String(format: "%.2f", totalCost))")
                                     .font(.caption2).monospacedDigit().frame(width: 64, alignment: .leading)
                                 GeometryReader { geo in
                                     RoundedRectangle(cornerRadius: 2)
@@ -999,7 +983,11 @@ struct DashboardView: View {
     /// Left axis: cost (USD).
     private var trendSpendAxis: (max: Double, step: Double, values: [Double], sections: Int) {
         let padded = padStats(dailyStats, days: timeRange.days)
-        let rawMax = padded.map(\.cost).max() ?? 5
+        let cal = Calendar.current
+        let rawMax = padded.map { s -> Double in
+            let d = cal.startOfDay(for: s.date)
+            return dailyBalanceSpend[d] ?? 0
+        }.max() ?? 5
         let step = niceStep(rawMax / targetGrid)
         let max = ceil(rawMax / step) * step
         let sections = Int(max / step)
@@ -1043,9 +1031,11 @@ struct DashboardView: View {
                 let now = Date()
 
                 Chart {
-                    // API spend bars
+                    // API spend bars: use balance data when available, raw log otherwise
                     ForEach(padStats) { s in
-                        BarMark(x: .value("Date", s.date, unit: .day), y: .value("Spend", s.cost))
+                        let cal = Calendar.current; let d = cal.startOfDay(for: s.date)
+                        let spend = dailyBalanceSpend[d] ?? 0
+                        BarMark(x: .value("Date", s.date, unit: .day), y: .value("Spend", spend))
                             .foregroundStyle(Color.green.opacity(0.8))
                             .position(by: .value("Series", "花费"))
                     }
@@ -1261,7 +1251,12 @@ struct DashboardView: View {
         paddedChanges = padCodeChanges()
         subDaily = subDailyData()
         apiDaily = apiDailyData()
-        let rawSpend = (try? await StatsService.balanceDailySpend(days: timeRange.days)) ?? []
+        // Use explicit sinceMs to match menu bar's balance query
+        let rangeStartMs = Int64(chartStart.timeIntervalSince1970 * 1000)
+        let rawSpend = (try? await StatsService.balanceDailySpend(days: timeRange.days, sinceMs: rangeStartMs)) ?? []
+        var dbs = [Date: Double]()
+        for s in rawSpend { dbs[s.date, default: 0] += s.spend }
+        dailyBalanceSpend = dbs
         // Aggregate spend by provider for summary cards
         var spendMap: [(String, Double)] = []
         for s in rawSpend {
@@ -1291,6 +1286,38 @@ struct DashboardView: View {
             }
         }
         balanceDaily = dailyAgg.values.map { ChartDataPoint(date: $0.date, label: $0.label, cost: $0.cost) }
+
+        // Compute tool cost breakdown (unified scaling: same as menu bar)
+        do {
+            let startMs = Int64(chartStart.timeIntervalSince1970 * 1000)
+            let toolRows: [Row] = try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [startMs])
+            }
+            let toolAPITotal = toolRows.reduce(0.0) { $0 + ($1["c"] as Double? ?? 0) }
+            let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
+            let subTotal = StatsService.subscriptionDailyAmortization() * Double(timeRange.days)
+            let totalCost = apiSpend + subTotal
+            let toolScale = toolAPITotal > 0 ? totalCost / toolAPITotal : 1.0
+
+            var tmap: [String: Double] = [:]
+            for r in toolRows {
+                if let s: String = r["s"], let c: Double = r["c"], c > 0 {
+                    tmap[s] = c * toolScale
+                }
+            }
+            toolCostBreakdown = tmap.compactMap { (key, cost) -> (String, Double)? in
+                guard cost > 0.001 else { return nil }
+                let label: String = switch key {
+                case "claude-code": "Claude Code"
+                case "aider": "aider"
+                case "cursor": "Cursor"
+                case "copilot": "Copilot"
+                case "windsurf": "Windsurf"
+                default: key
+                }
+                return (label, cost)
+            }.sorted(by: { $0.1 > $1.1 }).map { (name: $0.0, cost: $0.1) }
+        } catch { toolCostBreakdown = [] }
 
         // Load usage data for subscription CostSources
         do {
