@@ -265,7 +265,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             }
 
             // 7-day average for percentage comparison
-            let sevenDaysAgo = cal.startOfDay(for: cal.date(byAdding: .day, value: -6, to: Date())!).timeIntervalSince1970 * 1000
+            _ = cal.startOfDay(for: cal.date(byAdding: .day, value: -6, to: Date())!).timeIntervalSince1970 * 1000
             let weekAvgCst = (apiSpend + subAmortization * 7.0) / 7.0
 
             let todaySum = makeSummary(cnt: todayCnt, cost: todayCst, added: todayAdded, deleted: todayDeleted, label: I18n.t("menu.today"), vsAvg: weekAvgCst)
