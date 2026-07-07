@@ -62,6 +62,7 @@ struct DashboardView: View {
     @State private var trendHoverX: CGFloat = 0
     @State private var toolCostBreakdown: [(name: String, cost: Double)] = []
     @State private var dailyBalanceSpend: [Date: Double] = [:]  // date → USD spend
+    @State private var todayCombinedSpend: Double = 0
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -800,8 +801,8 @@ struct DashboardView: View {
     var spendingOverview: some View {
         _ = costSourceBreakdown
         let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
-        let subTotal = StatsService.subscriptionDailyAmortization() * Double(timeRange.days)
-        let totalCost = apiSpend + subTotal
+        let subDaily = StatsService.subscriptionDailyAmortization()
+        let totalCost = timeRange == .today ? todayCombinedSpend : apiSpend + subDaily * Double(timeRange.days)
         let toolCosts = computeToolCosts()
 
         let apiData = apiDonutData()
@@ -1295,6 +1296,9 @@ struct DashboardView: View {
             }
         }
         balanceDaily = dailyAgg.values.map { ChartDataPoint(date: $0.date, label: $0.label, cost: $0.cost) }
+
+        let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+        todayCombinedSpend = await StatsService.combinedSpend(sinceMs: todayStartMs)
 
         // Compute tool cost breakdown (unified scaling: same as menu bar)
         do {
