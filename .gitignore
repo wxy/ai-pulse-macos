@@ -11,5 +11,8 @@ Packages/
 # Distribution artifacts
 dist/
 
+# Local credentials (do not commit)
+.env
+
 # OS
 .DS_Store
