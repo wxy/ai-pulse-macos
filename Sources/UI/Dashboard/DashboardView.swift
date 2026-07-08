@@ -86,6 +86,17 @@ struct DashboardView: View {
         editorMappings.contains { $0.confidence == .certain && $0.dailySubscriptionCost > 0 }
     }
 
+    /// Rounded-rect "ear" for the robot-head frame.
+    private func earView(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(Color.marsGreen.opacity(0.20))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(Color.marsGreen.opacity(0.35), lineWidth: 1.5)
+            )
+            .frame(width: width, height: height)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Error banner — visible when health is not nominal
@@ -157,17 +168,65 @@ struct DashboardView: View {
             .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
 
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 0) {
                     if hasActiveCostSources || !providerCosts.isEmpty {
-                        spendingOverview.padding(.horizontal, 20)
-                        outputSection.padding(.horizontal, 20)
+                        // ── Robot head frame (face) — spending + output ──
+                        VStack(spacing: 16) {
+                            spendingOverview
+                            outputSection
+                        }
+                        .padding(20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
+                                .overlay(alignment: .top) {
+                                    ZStack(alignment: .top) {
+                                        Path { p in
+                                            p.addArc(center: CGPoint(x: 20, y: 2),
+                                                     radius: 20,
+                                                     startAngle: .degrees(180), endAngle: .degrees(0),
+                                                     clockwise: false)
+                                        }
+                                        .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
+                                        .frame(width: 40, height: 22)
+                                        Circle()
+                                            .fill(Color.marsGreen.opacity(0.4))
+                                            .frame(width: 6, height: 6)
+                                            .offset(y: -10)
+                                    }
+                                    .offset(y: -6)
+                                }
+                                .overlay(alignment: .leading) {
+                                    HStack(spacing: 6) {
+                                        earView(width: 14, height: 34)
+                                        earView(width: 8, height: 22)
+                                    }
+                                    .offset(x: -16, y: -80)
+                                }
+                                .overlay(alignment: .trailing) {
+                                    HStack(spacing: 6) {
+                                        earView(width: 8, height: 22)
+                                        earView(width: 14, height: 34)
+                                    }
+                                    .offset(x: 16, y: -80)
+                                }
+                        )
+                        .padding(.horizontal, 60).padding(.top, 60).padding(.bottom, 12)
+
+                        // ── Trend frame (body) — daily trend chart ──
                         if timeRange != .today {
-                            trendSection.padding(.horizontal, 20)
+                            trendSection
+                                .padding(20)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                        .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
+                                )
+                                .padding(.horizontal, 60).padding(.bottom, 60)
                         }
                     } else {
-                        emptyStateCard.padding(.horizontal, 20)
+                        emptyStateCard
                     }
-                }.padding(.bottom, 20)
+                }
             }
         }
         .frame(width: 700, height: 660)
@@ -819,6 +878,22 @@ struct DashboardView: View {
         return ""
     }
 
+    /// Vertical stat cards between the two donut charts ("nose" of the robot face).
+    @ViewBuilder var noseStatCards: some View {
+        let added = codeChanges.reduce(0) { $0 + $1.added }
+        let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
+        let netLines = added - deleted
+        Group {
+            smallCard(title: "净增行", value: "\(netLines)", color: netLines >= 0 ? .marsGreen : .deepRed)
+            smallCard(title: I18n.t("dashboard.code_added"), value: "+\(added)", color: Color.marsGreen)
+            smallCard(title: I18n.t("dashboard.code_deleted"), value: "-\(deleted)", color: .red)
+            if timeRange == .today {
+                smallCard(title: "请求次数", value: "\(todayCalls)", color: .primary)
+                smallCard(title: "Token 消耗", value: tokenShort(todayTokens), color: .primary)
+            }
+        }
+    }
+
     // MARK: - Bottom cards row
 
     var bottomCards: some View {
@@ -841,7 +916,6 @@ struct DashboardView: View {
         let subTotal = subDaily * Double(timeRange.days)
         let totalCost = timeRange == .today ? todayCombinedSpend : apiSpend + subTotal
 
-        let toolCosts = computeToolCosts()
         let apiData = apiDonutData()
         let subVsApi = subVsApiDonutData(api: apiSpend, sub: subTotal)
 
@@ -878,25 +952,18 @@ struct DashboardView: View {
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
 
-            // Donut charts flanking tool bars: sub/API split | tools | API providers
+            // Donuts flanking stat cards: left donut | nose stats | right donut
             HStack(alignment: .top, spacing: 12) {
                 // Left: subscription vs API donut
                 if subVsApi.total > 0.001 {
                     subVsApiDonut(data: subVsApi)
                 }
 
-                // Center: tool bars
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("按开发工具").font(.caption).foregroundColor(.secondary)
-                    if toolCosts.isEmpty {
-                        Text("--").font(.caption).foregroundColor(.secondary)
-                    } else {
-                        ForEach(Array(toolCosts.prefix(6).enumerated()), id: \.element.name) { idx, tc in
-                            toolBarRow(name: tc.name, cost: tc.cost, total: totalCost, index: idx)
-                        }
-                    }
+                // Center: stat cards as "nose" (vertical stack, limited width)
+                VStack(spacing: 6) {
+                    noseStatCards
                 }
-                .frame(maxWidth: .infinity)
+                .frame(width: 100)
 
                 // Right: API provider donut
                 if !apiData.isEmpty {
@@ -949,29 +1016,41 @@ struct DashboardView: View {
     // MARK: - Output section
 
     var outputSection: some View {
-        let added = codeChanges.reduce(0) { $0 + $1.added }
-        let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
-        let netLines = added - deleted
+        let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
+        let subDaily = StatsService.subscriptionDailyAmortization()
+        let subTotal = subDaily * Double(timeRange.days)
+        let totalCost = timeRange == .today ? todayCombinedSpend : apiSpend + subTotal
+        let toolCosts = computeToolCosts()
         let dataReady = loadedTimeRange == timeRange
 
         return VStack(spacing: 12) {
-            // Code line cards (+ calls/tokens for today)
-            HStack(spacing: 8) {
-                smallCard(title: "净增行", value: "\(netLines)", color: netLines >= 0 ? .marsGreen : .deepRed)
-                smallCard(title: I18n.t("dashboard.code_added"), value: "+\(added)", color: Color.marsGreen)
-                smallCard(title: I18n.t("dashboard.code_deleted"), value: "-\(deleted)", color: .red)
-                if timeRange == .today {
-                    smallCard(title: "请求次数", value: "\(todayCalls)", color: .primary)
-                    smallCard(title: "Token 消耗", value: tokenShort(todayTokens), color: .primary)
+            // ── Tool bars ("mouth") ──
+            VStack(alignment: .leading, spacing: 6) {
+                Text("按开发工具").font(.caption).foregroundColor(.secondary)
+                if toolCosts.isEmpty {
+                    Text("--").font(.caption).foregroundColor(.secondary)
+                } else {
+                    ForEach(Array(toolCosts.prefix(6).enumerated()), id: \.element.name) { idx, tc in
+                        toolBarRow(name: tc.name, cost: tc.cost, total: totalCost, index: idx)
+                    }
                 }
             }
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
 
-            // Repo list with cost + CPL
+            // ── Mouth line — short horizontal connector ──
+            HStack(spacing: 0) {
+                Spacer()
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.marsGreen.opacity(0.2))
+                    .frame(width: 60, height: 3)
+                Spacer()
+            }
+
+            // ── Repo list with cost + CPL ("chin/beard") ──
             let cplRepos = repos.filter { $0.totalChanges > 0 }
             if !cplRepos.isEmpty {
-                let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
                 let logTotal = cplRepos.map(\.cost).reduce(0, +)
-                let subTotal = StatsService.subscriptionDailyAmortization() * Double(timeRange.days)
                 let scale = logTotal > 0 ? apiSpend / logTotal : 1.0
                 let reposWithSub = cplRepos.map { r -> (RepoBreakdown, Double) in
                     let repoAPI = r.cost * scale
@@ -1400,7 +1479,7 @@ struct DashboardView: View {
                 .chartForegroundStyleScale(domain: data.map(\.label), range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
                 .frame(width: 120, height: 120)
                 Text("$\(String(format: "%.2f", apiSpend))")
-                    .font(.system(size: 18, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.deepRed)
             }
             .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
