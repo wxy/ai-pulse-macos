@@ -18,10 +18,11 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     private var phase2Timer: DispatchSourceTimer?
     private var phase3Timer: DispatchSourceTimer?
     private var pendingNotifyWorkItem: DispatchWorkItem?
+    private var pendingPlaySound = false  // sticky: true if any caller wants sound
     private var lastNotifyTime: Date = .distantPast
     private let notifyQueue = DispatchQueue(label: "com.wxy.aipulse.coordinator", qos: .utility)
-    private var sleepObserver: NSObjectProtocol?
-    private var wakeObserver: NSObjectProtocol?
+    private var screenSleepObserver: NSObjectProtocol?
+    private var screenWakeObserver: NSObjectProtocol?
 
     /// Minimum interval between consecutive .dataDidChange posts.
     /// Prevents the staggered startup phases (5s/10s/15s) and rapid
@@ -37,22 +38,25 @@ final class DataRefreshCoordinator: @unchecked Sendable {
 
         Logger.info("DataRefreshCoordinator: started (P1=30s, P2=5min, P3=1h)")
 
-        // Pause timers during sleep to prevent sound storms on wake.
+        // Pause timers when screen(s) turn off — covers both display sleep
+        // and system sleep (which always sleeps screens first).  Multi-display
+        // safe: NSWorkspace.screensDidSleepNotification fires only when the
+        // entire display subsystem powers down (all screens off).
         let nc = NSWorkspace.shared.notificationCenter
-        sleepObserver = nc.addObserver(forName: NSWorkspace.willSleepNotification,
-                                        object: nil, queue: .main) { [weak self] _ in
+        screenSleepObserver = nc.addObserver(forName: NSWorkspace.screensDidSleepNotification,
+                                              object: nil, queue: .main) { [weak self] _ in
             self?.suspendTimers()
         }
-        wakeObserver = nc.addObserver(forName: NSWorkspace.didWakeNotification,
-                                       object: nil, queue: .main) { [weak self] _ in
+        screenWakeObserver = nc.addObserver(forName: NSWorkspace.screensDidWakeNotification,
+                                             object: nil, queue: .main) { [weak self] _ in
             self?.resumeTimers()
         }
     }
 
     func stop() {
-        if let o = sleepObserver { NSWorkspace.shared.notificationCenter.removeObserver(o) }
-        if let o = wakeObserver   { NSWorkspace.shared.notificationCenter.removeObserver(o) }
-        sleepObserver = nil; wakeObserver = nil
+        if let o = screenSleepObserver { NSWorkspace.shared.notificationCenter.removeObserver(o) }
+        if let o = screenWakeObserver  { NSWorkspace.shared.notificationCenter.removeObserver(o) }
+        screenSleepObserver = nil; screenWakeObserver = nil
         cancelAllTimers()
         lastNotifyTime = .distantPast
         Logger.info("DataRefreshCoordinator: stopped")
@@ -126,14 +130,19 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         if discovered > 0 {
             Logger.info("RepoDiscovery: found \(discovered) new repo(s)")
         }
-        // LogWatcher.insertEvent() pushes notifyPhaseIngest() on successful write
+        // Heartbeat: always notify UI so dock icon stays current (pulses),
+        // but without coin sound unless LogWatcher inserted actual new data.
+        scheduleUINotify(playSound: false)
+        // LogWatcher.insertEvent() pushes notifyPhaseIngest() with playSound: true
     }
 
     private func runPhase2() {
         let start = Date()
         GitMonitor.shared.poll()
         Logger.debug("Phase2 git scan completed in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
-        // GitMonitor.insertChange() pushes notifyPhaseGitScan() on successful write
+        // Heartbeat (no sound unless GitMonitor found new commits).
+        scheduleUINotify(playSound: false)
+        // GitMonitor.insertChange() pushes notifyPhaseGitScan() with playSound: true
     }
 
     private func runPhase3() {
@@ -141,7 +150,9 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         ApiPoller.shared.pollAll()
         UsageMonitor.shared.refreshCopilotStatus()
         Logger.debug("Phase3 balance poll dispatched in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
-        // ApiPoller.cacheBalance() pushes notifyPhaseBalance() on successful write
+        // Heartbeat (no sound unless ApiPoller found balance changes).
+        scheduleUINotify(playSound: false)
+        // ApiPoller.cacheBalance() pushes notifyPhaseBalance() with playSound: true
     }
 
     // MARK: - Push-change notification (called by ingestion modules)
@@ -149,46 +160,51 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     /// Called by LogWatcher after a usage_event row is inserted.
     func notifyPhaseIngest() {
         notifyQueue.async { [weak self] in
-            self?.scheduleUINotify()
+            self?.scheduleUINotify(playSound: true)
         }
     }
 
     /// Called by GitMonitor after a code_change row is inserted.
     func notifyPhaseGitScan() {
         notifyQueue.async { [weak self] in
-            self?.scheduleUINotify()
+            self?.scheduleUINotify(playSound: true)
         }
     }
 
     /// Called by ApiPoller after a balance_snapshot row is inserted.
     func notifyPhaseBalance() {
         notifyQueue.async { [weak self] in
-            self?.scheduleUINotify()
+            self?.scheduleUINotify(playSound: true)
         }
     }
 
     // MARK: - Debounce & dispatch
 
-    private func scheduleUINotify() {
+    private func scheduleUINotify(playSound: Bool = false) {
+        if playSound { pendingPlaySound = true }  // sticky: any caller can request sound
         pendingNotifyWorkItem?.cancel()
+        let shouldPlay = pendingPlaySound
         let workItem = DispatchWorkItem { [weak self] in
-            self?.notifyConsumers()
+            self?.pendingPlaySound = false
+            self?.notifyConsumers(playSound: shouldPlay)
         }
         pendingNotifyWorkItem = workItem
         notifyQueue.asyncAfter(deadline: .now() + .milliseconds(500), execute: workItem)
     }
 
-    private func notifyConsumers() {
+    private func notifyConsumers(playSound: Bool = false) {
         let now = Date()
         guard now.timeIntervalSince(lastNotifyTime) >= minNotifyInterval else {
             Logger.debug("DataRefreshCoordinator: suppressing notify (last was \(String(format: "%.1f", now.timeIntervalSince(lastNotifyTime)))s ago)")
             return
         }
         lastNotifyTime = now
-        Logger.debug("DataRefreshCoordinator: posting .dataDidChange")
+        Logger.debug("DataRefreshCoordinator: posting .dataDidChange\(playSound ? " + sound" : "")")
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .dataDidChange, object: nil)
-            CoinSound.playForDataChange()
+            if playSound {
+                CoinSound.playForDataChange()
+            }
         }
     }
 
