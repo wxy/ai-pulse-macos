@@ -8,5 +8,8 @@ DerivedData/
 # SPM
 Packages/
 
+# Distribution artifacts
+dist/
+
 # OS
 .DS_Store
