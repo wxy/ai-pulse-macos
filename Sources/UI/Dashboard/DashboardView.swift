@@ -6,6 +6,7 @@ import GRDB
 extension Color {
     static let marsGreen  = Color(red: 44/255, green: 91/255, blue: 72/255)   // #2C5B48
     static let marsGreen2 = Color(red: 61/255, green: 122/255, blue: 96/255)  // #3D7A60
+    static let marsGreenLight = Color(red: 140/255, green: 196/255, blue: 170/255)  // #8CC4AA — subscription bars
     static let deepRed    = Color(red: 173/255, green: 46/255, blue: 35/255)  // #AD2E23
     static let deepRed2   = Color(red: 196/255, green: 74/255, blue: 63/255)  // #C44A3F
 }
@@ -37,14 +38,21 @@ enum TimeRange: Hashable {
 }
 
 struct DashboardView: View {
+    let initialTimeRange: TimeRange
+
     @State private var dailyStats: [DailyStat] = []
     @State private var providerCosts: [ProviderDailyCost] = []
     @State private var codeChanges: [DailyCodeChange] = []
     @State private var paddedChanges: [DailyCodeChange] = []
     @State private var repos: [RepoBreakdown] = []
     @State private var prediction: Prediction?
-    @State private var timeRange = TimeRange.thisWeek
+    @State private var timeRange: TimeRange
     @State private var costHoverDate: Date? = nil
+
+    init(initialTimeRange: TimeRange = .thisWeek) {
+        self.initialTimeRange = initialTimeRange
+        self._timeRange = State(initialValue: initialTimeRange)
+    }
     @State private var codeHoverDate: Date? = nil
     @State private var costHoverX: CGFloat = 0
     @State private var codeHoverX: CGFloat = 0
@@ -63,6 +71,12 @@ struct DashboardView: View {
     @State private var toolCostBreakdown: [(name: String, cost: Double)] = []
     @State private var dailyBalanceSpend: [Date: Double] = [:]  // date → USD spend
     @State private var todayCombinedSpend: Double = 0
+    @State private var todayCalls: Int = 0
+    @State private var todayTokens: Int = 0
+    @State private var yesterdaySpend: Double = 0
+    @State private var previousPeriodSpend: Double = 0  // for 30-day comparison
+    @State private var barProgress: CGFloat = 0  // 0→1 drives all entry animations
+    @State private var loadedTimeRange: TimeRange? = nil  // set after data lands; gates bars against stale renders
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -163,7 +177,10 @@ struct DashboardView: View {
             ApiPoller.shared.pollAll()
             await load()
         }
-        .onChange(of: timeRange) { _, _ in Task { await load() } }
+        .onChange(of: timeRange) { _, _ in
+            barProgress = 0  // collapse bars immediately, avoid stale-data render
+            Task { await load() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             Task { await load() }
         }
@@ -174,6 +191,11 @@ struct DashboardView: View {
             let snap = AppHealthMonitor.shared.current
             healthSeverity = snap.severity
             healthMessages = snap.messages
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dashboardSwitchTab)) { notification in
+            if let tr = notification.userInfo?["timeRange"] as? TimeRange, tr != timeRange {
+                timeRange = tr
+            }
         }
     }
 
@@ -701,6 +723,20 @@ struct DashboardView: View {
         let type: String
     }
 
+    /// Static helper so load() can pad without reading @State codeChanges.
+    static func padChanges(_ changes: [DailyCodeChange], chartStart: Date, chartDays: Int) -> [DailyCodeChange] {
+        let cal = Calendar.current
+        var map = [Date: DailyCodeChange]()
+        for c in changes { map[cal.startOfDay(for: c.date)] = c }
+        var result = [DailyCodeChange]()
+        for offset in 0..<chartDays {
+            guard let date = cal.date(byAdding: .day, value: offset, to: chartStart) else { continue }
+            if let c = map[date] { result.append(c) }
+            else { result.append(DailyCodeChange(date: date, added: 0, deleted: 0)) }
+        }
+        return result
+    }
+
     func padCodeChanges() -> [DailyCodeChange] {
         let cal = Calendar.current
         let start = chartStart
@@ -802,66 +838,69 @@ struct DashboardView: View {
         _ = costSourceBreakdown
         let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
         let subDaily = StatsService.subscriptionDailyAmortization()
-        let totalCost = timeRange == .today ? todayCombinedSpend : apiSpend + subDaily * Double(timeRange.days)
-        let toolCosts = computeToolCosts()
+        let subTotal = subDaily * Double(timeRange.days)
+        let totalCost = timeRange == .today ? todayCombinedSpend : apiSpend + subTotal
 
+        let toolCosts = computeToolCosts()
         let apiData = apiDonutData()
+        let subVsApi = subVsApiDonutData(api: apiSpend, sub: subTotal)
+
         return VStack(spacing: 16) {
             // Big total
             VStack(spacing: 4) {
                 Text("$\(String(format: "%.2f", totalCost))")
                     .font(.system(size: 48, weight: .bold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.deepRed)
-                Text("\(timeRange.label)\(I18n.t("dashboard.api_spent"))")
-                    .font(.caption).foregroundColor(.secondary)
+                    .scaleEffect(loadedTimeRange == timeRange ? (0.8 + 0.2 * barProgress) : 0.8)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
+                HStack(spacing: 6) {
+                    Text("\(timeRange.label)\(I18n.t("dashboard.api_spent"))")
+                        .font(.caption).foregroundColor(.secondary)
+                    // Day-over-day badge (today only)
+                    if timeRange == .today, yesterdaySpend > 0.001 {
+                        comparisonBadge(current: totalCost, previous: yesterdaySpend, upLabel: "比昨天", downLabel: "比昨天", flatLabel: "与昨天持平")
+                    }
+                    // Period-over-period badge (30-day only)
+                    if timeRange == .days30, previousPeriodSpend > 0.001 {
+                        comparisonBadge(current: totalCost, previous: previousPeriodSpend, upLabel: "比上期", downLabel: "比上期", flatLabel: "与上期持平")
+                    }
+                }
+                // Monthly projection — all time ranges
+                if let p = prediction, p.monthProjected > 0.001 {
+                    Text("本月已花 $\(String(format: "%.2f", p.monthSoFar)) · 预计 $\(String(format: "%.2f", p.monthProjected)) · 剩余 \(p.daysRemaining) 天")
+                        .font(.caption2).foregroundColor(.secondary)
+                        .padding(.top, 2)
+                }
             }
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
+            .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
 
-            // Tool bars + API donut
-            HStack(alignment: .top, spacing: 16) {
+            // Donut charts flanking tool bars: sub/API split | tools | API providers
+            HStack(alignment: .top, spacing: 12) {
+                // Left: subscription vs API donut
+                if subVsApi.total > 0.001 {
+                    subVsApiDonut(data: subVsApi)
+                }
+
+                // Center: tool bars
                 VStack(alignment: .leading, spacing: 6) {
                     Text("按开发工具").font(.caption).foregroundColor(.secondary)
                     if toolCosts.isEmpty {
                         Text("--").font(.caption).foregroundColor(.secondary)
                     } else {
-                        ForEach(toolCosts.prefix(6), id: \.name) { tc in
-                            toolBarRow(name: tc.name, cost: tc.cost, total: totalCost)
+                        ForEach(Array(toolCosts.prefix(6).enumerated()), id: \.element.name) { idx, tc in
+                            toolBarRow(name: tc.name, cost: tc.cost, total: totalCost, index: idx)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity)
 
+                // Right: API provider donut
                 if !apiData.isEmpty {
-                    VStack(spacing: 6) {
-                        Text("按 API 提供商").font(.caption).foregroundColor(.secondary)
-                        ZStack {
-                            Chart(apiData) { item in
-                                SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
-                                    .foregroundStyle(by: .value("Provider", item.label))
-                            }
-                            .chartLegend(.hidden)
-                            .chartForegroundStyleScale(domain: apiData.map(\.label), range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
-                            .frame(width: 120, height: 120)
-                            Text("$\(String(format: "%.2f", apiSpend))")
-                                .font(.system(size: 18, weight: .semibold, design: .rounded)).monospacedDigit()
-                                .foregroundStyle(Color.deepRed)
-                        }
-                        VStack(spacing: 2) {
-                            ForEach(apiData) { item in
-                                HStack(spacing: 4) {
-                                    Circle().fill(item.color).frame(width: 6, height: 6)
-                                    Text(item.label).font(.caption2).foregroundColor(.secondary)
-                                    Spacer()
-                                    Text("\(Int(item.pct))%").font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    }
-                    .frame(maxWidth: 140)
+                    apiProviderDonut(data: apiData, apiSpend: apiSpend)
                 }
             }
         }
@@ -871,8 +910,10 @@ struct DashboardView: View {
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
-    func toolBarRow(name: String, cost: Double, total: Double) -> some View {
+    func toolBarRow(name: String, cost: Double, total: Double, index: Int = 0) -> some View {
         let w = total > 0 ? cost / total : 0
+        let dataReady = loadedTimeRange == timeRange
+        let progress = dataReady ? barProgress : 0
         return VStack(spacing: 3) {
             HStack {
                 Text(name).font(.caption).lineLimit(1)
@@ -882,10 +923,11 @@ struct DashboardView: View {
             GeometryReader { geo in
                 RoundedRectangle(cornerRadius: 5)
                     .fill(Color.marsGreen)
-                    .frame(width: max(geo.size.width * w, 4), height: 10)
+                    .frame(width: max(geo.size.width * w * progress, progress > 0.01 ? 4 : 0), height: 10)
             }
             .frame(height: 10)
         }
+        .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(Double(index) * 0.04), value: progress)
     }
 
     struct DonutItem: Identifiable { let id = UUID(); let label: String; let cost: Double; let pct: Double; let color: Color }
@@ -910,13 +952,18 @@ struct DashboardView: View {
         let added = codeChanges.reduce(0) { $0 + $1.added }
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
         let netLines = added - deleted
+        let dataReady = loadedTimeRange == timeRange
 
         return VStack(spacing: 12) {
-            // Code line cards
+            // Code line cards (+ calls/tokens for today)
             HStack(spacing: 8) {
                 smallCard(title: "净增行", value: "\(netLines)", color: netLines >= 0 ? .marsGreen : .deepRed)
                 smallCard(title: I18n.t("dashboard.code_added"), value: "+\(added)", color: Color.marsGreen)
                 smallCard(title: I18n.t("dashboard.code_deleted"), value: "-\(deleted)", color: .red)
+                if timeRange == .today {
+                    smallCard(title: "请求次数", value: "\(todayCalls)", color: .primary)
+                    smallCard(title: "Token 消耗", value: tokenShort(todayTokens), color: .primary)
+                }
             }
 
             // Repo list with cost + CPL
@@ -935,10 +982,12 @@ struct DashboardView: View {
                 let maxCPL = cplRepos.compactMap { r in r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : nil }.max() ?? 1
                 VStack(alignment: .leading, spacing: 6) {
                     Text("按仓库").font(.caption).foregroundColor(.secondary)
-                    ForEach(reposWithSub.prefix(8), id: \.0.id) { (r, totalCost) in
+                    ForEach(Array(reposWithSub.prefix(8).enumerated()), id: \.element.0.id) { idx, item in
+                        let (r, totalCost) = item
                         let combinedCPL = r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : 0
                         let costRatio = maxCost > 0 ? totalCost / maxCost : 0
                         let cplRatio = maxCPL > 0 ? combinedCPL / maxCPL : 0
+                        let progress = dataReady ? barProgress : 0
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
@@ -952,7 +1001,7 @@ struct DashboardView: View {
                                 GeometryReader { geo in
                                     RoundedRectangle(cornerRadius: 5)
                                         .fill(Color.marsGreen)
-                                        .frame(width: max(geo.size.width * costRatio, 4), height: 10)
+                                        .frame(width: max(geo.size.width * costRatio * progress, progress > 0.01 ? 4 : 0), height: 10)
                                 }
                                 .frame(height: 10)
                             }
@@ -962,12 +1011,13 @@ struct DashboardView: View {
                                 GeometryReader { geo in
                                     RoundedRectangle(cornerRadius: 4)
                                         .fill(Color.deepRed)
-                                        .frame(width: max(geo.size.width * cplRatio, 3), height: 8)
+                                        .frame(width: max(geo.size.width * cplRatio * progress, progress > 0.01 ? 3 : 0), height: 8)
                                 }
                                 .frame(height: 8)
                             }
                         }
                         .padding(.vertical, 4)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(Double(idx) * 0.03), value: progress)
                         if r.id != cplRepos.prefix(8).last?.id {
                             Divider()
                         }
@@ -1029,6 +1079,8 @@ struct DashboardView: View {
         let leftValues = trendSpendAxis.values
         let rightVals = trendCodeAxis.values
         let rightMax = trendCodeAxis.max
+        let dataReady = loadedTimeRange == timeRange
+        let prog = Double(dataReady ? barProgress : 0)
 
         return VStack(spacing: 12) {
             Text("每日趋势").font(.headline)
@@ -1040,33 +1092,34 @@ struct DashboardView: View {
                 let now = Date()
 
                 Chart {
-                    // API spend bars: use balance data when available, raw log otherwise
+                    // API spend bars
                     ForEach(padStats) { s in
                         let cal = Calendar.current; let d = cal.startOfDay(for: s.date)
-                        let spend = dailyBalanceSpend[d] ?? 0
+                        let spend = (dailyBalanceSpend[d] ?? 0) * prog
                         BarMark(x: .value("Date", s.date, unit: .day), y: .value("Spend", spend))
                             .foregroundStyle(Color.marsGreen)
                             .position(by: .value("Series", "花费"))
                     }
                     // Subscription bars (only up to today)
                     ForEach(padStats.filter { $0.date <= now }) { s in
-                        BarMark(x: .value("Date", s.date, unit: .day), y: .value("Sub", subDaily))
-                            .foregroundStyle(Color.marsGreen2)
+                        BarMark(x: .value("Date", s.date, unit: .day), y: .value("Sub", subDaily * prog))
+                            .foregroundStyle(Color.marsGreenLight)
                             .position(by: .value("Series", "花费"))
                     }
                     // Added lines
                     ForEach(padCode) { c in
-                        BarMark(x: .value("Date", c.date, unit: .day), y: .value("Added", Double(c.added) * scale))
+                        BarMark(x: .value("Date", c.date, unit: .day), y: .value("Added", Double(c.added) * scale * prog))
                             .foregroundStyle(Color.deepRed2)
                             .position(by: .value("Series", "代码"))
                     }
                     // Deleted lines
                     ForEach(padCode) { c in
-                        BarMark(x: .value("Date", c.date, unit: .day), y: .value("Deleted", Double(c.deleted) * scale))
+                        BarMark(x: .value("Date", c.date, unit: .day), y: .value("Deleted", Double(c.deleted) * scale * prog))
                             .foregroundStyle(Color.deepRed.opacity(0.35))
                             .position(by: .value("Series", "代码"))
                     }
                 }
+                .animation(.spring(response: 0.6, dampingFraction: 0.7), value: barProgress)
                 .chartXAxis {
                     AxisMarks(values: dateStride) { _ in
                         AxisValueLabel(format: dateLabelFormat, orientation: .horizontal)
@@ -1126,7 +1179,7 @@ struct DashboardView: View {
                         Text("API 花费").font(.caption2).foregroundColor(.secondary)
                     }
                     HStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 2).fill(Color.marsGreen2).frame(width: 10, height: 10)
+                        RoundedRectangle(cornerRadius: 2).fill(Color.marsGreenLight).frame(width: 10, height: 10)
                         Text("订阅").font(.caption2).foregroundColor(.secondary)
                     }
                     HStack(spacing: 4) {
@@ -1246,30 +1299,198 @@ struct DashboardView: View {
         "\(dailyStats.reduce(0) { $0 + $1.netLines })"
     }
 
-    func load() async {
-        loadError = nil
-        do {
-            let raw = try await StatsService.dailyStats(days: timeRange.days)
-            dailyStats = padStats(raw, days: timeRange.days)
-        } catch { loadError = error.localizedDescription; dailyStats = [] }
+    /// Format token count to short human-readable form (e.g. "12.3K", "1.2M").
+    func tokenShort(_ tokens: Int) -> String {
+        if tokens >= 1_000_000 {
+            return String(format: "%.1fM", Double(tokens) / 1_000_000)
+        } else if tokens >= 1_000 {
+            return String(format: "%.1fK", Double(tokens) / 1_000)
+        }
+        return "\(tokens)"
+    }
 
-        providerCosts = (try? await StatsService.providerDailyCosts(days: timeRange.days)) ?? []
-        codeChanges = (try? await StatsService.dailyCodeChanges(days: timeRange.days)) ?? []
-        editorMappings = EditorDetector.certainMappings()
-        repos = (try? await StatsService.repoBreakdown(days: timeRange.days, editorMappings: editorMappings)) ?? []
-        prediction = await StatsService.prediction()
-        paddedChanges = padCodeChanges()
-        subDaily = subDailyData()
-        apiDaily = apiDailyData()
-        // Use explicit sinceMs to match menu bar's balance query
+    /// Generalized comparison badge. Shows percentage change with arrow and configurable labels.
+    @ViewBuilder
+    func comparisonBadge(current: Double, previous: Double, upLabel: String, downLabel: String, flatLabel: String) -> some View {
+        let pct = (current - previous) / previous * 100
+        if abs(pct) < 1 {
+            Text(flatLabel)
+                .font(.caption2).foregroundColor(.secondary)
+                .padding(.horizontal, 6).padding(.vertical, 1)
+                .background(Color(nsColor: .quaternarySystemFill))
+                .cornerRadius(4)
+        } else if pct > 0 {
+            Text("\(upLabel) ↑\(Int(round(pct)))%")
+                .font(.caption2).foregroundColor(.deepRed)
+                .padding(.horizontal, 6).padding(.vertical, 1)
+                .background(Color.deepRed.opacity(0.1))
+                .cornerRadius(4)
+        } else {
+            Text("\(downLabel) ↓\(Int(round(-pct)))%")
+                .font(.caption2).foregroundColor(.marsGreen)
+                .padding(.horizontal, 6).padding(.vertical, 1)
+                .background(Color.marsGreen.opacity(0.1))
+                .cornerRadius(4)
+        }
+    }
+
+    // MARK: - Donut charts
+
+    /// Data for subscription-vs-API donut chart.
+    func subVsApiDonutData(api: Double, sub: Double) -> (segments: [DonutItem], total: Double) {
+        let total = api + sub
+        var segments: [DonutItem] = []
+        if api > 0.001 {
+            segments.append(DonutItem(label: "API 付费", cost: api,
+                                      pct: total > 0 ? api / total * 100 : 0, color: .deepRed))
+        }
+        if sub > 0.001 {
+            segments.append(DonutItem(label: "订阅", cost: sub,
+                                      pct: total > 0 ? sub / total * 100 : 0, color: .marsGreen))
+        }
+        return (segments, total)
+    }
+
+    /// Subscription-vs-API donut chart.
+    func subVsApiDonut(data: (segments: [DonutItem], total: Double)) -> some View {
+        let dataReady = loadedTimeRange == timeRange
+        return VStack(spacing: 6) {
+            Text("订阅 / API 占比").font(.caption).foregroundColor(.secondary)
+            ZStack {
+                Chart(data.segments) { item in
+                    SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                        .foregroundStyle(by: .value("Type", item.label))
+                }
+                .chartLegend(.hidden)
+                .chartForegroundStyleScale(domain: data.segments.map(\.label),
+                                           range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
+                .frame(width: 120, height: 120)
+                Text("$\(String(format: "%.2f", data.total))")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(Color.deepRed)
+            }
+            .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
+            .opacity(dataReady ? barProgress : 0)
+            VStack(spacing: 2) {
+                ForEach(data.segments) { item in
+                    HStack(spacing: 4) {
+                        Circle().fill(item.color).frame(width: 6, height: 6)
+                        Text(item.label).font(.caption2).foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(Int(item.pct))%").font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 140)
+        .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.15), value: barProgress)
+    }
+
+    /// API provider donut chart.
+    func apiProviderDonut(data: [DonutItem], apiSpend: Double) -> some View {
+        let dataReady = loadedTimeRange == timeRange
+        return VStack(spacing: 6) {
+            Text("按 API 提供商").font(.caption).foregroundColor(.secondary)
+            ZStack {
+                Chart(data) { item in
+                    SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                        .foregroundStyle(by: .value("Provider", item.label))
+                }
+                .chartLegend(.hidden)
+                .chartForegroundStyleScale(domain: data.map(\.label), range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
+                .frame(width: 120, height: 120)
+                Text("$\(String(format: "%.2f", apiSpend))")
+                    .font(.system(size: 18, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(Color.deepRed)
+            }
+            .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
+            .opacity(dataReady ? barProgress : 0)
+            VStack(spacing: 2) {
+                ForEach(data) { item in
+                    HStack(spacing: 4) {
+                        Circle().fill(item.color).frame(width: 6, height: 6)
+                        Text(item.label).font(.caption2).foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(Int(item.pct))%").font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 140)
+        .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.2), value: barProgress)
+    }
+
+    func load() async {
+        // ── Synchronous prep ──
+        let currentTimeRange = timeRange  // capture before async closures for sendability
+        let newEditorMappings = EditorDetector.certainMappings()
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
         let rangeStartMs = Int64(chartStart.timeIntervalSince1970 * 1000)
-        let rawSpend = (try? await StatsService.balanceDailySpend(days: timeRange.days, sinceMs: rangeStartMs)) ?? []
+
+        // ── Phase 1a: fire all independent async queries in parallel ──
+        async let rawDailyStats       = StatsService.dailyStats(days: currentTimeRange.days)
+        async let rawProviderCosts    = StatsService.providerDailyCosts(days: currentTimeRange.days)
+        async let rawCodeChanges      = StatsService.dailyCodeChanges(days: currentTimeRange.days)
+        async let rawRepos            = StatsService.repoBreakdown(days: currentTimeRange.days, editorMappings: newEditorMappings)
+        async let rawPrediction       = StatsService.prediction()
+        async let rawSpend            = StatsService.balanceDailySpend(days: currentTimeRange.days, sinceMs: rangeStartMs)
+        async let rawTodayCombined    = StatsService.combinedSpend(sinceMs: todayStartMs)
+
+        // Conditional combined-spend queries (return 0 when not applicable).
+        // Compare timeRange outside async closures to avoid Sendable warnings.
+        let isToday = currentTimeRange == .today
+        let isDays30 = currentTimeRange == .days30
+
+        async let rawYesterdaySpend: Double = {
+            guard isToday else { return 0 }
+            if let y = cal.date(byAdding: .day, value: -1, to: todayStart) {
+                return await StatsService.combinedSpend(sinceMs: Int64(y.timeIntervalSince1970 * 1000))
+            }
+            return 0
+        }()
+
+        async let rawPreviousPeriodSpend: Double = {
+            guard isDays30 else { return 0 }
+            if let curr = cal.date(byAdding: .day, value: -29, to: todayStart),
+               let prev = cal.date(byAdding: .day, value: -59, to: todayStart) {
+                let prev60 = await StatsService.combinedSpend(sinceMs: Int64(prev.timeIntervalSince1970 * 1000))
+                let curr30 = await StatsService.combinedSpend(sinceMs: Int64(curr.timeIntervalSince1970 * 1000))
+                return prev60 - curr30
+            }
+            return 0
+        }()
+
+        // ── Phase 1b: await all parallel results ──
+        let newLoadError: String?
+        let newDailyStats: [DailyStat]
+        do {
+            newDailyStats = padStats(try await rawDailyStats, days: timeRange.days)
+            newLoadError = nil
+        } catch { newLoadError = error.localizedDescription; newDailyStats = [] }
+
+        let newProviderCosts        = (try? await rawProviderCosts) ?? []
+        let newCodeChanges          = (try? await rawCodeChanges) ?? []
+        let newRepos                = (try? await rawRepos) ?? []
+        let newPrediction           = await rawPrediction
+        let newTodayCombinedSpend   = await rawTodayCombined
+        let newYesterdaySpend       = await rawYesterdaySpend
+        let newPreviousPeriodSpend  = await rawPreviousPeriodSpend
+
+        // Derived chart data (sync, depends on above)
+        let newPaddedChanges = Self.padChanges(newCodeChanges, chartStart: chartStart, chartDays: chartDays)
+        let newSubDaily = subDailyData()
+        let newApiDaily = apiDailyData()
+
+        // Balance spend aggregation (sync processing of rawSpend)
+        let rawSpendResolved = (try? await rawSpend) ?? []
         var dbs = [Date: Double]()
-        for s in rawSpend { dbs[s.date, default: 0] += s.spend }
-        dailyBalanceSpend = dbs
-        // Aggregate spend by provider for summary cards
+        for s in rawSpendResolved { dbs[s.date, default: 0] += s.spend }
+        let newDailyBalanceSpend = dbs
+
         var spendMap: [(String, Double)] = []
-        for s in rawSpend {
+        for s in rawSpendResolved {
             if let idx = spendMap.firstIndex(where: { $0.0 == s.providerId }) {
                 spendMap[idx].1 += s.spend
             } else {
@@ -1279,14 +1500,14 @@ struct DashboardView: View {
         let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
             if case .apiKey(let pid) = cs.kind { return pid }; return nil
         })
-        balanceSpend = spendMap.compactMap { (pid, spend) in
+        let newBalanceSpend = spendMap.compactMap { (pid, spend) -> (String, String, Double)? in
             guard enabledB.contains(pid), spend > 0.001 else { return nil }
             let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
             return (pid, name, spend)
-        }.sorted(by: { $0.spend > $1.spend })
-        // Aggregate balance spend by (date, provider) for chart bars
+        }.sorted(by: { $0.2 > $1.2 })
+
         var dailyAgg: [String: (date: Date, label: String, cost: Double)] = [:]
-        for s in rawSpend {
+        for s in rawSpendResolved {
             guard let name = IntegrationRegistry.all.first(where: { $0.id == s.providerId })?.displayName else { continue }
             let key = "\(Int(s.date.timeIntervalSince1970))-\(name)"
             if let existing = dailyAgg[key] {
@@ -1295,32 +1516,48 @@ struct DashboardView: View {
                 dailyAgg[key] = (s.date, name, s.spend)
             }
         }
-        balanceDaily = dailyAgg.values.map { ChartDataPoint(date: $0.date, label: $0.label, cost: $0.cost) }
+        let newBalanceDaily = dailyAgg.values.map { ChartDataPoint(date: $0.date, label: $0.label, cost: $0.cost) }
 
-        let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-        todayCombinedSpend = await StatsService.combinedSpend(sinceMs: todayStartMs)
+        // Today-specific metrics (sync, depends on newDailyStats)
+        let newTodayCalls: Int, newTodayTokens: Int
+        if timeRange == .today, let today = newDailyStats.first {
+            newTodayCalls = today.calls; newTodayTokens = today.tokens
+        } else { newTodayCalls = 0; newTodayTokens = 0 }
 
-        // Compute tool cost breakdown (unified scaling: same as menu bar)
-        do {
-            let startMs = Int64(chartStart.timeIntervalSince1970 * 1000)
-            let toolData: [(String, Double)] = try await AppDatabase.shared.read { db in
-                let rows = try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [startMs])
-                return rows.compactMap { r in
-                    guard let s: String = r["s"], let c: Double = r["c"], c > 0 else { return nil }
-                    return (s, c)
+        // ── Phase 1c: tool cost & usage queries (depend on balance data) ──
+        let toolStartMs = Int64(chartStart.timeIntervalSince1970 * 1000)
+        async let rawToolData: [(String, Double)] = AppDatabase.shared.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [toolStartMs])
+            return rows.compactMap { r in
+                guard let s: String = r["s"], let c: Double = r["c"], c > 0 else { return nil }
+                return (s, c)
+            }
+        }
+
+        async let rawUsageData: [String: (Double, String)] = AppDatabase.shared.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT id, usage_percent, usage_limit_status FROM cost_source WHERE usage_percent IS NOT NULL")
+            var map: [String: (Double, String)] = [:]
+            for r in rows {
+                if let id: String = r["id"], let pct: Double = r["usage_percent"] {
+                    map[id] = (pct, r["usage_limit_status"] ?? "")
                 }
             }
+            return map
+        }
+
+        // ── Phase 1d: process tool data ──
+        let newToolCostBreakdown: [(name: String, cost: Double)]
+        do {
+            let toolData = try await rawToolData
             let toolAPITotal = toolData.reduce(0.0) { $0 + $1.1 }
-            let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
+            let apiSpend = newBalanceSpend.reduce(0.0) { $0 + $1.2 }
             let subTotal = StatsService.subscriptionDailyAmortization() * Double(timeRange.days)
-            let totalCost = apiSpend + subTotal
-            let toolScale = toolAPITotal > 0 ? totalCost / toolAPITotal : 1.0
+            let displayTotal = timeRange == .today ? newTodayCombinedSpend : (apiSpend + subTotal)
+            let toolScale = toolAPITotal > 0 ? displayTotal / toolAPITotal : 1.0
 
             var tmap: [String: Double] = [:]
-            for (s, c) in toolData {
-                tmap[s] = c * toolScale
-            }
-            toolCostBreakdown = tmap.compactMap { (key, cost) -> (String, Double)? in
+            for (s, c) in toolData { tmap[s] = c * toolScale }
+            newToolCostBreakdown = tmap.compactMap { (key, cost) -> (String, Double)? in
                 guard cost > 0.001 else { return nil }
                 let label: String = switch key {
                 case "claude-code": "Claude Code"
@@ -1332,24 +1569,41 @@ struct DashboardView: View {
                 }
                 return (label, cost)
             }.sorted(by: { $0.1 > $1.1 }).map { (name: $0.0, cost: $0.1) }
-        } catch { toolCostBreakdown = [] }
+        } catch { newToolCostBreakdown = [] }
 
-        // Load usage data for subscription CostSources
-        do {
-            usageData = try await AppDatabase.shared.read { db in
-                let rows = try Row.fetchAll(db, sql: "SELECT id, usage_percent, usage_limit_status FROM cost_source WHERE usage_percent IS NOT NULL")
-                var map: [String: (Double, String)] = [:]
-                for r in rows {
-                    if let id: String = r["id"],
-                       let pct: Double = r["usage_percent"] {
-                        let status: String = r["usage_limit_status"] ?? ""
-                        map[id] = (pct, status)
-                    }
+        let newUsageData = (try? await rawUsageData) ?? [:]
+
+        // ── Apply ALL state changes atomically ──
+        loadError = newLoadError
+        dailyStats = newDailyStats
+        providerCosts = newProviderCosts
+        codeChanges = newCodeChanges
+        editorMappings = newEditorMappings
+        repos = newRepos
+        prediction = newPrediction
+        paddedChanges = newPaddedChanges
+        subDaily = newSubDaily
+        apiDaily = newApiDaily
+        dailyBalanceSpend = newDailyBalanceSpend
+        balanceSpend = newBalanceSpend
+        balanceDaily = newBalanceDaily
+        todayCombinedSpend = newTodayCombinedSpend
+        todayCalls = newTodayCalls
+        todayTokens = newTodayTokens
+        yesterdaySpend = newYesterdaySpend
+        previousPeriodSpend = newPreviousPeriodSpend
+        toolCostBreakdown = newToolCostBreakdown
+        usageData = newUsageData
+        loadedTimeRange = timeRange  // mark data as matching current tab
+
+        // ── Trigger entry animations (only when bars were reset by tab switch) ──
+        if barProgress < 0.5 {
+            barProgress = 0
+            DispatchQueue.main.async {
+                withAnimation(.spring(response: 0.65, dampingFraction: 0.7)) {
+                    self.barProgress = 1
                 }
-                return map
             }
-        } catch {
-            // Usage data is optional; ignore failures
         }
     }
 

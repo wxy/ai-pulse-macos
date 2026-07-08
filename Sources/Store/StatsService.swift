@@ -274,7 +274,7 @@ enum StatsService {
             return Prediction(monthProjected: 0, dailyRate: 0, daysRemaining: 0, monthSoFar: 0)
         }
         let todayStart = cal.startOfDay(for: Date())
-        let daysElapsed = max(1, cal.dateComponents([.day], from: monthStart, to: todayStart).day ?? 1)
+        let daysElapsed = max(1, (cal.dateComponents([.day], from: monthStart, to: todayStart).day ?? 0) + 1)
         let range = cal.range(of: .day, in: .month, for: Date())
         let totalDays = range?.count ?? 30
         let daysRemaining = totalDays - daysElapsed

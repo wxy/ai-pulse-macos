@@ -6,6 +6,10 @@ extension Notification.Name {
     /// Posted when new data has been ingested (logs, commits, or balance snapshots).
     /// UI consumers (MenuBar, Dashboard, Dock) should refresh in response.
     static let dataDidChange = Notification.Name("AIPulseDataDidChange")
+
+    /// Posted to request the open Dashboard to switch to a specific TimeRange tab.
+    /// userInfo contains "timeRange": TimeRange value.
+    static let dashboardSwitchTab = Notification.Name("AIPulseDashboardSwitchTab")
 }
 
 // MARK: - Detection
