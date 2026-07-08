@@ -25,21 +25,72 @@ compares it against your code output — always know your cost-per-line.
 ## Requirements
 
 - macOS 14 Sonoma or later
-- Xcode 16+ (for building from source)
+- Xcode 16.6+ (for building from source)
+- Paid Apple Developer Program membership (for distribution)
 
 ## Quick Start
 
 ```bash
-# Clone and build
+# Clone
 git clone https://github.com/wxy/ai-pulse-macos.git
 cd ai-pulse-macos
-make build
 
+# Build & run (command line)
+make build
+make run
+
+# Or open in Xcode
+open AIPulse/AIPulse.xcodeproj
+# Product → Run (⌘R)
+```
+
+```bash
 # Run tests
 make test
+```
 
-# Run the app (dev mode)
-make run
+## Building for Distribution
+
+### Prerequisites
+
+1. **Developer ID Application certificate** in Keychain
+2. **App-specific password** for notarization: [appleid.apple.com](https://appleid.apple.com) → Sign-In & Security → App-Specific Passwords
+3. Create `.env` from template:
+
+```bash
+cp .env.example .env
+# Edit .env with your Apple ID and app-specific password
+```
+
+### 1. Archive in Xcode
+
+```
+Product → Archive (⌘⌥⇧A)
+Distribute App → Direct Distribution
+```
+
+This exports a notarized `AIPulse.app` to `dist/`.
+
+### 2. Package as DMG
+
+```bash
+# Build DMG only
+./scripts/make-dmg.sh
+
+# Build DMG + notarize + staple + verify
+NOTARIZE=1 ./scripts/make-dmg.sh
+```
+
+Output: `dist/AIPulse-{version}.dmg`
+
+### All-in-one via release script
+
+```bash
+# Build + sign + DMG (no notarization)
+make release VERSION=1.0.1 BUILD_NUM=2
+
+# Build + sign + DMG + notarize
+NOTARIZE=1 make release
 ```
 
 ## Architecture
@@ -47,8 +98,8 @@ make run
 ```
 Sources/
 ├── App/           # AppDelegate, SparkleSetup
-├── Engine/        # Core logic: DataRefreshCoordinator, AnomalyDetector,
-│                  #   CoinSound, RepoDiscovery, AppHealthMonitor, …
+├── Engine/        # Core logic: CostSource, Arbitrator, DataRefreshCoordinator,
+│                  #   AnomalyDetector, CoinSound, RepoDiscovery, AppHealthMonitor
 ├── GitMonitor/    # libgit2 commit scanner
 ├── Ingest/        # LogWatcher, ApiPoller, PricingCatalog, ProviderRegistry
 ├── Integrations/  # ClaudeCode, Aider, B/C-grade integrations
@@ -73,6 +124,14 @@ RepoDiscovery (new repos)       ──┤
                ┌──────────┬──────────┬──────────┐
            Dashboard    MenuBar     Dock      CoinSound
 ```
+
+## Scripts
+
+| Script | Purpose |
+|---|---|
+| `scripts/build-app.sh` | Build `.app` bundle from Swift Package |
+| `scripts/release.sh` | Archive + sign + DMG + optional notarization |
+| `scripts/make-dmg.sh` | Create a nicely-formatted DMG from an `.app` |
 
 ## CI
 
