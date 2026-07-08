@@ -96,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             if item.isSeparatorItem { dock.addItem(.separator()); continue }
             let copy = NSMenuItem(title: item.title, action: item.action, keyEquivalent: item.keyEquivalent)
             copy.target = item.target
+            copy.representedObject = item.representedObject
             if let sub = item.submenu {
                 let subCopy = NSMenu()
                 for si in sub.items {
@@ -114,18 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     // MARK: - Windows
 
     @MainActor
-    private func openDashboard() {
-        if let w = DashboardWindowManager.shared.window, w.isVisible {
-            w.makeKeyAndOrderFront(nil)
-            return
-        }
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 640),
-                         styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                         backing: .buffered, defer: false)
-        w.title = I18n.t("dashboard.title")
-        w.contentView = NSHostingView(rootView: DashboardView())
-        w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
-        DashboardWindowManager.shared.window = w
+    private func openDashboard(initialTimeRange: TimeRange = .thisWeek) {
+        DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: initialTimeRange)
     }
 
     @MainActor

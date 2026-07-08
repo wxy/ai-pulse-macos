@@ -10,6 +10,37 @@ final class SettingsWindowManager: @unchecked Sendable {
 final class DashboardWindowManager: @unchecked Sendable {
     static let shared = DashboardWindowManager()
     var window: NSWindow?
+
+    /// Open the Dashboard or bring the existing window to front.
+    /// If the window already exists, posts `.dashboardSwitchTab` so the view
+    /// switches to the requested tab instead of opening a duplicate window.
+    @MainActor
+    func openOrBringToFront(initialTimeRange: TimeRange = .thisWeek) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        if let w = window, w.contentView != nil {
+            // Window already open — request tab switch and bring to front
+            NotificationCenter.default.post(name: .dashboardSwitchTab, object: nil,
+                                            userInfo: ["timeRange": initialTimeRange])
+            w.makeKeyAndOrderFront(nil)
+            return
+        }
+        // Create a new window
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 640),
+                         styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                         backing: .buffered, defer: false)
+        w.title = I18n.t("dashboard.title")
+        w.contentView = NSHostingView(rootView: DashboardView(initialTimeRange: initialTimeRange))
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        w.isReleasedWhenClosed = false
+        // Clear the stored reference when the window is closed
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
+                                               object: w, queue: .main) { [weak self] _ in
+            self?.window = nil
+        }
+        window = w
+    }
 }
 
 final class MenuBarController: NSObject, @unchecked Sendable {
@@ -60,21 +91,25 @@ final class MenuBarController: NSObject, @unchecked Sendable {
                     case .impaired: text = I18n.t("health.impaired")
                     default:        text = I18n.t("health.degraded")
                     }
-                    let item = NSMenuItem(title: "\(emoji)  \(text)", action: #selector(self.openDashboard), keyEquivalent: "")
+                    let item = NSMenuItem(title: "\(emoji)  \(text)", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
                     item.target = self
                     self.menu.addItem(item)
                     self.menu.addItem(.separator())
                 }
 
-                // Today line — click opens Dashboard
+                // Today line — click opens Dashboard (Today tab)
                 if let today = stats.todaySummary {
-                    let item = NSMenuItem(title: today, action: #selector(self.openDashboard), keyEquivalent: "")
-                    item.target = self; self.menu.addItem(item)
+                    let item = NSMenuItem(title: today, action: #selector(self.openDashboard(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = TimeRange.today
+                    self.menu.addItem(item)
                 }
-                // Week line — click opens Dashboard
+                // Week line — click opens Dashboard (This Week tab)
                 if let week = stats.weekSummary {
-                    let item = NSMenuItem(title: week, action: #selector(self.openDashboard), keyEquivalent: "")
-                    item.target = self; self.menu.addItem(item)
+                    let item = NSMenuItem(title: week, action: #selector(self.openDashboard(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = TimeRange.thisWeek
+                    self.menu.addItem(item)
                 }
 
                 // Stats submenus — only shown if they have items
@@ -83,13 +118,13 @@ final class MenuBarController: NSObject, @unchecked Sendable {
 
                 // Tool submenu — by dev tool
                 if !stats.toolCosts.isEmpty {
-                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_tool"))", action: #selector(self.openDashboard), keyEquivalent: "")
+                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_tool"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
                     m.target = self
                     let s = NSMenu()
                     for tc in stats.toolCosts {
                         let item = NSMenuItem(
                             title: "\(tc.name) · $\(String(format: "%.2f", tc.cost))",
-                            action: #selector(self.openDashboard), keyEquivalent: ""
+                            action: #selector(self.openDashboard(_:)), keyEquivalent: ""
                         )
                         item.target = self
                         s.addItem(item)
@@ -99,14 +134,14 @@ final class MenuBarController: NSObject, @unchecked Sendable {
 
                 // Provider submenu — consumption from DB (USD)
                 if !stats.providerCosts.isEmpty {
-                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_provider"))", action: #selector(self.openDashboard), keyEquivalent: "")
+                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_provider"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
                     m.target = self
                     let s = NSMenu()
                     for pc in stats.providerCosts {
                         let name = IntegrationRegistry.all.first(where: { $0.id == pc.providerId })?.displayName ?? pc.providerId
                         let item = NSMenuItem(
                             title: "\(name) · $\(String(format: "%.2f", pc.cost))",
-                            action: #selector(self.openDashboard), keyEquivalent: ""
+                            action: #selector(self.openDashboard(_:)), keyEquivalent: ""
                         )
                         item.target = self
                         s.addItem(item)
@@ -114,11 +149,11 @@ final class MenuBarController: NSObject, @unchecked Sendable {
                     m.submenu = s; self.menu.addItem(m)
                 }
                 if !stats.repos.isEmpty {
-                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_repo"))", action: #selector(self.openDashboard), keyEquivalent: "")
+                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_repo"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
                     m.target = self
                     let s = NSMenu()
                     for r in stats.repos {
-                        let item = NSMenuItem(title: "\(r.name) · \(r.summary)", action: #selector(self.openDashboard), keyEquivalent: "")
+                        let item = NSMenuItem(title: "\(r.name) · \(r.summary)", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
                         item.target = self
                         s.addItem(item)
                     }
@@ -281,11 +316,9 @@ final class MenuBarController: NSObject, @unchecked Sendable {
         }
     }
 
-    @MainActor @objc private func openDashboard() {
-        NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true)
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 520), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        w.title = I18n.t("dashboard.title"); w.contentView = NSHostingView(rootView: DashboardView()); w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
-        DashboardWindowManager.shared.window = w
+    @MainActor @objc private func openDashboard(_ sender: NSMenuItem) {
+        let initialRange = sender.representedObject as? TimeRange ?? .thisWeek
+        DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: initialRange)
     }
 
     @MainActor @objc private func openPreferences() {
