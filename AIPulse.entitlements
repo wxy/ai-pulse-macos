@@ -6,7 +6,7 @@
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 
-	<!-- Network: API polling + local proxy (MAS core omits network.server) -->
+	<!-- Network: API polling + local proxy -->
 	<key>com.apple.security.network.client</key>
 	<true/>
 
@@ -14,11 +14,14 @@
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
 
-	<!-- Audio: allow NSSound to play synthesized coin sounds -->
-	<key>com.apple.security.exception.mach-lookup.global-name</key>
+	<!-- Audio: allow NSSound to play synthesized coin sounds
+	     (likely unnecessary — NSSound works fine under sandbox;
+	     if playback breaks, uncomment and re-validate)
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
 	<array>
 		<string>com.apple.audioanalyticsd</string>
 		<string>com.apple.audio.AudioComponentRegistrar</string>
 	</array>
+	-->
 </dict>
 </plist>

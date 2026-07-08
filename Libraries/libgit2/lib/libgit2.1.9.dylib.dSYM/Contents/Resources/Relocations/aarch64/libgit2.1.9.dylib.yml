@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/xingyuwang/develop/ai-pulse-macos/Libraries/libgit2/lib/libgit2.1.9.dylib'
+relocations:     []
+...
