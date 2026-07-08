@@ -53,23 +53,27 @@ enum CostConfidence: String, Codable, Comparable {
 extension CostSource {
     /// Persist active cost sources to the `cost_source` table for SQL queries.
     static func syncToDatabase(_ sources: [CostSource]) {
+        // Pre-compute row data outside the db.write closure to avoid
+        // an ownership/lifetime compiler crash on enum destructuring
+        // (switch_enum on CostSourceKind.associated-value) in optimized builds.
+        let rows: [(id: String, label: String, kind: String, confidence: String, monthlyFee: Double?)] =
+            sources.map { s in
+                let fee: Double? = {
+                    if case .subscription(_, _, let fee) = s.kind { return fee }
+                    return nil
+                }()
+                return (s.id, s.label, kindString(s.kind), s.confidence.rawValue, fee)
+            }
         Task {
             do {
                 try await AppDatabase.shared.write { db in
                     try db.execute(sql: "DELETE FROM cost_source")
-                    for s in sources {
-                        let monthlyFee: Double? = {
-                            if case .subscription(_, _, let fee) = s.kind { return fee }
-                            return nil
-                        }()
+                    for row in rows {
                         try db.execute(sql: """
                             INSERT INTO cost_source (id, label, kind, confidence, monthly_fee)
                             VALUES (?, ?, ?, ?, ?)
                             """, arguments: [
-                                s.id, s.label,
-                                kindString(s.kind),
-                                s.confidence.rawValue,
-                                monthlyFee,
+                                row.id, row.label, row.kind, row.confidence, row.monthlyFee,
                             ])
                     }
                 }
