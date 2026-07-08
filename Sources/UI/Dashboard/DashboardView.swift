@@ -1080,7 +1080,7 @@ struct DashboardView: View {
         let rightVals = trendCodeAxis.values
         let rightMax = trendCodeAxis.max
         let dataReady = loadedTimeRange == timeRange
-        let prog = dataReady ? barProgress : 0
+        let prog = Double(dataReady ? barProgress : 0)
 
         return VStack(spacing: 12) {
             Text("每日趋势").font(.headline)
@@ -1525,9 +1525,9 @@ struct DashboardView: View {
         } else { newTodayCalls = 0; newTodayTokens = 0 }
 
         // ── Phase 1c: tool cost & usage queries (depend on balance data) ──
+        let toolStartMs = Int64(chartStart.timeIntervalSince1970 * 1000)
         async let rawToolData: [(String, Double)] = AppDatabase.shared.read { db in
-            let startMs = Int64(chartStart.timeIntervalSince1970 * 1000)
-            let rows = try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [startMs])
+            let rows = try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [toolStartMs])
             return rows.compactMap { r in
                 guard let s: String = r["s"], let c: Double = r["c"], c > 0 else { return nil }
                 return (s, c)
