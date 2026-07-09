@@ -23,6 +23,10 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     private let notifyQueue = DispatchQueue(label: "com.wxy.aipulse.coordinator", qos: .utility)
     private var screenSleepObserver: NSObjectProtocol?
     private var screenWakeObserver: NSObjectProtocol?
+    /// Formatted today spend at the last sound-triggered notification.
+    /// Compared against the current formatted value so the coin sound only
+    /// plays when the dock badge label would actually change.
+    private var lastSoundBadgeLabel: String = ""
 
     /// Minimum interval between consecutive .dataDidChange posts.
     /// Prevents the staggered startup phases (5s/10s/15s) and rapid
@@ -200,10 +204,22 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         }
         lastNotifyTime = now
         Logger.debug("DataRefreshCoordinator: posting .dataDidChange\(playSound ? " + sound" : "")")
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
             NotificationCenter.default.post(name: .dataDidChange, object: nil)
-            if playSound {
-                CoinSound.playForDataChange()
+            guard let self, playSound else { return }
+            // Only play coin sound when the dock badge label would change.
+            // Uses the same formatting as DockManager.swift:120 so sound
+            // exactly mirrors visible badge updates.
+            Task {
+                let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+                let spend = await StatsService.combinedSpend(sinceMs: todayStartMs)
+                let label = "$\(String(format: "%.2f", spend))"
+                if label != self.lastSoundBadgeLabel {
+                    self.lastSoundBadgeLabel = label
+                    CoinSound.playForDataChange()
+                } else {
+                    Logger.debug("DataRefreshCoordinator: suppressing sound — badge unchanged at \(label)")
+                }
             }
         }
     }
