@@ -68,6 +68,8 @@ struct DashboardView: View {
     @State private var usageData: [String: (percent: Double, limitStatus: String)] = [:]  // costSourceId → (usage%, status)
     @State private var trendHoverDate: Date? = nil
     @State private var trendHoverX: CGFloat = 0
+    @State private var trendHoverY: CGFloat = 0
+    @State private var trendPlotFrame: CGRect = .zero  // plot area in chart-view coords
     @State private var toolCostBreakdown: [(name: String, cost: Double)] = []
     @State private var dailyBalanceSpend: [Date: Double] = [:]  // date → USD spend
     @State private var todayCombinedSpend: Double = 0
@@ -77,6 +79,7 @@ struct DashboardView: View {
     @State private var previousPeriodSpend: Double = 0  // for 30-day comparison
     @State private var barProgress: CGFloat = 0  // 0→1 drives all entry animations
     @State private var loadedTimeRange: TimeRange? = nil  // set after data lands; gates bars against stale renders
+    @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -1004,12 +1007,23 @@ struct DashboardView: View {
             let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
             map[name] = (map[name] ?? 0) + spend
         }
-        let total = map.values.reduce(0, +)
+        // Add error entries for providers whose balance fetch failed
+        let tracked = IntegrationRegistry.balanceTrackedCostSources()
+            .compactMap { cs -> String? in
+                if case .apiKey(let pid) = cs.kind { return pid }; return nil
+            }
+        for pid in tracked where balanceErrors.contains(pid) && !map.keys.contains(pid) {
+            let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
+            map[name] = -1  // sentinel: error, not zero
+        }
+        let total = map.values.filter { $0 > 0 }.reduce(0, +)
         let colors: [Color] = [.deepRed, .marsGreen, .deepRed2, .marsGreen2, .deepRed, .marsGreen]
         return map.sorted(by: { $0.value > $1.value }).enumerated().map { (i, kv) in
-            DonutItem(label: kv.key, cost: kv.value,
-                      pct: total > 0 ? kv.value / total * 100 : 0,
-                      color: colors[i % colors.count])
+            let isError = kv.value < 0
+            return DonutItem(label: isError ? "\(kv.key) ⚠" : kv.key,
+                             cost: isError ? 0 : kv.value,
+                             pct: isError ? 0 : (total > 0 ? kv.value / total * 100 : 0),
+                             color: isError ? .gray.opacity(0.5) : colors[i % colors.count])
         }
     }
 
@@ -1214,7 +1228,7 @@ struct DashboardView: View {
                               values: rightVals.map { $0 * leftMax / rightMax }) { value in
                         let idx = value.index
                         if idx < rightVals.count {
-                            AxisValueLabel("\(Int(rightVals[idx]))")
+                            AxisValueLabel(shortNum(Int(rightVals[idx])))
                         }
                     }
                 }
@@ -1224,9 +1238,13 @@ struct DashboardView: View {
                             .onContinuousHover { phase in
                                 if case .active(let loc) = phase,
                                    let frame = proxy.plotFrame {
-                                    let x = loc.x - geo[frame].origin.x
-                                    guard x >= 0, x <= geo[frame].width else { trendHoverDate = nil; return }
+                                    let pf = geo[frame]
+                                    let x = loc.x - pf.origin.x
+                                    let y = loc.y - pf.origin.y
+                                    guard x >= 0, x <= pf.width else { trendHoverDate = nil; return }
                                     trendHoverX = x
+                                    trendHoverY = y
+                                    trendPlotFrame = pf
                                     trendHoverDate = proxy.value(atX: x)
                                 } else { trendHoverDate = nil }
                             }
@@ -1239,6 +1257,22 @@ struct DashboardView: View {
                        let code = padCode.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
                        stat.cost > 0 || code.added > 0 || code.deleted > 0 {
                         let subCost = hd <= now ? subDaily : 0
+                        // Try right of cursor; flip left only if the tooltip would overflow.
+                        let tipW: CGFloat = 110
+                        let tipH: CGFloat = 68
+                        let gap: CGFloat = 8
+                        let pw = trendPlotFrame.width
+                        let ph = trendPlotFrame.height
+                        let fitsRight = (trendHoverX + gap + tipW <= pw)
+                        let rawX = fitsRight
+                            ? trendHoverX + gap
+                            : trendHoverX - tipW - gap
+                        let fitsAbove = (trendHoverY - tipH - gap >= 0)
+                        let rawY = fitsAbove
+                            ? trendHoverY - tipH - gap
+                            : trendHoverY + gap
+                        let tipX = trendPlotFrame.origin.x + max(0, min(rawX, pw - tipW))
+                        let tipY = trendPlotFrame.origin.y + max(0, min(rawY, ph - tipH))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(hd, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
                             Text("API: $\(String(format: "%.2f", stat.cost))").font(.caption2).monospacedDigit()
@@ -1247,7 +1281,7 @@ struct DashboardView: View {
                             Text("删除: -\(code.deleted) 行").font(.caption2).monospacedDigit()
                         }
                         .padding(6).background(.regularMaterial).cornerRadius(6)
-                        .offset(x: trendHoverX > 300 ? trendHoverX - 140 : trendHoverX + 16, y: 0)
+                        .offset(x: max(0, tipX), y: max(0, tipY))
                     }
                 }
 
@@ -1376,6 +1410,13 @@ struct DashboardView: View {
 
     func totalLines() -> String {
         "\(dailyStats.reduce(0) { $0 + $1.netLines })"
+    }
+
+    /// Format integer to short form (e.g. "1K", "15K", "1M", "980").
+    func shortNum(_ n: Int) -> String {
+        if n >= 1_000_000 { return "\(n / 1_000_000)M" }
+        if n >= 1_000     { return "\(n / 1_000)K" }
+        return "\(n)"
     }
 
     /// Format token count to short human-readable form (e.g. "12.3K", "1.2M").
@@ -1674,6 +1715,7 @@ struct DashboardView: View {
         toolCostBreakdown = newToolCostBreakdown
         usageData = newUsageData
         loadedTimeRange = timeRange  // mark data as matching current tab
+        balanceErrors = AppHealthMonitor.shared.failingProviders
 
         // ── Trigger entry animations (only when bars were reset by tab switch) ──
         if barProgress < 0.5 {

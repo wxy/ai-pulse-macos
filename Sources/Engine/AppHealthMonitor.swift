@@ -47,6 +47,12 @@ final class AppHealthMonitor: @unchecked Sendable {
         )
     }
 
+    /// Provider IDs currently failing balance/API fetches (thread-safe).
+    var failingProviders: Set<String> {
+        lock.lock(); defer { lock.unlock() }
+        return _apiErrors
+    }
+
     private init() {}
 
     // MARK: - Reporting
