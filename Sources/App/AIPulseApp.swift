@@ -77,6 +77,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         Timer.scheduledTimer(withTimeInterval: 3660, repeats: true) { _ in
             Task { await AnomalyDetector.shared.check() }
         }
+
+        // Build main menu bar (App, File, Window) — required for App Store compliance
+        buildMainMenu()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onLanguageChange),
+            name: I18n.didChangeLanguage, object: nil
+        )
     }
 
     /// Re-open handler: Dock click or Cmd+Tab → show Dashboard
@@ -120,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     }
 
     @MainActor
-    private func openPreferences() {
+    @objc private func openPreferences() {
         NSApp.activate(ignoringOtherApps: true)
         if let w = SettingsWindowManager.shared.window, w.isVisible {
             w.makeKeyAndOrderFront(nil)
@@ -133,6 +140,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         w.contentView = NSHostingView(rootView: SettingsView())
         w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
         SettingsWindowManager.shared.window = w
+    }
+
+    // MARK: - Main Menu
+
+    /// Build the full main menu bar (App, File, Window).
+    /// Required for App Store compliance — Guideline 4.
+    @MainActor
+    private func buildMainMenu() {
+        let mainMenu = NSMenu()
+
+        // --- App Menu ---
+        let appMenuItem = NSMenuItem()
+        let appSubmenu = NSMenu()
+        appMenuItem.submenu = appSubmenu
+
+        let aboutTitle = "\(I18n.t("settings.about")) \(I18n.t("about.title"))"
+        let aboutItem = NSMenuItem(title: aboutTitle, action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        appSubmenu.addItem(aboutItem)
+
+        let prefsItem = NSMenuItem(title: I18n.t("menu.preferences"), action: #selector(openPreferences), keyEquivalent: ",")
+        prefsItem.target = self
+        appSubmenu.addItem(prefsItem)
+
+        appSubmenu.addItem(.separator())
+
+        // Enable Services submenu (AppKit auto-inserts it)
+        if NSApp.servicesMenu == nil { NSApp.servicesMenu = NSMenu() }
+
+        let quitItem = NSMenuItem(title: I18n.t("menu.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appSubmenu.addItem(quitItem)
+
+        mainMenu.addItem(appMenuItem)
+
+        // --- File Menu ---
+        let fileMenuItem = NSMenuItem()
+        let fileSubmenu = NSMenu(title: "File")
+        let closeItem = NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileSubmenu.addItem(closeItem)
+        fileMenuItem.submenu = fileSubmenu
+        mainMenu.addItem(fileMenuItem)
+
+        // --- Window Menu ---
+        let windowMenuItem = NSMenuItem()
+        let windowSubmenu = NSMenu(title: "Window")
+
+        let timeRanges: [(TimeRange, String)] = [
+            (.today, I18n.t("dashboard.today")),
+            (.thisWeek, I18n.t("dashboard.this_week")),
+            (.days30, I18n.t("dashboard.days_30")),
+        ]
+        for (tr, label) in timeRanges {
+            let item = NSMenuItem(title: "Dashboard — \(label)", action: #selector(openDashboardFromMenu(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = tr
+            windowSubmenu.addItem(item)
+        }
+
+        windowSubmenu.addItem(.separator())
+
+        let welcomeItem = NSMenuItem(title: I18n.t("general.rerun_welcome"), action: #selector(showOnboardingFromMenu), keyEquivalent: "")
+        welcomeItem.target = self
+        windowSubmenu.addItem(welcomeItem)
+
+        windowMenuItem.submenu = windowSubmenu
+        mainMenu.addItem(windowMenuItem)
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    @MainActor @objc private func showAbout() {
+        NSApp.orderFrontStandardAboutPanel(nil)
+    }
+
+    @MainActor @objc private func openDashboardFromMenu(_ sender: NSMenuItem) {
+        let tr = sender.representedObject as? TimeRange ?? .thisWeek
+        DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: tr)
+    }
+
+    @MainActor @objc private func showOnboardingFromMenu() {
+        UserDefaults.standard.removeObject(forKey: "onboarding_completed")
+        openOnboarding()
+    }
+
+    @MainActor @objc private func onLanguageChange() {
+        buildMainMenu()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
