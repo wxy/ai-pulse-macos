@@ -60,7 +60,9 @@ final class LogWatcher: @unchecked Sendable {
 
     func start() {
         scanQueue.async { [weak self] in
-            self?.loadGroup.wait()  // ensure positions are loaded
+            if self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut {
+                Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+            }
             self?.watchClaudeCode()
             self?.discoverAndWatchRepos()
         }
@@ -70,7 +72,9 @@ final class LogWatcher: @unchecked Sendable {
     /// Safe to call repeatedly; idempotent. Used by DataRefreshCoordinator.
     func scan() {
         scanQueue.async { [weak self] in
-            self?.loadGroup.wait()  // ensure positions are loaded
+            if self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut {
+                Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+            }
             self?.scanClaudeProjectsOnly()
             self?.discoverAndWatchRepos()
         }
@@ -80,7 +84,9 @@ final class LogWatcher: @unchecked Sendable {
         claudeSource?.cancel()
         claudeSource = nil
         persistPositions()
-        persistGroup.wait()
+        if persistGroup.wait(timeout: .now() + 3.0) == .timedOut {
+            Logger.warning("LogWatcher: persist positions timed out during stop")
+        }
     }
 
     // MARK: - Claude Code

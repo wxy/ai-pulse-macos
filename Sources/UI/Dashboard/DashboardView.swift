@@ -77,6 +77,7 @@ struct DashboardView: View {
     @State private var previousPeriodSpend: Double = 0  // for 30-day comparison
     @State private var barProgress: CGFloat = 0  // 0→1 drives all entry animations
     @State private var loadedTimeRange: TimeRange? = nil  // set after data lands; gates bars against stale renders
+    @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -1004,12 +1005,23 @@ struct DashboardView: View {
             let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
             map[name] = (map[name] ?? 0) + spend
         }
-        let total = map.values.reduce(0, +)
+        // Add error entries for providers whose balance fetch failed
+        let tracked = IntegrationRegistry.balanceTrackedCostSources()
+            .compactMap { cs -> String? in
+                if case .apiKey(let pid) = cs.kind { return pid }; return nil
+            }
+        for pid in tracked where balanceErrors.contains(pid) && !map.keys.contains(pid) {
+            let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
+            map[name] = -1  // sentinel: error, not zero
+        }
+        let total = map.values.filter { $0 > 0 }.reduce(0, +)
         let colors: [Color] = [.deepRed, .marsGreen, .deepRed2, .marsGreen2, .deepRed, .marsGreen]
         return map.sorted(by: { $0.value > $1.value }).enumerated().map { (i, kv) in
-            DonutItem(label: kv.key, cost: kv.value,
-                      pct: total > 0 ? kv.value / total * 100 : 0,
-                      color: colors[i % colors.count])
+            let isError = kv.value < 0
+            return DonutItem(label: isError ? "\(kv.key) ⚠" : kv.key,
+                             cost: isError ? 0 : kv.value,
+                             pct: isError ? 0 : (total > 0 ? kv.value / total * 100 : 0),
+                             color: isError ? .gray.opacity(0.5) : colors[i % colors.count])
         }
     }
 
@@ -1674,6 +1686,7 @@ struct DashboardView: View {
         toolCostBreakdown = newToolCostBreakdown
         usageData = newUsageData
         loadedTimeRange = timeRange  // mark data as matching current tab
+        balanceErrors = AppHealthMonitor.shared.failingProviders
 
         // ── Trigger entry animations (only when bars were reset by tab switch) ──
         if barProgress < 0.5 {

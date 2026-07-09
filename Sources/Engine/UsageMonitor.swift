@@ -86,6 +86,8 @@ final class UsageMonitor: @unchecked Sendable {
         session.dataTask(with: req) { data, resp, error in
             if let error {
                 Logger.debug("UsageMonitor: Copilot API error: \(error.localizedDescription)")
+                AppHealthMonitor.shared.reportAPIError(providerId: "copilot-usage",
+                    message: "Copilot usage: \(error.localizedDescription)")
                 return
             }
             guard let data,
@@ -95,9 +97,12 @@ final class UsageMonitor: @unchecked Sendable {
                   let parsed = Self.parseCopilotResponse(json)
             else {
                 Logger.debug("UsageMonitor: Copilot API unexpected response")
+                AppHealthMonitor.shared.reportAPIError(providerId: "copilot-usage",
+                    message: "Copilot usage: unexpected response")
                 return
             }
 
+            AppHealthMonitor.shared.clearAPIError(providerId: "copilot-usage")
             let usedPercent = parsed.usedPercent
             let overageCount = parsed.overageCount
 
