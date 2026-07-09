@@ -177,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // --- File Menu ---
         let fileMenuItem = NSMenuItem()
         let fileSubmenu = NSMenu(title: "File")
-        let closeItem = NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let closeItem = NSMenuItem(title: I18n.t("menu.close_window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         fileSubmenu.addItem(closeItem)
         fileMenuItem.submenu = fileSubmenu
         mainMenu.addItem(fileMenuItem)
@@ -192,7 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             (.days30, I18n.t("dashboard.days_30")),
         ]
         for (tr, label) in timeRanges {
-            let item = NSMenuItem(title: "Dashboard — \(label)", action: #selector(openDashboardFromMenu(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: "\(I18n.t("menu.dashboard_label")) — \(label)", action: #selector(openDashboardFromMenu(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = tr
             windowSubmenu.addItem(item)

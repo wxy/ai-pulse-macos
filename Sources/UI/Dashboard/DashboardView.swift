@@ -408,7 +408,7 @@ struct DashboardView: View {
             let toolCosts = computeToolCosts()
             if !toolCosts.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("按开发工具").font(.caption).foregroundColor(.secondary)
+                    Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
                     HStack(spacing: 8) {
                         ForEach(toolCosts.prefix(5), id: \.name) { tc in
                             VStack(spacing: 2) {
@@ -467,7 +467,7 @@ struct DashboardView: View {
         case 75..<90: .marsGreen2
         default:      .deepRed
         }
-        let label = clamped > 100 ? "超量" : "\(Int(clamped))%"
+        let label = clamped > 100 ? I18n.t("dashboard.over_limit") : "\(Int(clamped))%"
         return HStack(spacing: 2) {
             Text(label)
                 .font(.system(size: 8)).monospacedDigit().foregroundColor(barColor)
@@ -484,7 +484,7 @@ struct DashboardView: View {
             }
             .frame(width: 40, height: 5)
         }
-        .help(clamped > 90 ? "用量接近上限，可能产生超额费用" : "当月用量百分比")
+        .help(clamped > 90 ? I18n.t("dashboard.usage_help") : I18n.t("dashboard.usage_percent"))
     }
 
     func confidenceBadge(_ c: CostConfidence) -> some View {
@@ -887,12 +887,12 @@ struct DashboardView: View {
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
         let netLines = added - deleted
         Group {
-            smallCard(title: "净增行", value: "\(netLines)", color: netLines >= 0 ? .marsGreen : .deepRed)
+            smallCard(title: I18n.t("dashboard.net_lines"), value: "\(netLines)", color: netLines >= 0 ? .marsGreen : .deepRed)
             smallCard(title: I18n.t("dashboard.code_added"), value: "+\(added)", color: Color.marsGreen)
             smallCard(title: I18n.t("dashboard.code_deleted"), value: "-\(deleted)", color: .red)
             if timeRange == .today {
-                smallCard(title: "请求次数", value: "\(todayCalls)", color: .primary)
-                smallCard(title: "Token 消耗", value: tokenShort(todayTokens), color: .primary)
+                smallCard(title: I18n.t("dashboard.request_count"), value: "\(todayCalls)", color: .primary)
+                smallCard(title: I18n.t("dashboard.token_usage"), value: tokenShort(todayTokens), color: .primary)
             }
         }
     }
@@ -935,16 +935,16 @@ struct DashboardView: View {
                         .font(.caption).foregroundColor(.secondary)
                     // Day-over-day badge (today only)
                     if timeRange == .today, yesterdaySpend > 0.001 {
-                        comparisonBadge(current: totalCost, previous: yesterdaySpend, upLabel: "比昨天", downLabel: "比昨天", flatLabel: "与昨天持平")
+                        comparisonBadge(current: totalCost, previous: yesterdaySpend, upLabel: I18n.t("dashboard.vs_yesterday"), downLabel: I18n.t("dashboard.vs_yesterday"), flatLabel: I18n.t("dashboard.vs_yesterday_flat"))
                     }
                     // Period-over-period badge (30-day only)
                     if timeRange == .days30, previousPeriodSpend > 0.001 {
-                        comparisonBadge(current: totalCost, previous: previousPeriodSpend, upLabel: "比上期", downLabel: "比上期", flatLabel: "与上期持平")
+                        comparisonBadge(current: totalCost, previous: previousPeriodSpend, upLabel: I18n.t("dashboard.vs_period"), downLabel: I18n.t("dashboard.vs_period"), flatLabel: I18n.t("dashboard.vs_period_flat"))
                     }
                 }
                 // Monthly projection — all time ranges
                 if let p = prediction, p.monthProjected > 0.001 {
-                    Text("本月已花 $\(String(format: "%.2f", p.monthSoFar)) · 预计 $\(String(format: "%.2f", p.monthProjected)) · 剩余 \(p.daysRemaining) 天")
+                    Text(String(format: I18n.t("dashboard.month_projection"), String(format: "%.2f", p.monthSoFar), String(format: "%.2f", p.monthProjected), p.daysRemaining))
                         .font(.caption2).foregroundColor(.secondary)
                         .padding(.top, 2)
                 }
@@ -1040,7 +1040,7 @@ struct DashboardView: View {
         return VStack(spacing: 12) {
             // ── Tool bars ("mouth") ──
             VStack(alignment: .leading, spacing: 6) {
-                Text("按开发工具").font(.caption).foregroundColor(.secondary)
+                Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
                 if toolCosts.isEmpty {
                     Text("--").font(.caption).foregroundColor(.secondary)
                 } else {
@@ -1074,7 +1074,7 @@ struct DashboardView: View {
                 let maxCost = reposWithSub.map(\.1).max() ?? 1
                 let maxCPL = cplRepos.compactMap { r in r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : nil }.max() ?? 1
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("按仓库").font(.caption).foregroundColor(.secondary)
+                    Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
                     ForEach(Array(reposWithSub.prefix(8).enumerated()), id: \.element.0.id) { idx, item in
                         let (r, totalCost) = item
                         let combinedCPL = r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : 0
@@ -1176,7 +1176,7 @@ struct DashboardView: View {
         let prog = Double(dataReady ? barProgress : 0)
 
         return VStack(spacing: 12) {
-            Text("每日趋势").font(.headline)
+            Text(I18n.t("dashboard.daily_trend")).font(.headline)
 
             if noData {
                 Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 20)
@@ -1191,25 +1191,25 @@ struct DashboardView: View {
                         let spend = (dailyBalanceSpend[d] ?? 0) * prog
                         BarMark(x: .value("Date", s.date, unit: .day), y: .value("Spend", spend))
                             .foregroundStyle(Color.marsGreen)
-                            .position(by: .value("Series", "花费"))
+                            .position(by: .value("Series", I18n.t("dashboard.chart_cost")))
                     }
                     // Subscription bars (only up to today)
                     ForEach(padStats.filter { $0.date <= now }) { s in
                         BarMark(x: .value("Date", s.date, unit: .day), y: .value("Sub", subDaily * prog))
                             .foregroundStyle(Color.marsGreenLight)
-                            .position(by: .value("Series", "花费"))
+                            .position(by: .value("Series", I18n.t("dashboard.chart_cost")))
                     }
                     // Added lines
                     ForEach(padCode) { c in
                         BarMark(x: .value("Date", c.date, unit: .day), y: .value("Added", Double(c.added) * scale * prog))
                             .foregroundStyle(Color.deepRed2)
-                            .position(by: .value("Series", "代码"))
+                            .position(by: .value("Series", I18n.t("dashboard.chart_code")))
                     }
                     // Deleted lines
                     ForEach(padCode) { c in
                         BarMark(x: .value("Date", c.date, unit: .day), y: .value("Deleted", Double(c.deleted) * scale * prog))
                             .foregroundStyle(Color.deepRed.opacity(0.35))
-                            .position(by: .value("Series", "代码"))
+                            .position(by: .value("Series", I18n.t("dashboard.chart_code")))
                     }
                 }
                 .animation(.spring(response: 0.6, dampingFraction: 0.7), value: barProgress)
@@ -1275,10 +1275,10 @@ struct DashboardView: View {
                         let tipY = trendPlotFrame.origin.y + max(0, min(rawY, ph - tipH))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(hd, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
-                            Text("API: $\(String(format: "%.2f", stat.cost))").font(.caption2).monospacedDigit()
-                            Text("订阅: $\(String(format: "%.2f", subCost))").font(.caption2).monospacedDigit()
-                            Text("新增: +\(code.added) 行").font(.caption2).monospacedDigit()
-                            Text("删除: -\(code.deleted) 行").font(.caption2).monospacedDigit()
+                            Text(String(format: I18n.t("dashboard.tooltip_api"), String(format: "%.2f", stat.cost))).font(.caption2).monospacedDigit()
+                            Text(String(format: I18n.t("dashboard.tooltip_sub"), String(format: "%.2f", subCost))).font(.caption2).monospacedDigit()
+                            Text(String(format: I18n.t("dashboard.tooltip_added"), code.added)).font(.caption2).monospacedDigit()
+                            Text(String(format: I18n.t("dashboard.tooltip_deleted"), code.deleted)).font(.caption2).monospacedDigit()
                         }
                         .padding(6).background(.regularMaterial).cornerRadius(6)
                         .offset(x: max(0, tipX), y: max(0, tipY))
@@ -1289,19 +1289,19 @@ struct DashboardView: View {
                 HStack(spacing: 16) {
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.marsGreen).frame(width: 10, height: 10)
-                        Text("API 花费").font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.api_spend_label")).font(.caption2).foregroundColor(.secondary)
                     }
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.marsGreenLight).frame(width: 10, height: 10)
-                        Text("订阅").font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.sub_label")).font(.caption2).foregroundColor(.secondary)
                     }
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.deepRed2).frame(width: 10, height: 10)
-                        Text("新增行").font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.added_lines")).font(.caption2).foregroundColor(.secondary)
                     }
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.deepRed).frame(width: 10, height: 10)
-                        Text("删除行").font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.deleted_lines")).font(.caption2).foregroundColor(.secondary)
                     }
                 }
             }
@@ -1461,11 +1461,11 @@ struct DashboardView: View {
         let total = api + sub
         var segments: [DonutItem] = []
         if api > 0.001 {
-            segments.append(DonutItem(label: "API 付费", cost: api,
+            segments.append(DonutItem(label: I18n.t("dashboard.api_paid"), cost: api,
                                       pct: total > 0 ? api / total * 100 : 0, color: .deepRed))
         }
         if sub > 0.001 {
-            segments.append(DonutItem(label: "订阅", cost: sub,
+            segments.append(DonutItem(label: I18n.t("dashboard.sub_label"), cost: sub,
                                       pct: total > 0 ? sub / total * 100 : 0, color: .marsGreen))
         }
         return (segments, total)
@@ -1475,7 +1475,7 @@ struct DashboardView: View {
     func subVsApiDonut(data: (segments: [DonutItem], total: Double)) -> some View {
         let dataReady = loadedTimeRange == timeRange
         return VStack(spacing: 6) {
-            Text("订阅 / API 占比").font(.caption).foregroundColor(.secondary)
+            Text(I18n.t("dashboard.sub_api_ratio")).font(.caption).foregroundColor(.secondary)
             ZStack {
                 Chart(data.segments) { item in
                     SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
@@ -1510,7 +1510,7 @@ struct DashboardView: View {
     func apiProviderDonut(data: [DonutItem], apiSpend: Double) -> some View {
         let dataReady = loadedTimeRange == timeRange
         return VStack(spacing: 6) {
-            Text("按 API 提供商").font(.caption).foregroundColor(.secondary)
+            Text(I18n.t("dashboard.by_provider")).font(.caption).foregroundColor(.secondary)
             ZStack {
                 Chart(data) { item in
                     SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
