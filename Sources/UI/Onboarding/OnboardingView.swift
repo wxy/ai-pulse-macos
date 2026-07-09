@@ -347,6 +347,9 @@ struct OnboardingView: View {
         LogWatcher.shared.start()
         NotificationCenter.default.post(name: .dataDidChange, object: nil)
         OnboardingWindowManager.shared.window?.close()
+        // Auto-open Dashboard so the user sees the app after onboarding,
+        // even if they skipped every step.
+        DashboardWindowManager.shared.openOrBringToFront()
     }
 }
 

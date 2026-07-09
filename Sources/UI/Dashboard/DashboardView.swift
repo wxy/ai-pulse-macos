@@ -1339,7 +1339,8 @@ struct DashboardView: View {
 
     var emptyStateCard: some View {
         VStack(spacing: 12) {
-            Image(systemName: "fuelpump").font(.system(size: 32)).foregroundColor(.secondary)
+            Image(nsImage: AppIconLoader.uiImage(size: 56))
+                .resizable().frame(width: 56, height: 56)
             Text("AI Pulse").font(.headline)
             Text(I18n.t("dashboard.empty_state"))
                 .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
