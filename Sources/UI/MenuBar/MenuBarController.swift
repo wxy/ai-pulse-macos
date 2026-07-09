@@ -289,7 +289,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             // --- Helper to format a stats line ---
             func makeSummary(cnt: Int, cost: Double, added: Int, deleted: Int, label: String, vsAvg: Double? = nil) -> String? {
                 guard cnt > 0 || added > 0 || deleted > 0 || cost > 0.0001 else { return nil }
-                let cS = cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : "~$0"
+                let cS = cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : I18n.t("menu.approx_zero")
                 let linesStr = "+\(added)/-\(deleted) \(I18n.t("menu.lines"))"
                 var result = "\(label) · \(cS) · \(linesStr)"
                 if let avg = vsAvg, avg > 0.001, cost > 0.001 {

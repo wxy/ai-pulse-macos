@@ -19,7 +19,8 @@
       "Bash(sqlite3 '/Users/xingyuwang/Library/Containers/com.wxy.AIPulse/Data/Library/Application Support/AIPulse/aipulse.db' 'SELECT source, model, in_tokens, out_tokens, cost_usd, cost_source_id, repo_path FROM usage_event WHERE source = '\\\\''aider'\\\\'' LIMIT 5;')",
       "Bash(git -C /Users/xingyuwang/develop/ai-pulse-macos log --oneline --all)",
       "Read(//Users/xingyuwang/**)",
-      "Bash(gh auth *)"
+      "Bash(gh auth *)",
+      "Bash(git log *)"
     ]
   }
 }
