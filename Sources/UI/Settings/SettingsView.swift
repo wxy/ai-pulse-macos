@@ -73,6 +73,9 @@ struct SettingsView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .frame(width: 680, height: 460)
+        .onReceive(NotificationCenter.default.publisher(for: .showIntegrationsTab)) { _ in
+            selectedTab = "Integrations"
+        }
     }
 }
 
@@ -200,6 +203,28 @@ struct GeneralTab: View {
                     .onChange(of: coinSoundEnabled) { _, v in
                         UserDefaults.standard.set(v, forKey: "coin_sound_enabled")
                     }
+            }
+
+            Divider().padding(.vertical, 8)
+
+            // Demo mode toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(DemoData.isActive ? I18n.t("demo.exit") : I18n.t("demo.enter"))
+                        .font(.body)
+                    Text(I18n.t("demo.onboarding_msg"))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Button(DemoData.isActive ? I18n.t("demo.exit") : I18n.t("demo.enter")) {
+                    if DemoData.isActive {
+                        DemoData.isManual = false
+                    } else {
+                        DemoData.isManual = true
+                    }
+                    NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
+                    NotificationCenter.default.post(name: .dataDidChange, object: nil)
+                }
             }
 
             Divider().padding(.vertical, 8)

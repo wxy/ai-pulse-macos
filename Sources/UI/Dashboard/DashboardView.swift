@@ -80,6 +80,7 @@ struct DashboardView: View {
     @State private var barProgress: CGFloat = 0  // 0→1 drives all entry animations
     @State private var loadedTimeRange: TimeRange? = nil  // set after data lands; gates bars against stale renders
     @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
+    @State private var isDemoMode = false
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -90,6 +91,14 @@ struct DashboardView: View {
     }
 
     /// Rounded-rect "ear" for the robot-head frame.
+    /// Adaptive font size for donut chart center numbers — smaller for longer values.
+    static func donutCenterFontSize(for value: Double) -> CGFloat {
+        let chars = String(format: "%.2f", abs(value)).count  // e.g. "12345.67" = 8
+        if chars <= 5 { return 16 }
+        if chars <= 7 { return 14 }
+        return 12
+    }
+
     private func earView(width: CGFloat, height: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
             .fill(Color.marsGreen.opacity(0.20))
@@ -172,7 +181,16 @@ struct DashboardView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    if hasActiveCostSources || !providerCosts.isEmpty {
+                    if isDemoMode {
+                        HStack(spacing: 6) {
+                            Text(I18n.t("demo.banner"))
+                                .font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20).padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.08))
+                    }
+                    if hasActiveCostSources || !providerCosts.isEmpty || isDemoMode {
                         // ── Robot head frame (face) — spending + output ──
                         VStack(spacing: 16) {
                             spendingOverview
@@ -1339,7 +1357,8 @@ struct DashboardView: View {
 
     var emptyStateCard: some View {
         VStack(spacing: 12) {
-            Image(systemName: "fuelpump").font(.system(size: 32)).foregroundColor(.secondary)
+            Image(nsImage: AppIconLoader.uiImage(size: 56))
+                .resizable().frame(width: 56, height: 56)
             Text("AI Pulse").font(.headline)
             Text(I18n.t("dashboard.empty_state"))
                 .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
@@ -1486,7 +1505,7 @@ struct DashboardView: View {
                                            range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
                 .frame(width: 120, height: 120)
                 Text("$\(String(format: "%.2f", data.total))")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: Self.donutCenterFontSize(for: data.total), weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.deepRed)
             }
             .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
@@ -1520,7 +1539,7 @@ struct DashboardView: View {
                 .chartForegroundStyleScale(domain: data.map(\.label), range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
                 .frame(width: 120, height: 120)
                 Text("$\(String(format: "%.2f", apiSpend))")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: Self.donutCenterFontSize(for: apiSpend), weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.deepRed)
             }
             .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
@@ -1545,6 +1564,33 @@ struct DashboardView: View {
         let currentTimeRange = timeRange  // capture before async closures for sendability
         let newEditorMappings = EditorDetector.certainMappings()
         let cal = Calendar.current
+
+        // ── Demo mode: skip real queries, use sample data ──
+        let demoActive = DemoData.isActive
+        if demoActive {
+            let d = DemoData.data(for: currentTimeRange)
+            await MainActor.run {
+                dailyStats = d.dailyStats
+                providerCosts = d.providerCosts
+                codeChanges = d.codeChanges
+                paddedChanges = Self.padChanges(d.codeChanges, chartStart: chartStart, chartDays: chartDays)
+                repos = d.repos
+                prediction = d.prediction
+                balanceSpend = d.balanceSpend
+                dailyBalanceSpend = d.dailyBalanceSpend
+                todayCombinedSpend = currentTimeRange == .today ? d.combinedSpend : 0
+                todayCalls = d.todayCalls
+                todayTokens = d.todayTokens
+                yesterdaySpend = d.yesterdaySpend
+                previousPeriodSpend = d.previousPeriodSpend
+                toolCostBreakdown = d.toolCostBreakdown
+                isDemoMode = true
+                loadedTimeRange = timeRange
+                if barProgress < 0.5 { barProgress = 0; withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 } }
+            }
+            return
+        }
+        isDemoMode = false
         let todayStart = cal.startOfDay(for: Date())
         let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
         let rangeStartMs = Int64(chartStart.timeIntervalSince1970 * 1000)

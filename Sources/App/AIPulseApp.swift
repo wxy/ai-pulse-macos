@@ -84,6 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self, selector: #selector(onLanguageChange),
             name: I18n.didChangeLanguage, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onDemoModeChange),
+            name: .demoModeDidChange, object: nil
+        )
     }
 
     /// Re-open handler: Dock click or Cmd+Tab → show Dashboard
@@ -204,6 +208,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         welcomeItem.target = self
         windowSubmenu.addItem(welcomeItem)
 
+        windowSubmenu.addItem(.separator())
+
+        let demoToggleItem = NSMenuItem(title: demoModeMenuItemTitle, action: #selector(toggleDemoMode), keyEquivalent: "")
+        demoToggleItem.target = self
+        demoToggleItem.tag = 999  // marker to find and update later
+        windowSubmenu.addItem(demoToggleItem)
+
         windowMenuItem.submenu = windowSubmenu
         mainMenu.addItem(windowMenuItem)
 
@@ -222,6 +233,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     @MainActor @objc private func showOnboardingFromMenu() {
         UserDefaults.standard.removeObject(forKey: "onboarding_completed")
         openOnboarding()
+    }
+
+    private var demoModeMenuItemTitle: String {
+        DemoData.isActive ? I18n.t("demo.exit") : I18n.t("demo.enter")
+    }
+
+    @MainActor @objc private func toggleDemoMode() {
+        if DemoData.isActive {
+            DemoData.isManual = false
+            openPreferences()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NotificationCenter.default.post(name: .showIntegrationsTab, object: nil)
+            }
+        } else {
+            DemoData.isManual = true
+        }
+        NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
+        NotificationCenter.default.post(name: .dataDidChange, object: nil)
+    }
+
+    /// Update the demo menu item title when demo mode changes.
+    @MainActor @objc private func onDemoModeChange() {
+        buildMainMenu()
+        // Refresh Dashboard if it's open
+        NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
     }
 
     @MainActor @objc private func onLanguageChange() {

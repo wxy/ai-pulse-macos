@@ -40,7 +40,12 @@ struct OnboardingView: View {
 
             // Navigation
             HStack {
-                if step > 0 {
+                if step == 0 {
+                    Button(I18n.t("demo.skip_welcome")) {
+                        DemoData.isManual = true
+                        close()
+                    }
+                } else if step > 0 {
                     Button(I18n.t("onboarding.back")) { step -= 1 }
                 }
                 Spacer()
@@ -218,6 +223,7 @@ struct OnboardingView: View {
 
     var doneStep: some View {
         let totalCheckedRepos = dirEntries.filter(\.isChecked).reduce(0) { $0 + $1.repoCount }
+        let hasAnyConfig = !enabledIds.isEmpty || totalCheckedRepos > 0
         return VStack(spacing: 16) {
             Text("🎉").font(.system(size: 48))
             Text(I18n.t("onboarding.done_title")).font(.title2).fontWeight(.bold)
@@ -234,6 +240,20 @@ struct OnboardingView: View {
             if hasLogSource {
                 Text(I18n.t("onboarding.done_cpl"))
                     .font(.caption).foregroundColor(.secondary)
+            }
+            // Demo mode notice — shown when nothing was configured
+            if !hasAnyConfig {
+                VStack(spacing: 6) {
+                    Text(I18n.t("demo.onboarding_title"))
+                        .font(.caption).fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                    Text(I18n.t("demo.onboarding_msg"))
+                        .font(.caption2).foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(12)
+                .background(Color(nsColor: .quaternarySystemFill).opacity(0.5))
+                .cornerRadius(8)
             }
         }
     }
@@ -347,6 +367,9 @@ struct OnboardingView: View {
         LogWatcher.shared.start()
         NotificationCenter.default.post(name: .dataDidChange, object: nil)
         OnboardingWindowManager.shared.window?.close()
+        // Auto-open Dashboard so the user sees the app after onboarding,
+        // even if they skipped every step.
+        DashboardWindowManager.shared.openOrBringToFront()
     }
 }
 
@@ -354,6 +377,8 @@ struct OnboardingView: View {
 
 extension Notification.Name {
     static let dashboardRefresh = Notification.Name("dashboardRefresh")
+    static let showIntegrationsTab = Notification.Name("showIntegrationsTab")
+    static let demoModeDidChange = Notification.Name("demoModeDidChange")
 }
 
 final class OnboardingWindowManager: @unchecked Sendable {
