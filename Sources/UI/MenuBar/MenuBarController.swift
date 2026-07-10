@@ -327,31 +327,10 @@ final class MenuBarController: NSObject, @unchecked Sendable {
 
     /// Build demo-mode stats from DemoData so the Dock right-click menu
     /// shows realistic sample data when no integrations are configured.
-    /// Uses the same Calendar-based date filtering as the Dashboard.
+    /// Uses the same single-source DemoData.data(for:) as the Dashboard.
     private static func demoStats() -> Stats {
-        let cal = Calendar.current
-        var monCal = cal; monCal.firstWeekday = 2
-        let todayStart = cal.startOfDay(for: Date())
-        let weekStart = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-
-        // Filter to today
-        let todayStats = DemoData.dailyStats.filter { cal.isDate($0.date, inSameDayAs: todayStart) }
-        let todayChanges = DemoData.codeChanges.filter { cal.isDate($0.date, inSameDayAs: todayStart) }
-        let todayPC = DemoData.providerCosts.filter { cal.isDate($0.date, inSameDayAs: todayStart) }
-
-        // Filter to this week
-        let weekStats = DemoData.dailyStats.filter { $0.date >= weekStart }
-        let weekChanges = DemoData.codeChanges.filter { $0.date >= weekStart }
-        let weekPC = DemoData.providerCosts.filter { $0.date >= weekStart }
-
-        let todayCst = todayStats.reduce(0) { $0 + $1.cost }
-        let weekCst = weekStats.reduce(0) { $0 + $1.cost }
-        let todayCnt = todayStats.reduce(0) { $0 + $1.calls }
-        let weekCnt = weekStats.reduce(0) { $0 + $1.calls }
-        let todayAdded = todayChanges.reduce(0) { $0 + $1.added }
-        let todayDeleted = todayChanges.reduce(0) { $0 + $1.deleted }
-        let weekAdded = weekChanges.reduce(0) { $0 + $1.added }
-        let weekDeleted = weekChanges.reduce(0) { $0 + $1.deleted }
+        let todayData = DemoData.data(for: .today)
+        let weekData = DemoData.data(for: .thisWeek)
 
         func makeSummary(cnt: Int, cost: Double, a: Int, d: Int, label: String) -> String? {
             guard cnt > 0 || a > 0 || d > 0 || cost > 0.0001 else { return nil }
@@ -359,30 +338,29 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             return "\(label) · \(cS) · +\(a)/-\(d) \(I18n.t("menu.lines"))"
         }
 
+        let todayCst = todayData.todayCombinedSpend
+        let todayCnt = todayData.todayCalls
+        let todayAdded = todayData.codeChanges.reduce(0) { $0 + $1.added }
+        let todayDeleted = todayData.codeChanges.reduce(0) { $0 + $1.deleted }
+
+        let weekCst = weekData.balanceSpend.reduce(0) { $0 + $1.spend }
+        let weekCnt = weekData.dailyStats.reduce(0) { $0 + $1.calls }
+        let weekAdded = weekData.codeChanges.reduce(0) { $0 + $1.added }
+        let weekDeleted = weekData.codeChanges.reduce(0) { $0 + $1.deleted }
+
         let todaySum = makeSummary(cnt: todayCnt, cost: todayCst, a: todayAdded, d: todayDeleted, label: I18n.t("menu.today"))
         let weekSum = makeSummary(cnt: weekCnt, cost: weekCst, a: weekAdded, d: weekDeleted, label: I18n.t("menu.this_week"))
 
-        // Repos, providers, tools — show week-level data for the menu
-        let repos: [RepoStat] = DemoData.repos.map { r in
+        let repos: [RepoStat] = weekData.repos.map { r in
             RepoStat(name: URL(fileURLWithPath: "/\(r.repo)").lastPathComponent,
                      added: r.added, deleted: r.deleted, cost: r.cost)
         }
 
-        // Aggregate provider costs for the week
-        var weekProviderTotals: [String: Double] = [:]
-        for pc in weekPC {
-            weekProviderTotals[pc.providerId, default: 0] += pc.cost
+        let providerCosts: [(providerId: String, cost: Double)] = weekData.balanceSpend.map {
+            ($0.providerId, $0.spend)
         }
-        let providerCosts: [(providerId: String, cost: Double)] = weekProviderTotals
-            .map { ($0.key, ($0.value * 100).rounded() / 100) }
-            .sorted { $0.1 > $1.1 }
 
-        // Scale tool costs proportionally to week total
-        let demoToolTotal = DemoData.toolCosts.reduce(0.0) { $0 + $1.cost }
-        let scale = demoToolTotal > 0 ? weekCst / demoToolTotal : 1.0
-        let toolCosts: [ToolCost] = DemoData.toolCosts.map {
-            ToolCost(name: $0.name, cost: ($0.cost * scale * 100).rounded() / 100)
-        }
+        let toolCosts: [ToolCost] = weekData.toolCostBreakdown.map { ToolCost(name: $0.name, cost: $0.cost) }
 
         return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos,
                      providerCosts: providerCosts, toolCosts: toolCosts, hasActivity: true)

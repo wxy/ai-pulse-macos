@@ -98,8 +98,16 @@ final class DockManager: @unchecked Sendable {
         // Guard against test environment where NSApp may not be available
         guard NSApp != nil else { return }
         let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-        let todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
-        let dailyAvg = await rollingDailyAvg()
+        let todayCost: Double
+        let dailyAvg: Double
+        if DemoData.isActive {
+            let d = DemoData.data(for: .today)
+            todayCost = d.todayCombinedSpend
+            dailyAvg = DemoData.data(for: .days30).balanceSpend.reduce(0) { $0 + $1.spend } / 30.0
+        } else {
+            todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
+            dailyAvg = await rollingDailyAvg()
+        }
 
         // Linear progress ring: 1.0 = 1× 7-day daily average = full circle.
         let fillFraction = dailyAvg > 0 ? CGFloat(todayCost / dailyAvg) : 0

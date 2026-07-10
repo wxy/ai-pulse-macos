@@ -189,4 +189,88 @@ enum DemoData {
 
     static let todayStat: DailyStat? = dailyStats.last
     static let yesterdayStat: DailyStat? = dailyStats.count >= 2 ? dailyStats[dailyStats.count - 2] : nil
+
+    // MARK: - Time-range filtered data (single source of truth)
+
+    /// All demo data for a specific time range, computed once.
+    /// Both Dashboard and Dock menu use this to guarantee consistency.
+    struct RangeData {
+        let dailyStats: [DailyStat]
+        let providerCosts: [ProviderDailyCost]
+        let codeChanges: [DailyCodeChange]
+        let repos: [RepoBreakdown]
+        let prediction: Prediction
+        let balanceSpend: [(providerId: String, name: String, spend: Double)]
+        let dailyBalanceSpend: [Date: Double]
+        let todayCombinedSpend: Double
+        let todayCalls: Int
+        let todayTokens: Int
+        let yesterdaySpend: Double
+        let previousPeriodSpend: Double
+        let toolCostBreakdown: [(name: String, cost: Double)]
+    }
+
+    static func data(for timeRange: TimeRange) -> RangeData {
+        let cal = Calendar.current
+        let cutoffDate: Date
+        switch timeRange {
+        case .today:
+            cutoffDate = cal.startOfDay(for: Date())
+        case .thisWeek:
+            var monCal = cal; monCal.firstWeekday = 2
+            cutoffDate = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+        case .days30:
+            cutoffDate = cal.date(byAdding: .day, value: -29, to: cal.startOfDay(for: Date()))!
+        }
+
+        let fStats = dailyStats.filter { $0.date >= cutoffDate }
+        let fProvider = providerCosts.filter { $0.date >= cutoffDate }
+        let fChanges = codeChanges.filter { $0.date >= cutoffDate }
+
+        // Aggregate balance spend
+        var providerTotals: [String: (name: String, spend: Double)] = [:]
+        for pc in fProvider {
+            let dn = providerNames[pc.providerId] ?? pc.providerId
+            let cur = providerTotals[pc.providerId]
+            providerTotals[pc.providerId] = (dn, (cur?.spend ?? 0) + pc.cost)
+        }
+        let fBalanceSpend = providerTotals.map {
+            (providerId: $0.key, name: $0.value.name, spend: ($0.value.spend * 100).rounded() / 100)
+        }.sorted { $0.spend > $1.spend }
+
+        var fDailySpend: [Date: Double] = [:]
+        for s in fStats { fDailySpend[s.date] = s.cost }
+
+        let subAmort = 0.67  // approximate daily sub amortization for demo
+        let dayCount = max(1, Double(fStats.count))
+        let apiTotal = fBalanceSpend.reduce(0.0) { $0 + $1.spend }
+        let subTotal = subAmort * dayCount
+        let combinedTotal = apiTotal + subTotal
+
+        // Scale tool costs
+        let demoToolTotal = toolCosts.reduce(0.0) { $0 + $1.cost }
+        let toolScale = demoToolTotal > 0 ? combinedTotal / demoToolTotal : 1.0
+        let fToolCosts = toolCosts.map {
+            (name: $0.name, cost: ($0.cost * toolScale * 100).rounded() / 100)
+        }
+
+        let prevPeriodSpend = timeRange == .days30
+            ? dailyStats.prefix(15).reduce(0) { $0 + $1.cost } : 0.0
+
+        return RangeData(
+            dailyStats: fStats,
+            providerCosts: fProvider,
+            codeChanges: fChanges,
+            repos: repos,
+            prediction: prediction,
+            balanceSpend: fBalanceSpend,
+            dailyBalanceSpend: fDailySpend,
+            todayCombinedSpend: timeRange == .today ? combinedTotal : 0,
+            todayCalls: todayStat?.calls ?? 0,
+            todayTokens: todayStat?.tokens ?? 0,
+            yesterdaySpend: timeRange == .today ? (yesterdayStat?.cost ?? 0) : 0,
+            previousPeriodSpend: prevPeriodSpend,
+            toolCostBreakdown: fToolCosts
+        )
+    }
 }
