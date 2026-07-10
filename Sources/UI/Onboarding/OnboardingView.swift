@@ -40,7 +40,12 @@ struct OnboardingView: View {
 
             // Navigation
             HStack {
-                if step > 0 {
+                if step == 0 {
+                    Button(I18n.t("demo.skip_welcome")) {
+                        DemoData.isManual = true
+                        close()
+                    }
+                } else if step > 0 {
                     Button(I18n.t("onboarding.back")) { step -= 1 }
                 }
                 Spacer()

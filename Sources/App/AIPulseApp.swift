@@ -206,6 +206,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
         windowSubmenu.addItem(.separator())
 
+        let enterDemoItem = NSMenuItem(title: I18n.t("demo.enter"), action: #selector(enterDemoMode), keyEquivalent: "")
+        enterDemoItem.target = self
+        windowSubmenu.addItem(enterDemoItem)
+
         let exitDemoItem = NSMenuItem(title: I18n.t("demo.exit"), action: #selector(exitDemoMode), keyEquivalent: "")
         exitDemoItem.target = self
         windowSubmenu.addItem(exitDemoItem)
@@ -230,7 +234,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         openOnboarding()
     }
 
+    @MainActor @objc private func enterDemoMode() {
+        DemoData.isManual = true
+        // Force Dashboard to reload with demo data
+        DashboardWindowManager.shared.openOrBringToFront()
+    }
+
     @MainActor @objc private func exitDemoMode() {
+        DemoData.isManual = false
         openPreferences()
         // Post a notification so SettingsView can switch to Integrations tab
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {

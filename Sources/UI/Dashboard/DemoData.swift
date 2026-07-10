@@ -6,10 +6,21 @@ enum DemoData {
 
     // MARK: - Detection
 
-    /// True when the user has no active CostSource of any kind.
+    private static let manualKey = "demo_mode_manual"
+
+    /// User can force demo mode from the welcome page or Window menu.
+    static var isManual: Bool {
+        get { UserDefaults.standard.bool(forKey: manualKey) }
+        set { UserDefaults.standard.set(newValue, forKey: manualKey) }
+    }
+
+    /// True when demo should be active: either user requested it manually,
+    /// or no integrations are configured (auto-detect).
     static var isActive: Bool {
-        IntegrationRegistry.activeCostSources().isEmpty
-        && IntegrationRegistry.all.allSatisfy { IntegrationRegistry.config(for: $0.id).enabled == false }
+        isManual || (
+            IntegrationRegistry.activeCostSources().isEmpty
+            && IntegrationRegistry.all.allSatisfy { IntegrationRegistry.config(for: $0.id).enabled == false }
+        )
     }
 
     // MARK: - Dates
