@@ -146,7 +146,7 @@ struct IntegrationRow: View {
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 if isSubscriptionType {
-                    labeledPicker(label: "订阅套餐", selection: $tierInput) {
+                    labeledPicker(label: I18n.t("integrations.subscription_plan"), selection: $tierInput) {
                         Text(I18n.t("integrations.select_plan")).tag("")
                         ForEach(SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? [], id: \.label) { t in
                             Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
@@ -158,7 +158,7 @@ struct IntegrationRow: View {
                 }
                 if !availableAPIKeySources.isEmpty {
                     labeledPicker(label: "API", selection: $preferredKeyId) {
-                        Text("不使用").tag("")
+                        Text(I18n.t("integrations.not_used")).tag("")
                         ForEach(availableAPIKeySources, id: \.id) { src in
                             Text(src.label).tag(src.id)
                         }

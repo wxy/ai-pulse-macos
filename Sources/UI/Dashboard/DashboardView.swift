@@ -1572,6 +1572,7 @@ struct DashboardView: View {
                 toolCostBreakdown = DemoData.toolCosts
                 isDemoMode = true
                 loadedTimeRange = timeRange
+                if barProgress < 0.5 { barProgress = 0; withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 } }
             }
             return
         }
