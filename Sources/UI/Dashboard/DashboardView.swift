@@ -1582,8 +1582,8 @@ struct DashboardView: View {
             let filteredStats = DemoData.dailyStats.filter { $0.date >= cutoffDate }
             let filteredProviderCosts = DemoData.providerCosts.filter { $0.date >= cutoffDate }
             let filteredCodeChanges = DemoData.codeChanges.filter { $0.date >= cutoffDate }
-            let todayStat = DemoData.dailyStats.last
-            let yesterdayStat = DemoData.dailyStats.count >= 2 ? DemoData.dailyStats[DemoData.dailyStats.count - 2] : nil
+            let todayStat = DemoData.todayStat
+            let yesterdayStat = DemoData.yesterdayStat
 
             var providerTotals: [String: (name: String, spend: Double)] = [:]
             for pc in filteredProviderCosts {
