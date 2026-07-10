@@ -1552,24 +1552,70 @@ struct DashboardView: View {
     }
 
     func load() async {
+        // ── Synchronous prep ──
+        let currentTimeRange = timeRange  // capture before async closures for sendability
+        let newEditorMappings = EditorDetector.certainMappings()
+        let cal = Calendar.current
+
         // ── Demo mode: skip real queries, use sample data ──
         let demoActive = DemoData.isActive
         if demoActive {
+            let cutoffDate: Date
+            switch currentTimeRange {
+            case .today:
+                cutoffDate = cal.startOfDay(for: Date())
+            case .thisWeek:
+                var monCal = cal; monCal.firstWeekday = 2
+                cutoffDate = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            case .days30:
+                cutoffDate = cal.date(byAdding: .day, value: -29, to: cal.startOfDay(for: Date()))!
+            }
+
+            let filteredStats = DemoData.dailyStats.filter { $0.date >= cutoffDate }
+            let filteredProviderCosts = DemoData.providerCosts.filter { $0.date >= cutoffDate }
+            let filteredCodeChanges = DemoData.codeChanges.filter { $0.date >= cutoffDate }
+            let todayStat = DemoData.dailyStats.last
+            let yesterdayStat = DemoData.dailyStats.count >= 2 ? DemoData.dailyStats[DemoData.dailyStats.count - 2] : nil
+
+            var providerTotals: [String: (name: String, spend: Double)] = [:]
+            for pc in filteredProviderCosts {
+                let dn = ["openai": "OpenAI", "anthropic": "Anthropic", "deepseek": "DeepSeek"][pc.providerId] ?? pc.providerId
+                let cur = providerTotals[pc.providerId]
+                providerTotals[pc.providerId] = (dn, (cur?.spend ?? 0) + pc.cost)
+            }
+            let filteredBalanceSpend = providerTotals.map { (providerId: $0.key, name: $0.value.name, spend: $0.value.spend) }.sorted { $0.spend > $1.spend }
+
+            var filteredDailySpend: [Date: Double] = [:]
+            for s in filteredStats { filteredDailySpend[s.date] = s.cost }
+
+            let subDailyAmort = StatsService.subscriptionDailyAmortization()
+            let dayCount = max(1, Double(filteredStats.count))
+            let apiTotal = filteredBalanceSpend.reduce(0.0) { $0 + $1.spend }
+            let subTotal = subDailyAmort * dayCount
+            let combinedTotal = apiTotal + subTotal
+
+            let demoToolTotal = DemoData.toolCosts.reduce(0.0) { $0 + $1.cost }
+            let toolScale = demoToolTotal > 0 ? combinedTotal / demoToolTotal : 1.0
+            let scaledToolCosts = DemoData.toolCosts.map { (name: $0.name, cost: $0.cost * toolScale) }
+
+            let prevPeriodSpend = currentTimeRange == .days30
+                ? DemoData.dailyStats.prefix(15).reduce(0) { $0 + $1.cost } : 0.0
+
             await MainActor.run {
-                dailyStats = DemoData.dailyStats
-                providerCosts = DemoData.providerCosts
-                codeChanges = DemoData.codeChanges
-                paddedChanges = Self.padChanges(DemoData.codeChanges, chartStart: chartStart, chartDays: chartDays)
+                dailyStats = filteredStats
+                providerCosts = filteredProviderCosts
+                codeChanges = filteredCodeChanges
+                paddedChanges = Self.padChanges(filteredCodeChanges, chartStart: chartStart, chartDays: chartDays)
                 repos = DemoData.repos
                 prediction = DemoData.prediction
-                balanceSpend = DemoData.balanceSpend
-                dailyBalanceSpend = DemoData.dailyBalanceSpend
-                todayCombinedSpend = DemoData.todayCalls > 0 ? DemoData.balanceSpend.reduce(0) { $0 + $1.spend } / 30.0 : 0
-                todayCalls = DemoData.todayCalls
-                todayTokens = DemoData.todayTokens
-                yesterdaySpend = DemoData.yesterdaySpend
-                previousPeriodSpend = DemoData.previousPeriodSpend
-                toolCostBreakdown = DemoData.toolCosts
+                balanceSpend = filteredBalanceSpend
+                dailyBalanceSpend = filteredDailySpend
+                todayCombinedSpend = currentTimeRange == .today ? combinedTotal : 0
+                todayCalls = todayStat?.calls ?? 0
+                todayTokens = todayStat?.tokens ?? 0
+                yesterdaySpend = currentTimeRange == .today ? (yesterdayStat?.cost ?? 0) : 0
+                previousPeriodSpend = prevPeriodSpend
+                toolCostBreakdown = scaledToolCosts
                 isDemoMode = true
                 loadedTimeRange = timeRange
                 if barProgress < 0.5 { barProgress = 0; withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 } }
@@ -1577,11 +1623,6 @@ struct DashboardView: View {
             return
         }
         isDemoMode = false
-
-        // ── Synchronous prep ──
-        let currentTimeRange = timeRange  // capture before async closures for sendability
-        let newEditorMappings = EditorDetector.certainMappings()
-        let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
         let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
         let rangeStartMs = Int64(chartStart.timeIntervalSince1970 * 1000)
