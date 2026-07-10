@@ -250,6 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             DemoData.isManual = true
         }
         NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
+        NotificationCenter.default.post(name: .dataDidChange, object: nil)
     }
 
     /// Update the demo menu item title when demo mode changes.

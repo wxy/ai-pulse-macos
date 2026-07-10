@@ -91,6 +91,14 @@ struct DashboardView: View {
     }
 
     /// Rounded-rect "ear" for the robot-head frame.
+    /// Adaptive font size for donut chart center numbers — smaller for longer values.
+    static func donutCenterFontSize(for value: Double) -> CGFloat {
+        let chars = String(format: "%.2f", abs(value)).count  // e.g. "12345.67" = 8
+        if chars <= 5 { return 16 }
+        if chars <= 7 { return 14 }
+        return 12
+    }
+
     private func earView(width: CGFloat, height: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
             .fill(Color.marsGreen.opacity(0.20))
@@ -1497,7 +1505,7 @@ struct DashboardView: View {
                                            range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
                 .frame(width: 120, height: 120)
                 Text("$\(String(format: "%.2f", data.total))")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: Self.donutCenterFontSize(for: data.total), weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.deepRed)
             }
             .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
@@ -1531,7 +1539,7 @@ struct DashboardView: View {
                 .chartForegroundStyleScale(domain: data.map(\.label), range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
                 .frame(width: 120, height: 120)
                 Text("$\(String(format: "%.2f", apiSpend))")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .font(.system(size: Self.donutCenterFontSize(for: apiSpend), weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.deepRed)
             }
             .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)

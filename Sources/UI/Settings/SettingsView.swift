@@ -223,6 +223,7 @@ struct GeneralTab: View {
                         DemoData.isManual = true
                     }
                     NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
+                    NotificationCenter.default.post(name: .dataDidChange, object: nil)
                 }
             }
 
