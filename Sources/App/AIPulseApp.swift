@@ -204,6 +204,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         welcomeItem.target = self
         windowSubmenu.addItem(welcomeItem)
 
+        windowSubmenu.addItem(.separator())
+
+        let exitDemoItem = NSMenuItem(title: I18n.t("demo.exit"), action: #selector(exitDemoMode), keyEquivalent: "")
+        exitDemoItem.target = self
+        windowSubmenu.addItem(exitDemoItem)
+
         windowMenuItem.submenu = windowSubmenu
         mainMenu.addItem(windowMenuItem)
 
@@ -222,6 +228,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     @MainActor @objc private func showOnboardingFromMenu() {
         UserDefaults.standard.removeObject(forKey: "onboarding_completed")
         openOnboarding()
+    }
+
+    @MainActor @objc private func exitDemoMode() {
+        openPreferences()
+        // Post a notification so SettingsView can switch to Integrations tab
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NotificationCenter.default.post(name: .showIntegrationsTab, object: nil)
+        }
     }
 
     @MainActor @objc private func onLanguageChange() {

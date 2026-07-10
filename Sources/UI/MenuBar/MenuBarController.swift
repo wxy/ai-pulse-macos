@@ -76,9 +76,18 @@ final class MenuBarController: NSObject, @unchecked Sendable {
     /// Sections appear only when they have content.
     private func refreshStats() {
         Task {
-            let stats = await fetchStats()
+            let demoActive = DemoData.isActive
+            let stats = demoActive ? Self.demoStats() : await fetchStats()
             DispatchQueue.main.async {
                 self.menu.removeAllItems()
+
+                // Demo mode indicator
+                if demoActive {
+                    let demoItem = NSMenuItem(title: I18n.t("demo.menu_label"), action: nil, keyEquivalent: "")
+                    demoItem.isEnabled = false
+                    self.menu.addItem(demoItem)
+                    self.menu.addItem(.separator())
+                }
 
                 // Health status — only shown when not nominal
                 let health = AppHealthMonitor.shared.current
@@ -314,6 +323,41 @@ final class MenuBarController: NSObject, @unchecked Sendable {
         } catch {
             return Stats(todaySummary: I18n.t("menu.unavailable"), weekSummary: nil, repos: [], providerCosts: [], toolCosts: [], hasActivity: false)
         }
+    }
+
+    /// Build demo-mode stats from DemoData so the Dock right-click menu
+    /// shows realistic sample data when no integrations are configured.
+    private static func demoStats() -> Stats {
+        let todayCst = DemoData.todayCalls > 0 ? DemoData.balanceSpend.reduce(0) { $0 + $1.spend } / 30.0 : 0
+        let weekCst = DemoData.balanceSpend.reduce(0) { $0 + $1.spend }
+        let added = DemoData.codeChanges.reduce(0) { $0 + $1.added }
+        let deleted = DemoData.codeChanges.reduce(0) { $0 + $1.deleted }
+        let todayCnt = DemoData.todayCalls
+        let weekCnt = Int(Double(todayCnt) * 7.0)
+
+        func makeSummary(cnt: Int, cost: Double, a: Int, d: Int, label: String) -> String? {
+            guard cnt > 0 || a > 0 || d > 0 || cost > 0.0001 else { return nil }
+            let cS = cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : I18n.t("menu.approx_zero")
+            return "\(label) · \(cS) · +\(a)/-\(d) \(I18n.t("menu.lines"))"
+        }
+
+        let todaySum = makeSummary(cnt: todayCnt, cost: todayCst, a: DemoData.codeChanges.last?.added ?? 0,
+                                    d: DemoData.codeChanges.last?.deleted ?? 0, label: I18n.t("menu.today"))
+        let weekSum = makeSummary(cnt: weekCnt, cost: weekCst, a: added, d: deleted, label: I18n.t("menu.this_week"))
+
+        let repos: [RepoStat] = DemoData.repos.map { r in
+            RepoStat(name: URL(fileURLWithPath: "/\(r.repo)").lastPathComponent,
+                     added: r.added, deleted: r.deleted, cost: r.cost)
+        }
+
+        let providerCosts: [(providerId: String, cost: Double)] = DemoData.balanceSpend.map {
+            ($0.providerId, $0.spend)
+        }
+
+        let toolCosts: [ToolCost] = DemoData.toolCosts.map { ToolCost(name: $0.name, cost: $0.cost) }
+
+        return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos,
+                     providerCosts: providerCosts, toolCosts: toolCosts, hasActivity: true)
     }
 
     @MainActor @objc private func openDashboard(_ sender: NSMenuItem) {

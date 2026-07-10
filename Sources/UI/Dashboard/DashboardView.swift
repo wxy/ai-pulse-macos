@@ -80,6 +80,7 @@ struct DashboardView: View {
     @State private var barProgress: CGFloat = 0  // 0→1 drives all entry animations
     @State private var loadedTimeRange: TimeRange? = nil  // set after data lands; gates bars against stale renders
     @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
+    @State private var isDemoMode = false
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -172,7 +173,16 @@ struct DashboardView: View {
 
             ScrollView {
                 VStack(spacing: 0) {
-                    if hasActiveCostSources || !providerCosts.isEmpty {
+                    if isDemoMode {
+                        HStack(spacing: 6) {
+                            Text(I18n.t("demo.banner"))
+                                .font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20).padding(.vertical, 8)
+                        .background(Color.accentColor.opacity(0.08))
+                    }
+                    if hasActiveCostSources || !providerCosts.isEmpty || isDemoMode {
                         // ── Robot head frame (face) — spending + output ──
                         VStack(spacing: 16) {
                             spendingOverview
@@ -1542,6 +1552,31 @@ struct DashboardView: View {
     }
 
     func load() async {
+        // ── Demo mode: skip real queries, use sample data ──
+        let demoActive = DemoData.isActive
+        if demoActive {
+            await MainActor.run {
+                dailyStats = DemoData.dailyStats
+                providerCosts = DemoData.providerCosts
+                codeChanges = DemoData.codeChanges
+                paddedChanges = Self.padChanges(DemoData.codeChanges, chartStart: chartStart, chartDays: chartDays)
+                repos = DemoData.repos
+                prediction = DemoData.prediction
+                balanceSpend = DemoData.balanceSpend
+                dailyBalanceSpend = DemoData.dailyBalanceSpend
+                todayCombinedSpend = DemoData.todayCalls > 0 ? DemoData.balanceSpend.reduce(0) { $0 + $1.spend } / 30.0 : 0
+                todayCalls = DemoData.todayCalls
+                todayTokens = DemoData.todayTokens
+                yesterdaySpend = DemoData.yesterdaySpend
+                previousPeriodSpend = DemoData.previousPeriodSpend
+                toolCostBreakdown = DemoData.toolCosts
+                isDemoMode = true
+                loadedTimeRange = timeRange
+            }
+            return
+        }
+        isDemoMode = false
+
         // ── Synchronous prep ──
         let currentTimeRange = timeRange  // capture before async closures for sendability
         let newEditorMappings = EditorDetector.certainMappings()

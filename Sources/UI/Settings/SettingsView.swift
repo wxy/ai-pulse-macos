@@ -73,6 +73,9 @@ struct SettingsView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .frame(width: 680, height: 460)
+        .onReceive(NotificationCenter.default.publisher(for: .showIntegrationsTab)) { _ in
+            selectedTab = "Integrations"
+        }
     }
 }
 
