@@ -207,6 +207,27 @@ struct GeneralTab: View {
 
             Divider().padding(.vertical, 8)
 
+            // Demo mode toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(DemoData.isActive ? I18n.t("demo.exit") : I18n.t("demo.enter"))
+                        .font(.body)
+                    Text(I18n.t("demo.onboarding_msg"))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Button(DemoData.isActive ? I18n.t("demo.exit") : I18n.t("demo.enter")) {
+                    if DemoData.isActive {
+                        DemoData.isManual = false
+                    } else {
+                        DemoData.isManual = true
+                    }
+                    NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
+                }
+            }
+
+            Divider().padding(.vertical, 8)
+
             Text(I18n.t("general.rerun_welcome_desc"))
                 .font(.caption).foregroundColor(.secondary)
             Button(I18n.t("general.rerun_welcome")) {

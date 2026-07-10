@@ -378,6 +378,7 @@ struct OnboardingView: View {
 extension Notification.Name {
     static let dashboardRefresh = Notification.Name("dashboardRefresh")
     static let showIntegrationsTab = Notification.Name("showIntegrationsTab")
+    static let demoModeDidChange = Notification.Name("demoModeDidChange")
 }
 
 final class OnboardingWindowManager: @unchecked Sendable {

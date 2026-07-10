@@ -84,6 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self, selector: #selector(onLanguageChange),
             name: I18n.didChangeLanguage, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onDemoModeChange),
+            name: .demoModeDidChange, object: nil
+        )
     }
 
     /// Re-open handler: Dock click or Cmd+Tab → show Dashboard
@@ -206,13 +210,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
         windowSubmenu.addItem(.separator())
 
-        let enterDemoItem = NSMenuItem(title: I18n.t("demo.enter"), action: #selector(enterDemoMode), keyEquivalent: "")
-        enterDemoItem.target = self
-        windowSubmenu.addItem(enterDemoItem)
-
-        let exitDemoItem = NSMenuItem(title: I18n.t("demo.exit"), action: #selector(exitDemoMode), keyEquivalent: "")
-        exitDemoItem.target = self
-        windowSubmenu.addItem(exitDemoItem)
+        let demoToggleItem = NSMenuItem(title: demoModeMenuItemTitle, action: #selector(toggleDemoMode), keyEquivalent: "")
+        demoToggleItem.target = self
+        demoToggleItem.tag = 999  // marker to find and update later
+        windowSubmenu.addItem(demoToggleItem)
 
         windowMenuItem.submenu = windowSubmenu
         mainMenu.addItem(windowMenuItem)
@@ -234,19 +235,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         openOnboarding()
     }
 
-    @MainActor @objc private func enterDemoMode() {
-        DemoData.isManual = true
-        // Force Dashboard to reload with demo data
-        DashboardWindowManager.shared.openOrBringToFront()
+    private var demoModeMenuItemTitle: String {
+        DemoData.isActive ? I18n.t("demo.exit") : I18n.t("demo.enter")
     }
 
-    @MainActor @objc private func exitDemoMode() {
-        DemoData.isManual = false
-        openPreferences()
-        // Post a notification so SettingsView can switch to Integrations tab
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            NotificationCenter.default.post(name: .showIntegrationsTab, object: nil)
+    @MainActor @objc private func toggleDemoMode() {
+        if DemoData.isActive {
+            DemoData.isManual = false
+            openPreferences()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NotificationCenter.default.post(name: .showIntegrationsTab, object: nil)
+            }
+        } else {
+            DemoData.isManual = true
         }
+        NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
+    }
+
+    /// Update the demo menu item title when demo mode changes.
+    @MainActor @objc private func onDemoModeChange() {
+        buildMainMenu()
+        // Refresh Dashboard if it's open
+        NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
     }
 
     @MainActor @objc private func onLanguageChange() {
