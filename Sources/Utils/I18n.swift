@@ -209,7 +209,7 @@ enum I18n {
         "menu.no_usage": "No AI usage this week",
         "menu.unavailable": "Stats unavailable",
         "menu.by_repo": "▸ By Repo",
-        "menu.preferences": "Preferences…",
+        "menu.preferences": "Settings…",
         "menu.quit": "Quit",
         "menu.lines": "lines",
         "menu.per_line": "/K lines",
