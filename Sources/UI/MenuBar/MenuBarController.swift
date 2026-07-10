@@ -338,12 +338,12 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             return "\(label) · \(cS) · +\(a)/-\(d) \(I18n.t("menu.lines"))"
         }
 
-        let todayCst = todayData.todayCombinedSpend
+        let todayCst = todayData.combinedSpend
         let todayCnt = todayData.todayCalls
         let todayAdded = todayData.codeChanges.reduce(0) { $0 + $1.added }
         let todayDeleted = todayData.codeChanges.reduce(0) { $0 + $1.deleted }
 
-        let weekCst = weekData.balanceSpend.reduce(0) { $0 + $1.spend }
+        let weekCst = weekData.combinedSpend
         let weekCnt = weekData.dailyStats.reduce(0) { $0 + $1.calls }
         let weekAdded = weekData.codeChanges.reduce(0) { $0 + $1.added }
         let weekDeleted = weekData.codeChanges.reduce(0) { $0 + $1.deleted }

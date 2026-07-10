@@ -68,11 +68,11 @@ enum DemoData {
             let cost = dailyBase(offset: -i)
             let calls = max(1, Int(cost * 1.5))
             let tokens = Int(cost * 4200)
-            let baseLines = Int(cost * 9)
+            let baseLines = Int(cost * 60)
             let netLines = isWeekend(d) ? baseLines / 3 : baseLines
+            let cpl = netLines > 0 ? (cost * 1000 / Double(netLines) * 100).rounded() / 100 : 0
             return DailyStat(date: d, cost: cost, calls: calls, tokens: tokens,
-                             netLines: netLines,
-                             costPerLine: netLines > 0 ? cost * 1000 / Double(max(netLines, 1)) : 0)
+                             netLines: netLines, costPerLine: cpl)
         }
     }()
 
@@ -108,8 +108,8 @@ enum DemoData {
         (0..<30).reversed().map { i in
             let d = day(-i)
             let base = dailyBase(offset: -i)
-            let added = Int(base * 14) + (isWeekend(d) ? 0 : Int(base * 3))
-            let deleted = Int(base * 5) + (isWeekend(d) ? 0 : Int(base))
+            let added = Int(base * 55) + (isWeekend(d) ? 0 : Int(base * 8))
+            let deleted = Int(base * 18) + (isWeekend(d) ? 0 : Int(base * 3))
             return DailyCodeChange(date: d, added: max(0, added), deleted: max(0, deleted))
         }
     }()
@@ -118,13 +118,13 @@ enum DemoData {
 
     static let repos: [RepoBreakdown] = {
         let repoData: [(repo: String, cost: Double, added: Int, deleted: Int, apiSources: [(String, Double)], subSources: [(String, Double)])] = [
-            ("ai-pulse-macos", 172.0, 4580, 1320,
+            ("ai-pulse-macos", 172.0, 28500, 8200,
              [("Claude Code", 2.85), ("aider", 3.72)],
              [("Cursor Pro", 1.14)]),
-            ("xingyu.wang", 118.0, 3380, 1020,
+            ("xingyu.wang", 118.0, 21000, 6400,
              [("Claude Code", 3.21)],
              [("Cursor Pro", 0.93)]),
-            ("open-source-lib", 52.0, 1820, 560,
+            ("open-source-lib", 52.0, 11400, 3500,
              [("aider", 4.15)],
              []),
         ]
@@ -202,7 +202,7 @@ enum DemoData {
         let prediction: Prediction
         let balanceSpend: [(providerId: String, name: String, spend: Double)]
         let dailyBalanceSpend: [Date: Double]
-        let todayCombinedSpend: Double
+        let combinedSpend: Double        // API + subscription, for the period
         let todayCalls: Int
         let todayTokens: Int
         let yesterdaySpend: Double
@@ -265,7 +265,7 @@ enum DemoData {
             prediction: prediction,
             balanceSpend: fBalanceSpend,
             dailyBalanceSpend: fDailySpend,
-            todayCombinedSpend: timeRange == .today ? combinedTotal : 0,
+            combinedSpend: combinedTotal,
             todayCalls: todayStat?.calls ?? 0,
             todayTokens: todayStat?.tokens ?? 0,
             yesterdaySpend: timeRange == .today ? (yesterdayStat?.cost ?? 0) : 0,

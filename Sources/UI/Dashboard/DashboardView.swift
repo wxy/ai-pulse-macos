@@ -1578,7 +1578,7 @@ struct DashboardView: View {
                 prediction = d.prediction
                 balanceSpend = d.balanceSpend
                 dailyBalanceSpend = d.dailyBalanceSpend
-                todayCombinedSpend = d.todayCombinedSpend
+                todayCombinedSpend = currentTimeRange == .today ? d.combinedSpend : 0
                 todayCalls = d.todayCalls
                 todayTokens = d.todayTokens
                 yesterdaySpend = d.yesterdaySpend

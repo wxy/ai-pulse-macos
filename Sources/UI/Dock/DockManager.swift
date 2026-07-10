@@ -102,7 +102,7 @@ final class DockManager: @unchecked Sendable {
         let dailyAvg: Double
         if DemoData.isActive {
             let d = DemoData.data(for: .today)
-            todayCost = d.todayCombinedSpend
+            todayCost = d.combinedSpend
             dailyAvg = DemoData.data(for: .days30).balanceSpend.reduce(0) { $0 + $1.spend } / 30.0
         } else {
             todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
