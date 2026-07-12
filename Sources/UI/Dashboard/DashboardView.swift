@@ -81,6 +81,7 @@ struct DashboardView: View {
     @State private var loadedTimeRange: TimeRange? = nil  // set after data lands; gates bars against stale renders
     @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
     @State private var isDemoMode = false
+    @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -1577,6 +1578,12 @@ struct DashboardView: View {
     }
 
     func load() async {
+        // Bump generation so only the latest load() applies its results.
+        // When tab-switching or rapid refresh triggers two concurrent loads,
+        // the stale one is discarded.
+        loadGeneration += 1
+        let myGen = loadGeneration
+
         // ── Synchronous prep ──
         let currentTimeRange = timeRange  // capture before async closures for sendability
         let newEditorMappings = EditorDetector.certainMappings()
@@ -1586,6 +1593,7 @@ struct DashboardView: View {
         let demoActive = DemoData.isActive
         if demoActive {
             let d = DemoData.data(for: currentTimeRange)
+            guard myGen == loadGeneration else { return }
             await MainActor.run {
                 dailyStats = d.dailyStats
                 providerCosts = d.providerCosts
@@ -1755,6 +1763,9 @@ struct DashboardView: View {
         } catch { newToolCostBreakdown = [] }
 
         let newUsageData = (try? await rawUsageData) ?? [:]
+
+        // Discard results if a newer load() has started (tab switch, concurrent refresh)
+        guard myGen == loadGeneration else { return }
 
         // ── Apply ALL state changes atomically ──
         loadError = newLoadError
