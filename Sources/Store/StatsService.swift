@@ -204,6 +204,25 @@ enum StatsService {
                 subRepoMap[m.repoPath, default: []].append((m.toolName, m.dailySubscriptionCost))
             }
 
+            // Latest event timestamp per repo — used for stable recency-based sorting
+            var latestEventMs: [String: Int64] = [:]
+            do {
+                let tsRows: [Row] = try await AppDatabase.shared.read { db in
+                    try Row.fetchAll(db, sql: """
+                        SELECT repo_path, MAX(ts) AS latest
+                        FROM usage_event WHERE repo_path IS NOT NULL
+                        GROUP BY repo_path
+                    """)
+                }
+                for r in tsRows {
+                    if let path: String = r["repo_path"], let ts: Int64 = r["latest"] {
+                        latestEventMs[URL(fileURLWithPath: path).lastPathComponent] = ts
+                    }
+                }
+            } catch {
+                Logger.debug("StatsService.repoBreakdown: latestEventMs query failed, continuing without it")
+            }
+
             AppHealthMonitor.shared.clearStatsError()
             return costMap.compactMap { (p, sourceCosts) in
                 let totalCost = sourceCosts.reduce(0.0) { $0 + $1.cost }
@@ -236,6 +255,14 @@ enum StatsService {
                     apiSources: apiSources,
                     subscriptionSources: subSourceList
                 )
+            }
+            // Sort by latest activity — repos with recent usage rise to the top.
+            // Sort by total changes descending as tiebreaker for repos without usage events.
+            .sorted { a, b in
+                let aLast = latestEventMs[a.repo] ?? 0
+                let bLast = latestEventMs[b.repo] ?? 0
+                if aLast != bLast { return aLast > bLast }
+                return a.totalChanges > b.totalChanges
             }
         } catch {
             Logger.error("StatsService.repoBreakdown error: \(error)")
