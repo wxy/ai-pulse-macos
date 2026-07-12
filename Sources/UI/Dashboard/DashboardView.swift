@@ -975,9 +975,11 @@ struct DashboardView: View {
 
             // Donuts flanking stat cards: left donut | nose stats | right donut
             HStack(alignment: .top, spacing: 12) {
-                // Left: subscription vs API donut
+                // Left: subscription vs API donut (placeholder when empty)
                 if subVsApi.total > 0.001 {
                     subVsApiDonut(data: subVsApi)
+                } else {
+                    emptyDonut(title: I18n.t("dashboard.sub_api_ratio"))
                 }
 
                 // Center: stat cards as "nose" (vertical stack, limited width)
@@ -986,9 +988,11 @@ struct DashboardView: View {
                 }
                 .frame(width: 100)
 
-                // Right: API provider donut
+                // Right: API provider donut (placeholder when empty)
                 if !apiData.isEmpty {
                     apiProviderDonut(data: apiData, apiSpend: apiSpend)
+                } else {
+                    emptyDonut(title: I18n.t("dashboard.by_provider"))
                 }
             }
         }
@@ -1056,19 +1060,17 @@ struct DashboardView: View {
         let dataReady = loadedTimeRange == timeRange
 
         return VStack(spacing: 12) {
-            // ── Tool bars ("mouth") ──
-            VStack(alignment: .leading, spacing: 6) {
-                Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
-                if toolCosts.isEmpty {
-                    Text("--").font(.caption).foregroundColor(.secondary)
-                } else {
+            // ── Tool bars ("mouth") — hidden when no data ──
+            if !toolCosts.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
                     ForEach(Array(toolCosts.prefix(6).enumerated()), id: \.element.name) { idx, tc in
                         toolBarRow(name: tc.name, cost: tc.cost, total: totalCost, index: idx)
                     }
                 }
+                .padding(12)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
             }
-            .padding(12)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
 
             // ── Mouth line — short horizontal connector ──
             HStack(spacing: 0) {
@@ -1193,13 +1195,12 @@ struct DashboardView: View {
         let dataReady = loadedTimeRange == timeRange
         let prog = Double(dataReady ? barProgress : 0)
 
-        return VStack(spacing: 12) {
-            Text(I18n.t("dashboard.daily_trend")).font(.headline)
+        // Hide entirely when no data — don't show an empty chart shell
+        if noData { return AnyView(EmptyView()) }
 
-            if noData {
-                Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 20)
-            } else {
-                let subDaily = StatsService.subscriptionDailyAmortization()
+        return AnyView(VStack(spacing: 12) {
+            Text(I18n.t("dashboard.daily_trend")).font(.headline)
+            let subDaily = StatsService.subscriptionDailyAmortization()
                 let now = Date()
 
                 Chart {
@@ -1322,12 +1323,11 @@ struct DashboardView: View {
                         Text(I18n.t("dashboard.deleted_lines")).font(.caption2).foregroundColor(.secondary)
                     }
                 }
-            }
         }
         .padding(16)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
+        .shadow(color: .black.opacity(0.05), radius: 12, y: 3))
     }
 
     // MARK: - Axis helpers
@@ -1476,6 +1476,23 @@ struct DashboardView: View {
     // MARK: - Donut charts
 
     /// Data for subscription-vs-API donut chart.
+    /// Gray placeholder donut shown when there's no data to fill it.
+    /// Keeps the 3-column layout balanced instead of collapsing.
+    func emptyDonut(title: String) -> some View {
+        VStack(spacing: 6) {
+            Text(title).font(.caption).foregroundColor(.secondary)
+            ZStack {
+                Circle()
+                    .stroke(Color.secondary.opacity(0.15), lineWidth: 12)
+                    .frame(width: 120, height: 120)
+                Text("$0.00")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: 140)
+    }
+
     func subVsApiDonutData(api: Double, sub: Double) -> (segments: [DonutItem], total: Double) {
         let total = api + sub
         var segments: [DonutItem] = []
@@ -1565,7 +1582,7 @@ struct DashboardView: View {
         let newEditorMappings = EditorDetector.certainMappings()
         let cal = Calendar.current
 
-        // ── Demo mode: skip real queries, use sample data ──
+        // ── Demo mode: auto-activates when no integrations configured ──
         let demoActive = DemoData.isActive
         if demoActive {
             let d = DemoData.data(for: currentTimeRange)

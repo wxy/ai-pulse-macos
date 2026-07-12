@@ -13,5 +13,13 @@
 	<!-- File access: user-selected directories via Open Panel -->
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
+
+	<!-- Audio: NSSound.play() on macOS 26 routes through audioanalyticsd.
+	     Without this exception, sandboxed Release builds hit a
+	     precondition failure (EXC_BREAKPOINT) in app.run(). -->
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>com.apple.audioanalyticsd</string>
+	</array>
 </dict>
 </plist>
