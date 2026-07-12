@@ -49,7 +49,7 @@ struct DashboardView: View {
     @State private var timeRange: TimeRange
     @State private var costHoverDate: Date? = nil
 
-    init(initialTimeRange: TimeRange = .thisWeek) {
+    init(initialTimeRange: TimeRange = .today) {
         self.initialTimeRange = initialTimeRange
         self._timeRange = State(initialValue: initialTimeRange)
     }

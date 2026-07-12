@@ -126,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     // MARK: - Windows
 
     @MainActor
-    private func openDashboard(initialTimeRange: TimeRange = .thisWeek) {
+    private func openDashboard(initialTimeRange: TimeRange = .today) {
         DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: initialTimeRange)
     }
 
@@ -226,7 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     }
 
     @MainActor @objc private func openDashboardFromMenu(_ sender: NSMenuItem) {
-        let tr = sender.representedObject as? TimeRange ?? .thisWeek
+        let tr = sender.representedObject as? TimeRange ?? .today
         DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: tr)
     }
 
