@@ -242,11 +242,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     @MainActor @objc private func toggleDemoMode() {
         if DemoData.isActive {
             DemoData.isManual = false
+            DemoData.isSuppressed = true
             openPreferences()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 NotificationCenter.default.post(name: .showIntegrationsTab, object: nil)
             }
         } else {
+            DemoData.isSuppressed = false
             DemoData.isManual = true
         }
         NotificationCenter.default.post(name: .demoModeDidChange, object: nil)

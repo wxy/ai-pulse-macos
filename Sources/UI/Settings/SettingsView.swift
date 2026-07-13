@@ -219,7 +219,9 @@ struct GeneralTab: View {
                 Button(DemoData.isActive ? I18n.t("demo.exit") : I18n.t("demo.enter")) {
                     if DemoData.isActive {
                         DemoData.isManual = false
+                        DemoData.isSuppressed = true
                     } else {
+                        DemoData.isSuppressed = false
                         DemoData.isManual = true
                     }
                     NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
