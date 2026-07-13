@@ -25,8 +25,10 @@ enum RepoDiscovery {
 
     /// Directories to skip during recursive scans — prevents accidental access
     /// to system media folders (Music, Pictures, Movies) which trigger
-    /// unnecessary permission dialogs on macOS 26.
-    private static let skippedDirNames: Set<String> = ["Music", "Pictures", "Movies"]
+    /// permission dialogs, plus Library (system data) and Trash.
+    private static let skippedDirNames: Set<String> = [
+        "Music", "Pictures", "Movies", "Library", ".Trash",
+    ]
 
     private static func scanDirectory(_ dir: URL, known: Set<String>) -> Int {
         let fm = FileManager.default

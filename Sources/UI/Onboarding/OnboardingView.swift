@@ -326,7 +326,7 @@ struct OnboardingView: View {
             let expanded = NSString(string: path).expandingTildeInPath
             let fm = FileManager.default
             var result: [String] = []
-            let skippedDirs: Set<String> = ["Music", "Pictures", "Movies"]
+            let skippedDirs: Set<String> = ["Music", "Pictures", "Movies", "Library", ".Trash"]
             if fm.fileExists(atPath: expanded),
                let enumerator = fm.enumerator(
                     at: URL(fileURLWithPath: expanded),
