@@ -24,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // Register defaults (fresh install values)
         UserDefaults.standard.register(defaults: ["coin_sound_enabled": true])
 
+        // Reset per-session demo suppression on each launch
+        DemoData.isSuppressed = false
+
         // One-time libgit2 init (replaces per-call init/shutdown)
         GitRepo.setup()
 
