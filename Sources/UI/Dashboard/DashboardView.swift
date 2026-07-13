@@ -1486,7 +1486,7 @@ struct DashboardView: View {
                 Circle()
                     .stroke(Color.secondary.opacity(0.15), lineWidth: 12)
                     .frame(width: 120, height: 120)
-                Text("$0.00")
+                Text(I18n.t("dashboard.zero_cost"))
                     .font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(.secondary)
             }
