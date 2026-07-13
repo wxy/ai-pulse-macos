@@ -21,7 +21,8 @@
       "Read(//Users/xingyuwang/**)",
       "Bash(gh auth *)",
       "Bash(git log *)",
-      "Bash(cat ~/Library/Containers/com.wxy.AIPulse/Data/Library/Logs/AIPulse/aipulse.log 2>/dev/null | tail -30)"
+      "Bash(cat ~/Library/Containers/com.wxy.AIPulse/Data/Library/Logs/AIPulse/aipulse.log 2>/dev/null | tail -30)",
+      "Bash(grep -E '\"type\":\"result\"|\"content\":\\\\[{\"type\":\"text\",\"text\":\"')"
     ]
   }
 }

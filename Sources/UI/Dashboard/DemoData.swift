@@ -7,17 +7,27 @@ enum DemoData {
     // MARK: - Detection
 
     private static let manualKey = "demo_mode_manual"
+    private static let suppressedKey = "demo_mode_suppressed"
 
     static var isManual: Bool {
         get { UserDefaults.standard.bool(forKey: manualKey) }
-        set { UserDefaults.standard.set(newValue, forKey: manualKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: manualKey)
+            if newValue { UserDefaults.standard.set(false, forKey: suppressedKey) }
+        }
+    }
+
+    /// User explicitly exited demo mode — suppress auto-demo for this session.
+    static var isSuppressed: Bool {
+        get { UserDefaults.standard.bool(forKey: suppressedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: suppressedKey) }
     }
 
     static var isActive: Bool {
-        isManual || (
-            IntegrationRegistry.activeCostSources().isEmpty
+        if isManual { return true }
+        if isSuppressed { return false }
+        return IntegrationRegistry.activeCostSources().isEmpty
             && IntegrationRegistry.all.allSatisfy { IntegrationRegistry.config(for: $0.id).enabled == false }
-        )
     }
 
     // MARK: - Dates

@@ -24,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // Register defaults (fresh install values)
         UserDefaults.standard.register(defaults: ["coin_sound_enabled": true])
 
+        // Reset per-session demo suppression on each launch
+        DemoData.isSuppressed = false
+
         // One-time libgit2 init (replaces per-call init/shutdown)
         GitRepo.setup()
 
@@ -126,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     // MARK: - Windows
 
     @MainActor
-    private func openDashboard(initialTimeRange: TimeRange = .thisWeek) {
+    private func openDashboard(initialTimeRange: TimeRange = .today) {
         DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: initialTimeRange)
     }
 
@@ -226,7 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     }
 
     @MainActor @objc private func openDashboardFromMenu(_ sender: NSMenuItem) {
-        let tr = sender.representedObject as? TimeRange ?? .thisWeek
+        let tr = sender.representedObject as? TimeRange ?? .today
         DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: tr)
     }
 
@@ -242,11 +245,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     @MainActor @objc private func toggleDemoMode() {
         if DemoData.isActive {
             DemoData.isManual = false
+            DemoData.isSuppressed = true
             openPreferences()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 NotificationCenter.default.post(name: .showIntegrationsTab, object: nil)
             }
         } else {
+            DemoData.isSuppressed = false
             DemoData.isManual = true
         }
         NotificationCenter.default.post(name: .demoModeDidChange, object: nil)

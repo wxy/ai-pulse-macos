@@ -15,7 +15,7 @@ final class DashboardWindowManager: @unchecked Sendable {
     /// If the window already exists, posts `.dashboardSwitchTab` so the view
     /// switches to the requested tab instead of opening a duplicate window.
     @MainActor
-    func openOrBringToFront(initialTimeRange: TimeRange = .thisWeek) {
+    func openOrBringToFront(initialTimeRange: TimeRange = .today) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         if let w = window, w.contentView != nil {
@@ -367,7 +367,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
     }
 
     @MainActor @objc private func openDashboard(_ sender: NSMenuItem) {
-        let initialRange = sender.representedObject as? TimeRange ?? .thisWeek
+        let initialRange = sender.representedObject as? TimeRange ?? .today
         DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: initialRange)
     }
 

@@ -171,6 +171,7 @@ struct IntegrationsSettingsTab: View {
 struct GeneralTab: View {
     @Binding var lang: String
     @State private var coinSoundEnabled = UserDefaults.standard.bool(forKey: "coin_sound_enabled")
+    @State private var demoActive = DemoData.isActive
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -210,16 +211,18 @@ struct GeneralTab: View {
             // Demo mode toggle
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(DemoData.isActive ? I18n.t("demo.exit") : I18n.t("demo.enter"))
+                    Text(demoActive ? I18n.t("demo.exit") : I18n.t("demo.enter"))
                         .font(.body)
                     Text(I18n.t("demo.onboarding_msg"))
                         .font(.caption2).foregroundColor(.secondary)
                 }
                 Spacer()
-                Button(DemoData.isActive ? I18n.t("demo.exit") : I18n.t("demo.enter")) {
+                Button(demoActive ? I18n.t("demo.exit") : I18n.t("demo.enter")) {
                     if DemoData.isActive {
                         DemoData.isManual = false
+                        DemoData.isSuppressed = true
                     } else {
+                        DemoData.isSuppressed = false
                         DemoData.isManual = true
                     }
                     NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
@@ -242,6 +245,9 @@ struct GeneralTab: View {
                 w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
                 OnboardingWindowManager.shared.window = w
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .demoModeDidChange)) { _ in
+            demoActive = DemoData.isActive
         }
     }
 }
