@@ -30,7 +30,6 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright 2026 Xingyu Wang. Apache 2.0.</string>
-	<key>NSAppleMusicUsageDescription</key>
-	<string>AI Pulse plays short coin sound effects to provide audio feedback when new AI spending data is detected. For example, when your daily API usage costs update during periodic data refresh, a brief coin chime plays to confirm new data has arrived. The app does not access or read your music library.</string>
+
 </dict>
 </plist>

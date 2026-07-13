@@ -23,6 +23,11 @@ enum RepoDiscovery {
 
     // MARK: - Private
 
+    /// Directories to skip during recursive scans — prevents accidental access
+    /// to system media folders (Music, Pictures, Movies) which trigger
+    /// unnecessary permission dialogs on macOS 26.
+    private static let skippedDirNames: Set<String> = ["Music", "Pictures", "Movies"]
+
     private static func scanDirectory(_ dir: URL, known: Set<String>) -> Int {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
@@ -33,6 +38,10 @@ enum RepoDiscovery {
 
         var count = 0
         for case let url as URL in enumerator {
+            if skippedDirNames.contains(url.lastPathComponent) {
+                enumerator.skipDescendants()
+                continue
+            }
             let gitDir = url.appendingPathComponent(".git")
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: gitDir.path, isDirectory: &isDir), isDir.boolValue
