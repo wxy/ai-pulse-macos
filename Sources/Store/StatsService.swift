@@ -318,6 +318,7 @@ enum StatsService {
             let projected = spent + dailyRate * Double(daysRemaining)
             return Prediction(monthProjected: projected, dailyRate: dailyRate, daysRemaining: daysRemaining, monthSoFar: spent)
         } catch {
+            Logger.error("StatsService.prediction: query failed — \(error)")
             return Prediction(monthProjected: 0, dailyRate: 0, daysRemaining: 0, monthSoFar: 0)
         }
     }

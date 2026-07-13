@@ -292,7 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         NSApp.activate(ignoringOtherApps: true)
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
                          styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        w.title = "AI Pulse — Welcome"
+        w.title = I18n.t("onboarding.window_title")
         w.contentView = NSHostingView(rootView: OnboardingView())
         w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
         OnboardingWindowManager.shared.window = w

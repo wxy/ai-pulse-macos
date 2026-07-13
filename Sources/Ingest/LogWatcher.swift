@@ -54,7 +54,7 @@ final class LogWatcher: @unchecked Sendable {
                 UserDefaults.standard.removeObject(forKey: "logwatcher_positions")
             }
         } catch {
-            // DB not ready yet; will retry on next scan
+            Logger.warning("LogWatcher: DB positions load failed, re-scanning all files: \(error)")
         }
     }
 

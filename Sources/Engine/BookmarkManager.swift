@@ -49,12 +49,12 @@ enum BookmarkManager {
     /// Returns the selected URL, or nil if cancelled.
     @MainActor
     static func requestAccess(
-        message: String = "AI Pulse 需要访问此目录以读取 AI 日志和代码仓库",
+        message: String? = nil,
         defaultDirectory: String = NSHomeDirectory()
     ) -> URL? {
         let panel = NSOpenPanel()
-        panel.message = message
-        panel.prompt = "授权访问"
+        panel.message = message ?? I18n.t("bookmark.repos_message")
+        panel.prompt = I18n.t("bookmark.grant")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false

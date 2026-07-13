@@ -163,7 +163,7 @@ final class ApiPoller: @unchecked Sendable {
         for entry in entries {
             if let prev = prevBalance, entry.totalBalance < prev {
                 let spend = prev - entry.totalBalance
-                CoinSound.play(for: spend)
+                DispatchQueue.main.async { CoinSound.play(for: spend) }
             }
         }
 

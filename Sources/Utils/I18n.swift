@@ -64,6 +64,7 @@ enum I18n {
         "about.website": "网站",
         "anomaly.title": "⚠️ AI 花费异常",
         "onboarding.welcome": "你的 AI 油表",
+        "onboarding.window_title": "AI Pulse — 欢迎",
         "onboarding.desc": "跟踪所有工具、订阅和 API 密钥的 AI 花费。",
         "onboarding.privacy": "所有数据仅存储在本机。",
         "onboarding.detected": "已检测到的工具",
@@ -270,6 +271,7 @@ enum I18n {
         "about.website": "Website",
         "anomaly.title": "⚠️ AI Spending Spike",
         "onboarding.welcome": "Your AI Fuel Gauge",
+        "onboarding.window_title": "AI Pulse — Welcome",
         "onboarding.desc": "Track AI spend across all tools, subscriptions, and API keys.",
         "onboarding.privacy": "All data stays on your machine.",
         "onboarding.detected": "Detected Tools",
@@ -416,16 +418,22 @@ enum I18n {
     static let didChangeLanguage = Notification.Name("I18nDidChangeLanguage")
 
     private static let langKey = "app_language"
-    private static nonisolated(unsafe) var currentLang: String?
+    private static let langLock = NSLock()
+    private static nonisolated(unsafe) var _currentLang: String?
 
     static func setLang(_ lang: String) {
-        currentLang = lang
+        langLock.lock()
+        _currentLang = lang
+        langLock.unlock()
         UserDefaults.standard.set(lang, forKey: langKey)
         NotificationCenter.default.post(name: didChangeLanguage, object: nil)
     }
 
     static func getLang() -> String {
-        if let l = currentLang { return l }
+        langLock.lock()
+        if let l = _currentLang { langLock.unlock(); return l }
+        langLock.unlock()
+
         let saved = UserDefaults.standard.string(forKey: langKey)
         let lang: String
         if let s = saved { lang = s }
@@ -433,7 +441,10 @@ enum I18n {
             let preferred = Locale.preferredLanguages.first ?? ""
             lang = preferred.hasPrefix("zh") ? "zh" : "en"
         }
-        currentLang = lang
+
+        langLock.lock()
+        _currentLang = lang
+        langLock.unlock()
         return lang
     }
 

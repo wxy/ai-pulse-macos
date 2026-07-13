@@ -7,13 +7,13 @@ enum CoinSound {
     /// Keep active sounds alive with strong references so they don't dealloc mid-playback.
     /// Overlapping sounds (e.g., multi-coin for large spend) each get their own slot;
     /// cleaned up after their duration elapses.
-    private static nonisolated(unsafe) var activeSounds = Set<NSSound>()
+    @MainActor private static var activeSounds = Set<NSSound>()
 
     // MARK: - Public
 
     /// Play coin sound(s) scaled to the spend amount.
     /// Larger spend → multiple-coin sound.
-    static func play(for spend: Double) {
+    @MainActor static func play(for spend: Double) {
         guard UserDefaults.standard.bool(forKey: "coin_sound_enabled") else { return }
 
         if spend >= 1.00 {
@@ -36,7 +36,7 @@ enum CoinSound {
     /// don't produce a storm of audio cues.
     /// - Parameter bypassThrottle: if true, ignores the 60-second cooldown
     ///   (used for startup chime).
-    static func playForDataChange(bypassThrottle: Bool = false) {
+    @MainActor static func playForDataChange(bypassThrottle: Bool = false) {
         guard UserDefaults.standard.bool(forKey: "coin_sound_enabled") else {
             Logger.debug("CoinSound: playForDataChange skipped — sound disabled")
             return
@@ -53,11 +53,11 @@ enum CoinSound {
         playBundleSound(named: "coin", ext: "mp3")
     }
 
-    private static nonisolated(unsafe) var lastDataChangeSoundTime: Date = .distantPast
+    @MainActor private static var lastDataChangeSoundTime: Date = .distantPast
 
     // MARK: - Playback
 
-    private static func playBundleSound(named name: String, ext: String) {
+    @MainActor private static func playBundleSound(named name: String, ext: String) {
         guard let url = Bundle.main.url(forResource: name, withExtension: ext) else {
             Logger.debug("CoinSound: '\(name).\(ext)' not in bundle, falling back to beep")
             NSSound.beep()
