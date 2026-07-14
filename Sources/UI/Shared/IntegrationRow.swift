@@ -173,7 +173,7 @@ struct IntegrationRow: View {
                                                @ViewBuilder content: () -> C) -> some View {
         HStack(spacing: 4) {
             Text(label).font(.caption).foregroundColor(.secondary)
-                .frame(width: 56, alignment: .leading)
+                .frame(width: 112, alignment: .leading)
             Picker("", selection: selection) { content() }
                 .pickerStyle(.menu)
                 .frame(width: 184, alignment: .leading)
