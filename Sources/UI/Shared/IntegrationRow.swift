@@ -156,17 +156,15 @@ struct IntegrationRow: View {
                         if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
                     }
                 }
-                if !availableAPIKeySources.isEmpty {
-                    labeledPicker(label: I18n.t("integrations.preferred_api_key"), selection: $preferredKeyId) {
-                        Text(I18n.t("integrations.not_used")).tag("")
-                        ForEach(availableAPIKeySources, id: \.id) { src in
-                            Text(src.label).tag(src.id)
-                        }
-                    }
-                    .onChange(of: preferredKeyId) { _, v in
-                        savePreferredKey(v)
+                labeledPicker(label: I18n.t("integrations.preferred_api_key"), selection: $preferredKeyId) {
+                    Text(I18n.t("integrations.not_used")).tag("")
+                    ForEach(availableAPIKeySources, id: \.id) { src in
+                        Text(src.label).tag(src.id)
                     }
                 }
+                .onChange(of: preferredKeyId) { _, v in
+                        savePreferredKey(v)
+                    }
             }
         }
     }
