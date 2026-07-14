@@ -326,11 +326,18 @@ struct OnboardingView: View {
             let expanded = NSString(string: path).expandingTildeInPath
             let fm = FileManager.default
             var result: [String] = []
+            let skippedDirs: Set<String> = ["Music", "Pictures", "Movies", "Library", ".Trash"]
             if fm.fileExists(atPath: expanded),
-               let items = (fm.enumerator(at: URL(fileURLWithPath: expanded),
-                                    includingPropertiesForKeys: [.isDirectoryKey],
-                                    options: [.skipsHiddenFiles, .skipsPackageDescendants])?.allObjects as? [URL]) {
-                for url in items {
+               let enumerator = fm.enumerator(
+                    at: URL(fileURLWithPath: expanded),
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
+               ) {
+                while let url = enumerator.nextObject() as? URL {
+                    if skippedDirs.contains(url.lastPathComponent) {
+                        enumerator.skipDescendants()
+                        continue
+                    }
                     let git = url.appendingPathComponent(".git")
                     var d: ObjCBool = false
                     if fm.fileExists(atPath: git.path, isDirectory: &d), d.boolValue {

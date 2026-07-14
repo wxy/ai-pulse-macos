@@ -20,7 +20,7 @@ struct CursorIntegration: Detectable {
             kind: .subscription(toolId: "cursor", tierLabel: tier.label, monthlyFee: tier.fee),
             coveredModels: PricingManager.shared.modelsForTool("cursor"),
             confidence: .amortized,
-            limitations: ["超量费用暂不支持"]
+            limitations: [I18n.t("limitation.overage_unsupported")]
         )]
     }
 
@@ -80,7 +80,7 @@ struct WindsurfIntegration: Detectable {
             kind: .subscription(toolId: "windsurf", tierLabel: tier.label, monthlyFee: tier.fee),
             coveredModels: PricingManager.shared.modelsForTool("windsurf"),
             confidence: .amortized,
-            limitations: ["超量费用暂不支持"]
+            limitations: [I18n.t("limitation.overage_unsupported")]
         )]
     }
 

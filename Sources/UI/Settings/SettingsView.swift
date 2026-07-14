@@ -97,6 +97,12 @@ struct IntegrationsSettingsTab: View {
             case .editors: return I18n.t("integrations.group_editors")
             }
         }
+        var desc: String? {
+            switch self {
+            case .apiKeys: return I18n.t("integrations.group_api_key_desc")
+            case .editors: return I18n.t("integrations.group_editors_desc")
+            }
+        }
     }
 
     func groupFor(_ integration: any Detectable) -> Group {
@@ -129,6 +135,11 @@ struct IntegrationsSettingsTab: View {
                         let items = results.filter { groupFor($0.0) == group }
                         if !items.isEmpty {
                             sectionHeader(Group.label(group), count: items.count)
+                            if let desc = group.desc {
+                                Text(desc)
+                                    .font(.caption2).foregroundColor(.secondary)
+                                    .padding(.bottom, 2)
+                            }
                             ForEach(items, id: \.0.id) { (i, r) in
                                 IntegrationRow(integration: i, detected: r,
                                                onGrant: { runDetection() })
@@ -249,156 +260,6 @@ struct GeneralTab: View {
         .onReceive(NotificationCenter.default.publisher(for: .demoModeDidChange)) { _ in
             demoActive = DemoData.isActive
         }
-    }
-}
-
-// MARK: - API Keys
-
-struct ApiKeysTab: View {
-    @State private var keyInputs: [String: String] = [:]
-    @State private var masks: [String: Bool] = [:]
-    @State private var cachedBalances: [String: CachedBalance] = [:]
-
-    // Fixed column widths so rows with/without balance API align identically
-    private let nameW: CGFloat   = 72
-    private let keyW: CGFloat    = 148
-    private let btnW: CGFloat    = 44
-    private let balW: CGFloat    = 110
-    // Total width after the name column (key + btn + balance)
-    private var restW: CGFloat   { keyW + btnW + balW }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(I18n.t("apikeys.title")).font(.title3).fontWeight(.semibold)
-            Text(I18n.t("apikeys.desc")).font(.caption).foregroundColor(.secondary)
-
-            let balanceProviders = ProviderRegistry.all.filter(\.canFetchBalance)
-
-            ScrollView {
-                VStack(spacing: 5) {
-                    ForEach(balanceProviders, id: \.id) { p in
-                        HStack(spacing: 0) {
-                            Text(p.name).font(.callout).frame(width: nameW, alignment: .leading)
-
-                            if masks[p.id] == true {
-                                Text("••••••••")
-                                    .font(.callout).foregroundColor(.secondary)
-                                    .frame(width: keyW, alignment: .leading)
-
-                                Button(I18n.t("apikeys.change")) {
-                                    masks[p.id] = false
-                                    keyInputs[p.id] = ""
-                                }.frame(width: btnW)
-                            } else {
-PasteableTextField(
-                                    text: Binding(
-                                        get: { keyInputs[p.id] ?? "" },
-                                        set: { keyInputs[p.id] = $0 }
-                                    ),
-                                    placeholder: I18n.t("apikeys.placeholder")
-                                )
-                                    .frame(width: keyW, height: 22)
-
-                                Button(I18n.t("apikeys.save")) {
-                                    let k = keyInputs[p.id] ?? ""
-                                    if k.isEmpty {
-                                        ApiKeyManager.shared.delete(p.id)
-                                        masks[p.id] = false
-                                    } else {
-                                        ApiKeyManager.shared.set(p.id, key: k)
-                                        masks[p.id] = true
-                                        keyInputs[p.id] = ""
-                                        ApiPoller.shared.fetchNow(providerId: p.id)
-                                    }
-                                    refreshCache()
-                                }
-                                .disabled((keyInputs[p.id] ?? "").isEmpty)
-                                .frame(width: btnW)
-                            }
-
-                            balanceView(for: p.id).frame(width: balW, alignment: .leading)
-                        }
-                        .padding(.vertical, 2)
-                    }
-                }
-            }
-        }
-        .onAppear {
-            for p in ProviderRegistry.all where p.canFetchBalance {
-                if let saved = ApiKeyManager.shared.get(p.id), !saved.isEmpty {
-                    masks[p.id] = true
-                    keyInputs[p.id] = ""
-                } else {
-                    masks[p.id] = false
-                    keyInputs[p.id] = ""
-                }
-            }
-            refreshCache()
-        }
-    }
-
-    @ViewBuilder
-    private func balanceView(for providerId: String) -> some View {
-        if let cb = cachedBalances[providerId] {
-            if let err = cb.error {
-                Text(err).font(.caption2).foregroundColor(.orange).lineLimit(1)
-            } else if let b = cb.balances.first {
-                Text("\(b.currency) \(String(format: "%.2f", b.totalBalance))")
-                    .font(.caption2).foregroundColor(.secondary).monospacedDigit()
-            } else {
-                Text("--").font(.caption2).foregroundColor(.secondary)
-            }
-        } else {
-            Text("--").font(.caption2).foregroundColor(.secondary)
-        }
-    }
-
-    private func refreshCache() {
-        var cb: [String: CachedBalance] = [:]
-        for p in ProviderRegistry.all where p.canFetchBalance {
-            if let c = ApiPoller.shared.cachedBalance(for: p.id) { cb[p.id] = c }
-        }
-        cachedBalances = cb
-    }
-}
-
-// MARK: - Tools
-
-struct ToolsTab: View {
-    @State private var tools: [ToolItem] = []
-    struct ToolItem: Identifiable { let id = UUID(); let name: String; let path: String; let sessions: Int; var enabled: Bool }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(I18n.t("tools.title")).font(.title3).fontWeight(.semibold)
-            Text(I18n.t("tools.desc")).font(.caption).foregroundColor(.secondary)
-            if tools.isEmpty {
-                Label(I18n.t("tools.no_tools"), systemImage: "questionmark.circle").foregroundColor(.secondary).padding(.top, 20)
-            } else {
-                VStack(spacing: 6) {
-                    ForEach($tools) { $t in
-                        HStack {
-                            Toggle(isOn: $t.enabled) {}.toggleStyle(.checkbox)
-                            VStack(alignment: .leading) {
-                                Text(t.name).font(.body)
-                                Text("\(t.path) · \(t.sessions) \(I18n.t("tools.sessions"))").font(.caption2).foregroundColor(.secondary)
-                            }
-                            Spacer()
-                        }
-                        .padding(10).background(Color(nsColor: .quaternarySystemFill)).cornerRadius(8)
-                    }
-                }
-            }
-        }
-        .onAppear { detect() }
-    }
-    private func detect() {
-        var list: [ToolItem] = []
-        let ccDir = FileManager.default.realHomeDirectory.appendingPathComponent(".claude/projects")
-        if FileManager.default.fileExists(atPath: ccDir.path) {
-            let sessions = (try? FileManager.default.contentsOfDirectory(atPath: ccDir.path))?.count ?? 0
-            list.append(ToolItem(name: I18n.t("tools.claude_code"), path: "~/.claude/projects/", sessions: sessions, enabled: true))
-        }
-        tools = list
     }
 }
 
@@ -602,103 +463,6 @@ struct ReposTab: View {
             dirEntries[idx].isScanning = false
             // Update cache
             repoScanCache[path] = (Date(), foundRepos)
-        }
-    }
-}
-
-// MARK: - Subscriptions
-
-struct SubsTab: View {
-    @State private var selections: [String: String] = [:] // bundleId → tier label
-    @State private var dbError: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(I18n.t("subs.title")).font(.title3).fontWeight(.semibold)
-            Text(I18n.t("subs.desc")).font(.caption).foregroundColor(.secondary)
-
-            let detected = SubscriptionRegistry.tools.filter(\.installed)
-            let notDetected = SubscriptionRegistry.tools.filter { !$0.installed }
-
-            if detected.isEmpty && notDetected.isEmpty {
-                Text(I18n.t("subs.empty")).font(.caption).foregroundColor(.secondary).padding(.top, 10)
-            }
-
-            // Detected tools — pick a tier
-            ForEach(detected) { tool in
-                HStack {
-                    Image(systemName: "checkmark.seal.fill").foregroundColor(.green)
-                    Text(tool.name).font(.body).frame(width: 180, alignment: .leading)
-                    Picker("", selection: Binding(
-                        get: { selections[tool.name] ?? "" },
-                        set: { v in selections[tool.name] = v; save(tool: tool, tierLabel: v) }
-                    )) {
-                        Text(I18n.t("subs.choose")).tag("")
-                        ForEach(tool.tiers) { t in
-                            Text("\(t.label) ($\(String(format: "%.0f", t.fee))\(I18n.t("subs.per_month")))").tag(t.label)
-                        }
-                    }.frame(width: 220)
-                }
-                .padding(.vertical, 4)
-            }
-
-            // Not installed — greyed out
-            if !notDetected.isEmpty && !detected.isEmpty {
-                Divider().padding(.vertical, 4)
-            }
-            ForEach(notDetected) { tool in
-                HStack {
-                    Image(systemName: "questionmark.circle").foregroundColor(.secondary)
-                    Text(tool.name).font(.body).foregroundColor(.secondary).frame(width: 180, alignment: .leading)
-                    Text(I18n.t("subs.not_installed")).font(.caption).foregroundColor(.secondary)
-                }
-                .padding(.vertical, 4)
-            }
-
-            if let err = dbError { Text(err).font(.caption2).foregroundColor(.red) }
-        }
-        .onAppear {
-            // Restore saved selections from DB
-            Task {
-                do {
-                    // Process Row values inside the read closure so only
-                    // Sendable types cross isolation boundaries (Row is not
-                    // Sendable in Swift 6 strict mode).
-                    let map: [String: String] = try await AppDatabase.shared.read { db in
-                        let rows = try Row.fetchAll(db, sql: "SELECT id, name, monthly_fee, currency FROM subscription_tool")
-                        var map = [String: String]()
-                        for r in rows {
-                            let name: String = r["name"] ?? ""
-                            if let tool = SubscriptionRegistry.tools.first(where: { name.hasPrefix($0.name) }) {
-                                let tierLabel = String(name.dropFirst(tool.name.count + 1))
-                                if tool.tiers.contains(where: { $0.label == tierLabel }) {
-                                    map[tool.name] = tierLabel
-                                }
-                            }
-                        }
-                        return map
-                    }
-                    await MainActor.run { selections = map; dbError = nil }
-                } catch {
-                    await MainActor.run { dbError = "Load: \(error.localizedDescription)" }
-                }
-            }
-        }
-    }
-
-    private func save(tool: SubscriptionTool, tierLabel: String) {
-        let itemName = "\(tool.name) \(tierLabel)"
-        guard let tier = tool.tiers.first(where: { $0.label == tierLabel }) else { return }
-        Task {
-            do {
-                try await AppDatabase.shared.write { db in
-                    try db.execute(sql: """
-                        INSERT OR REPLACE INTO subscription_tool (id, name, monthly_fee, currency)
-                        VALUES (?, ?, ?, ?)
-                        """, arguments: [tool.name, itemName, tier.fee, tier.currency])
-                }
-                await MainActor.run { dbError = nil }
-            } catch { await MainActor.run { dbError = "Save: \(error.localizedDescription)" } }
         }
     }
 }

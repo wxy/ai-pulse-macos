@@ -64,29 +64,39 @@ struct IntegrationRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            if detecting {
-                ProgressView().scaleEffect(0.6).frame(width: 20)
-            } else {
-                Image(systemName: iconName)
-                    .foregroundColor(iconColor)
-                    .font(.title3).frame(width: 20)
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                if detecting {
+                    ProgressView().scaleEffect(0.6).frame(width: 20)
+                } else {
+                    Image(systemName: iconName)
+                        .foregroundColor(iconColor)
+                        .font(.title3).frame(width: 20)
+                }
 
-            VStack(alignment: .leading, spacing: 2) {
                 Text(integration.displayName).font(.body).fontWeight(.medium)
-                Text(summaryText)
-                    .font(.caption).foregroundColor(.secondary).lineLimit(2)
+
+                if !(detected.found || isAPIKeyType) {
+                    Text(summaryText)
+                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                }
+
+                Spacer()
+
+                if needsGrant {
+                    Button(I18n.t("bookmark.grant")) { grantClaude() }
+                        .buttonStyle(.bordered).controlSize(.small)
+                } else if isAPIKeyType {
+                    controls
+                } else if detected.found {
+                    Text(summaryText)
+                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                }
             }
 
-            Spacer()
-
-            if needsGrant {
-                Button(I18n.t("bookmark.grant")) { grantClaude() }
-                    .buttonStyle(.bordered).controlSize(.small)
-            } else if detected.found || isAPIKeyType || isSubscriptionType || isLogTool {
-                controls
-                    .disabled(!detected.found && !isAPIKeyType)
+            if !isAPIKeyType && detected.found {
+                devToolControls
+                    .padding(.leading, 32)
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -140,34 +150,35 @@ struct IntegrationRow: View {
     }
 
     @ViewBuilder
+    var devToolControls: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if isSubscriptionType {
+                labeledPicker(label: I18n.t("integrations.subscription_plan"), selection: $tierInput) {
+                    Text(I18n.t("integrations.select_plan")).tag("")
+                    ForEach(SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? [], id: \.label) { t in
+                        Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
+                    }
+                }
+                .onChange(of: tierInput) { _, v in
+                    if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
+                }
+            }
+            labeledPicker(label: I18n.t("integrations.preferred_api_key"), selection: $preferredKeyId) {
+                Text(I18n.t("integrations.not_used")).tag("")
+                ForEach(availableAPIKeySources, id: \.id) { src in
+                    Text(src.label).tag(src.id)
+                }
+            }
+            .onChange(of: preferredKeyId) { _, v in
+                savePreferredKey(v)
+            }
+        }
+    }
+
+    @ViewBuilder
     var controls: some View {
         if isAPIKeyType {
             apiKeyControls
-        } else {
-            VStack(alignment: .leading, spacing: 4) {
-                if isSubscriptionType {
-                    labeledPicker(label: I18n.t("integrations.subscription_plan"), selection: $tierInput) {
-                        Text(I18n.t("integrations.select_plan")).tag("")
-                        ForEach(SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? [], id: \.label) { t in
-                            Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
-                        }
-                    }
-                    .onChange(of: tierInput) { _, v in
-                        if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
-                    }
-                }
-                if !availableAPIKeySources.isEmpty {
-                    labeledPicker(label: "API", selection: $preferredKeyId) {
-                        Text(I18n.t("integrations.not_used")).tag("")
-                        ForEach(availableAPIKeySources, id: \.id) { src in
-                            Text(src.label).tag(src.id)
-                        }
-                    }
-                    .onChange(of: preferredKeyId) { _, v in
-                        savePreferredKey(v)
-                    }
-                }
-            }
         }
     }
 
@@ -175,7 +186,7 @@ struct IntegrationRow: View {
                                                @ViewBuilder content: () -> C) -> some View {
         HStack(spacing: 4) {
             Text(label).font(.caption).foregroundColor(.secondary)
-                .frame(width: 56, alignment: .leading)
+                .frame(width: 112, alignment: .leading)
             Picker("", selection: selection) { content() }
                 .pickerStyle(.menu)
                 .frame(width: 184, alignment: .leading)

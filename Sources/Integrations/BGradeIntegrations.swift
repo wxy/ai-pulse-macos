@@ -14,7 +14,7 @@ struct DeepSeekIntegration: Detectable, Collectable {
             kind: .apiKey(providerId: "deepseek"),
             coveredModels: PricingManager.shared.modelsForProvider("deepseek"),
             confidence: .exact,
-            limitations: ["假设此 Key 仅用于编程任务"]
+            limitations: [I18n.t("limitation.assume_programming")]
         )]
     }
 
@@ -41,7 +41,7 @@ struct OpenAI_Integration: Detectable, Collectable {
             kind: .apiKey(providerId: "openai"),
             coveredModels: PricingManager.shared.modelsForProvider("openai"),
             confidence: .exact,
-            limitations: ["假设此 Key 仅用于编程任务"]
+            limitations: [I18n.t("limitation.assume_programming")]
         )]
     }
 
@@ -68,7 +68,7 @@ struct KimiIntegration: Detectable, Collectable {
             kind: .apiKey(providerId: "moonshot"),
             coveredModels: PricingManager.shared.modelsForProvider("moonshot"),
             confidence: .exact,
-            limitations: ["假设此 Key 仅用于编程任务"]
+            limitations: [I18n.t("limitation.assume_programming")]
         )]
     }
 
@@ -95,7 +95,7 @@ struct ZhipuIntegration: Detectable, Collectable {
             kind: .apiKey(providerId: "zhipu"),
             coveredModels: PricingManager.shared.modelsForProvider("zhipu"),
             confidence: .exact,
-            limitations: ["假设此 Key 仅用于编程任务"]
+            limitations: [I18n.t("limitation.assume_programming")]
         )]
     }
 
@@ -122,7 +122,7 @@ struct AnthropicIntegration: Detectable, Collectable {
             kind: .apiKey(providerId: "anthropic"),
             coveredModels: PricingManager.shared.claudeModels(),
             confidence: .estimated,
-            limitations: ["无余额 API，按 token × 定价表估算"]
+            limitations: [I18n.t("limitation.no_balance_api")]
         )]
     }
 

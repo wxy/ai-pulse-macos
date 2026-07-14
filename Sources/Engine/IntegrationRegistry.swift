@@ -61,7 +61,7 @@ enum IntegrationRegistry {
                         monthlyFee: m.dailySubscriptionCost * 30),
                     coveredModels: models,
                     confidence: .uncertain,
-                    limitations: ["自动检测到，请在设置中配置订阅方案以精确计算"]
+                    limitations: [I18n.t("limitation.auto_detected")]
                 ))
             }
         }
