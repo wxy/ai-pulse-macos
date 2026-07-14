@@ -97,6 +97,12 @@ struct IntegrationsSettingsTab: View {
             case .editors: return I18n.t("integrations.group_editors")
             }
         }
+        var desc: String? {
+            switch self {
+            case .apiKeys: return I18n.t("integrations.group_api_key_desc")
+            case .editors: return I18n.t("integrations.group_editors_desc")
+            }
+        }
     }
 
     func groupFor(_ integration: any Detectable) -> Group {
@@ -129,6 +135,11 @@ struct IntegrationsSettingsTab: View {
                         let items = results.filter { groupFor($0.0) == group }
                         if !items.isEmpty {
                             sectionHeader(Group.label(group), count: items.count)
+                            if let desc = group.desc {
+                                Text(desc)
+                                    .font(.caption2).foregroundColor(.secondary)
+                                    .padding(.bottom, 2)
+                            }
                             ForEach(items, id: \.0.id) { (i, r) in
                                 IntegrationRow(integration: i, detected: r,
                                                onGrant: { runDetection() })
