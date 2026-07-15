@@ -12,8 +12,9 @@ your machine.**
 
 ## Download
 
-**[Download AI Pulse on the Mac App Store](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)** —
-the recommended way to install. Requires macOS 14 Sonoma or later.
+[![Download on the Mac App Store](https://tools.applemediaservices.com/api/badges/download-on-the-mac-app-store/black/en-us?size=250x83)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+
+Requires macOS 14 Sonoma or later.
 
 To build from source, see [Quick Start](#quick-start).
 
@@ -121,20 +122,14 @@ open AIPulse/AIPulse.xcodeproj
 ## Distribution
 
 AI Pulse is distributed through the [Mac App Store](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12).
-For direct DMG distribution or self-built archives:
+We recommend the App Store for automatic updates and sandbox security.
+
+To build a DMG for direct distribution (requires Apple Developer membership):
 
 ```bash
-# 1. Set up credentials (one-time)
 cp .env.example .env
 # Edit .env with your Apple ID and app-specific password
-
-# 2. Archive in Xcode
-#    Product → Archive → Distribute App → Direct Distribution
-#    This exports a notarized AIPulse.app to dist/
-
-# 3. Package as DMG
 NOTARIZE=1 ./scripts/make-dmg.sh
-# → dist/AIPulse-{version}.dmg
 ```
 
 ## Architecture
@@ -200,7 +195,7 @@ RepoDiscovery     ──┤
 | Workflow | Trigger | Does |
 |----------|---------|------|
 | `ci.yml` | Push / PR to `main` | Build + test |
-| `release.yml` | `git tag v*` | Sign + notarize + DMG + GitHub Release |
+| `release.yml` | `git tag v*` | Publish GitHub Release (App Store is primary distribution) |
 
 ## Related Projects
 
