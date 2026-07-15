@@ -1,6 +1,7 @@
 # AI Pulse for macOS
 
 [![CI](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml)
+[![App Store](https://img.shields.io/badge/App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)]()
 [![Swift](https://img.shields.io/badge/swift-6.0-orange)]()
@@ -8,6 +9,13 @@
 Your AI coding fuel gauge — track exactly who's charging you, how much,
 and whether your code output is worth it. **100% local, zero data leaves
 your machine.**
+
+## Download
+
+**[Download AI Pulse on the Mac App Store](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)** —
+the recommended way to install. Requires macOS 14 Sonoma or later.
+
+To build from source, see [Quick Start](#quick-start).
 
 Also check out [AI Pulse for Chrome](https://github.com/wxy/ai-pulse) —
 the browser extension that covers web-based AI tools like ChatGPT, Claude.ai,
@@ -111,6 +119,9 @@ open AIPulse/AIPulse.xcodeproj
 ```
 
 ## Distribution
+
+AI Pulse is distributed through the [Mac App Store](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12).
+For direct DMG distribution or self-built archives:
 
 ```bash
 # 1. Set up credentials (one-time)
