@@ -62,7 +62,7 @@ final class UsageMonitor: @unchecked Sendable {
     // MARK: - GitHub Copilot (HTTP)
 
     /// Parse the Copilot API response JSON. Internal for testing.
-    static func parseCopilotResponse(_ json: [String: Any]) -> (usedPercent: Double, overageCount: Int)? {
+    static nonisolated func parseCopilotResponse(_ json: [String: Any]) -> (usedPercent: Double, overageCount: Int)? {
         guard let snapshots = json["quota_snapshots"] as? [String: Any],
               let premium = snapshots["premium_interactions"] as? [String: Any],
               let percentRemaining = premium["percent_remaining"] as? Double
@@ -83,26 +83,40 @@ final class UsageMonitor: @unchecked Sendable {
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 10
 
-        session.dataTask(with: req) { data, resp, error in
+        session.dataTask(with: req) { [healthMonitor = AppHealthMonitor.shared] data, resp, error in
             if let error {
-                Logger.debug("UsageMonitor: Copilot API error: \(error.localizedDescription)")
-                AppHealthMonitor.shared.reportAPIError(providerId: "copilot-usage",
-                    message: "Copilot usage: \(error.localizedDescription)")
+                Task { @MainActor in
+                    Logger.debug("UsageMonitor: Copilot API error: \(error.localizedDescription)")
+                    healthMonitor.reportAPIError(providerId: "copilot-usage",
+                        message: "Copilot usage: \(error.localizedDescription)")
+                }
                 return
             }
             guard let data,
                   let httpResp = resp as? HTTPURLResponse,
                   httpResp.statusCode == 200,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let parsed = Self.parseCopilotResponse(json)
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else {
-                Logger.debug("UsageMonitor: Copilot API unexpected response")
-                AppHealthMonitor.shared.reportAPIError(providerId: "copilot-usage",
-                    message: "Copilot usage: unexpected response")
+                Task { @MainActor in
+                    Logger.debug("UsageMonitor: Copilot API unexpected response")
+                    healthMonitor.reportAPIError(providerId: "copilot-usage",
+                        message: "Copilot usage: unexpected response")
+                }
                 return
             }
 
-            AppHealthMonitor.shared.clearAPIError(providerId: "copilot-usage")
+            guard let parsed = Self.parseCopilotResponse(json) else {
+                Task { @MainActor in
+                    Logger.debug("UsageMonitor: Copilot API unexpected response")
+                    healthMonitor.reportAPIError(providerId: "copilot-usage",
+                        message: "Copilot usage: unexpected response")
+                }
+                return
+            }
+
+            Task { @MainActor in
+                healthMonitor.clearAPIError(providerId: "copilot-usage")
+            }
             let usedPercent = parsed.usedPercent
             let overageCount = parsed.overageCount
 
@@ -117,13 +131,17 @@ final class UsageMonitor: @unchecked Sendable {
                     }
                 } catch {
                     DispatchQueue.main.async {
-                        Logger.debug("UsageMonitor: copilot status update failed: \(error)")
+                        MainActor.assumeIsolated {
+                            Logger.debug("UsageMonitor: copilot status update failed: \(error)")
+                        }
                     }
                 }
             }
 
             DispatchQueue.main.async {
-                Logger.debug("UsageMonitor: Copilot used \(String(format: "%.0f", usedPercent))% overage=\(overageCount)")
+                MainActor.assumeIsolated {
+                    Logger.debug("UsageMonitor: Copilot used \(String(format: "%.0f", usedPercent))% overage=\(overageCount)")
+                }
             }
         }.resume()
     }

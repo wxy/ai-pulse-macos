@@ -31,7 +31,7 @@ struct GitRepo {
     ///   matches are returned. Used to exclude collaborators' commits.
     ///   When filtering by author, `maxCount` is multiplied by 10 to ensure
     ///   we can walk past collaborator commits to find the user's own.
-    func log(since lastHash: String?, maxCount: Int = 20,
+    nonisolated func log(since lastHash: String?, maxCount: Int = 20,
              authorEmail: String? = nil) -> [(hash: String, ts: Int, parentCount: Int)] {
         let effectiveMax = authorEmail != nil ? maxCount * 10 : maxCount
         var repoPtr: OpaquePointer?
@@ -75,7 +75,7 @@ struct GitRepo {
 
     /// Read the git `user.email` for this repository.
     /// Checks repo-local config first, then global `~/.gitconfig`.
-    func userEmail() -> String? {
+    nonisolated func userEmail() -> String? {
         var repoPtr: OpaquePointer?
         guard git_repository_open(&repoPtr, path) == 0, let repo = repoPtr else { return nil }
         defer { git_repository_free(repo) }
@@ -93,7 +93,7 @@ struct GitRepo {
     }
 
     /// Get per-file added/deleted lines for a commit, excluding generated/lock files.
-    func diffTree(hash: String) -> (added: Int, deleted: Int)? {
+    nonisolated func diffTree(hash: String) -> (added: Int, deleted: Int)? {
         var repoPtr: OpaquePointer?
         guard git_repository_open(&repoPtr, path) == 0, let repo = repoPtr else { return nil }
         defer { git_repository_free(repo) }
@@ -153,16 +153,16 @@ struct GitRepo {
 
     // MARK: - Exclusion filter (mirrors GitMonitor)
 
-    private static let excludedSuffixes: Set<String> = [
+    private static nonisolated let excludedSuffixes: Set<String> = [
         ".lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
         ".pb.go", ".generated.swift", ".generated.ts", ".graphql",
         ".min.js", ".min.css", ".map"
     ]
-    private static let excludedDirs: Set<String> = [
+    private static nonisolated let excludedDirs: Set<String> = [
         "node_modules", "dist", "build", ".next", "vendor", "__pycache__"
     ]
 
-    static func isExcluded(file: String) -> Bool {
+    static nonisolated func isExcluded(file: String) -> Bool {
         for suffix in excludedSuffixes where file.hasSuffix(suffix) { return true }
         for dir in excludedDirs where file.contains("/\(dir)/") || file.hasPrefix("\(dir)/") { return true }
         return false
