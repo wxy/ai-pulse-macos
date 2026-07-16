@@ -258,6 +258,8 @@ struct DashboardView: View {
         .task {
             ApiPoller.shared.pollAll()
             await load()
+            // Sync to iCloud after Dashboard opens with fresh data
+            triggerCloudSync()
         }
         .onChange(of: timeRange) { _, _ in
             barProgress = 0  // collapse bars immediately, avoid stale-data render
@@ -1580,6 +1582,50 @@ struct DashboardView: View {
         }
         .frame(maxWidth: 140)
         .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.2), value: barProgress)
+    }
+
+    /// Sync dashboard data to iCloud after refresh, respecting the 5-min throttle.
+    private func triggerCloudSync() {
+        Logger.debug("Dashboard: triggerCloudSync called")
+        let syncKey = "lastCloudSyncTime"
+        let lastSync = UserDefaults.standard.double(forKey: syncKey)
+        let syncNow = Date().timeIntervalSince1970
+        guard syncNow - lastSync >= 300 else {
+            Logger.debug("Dashboard: sync throttled (last was \(Int(syncNow - lastSync))s ago)")
+            return
+        }
+        UserDefaults.standard.set(syncNow, forKey: syncKey)
+        Logger.debug("Dashboard: starting cloud sync task")
+
+        let providerNames = Dictionary(uniqueKeysWithValues: IntegrationRegistry.all.map { ($0.id, $0.displayName) })
+        Task.detached(priority: .background) {
+            let cal = Calendar.current
+            let todayStart = cal.startOfDay(for: Date())
+            let todayMs = Int64(todayStart.timeIntervalSince1970 * 1000)
+            let weekMs = Int64(cal.date(byAdding: .day, value: -6, to: todayStart)!.timeIntervalSince1970 * 1000)
+            let monthMs = Int64(cal.date(byAdding: .day, value: -29, to: todayStart)!.timeIntervalSince1970 * 1000)
+            async let t = StatsService.combinedSpend(sinceMs: todayMs)
+            async let w = StatsService.combinedSpend(sinceMs: weekMs)
+            async let m = StatsService.combinedSpend(sinceMs: monthMs)
+            let (todayCost, weekCost, monthCost) = await (t, w, m)
+            var providers: [(providerId: String, name: String, cost: Double)] = []
+            if let spend = try? await StatsService.balanceDailySpend(days: 7, sinceMs: weekMs) {
+                var totals: [String: (name: String, cost: Double)] = [:]
+                for s in spend {
+                    let name = providerNames[s.providerId] ?? s.providerId
+                    let prev = totals[s.providerId]?.cost ?? 0
+                    totals[s.providerId] = (name, prev + s.spend)
+                }
+                providers = totals.map { (providerId: $0.key, name: $0.value.name, cost: $0.value.cost) }.sorted { $0.cost > $1.cost }
+            }
+            let weekStats = (try? await StatsService.dailyStats(days: 7)) ?? []
+            let repos = Array(weekStats.map { (name: "Day", cost: $0.cost) }.suffix(3))
+            let trend = weekStats.map { (date: $0.date, cost: $0.cost) }
+            await CloudSyncService.shared.syncDashboard(
+                todayCost: todayCost, weekCost: weekCost, monthCost: monthCost,
+                providerBreakdown: providers, topRepos: repos, weekTrend: trend
+            )
+        }
     }
 
     func load() async {

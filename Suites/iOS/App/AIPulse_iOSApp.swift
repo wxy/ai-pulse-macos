@@ -33,7 +33,7 @@ struct ContentView: View {
         .task {
             do {
                 hasData = try await cloudData.hasData()
-                if hasData == true { try? await cloudData.fetchAll(days: 30) }
+                if hasData == true { try? await cloudData.fetchAll() }
             } catch {
                 hasData = false
             }

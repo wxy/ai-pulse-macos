@@ -1,93 +1,83 @@
 import CloudKit
 import Foundation
 
-/// Writes aggregated spending data from macOS to iCloud Private DB.
-/// Called after each DataRefreshCoordinator cycle so iOS/watchOS can display
-/// the same data without having their own data collection.
+private nonisolated(unsafe) let isoFormatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withFullDate]
+    return f
+}()
+
+/// Writes a single summary record to iCloud after each DataRefreshCoordinator cycle.
+/// Mobile apps (iOS/watchOS) read this one record — no raw data needed.
 @MainActor
 final class CloudSyncService {
     static let shared = CloudSyncService()
 
-    private let container = CKContainer(identifier: "iCloud.com.wxy.aipulse")
-    private let database: CKDatabase
+    private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
 
-    private init() {
-        // Use public CloudKit database for dev/test (schema already deployed to Production)
-        database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
-    }
+    private init() {}
 
-    // MARK: - Public API
+    /// Sync all dashboard data as a single summary record.
+    /// Mobile apps read this one record to display the full dashboard.
+    func syncDashboard(
+        todayCost: Double,
+        weekCost: Double,
+        monthCost: Double,
+        providerBreakdown: [(providerId: String, name: String, cost: Double)],
+        topRepos: [(name: String, cost: Double)],
+        weekTrend: [(date: Date, cost: Double)]
+    ) async {
+        let recordID = CKRecord.ID(recordName: "dashboard-summary")
+        let r = CKRecord(recordType: "DashboardSummary", recordID: recordID)
 
-    /// Sync pre-computed totals so iOS/watchOS show the same numbers as macOS.
-    func syncTotals(today: Double, week: Double, month: Double) async {
-        let recordID = CKRecord.ID(recordName: "app-config")
-        let r = CKRecord(recordType: "AppConfig", recordID: recordID)
-        r["todayCost"] = today
-        r["weekCost"] = week
-        r["monthCost"] = month
+        // Totals
+        r["todayCost"] = todayCost
+        r["weekCost"] = weekCost
+        r["monthCost"] = monthCost
         r["updatedAt"] = Date()
-        await save([r])
-    }
 
-    /// Sync the latest aggregated stats to iCloud.
-    /// Called by DataRefreshCoordinator after each refresh cycle.
-    func syncDailyStats(_ stats: [DailyStat]) async {
-        await save(stats.map { stat in
-            let r = CKRecord(recordType: "DailyStat")
-            r["date"] = stat.date
-            r["cost"] = stat.cost
-            r["calls"] = stat.calls
-            r["tokens"] = stat.tokens
-            r["netLines"] = stat.netLines
-            r["costPerLine"] = stat.costPerLine
-            return r
-        })
-    }
+        // Provider breakdown → JSON string
+        let providers: [[String: Any]] = providerBreakdown.map {
+            ["id": $0.providerId, "name": $0.name, "cost": $0.cost]
+        }
+        if let pd = try? JSONSerialization.data(withJSONObject: providers) {
+            r["providerBreakdown"] = String(data: pd, encoding: .utf8)
+        }
 
-    func syncCodeChanges(_ changes: [DailyCodeChange]) async {
-        await save(changes.map { change in
-            let r = CKRecord(recordType: "DailyCodeChange")
-            r["date"] = change.date
-            r["added"] = change.added
-            r["deleted"] = change.deleted
-            return r
-        })
-    }
+        // Top repos → JSON string
+        let repos: [[String: Any]] = topRepos.map {
+            ["name": $0.name, "cost": $0.cost]
+        }
+        if let rd = try? JSONSerialization.data(withJSONObject: repos) {
+            r["topRepos"] = String(data: rd, encoding: .utf8)
+        }
 
-    func syncProviderCosts(_ costs: [ProviderDailyCost]) async {
-        await save(costs.map { cost in
-            let r = CKRecord(recordType: "ProviderCost")
-            r["date"] = cost.date
-            r["providerId"] = cost.providerId
-            r["cost"] = cost.cost
-            return r
-        })
-    }
+        // Weekly trend (7 days) → JSON string
+        let trend: [[String: Any]] = weekTrend.map {
+            ["date": isoFormatter.string(from: $0.date), "cost": $0.cost]
+        }
+        if let td = try? JSONSerialization.data(withJSONObject: trend) {
+            r["weekTrend"] = String(data: td, encoding: .utf8)
+        }
 
-    // MARK: - Private
-
-    private func save(_ records: [CKRecord]) async {
-        guard !records.isEmpty else { return }
         do {
-            let (_, results) = try await database.modifyRecords(
-                saving: records, deleting: [], savePolicy: .allKeys
-            )
+            let (_, results) = try await database.modifyRecords(saving: [r], deleting: [], savePolicy: .allKeys)
             let failed = results.compactMap { _, result in
                 if case .failure = result { return true }; return nil
             }
             if failed.isEmpty {
-                Logger.debug("CloudSync: saved \(records.count) records")
+                // Verify the record is actually readable
+                do {
+                    let check = try await database.record(for: recordID)
+                    Logger.debug("CloudSync: saved + read-back OK — todayCost=\(check["todayCost"] ?? 0)")
+                } catch {
+                    Logger.error("CloudSync: save claimed success but read-back failed: \(error.localizedDescription)")
+                }
             } else {
-                Logger.warning("CloudSync: \(failed.count)/\(records.count) records failed")
+                Logger.warning("CloudSync: summary save had \(failed.count) failures")
             }
         } catch {
             Logger.warning("CloudSync: save failed — \(error.localizedDescription)")
         }
-    }
-
-    private func isoDate(_ date: Date) -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withFullDate]
-        return f.string(from: date)
     }
 }

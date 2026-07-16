@@ -199,35 +199,6 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         Logger.debug("DataRefreshCoordinator: posting .dataDidChange\(playSound ? " + sound" : "")")
         NotificationCenter.default.post(name: .dataDidChange, object: nil)
 
-        // Sync latest data to iCloud for iOS/watchOS clients
-        Task.detached(priority: .background) {
-            let todayStart = Calendar.current.startOfDay(for: Date())
-            let todayMs = Int64(todayStart.timeIntervalSince1970 * 1000)
-
-            async let stats = StatsService.dailyStats(days: 30)
-            async let changes = StatsService.dailyCodeChanges(days: 30)
-            async let costs = StatsService.providerDailyCosts(days: 30)
-            async let todayCost = StatsService.combinedSpend(sinceMs: todayMs)
-
-            let weekStart = Calendar.current.date(byAdding: .day, value: -6, to: todayStart)!
-            let weekMs = Int64(weekStart.timeIntervalSince1970 * 1000)
-            async let weekCost = StatsService.combinedSpend(sinceMs: weekMs)
-
-            let monthStart = Calendar.current.date(byAdding: .day, value: -29, to: todayStart)!
-            let monthMs = Int64(monthStart.timeIntervalSince1970 * 1000)
-            async let monthCost = StatsService.combinedSpend(sinceMs: monthMs)
-
-            let (s, c, p, t, w, m) = await (
-                (try? stats) ?? [], (try? changes) ?? [], (try? costs) ?? [],
-                todayCost, weekCost, monthCost
-            )
-
-            await CloudSyncService.shared.syncDailyStats(s)
-            await CloudSyncService.shared.syncCodeChanges(c)
-            await CloudSyncService.shared.syncProviderCosts(p)
-            await CloudSyncService.shared.syncTotals(today: t, week: w, month: m)
-        }
-
         guard playSound else { return }
         Task { @MainActor in
             let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
