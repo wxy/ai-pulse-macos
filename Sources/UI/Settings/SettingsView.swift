@@ -54,7 +54,7 @@ struct SettingsView: View {
                 }
                 Spacer()
             }
-            .frame(width: 160).padding(.top, 12)
+            .frame(width: 184).padding(.top, 12)
             .background(Color(nsColor: .controlBackgroundColor))
 
             // Content
@@ -191,7 +191,7 @@ struct GeneralTab: View {
 
             HStack {
                 Text(I18n.t("general.language_label"))
-                    .frame(width: 100, alignment: .leading)
+                    .frame(width: 140, alignment: .leading)
                 Picker("", selection: $lang) {
                     ForEach(I18n.supportedLanguages, id: \.code) { lang in
                         if lang.code == "auto" {

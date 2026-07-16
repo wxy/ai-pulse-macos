@@ -72,6 +72,7 @@ struct DashboardView: View {
     @State private var trendPlotFrame: CGRect = .zero  // plot area in chart-view coords
     @State private var toolCostBreakdown: [(name: String, cost: Double)] = []
     @State private var dailyBalanceSpend: [Date: Double] = [:]  // date → USD spend
+    @State private var i18nToken = 0  // bumped on language change to force re-render
     @State private var todayCombinedSpend: Double = 0
     @State private var todayCalls: Int = 0
     @State private var todayTokens: Int = 0
@@ -278,6 +279,10 @@ struct DashboardView: View {
                 timeRange = tr
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: I18n.didChangeLanguage)) { _ in
+            i18nToken += 1
+        }
+        .id(i18nToken)
     }
 
     // MARK: - Health banner helpers
