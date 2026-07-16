@@ -253,7 +253,7 @@ struct DashboardView: View {
         }
         .frame(width: 700, height: 660)
         .background(Color(nsColor: .windowBackgroundColor))
-        .environment(\.locale, Locale(identifier: I18n.getLang() == "zh" ? "zh_CN" : "en_US"))
+        .environment(\.locale, Locale(identifier: I18n.resolvedLang().hasPrefix("zh") ? "zh_CN" : "en_US"))
         .task {
             ApiPoller.shared.pollAll()
             await load()
@@ -1380,7 +1380,7 @@ struct DashboardView: View {
     }
 
     var dateLabelFormat: Date.FormatStyle {
-        .dateTime.month(.abbreviated).day().locale(Locale(identifier: I18n.getLang() == "zh" ? "zh_CN" : "en_US"))
+        .dateTime.month(.abbreviated).day().locale(Locale(identifier: I18n.resolvedLang().hasPrefix("zh") ? "zh_CN" : "en_US"))
     }
 
     // MARK: - Data padding
