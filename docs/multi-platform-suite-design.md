@@ -56,47 +56,47 @@
 
 ## 文件结构
 
+iOS/iPadOS 共享同一代码库（自适应布局）。watchOS 单独。
+
 ```
-ai-pulse/
-├── ai-pulse-macos/          # 现有 macOS app（SPM project）
-│   └── Sources/
-│       └── Sync/
-│           └── CloudSyncService.swift   # 新增：CKRecord 写入
-│
-├── ai-pulse-ios/            # 新建 iOS app（SPM project）
-│   └── Sources/
+ai-pulse-macos/                    # 仓库根（单仓库，不动现有结构）
+├── Sources/                        # 现有 macOS 代码，不动
+│   └── Sync/
+│       └── CloudSyncService.swift  # 🆕 新增：CKRecord 写入
+├── Suites/                         # 🆕 移动端套件
+│   ├── Shared/                     # 跨平台共享
+│   │   ├── Models/
+│   │   │   ├── DailyStat.swift
+│   │   │   ├── DailyCodeChange.swift
+│   │   │   └── ProviderCost.swift
+│   │   └── UI/                     # 共享视图组件
+│   │       ├── TrendChart.swift
+│   │       ├── DonutChart.swift
+│   │       └── SpendingCard.swift
+│   ├── iOS/                        # iOS + iPadOS（单 target，自适应）
+│   │   ├── App/
+│   │   │   └── AIPulse_iOSApp.swift
+│   │   └── UI/
+│   │       ├── DashboardView.swift
+│   │       └── WelcomeView.swift   # 无 macOS 时的引导页
+│   └── watchOS/                    # watchOS
 │       ├── App/
-│       │   └── AIPulseApp.swift
+│       │   └── AIPulse_WatchApp.swift
 │       ├── UI/
-│       │   └── Dashboard/
-│       │       └── DashboardView.swift  # 复用 macOS Dashboard 逻辑
-│       └── Store/
-│           └── CloudDataService.swift   # CKQuery 读取
-│
-├── ai-pulse-watchos/        # 新建 watchOS app（SPM project）
-│   └── Sources/
-│       ├── App/
-│       │   └── AIPulseWatchApp.swift
-│       ├── UI/
-│       │   └── Complication/
-│       │       └── SpendComplication.swift
+│       │   ├── ContentView.swift
+│       │   └── SpendComplication.swift
 │       └── Store/
 │           └── CloudDataService.swift
-│
-└── ai-pulse-shared/         # 新建 shared Swift package
-    └── Sources/
-        ├── Models/
-        │   └── DailyStat.swift
-        │   └── DailyCodeChange.swift
-        │   └── ProviderCost.swift
-        ├── UI/
-        │   └── Dashboard/
-        │       └── TrendChart.swift    # 跨平台复用
-        │       └── DonutChart.swift
-        │       └── SpendingCard.swift
-        └── I18n/
-            └── I18n.swift
+├── AIPulse.xcworkspace             # 统一工作空间（已有）
+├── AIPulse.xcodeproj               # macOS 工程（已有）
+├── AIPulse                         # 🆕 iOS/watchOS targets（新建 xcodeproj）
+├── Package.swift                   # SPM（已有）
+└── Resources/                      # 现有资源
 ```
+
+**工作空间说明**：`AIPulse.xcworkspace`（已有）作为统一工作空间，包含 macOS project + 新建的 iOS/watchOS project。在 Xcode 中打开一个 workspace，Scheme 选择器切换目标即可构建/运行任一平台。
+
+注意：目前仓库中只有 `AIPulse.xcworkspace` 是实际使用的。`.xcodeproj/project.xcworkspace` 和 `.swiftpm/xcode/package.xcworkspace` 是 Xcode/SPM 自动生成的，无需关注。
 
 ## 需要解决的问题
 
