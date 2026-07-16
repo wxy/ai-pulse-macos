@@ -19,7 +19,9 @@ final class ApiPoller: @unchecked Sendable {
     func start() {
         // Initial poll at +10s (coordinator Phase 3 handles periodic polling).
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 10) { [weak self] in
-            self?.pollAll()
+            Task { @MainActor in
+                self?.pollAll()
+            }
         }
     }
 
@@ -60,25 +62,29 @@ final class ApiPoller: @unchecked Sendable {
     // MARK: - Generic simple fetcher
 
     private func fetchSimple(provider: ProviderDef, url: String, apiKey: String,
-                              parser: @escaping ([String: Any]) -> [BalanceEntry]) {
+                              parser: @escaping @Sendable ([String: Any]) -> [BalanceEntry]) {
         var req = URLRequest(url: URL(string: url)!)
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         session.dataTask(with: req) { [weak self] data, resp, error in
-            if let error {
-                self?.cacheError(pid: provider.id, msg: error.localizedDescription); return
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if let error {
+                        self?.cacheError(pid: provider.id, msg: error.localizedDescription); return
+                    }
+                    guard let data, let httpResp = resp as? HTTPURLResponse else {
+                        self?.cacheError(pid: provider.id, msg: "No response"); return
+                    }
+                    guard httpResp.statusCode == 200 else {
+                        self?.cacheError(pid: provider.id, msg: "HTTP \(httpResp.statusCode)")
+                        return
+                    }
+                    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        self?.cacheError(pid: provider.id, msg: "Invalid JSON"); return
+                    }
+                    let entries = parser(json)
+                    self?.cacheBalance(pid: provider.id, entries: entries)
+                }
             }
-            guard let data, let httpResp = resp as? HTTPURLResponse else {
-                self?.cacheError(pid: provider.id, msg: "No response"); return
-            }
-            guard httpResp.statusCode == 200 else {
-                self?.cacheError(pid: provider.id, msg: "HTTP \(httpResp.statusCode)")
-                return
-            }
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                self?.cacheError(pid: provider.id, msg: "Invalid JSON"); return
-            }
-            let entries = parser(json)
-            self?.cacheBalance(pid: provider.id, entries: entries)
         }.resume()
     }
 
@@ -87,8 +93,12 @@ final class ApiPoller: @unchecked Sendable {
     private func fetchOpenAIUsage(provider: ProviderDef, baseURL: String, apiKey: String) {
         let cal = Calendar.current
         let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"
-        var totalCost = 0.0
         let group = DispatchGroup()
+
+        final class CostAccumulator: @unchecked Sendable {
+            nonisolated(unsafe) var value: Double = 0.0
+        }
+        let totalCost = CostAccumulator()
 
         for dayOffset in 0..<3 {
             guard let date = cal.date(byAdding: .day, value: -dayOffset, to: Date()) else { continue }
@@ -104,26 +114,26 @@ final class ApiPoller: @unchecked Sendable {
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let usage = json["total_usage"] as? Double
                 else { return }
-                totalCost += usage / 100.0
+                totalCost.value += usage / 100.0
             }.resume()
         }
 
         group.notify(queue: .global(qos: .utility)) { [weak self] in
-            let entry = BalanceEntry(currency: "USD", totalBalance: totalCost, grantedBalance: 0, toppedUpBalance: 0)
+            let entry = BalanceEntry(currency: "USD", totalBalance: totalCost.value, grantedBalance: 0, toppedUpBalance: 0)
             self?.cacheBalance(pid: provider.id, entries: [entry])
         }
     }
 
     // MARK: - Zhipu parser
 
-    private func zhipuParser(_ json: [String: Any]) -> [BalanceEntry] {
+    private nonisolated func zhipuParser(_ json: [String: Any]) -> [BalanceEntry] {
         let limits = (json["data"] as? [String: Any])?["limits"] as? [[String: Any]] ?? []
         let tokenLimit = limits.first { ($0["type"] as? String) == "TOKENS_LIMIT" }
         let remaining = tokenLimit?["remaining"] as? Double ?? tokenLimit?["currentValue"] as? Double ?? 0
         return [BalanceEntry(currency: "tokens", totalBalance: remaining, grantedBalance: 0, toppedUpBalance: 0)]
     }
 
-    private func simpleParser(for providerId: String) -> ([String: Any]) -> [BalanceEntry] {
+    private nonisolated func simpleParser(for providerId: String) -> @Sendable ([String: Any]) -> [BalanceEntry] {
         switch providerId {
         case "deepseek":
             return { json in

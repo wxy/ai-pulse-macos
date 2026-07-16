@@ -49,11 +49,15 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         let nc = NSWorkspace.shared.notificationCenter
         screenSleepObserver = nc.addObserver(forName: NSWorkspace.screensDidSleepNotification,
                                               object: nil, queue: .main) { [weak self] _ in
-            self?.suspendTimers()
+            MainActor.assumeIsolated {
+                self?.suspendTimers()
+            }
         }
         screenWakeObserver = nc.addObserver(forName: NSWorkspace.screensDidWakeNotification,
                                              object: nil, queue: .main) { [weak self] _ in
-            self?.resumeTimers()
+            MainActor.assumeIsolated {
+                self?.resumeTimers()
+            }
         }
     }
 
@@ -92,34 +96,27 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     }
 
     private func recreateTimers() {
-        // Phase 1: Ingest (30s, first after 5s)
+        // Timer callbacks fire on notifyQueue (utility). Hop to MainActor
+        // since runPhase* methods are MainActor-isolated.
         phase1Timer = makeTimer(interval: .seconds(30), firstDeadline: .now() + 5) { [weak self] in
-            self?.runPhase1()
+            Task { @MainActor [weak self] in self?.runPhase1() }
         }
-        // Phase 2: Git scan (5min, first after 15s)
         phase2Timer = makeTimer(interval: .seconds(300), firstDeadline: .now() + 15) { [weak self] in
-            self?.runPhase2()
+            Task { @MainActor [weak self] in self?.runPhase2() }
         }
-        // Phase 3: Balance poll (1h, first after 10s)
         phase3Timer = makeTimer(interval: .seconds(3600), firstDeadline: .now() + 10) { [weak self] in
-            self?.runPhase3()
+            Task { @MainActor [weak self] in self?.runPhase3() }
         }
     }
 
-    /// Called by external triggers (e.g., Settings adds a new directory)
-    /// to force an immediate ingest scan.
     func triggerIngest() {
         notifyQueue.async { [weak self] in
-            self?.runPhase1()
+            Task { @MainActor [weak self] in self?.runPhase1() }
         }
     }
 
-    /// External callers can explicitly notify consumers (e.g., after
-    /// on-demand polling by ApiPoller.fetchNow).
     func notifyDataChange() {
-        notifyQueue.async { [weak self] in
-            self?.scheduleUINotify()
-        }
+        Task { @MainActor [weak self] in self?.scheduleUINotify() }
     }
 
     // MARK: - Phase runners
@@ -163,37 +160,33 @@ final class DataRefreshCoordinator: @unchecked Sendable {
 
     /// Called by LogWatcher after a usage_event row is inserted.
     func notifyPhaseIngest() {
-        notifyQueue.async { [weak self] in
-            self?.scheduleUINotify(playSound: true)
-        }
+        Task { @MainActor [weak self] in self?.scheduleUINotify(playSound: true) }
     }
 
     /// Called by GitMonitor after a code_change row is inserted.
     func notifyPhaseGitScan() {
-        notifyQueue.async { [weak self] in
-            self?.scheduleUINotify(playSound: true)
-        }
+        Task { @MainActor [weak self] in self?.scheduleUINotify(playSound: true) }
     }
 
     /// Called by ApiPoller after a balance_snapshot row is inserted.
     func notifyPhaseBalance() {
-        notifyQueue.async { [weak self] in
-            self?.scheduleUINotify(playSound: true)
-        }
+        Task { @MainActor [weak self] in self?.scheduleUINotify(playSound: true) }
     }
 
     // MARK: - Debounce & dispatch
 
+    private var notifyTask: Task<Void, Never>?
+
     private func scheduleUINotify(playSound: Bool = false) {
-        if playSound { pendingPlaySound = true }  // sticky: any caller can request sound
-        pendingNotifyWorkItem?.cancel()
+        if playSound { pendingPlaySound = true }
+        notifyTask?.cancel()
         let shouldPlay = pendingPlaySound
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.pendingPlaySound = false
-            self?.notifyConsumers(playSound: shouldPlay)
+        notifyTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard let self, !Task.isCancelled else { return }
+            self.pendingPlaySound = false
+            self.notifyConsumers(playSound: shouldPlay)
         }
-        pendingNotifyWorkItem = workItem
-        notifyQueue.asyncAfter(deadline: .now() + .milliseconds(500), execute: workItem)
     }
 
     private func notifyConsumers(playSound: Bool = false) {
@@ -204,22 +197,17 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         }
         lastNotifyTime = now
         Logger.debug("DataRefreshCoordinator: posting .dataDidChange\(playSound ? " + sound" : "")")
-        DispatchQueue.main.async { [weak self] in
-            NotificationCenter.default.post(name: .dataDidChange, object: nil)
-            guard let self, playSound else { return }
-            // Only play coin sound when the dock badge label would change.
-            // Uses the same formatting as DockManager.swift:120 so sound
-            // exactly mirrors visible badge updates.
-            Task {
-                let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-                let spend = await StatsService.combinedSpend(sinceMs: todayStartMs)
-                let label = "$\(String(format: "%.2f", spend))"
-                if label != self.lastSoundBadgeLabel {
-                    self.lastSoundBadgeLabel = label
-                    CoinSound.playForDataChange()
-                } else {
-                    Logger.debug("DataRefreshCoordinator: suppressing sound — badge unchanged at \(label)")
-                }
+        NotificationCenter.default.post(name: .dataDidChange, object: nil)
+        guard playSound else { return }
+        Task { @MainActor in
+            let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+            let spend = await StatsService.combinedSpend(sinceMs: todayStartMs)
+            let label = "$\(String(format: "%.2f", spend))"
+            if label != lastSoundBadgeLabel {
+                lastSoundBadgeLabel = label
+                CoinSound.playForDataChange()
+            } else {
+                Logger.debug("DataRefreshCoordinator: suppressing sound — badge unchanged at \(label)")
             }
         }
     }

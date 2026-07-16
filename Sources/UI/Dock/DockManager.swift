@@ -20,9 +20,11 @@ final class DockManager: @unchecked Sendable {
             forName: .appHealthDidChange, object: nil, queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            let snap = AppHealthMonitor.shared.current
-            self.healthSeverity = snap.severity
-            Task { await self.setProgressIcon() }
+            Task { @MainActor in
+                let snap = AppHealthMonitor.shared.current
+                self.healthSeverity = snap.severity
+                await self.setProgressIcon()
+            }
         }
 
         Task {

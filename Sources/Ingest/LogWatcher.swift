@@ -60,11 +60,15 @@ final class LogWatcher: @unchecked Sendable {
 
     func start() {
         scanQueue.async { [weak self] in
-            if self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut {
-                Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+            let timedOut = self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if timedOut {
+                    Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+                }
+                self.watchClaudeCode()
+                self.discoverAndWatchRepos()
             }
-            self?.watchClaudeCode()
-            self?.discoverAndWatchRepos()
         }
     }
 
@@ -72,11 +76,15 @@ final class LogWatcher: @unchecked Sendable {
     /// Safe to call repeatedly; idempotent. Used by DataRefreshCoordinator.
     func scan() {
         scanQueue.async { [weak self] in
-            if self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut {
-                Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+            let timedOut = self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if timedOut {
+                    Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+                }
+                self.scanClaudeProjectsOnly()
+                self.discoverAndWatchRepos()
             }
-            self?.scanClaudeProjectsOnly()
-            self?.discoverAndWatchRepos()
         }
     }
 
@@ -121,7 +129,13 @@ final class LogWatcher: @unchecked Sendable {
             queue: DispatchQueue.global(qos: .utility)
         )
         claudeSource?.setEventHandler { [weak self] in
-            self?.scanQueue.async { self?.scanClaudeCode(at: dir) }
+            guard let self else { return }
+            self.scanQueue.async { [weak self] in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.scanClaudeCode(at: dir)
+                }
+            }
         }
         claudeSource?.setCancelHandler { close(fd) }
         claudeSource?.resume()

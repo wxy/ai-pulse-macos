@@ -37,7 +37,9 @@ final class DashboardWindowManager: @unchecked Sendable {
         // Clear the stored reference when the window is closed
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
                                                object: w, queue: .main) { [weak self] _ in
-            self?.window = nil
+            Task { @MainActor in
+                self?.window = nil
+            }
         }
         window = w
     }

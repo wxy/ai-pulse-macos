@@ -95,7 +95,9 @@ enum Logger {
 
         // File
         queue.async {
-            writeToFile(line)
+            Task { @MainActor in
+                writeToFile(line)
+            }
         }
     }
 

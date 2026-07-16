@@ -119,42 +119,33 @@ final class GitMonitor: @unchecked Sendable {
         lock.lock()
         let lastHash = lastSeenCommit[repo]
         lock.unlock()
-
-        let gitOpTimeout: TimeInterval = 30.0
-        let sem = DispatchSemaphore(value: 0)
         let repoName = URL(fileURLWithPath: repo).lastPathComponent
 
-        gitOpQueue.async {
-            defer { sem.signal() }
+        gitOpQueue.async { [self] in
             let gitRepo = GitRepo(path: repo)
             let authorEmail = gitRepo.userEmail()
             let commits = gitRepo.log(since: lastHash, authorEmail: authorEmail)
 
+            var changes: [CodeChange] = []
+            var newHash: String?
             for commit in commits {
                 guard let stats = gitRepo.diffTree(hash: commit.hash) else { continue }
-                let isMerge = commit.parentCount >= 2
-
                 if stats.added > 0 || stats.deleted > 0 {
-                    self.insertChange(CodeChange(
+                    changes.append(CodeChange(
                         commitHash: commit.hash, ts: commit.ts * 1000,
                         repoPath: repo, added: stats.added, deleted: stats.deleted,
-                        isMerge: isMerge
+                        isMerge: commit.parentCount >= 2
                     ))
                 }
-
-                self.lock.lock()
-                self.lastSeenCommit[repo] = commit.hash
-                self.lock.unlock()
+                newHash = commit.hash
             }
-            self.persistLastSeen()
-        }
 
-        if sem.wait(timeout: .now() + gitOpTimeout) == .timedOut {
-            Logger.warning("GitMonitor: git operation timed out for \(repoName) after \(gitOpTimeout)s")
-            AppHealthMonitor.shared.reportAPIError(providerId: "git-\(repoName)",
-                message: "Git scan timed out for \(repoName)")
-        } else {
-            AppHealthMonitor.shared.clearAPIError(providerId: "git-\(repoName)")
+            Task { @MainActor [self, changes, newHash, repo, repoName] in
+                for change in changes { insertChange(change) }
+                if let h = newHash { lock.withLock { lastSeenCommit[repo] = h } }
+                persistLastSeen()
+                AppHealthMonitor.shared.clearAPIError(providerId: "git-\(repoName)")
+            }
         }
     }
 
