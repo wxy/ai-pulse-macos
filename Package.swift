@@ -20,6 +20,7 @@ let package = Package(
             ],
             path: "Sources",
             exclude: ["Clibgit2"],
+            resources: [.process("Localizable.xcstrings")],
             linkerSettings: [
                 .unsafeFlags([
                     "-LLibraries/libgit2/lib",

@@ -1,462 +1,55 @@
 import Foundation
 
 enum I18n {
-    static let zh: [String: String] = [
-        "menu.loading": "加载中…",
-        "menu.no_usage": "本周无 AI 使用记录",
-        "menu.unavailable": "统计不可用",
-        "menu.by_repo": "▸ 按仓库",
-        "menu.preferences": "偏好设置…",
-        "menu.quit": "退出",
-        "menu.lines": "行",
-        "menu.per_line": "/千行",
-        "menu.today": "今日",
-        "menu.this_week": "本周",
-        "menu.dashboard": "Dashboard…",
-        "dashboard.title": "AI Pulse 仪表盘",
-        "dashboard.days_7": "7 天",
-        "dashboard.days_30": "30 天",
-        "dashboard.cost_usd": "USD",
-        "settings.title": "AI Pulse 偏好设置",
-        "settings.general": "通用",
-        "settings.repos": "仓库",
-        "settings.about": "关于",
-        "settings.integrations": "集成",
-        "settings.language": "语言",
-        "settings.language_zh": "中文",
-        "settings.language_en": "English",
-        "general.title": "通用",
-        "general.desc": "应用全局设置。",
-        "general.language_label": "显示语言",
-        "general.coin_sound": "花费音效",
-        "general.coin_sound_desc": "检测到余额消费时播放金币音效",
-        "tools.title": "编程工具",
-        "tools.desc": "自动检测的 AI 编程工具。",
-        "tools.no_tools": "未检测到编程工具",
-        "tools.sessions": "个会话",
-        "tools.claude_code": "Claude Code",
-        "repos.title": "Git 仓库",
-        "repos.directories": "目录",
-        "repos.repositories": "仓库",
-        "repos.add": "添加目录",
-        "repos.no_repos": "未发现仓库",
-        "repos.select_dir": "选择一个目录",
-        "repos.summary": "%d 个目录 · %d 个仓库",
-        "repos.delete_title": "移除目录",
-        "repos.delete_msg": "停止监控 '%@'？\n其仓库将不再被追踪。",
-        "repos.cancel": "取消",
-        "repos.remove": "移除",
-        "subs.title": "订阅工具",
-        "subs.desc": "月费工具。单行成本 = 月费 / 净提交行数。",
-        "subs.add": "添加",
-        "subs.choose": "选择预设…",
-        "subs.delete_title": "移除订阅",
-        "subs.delete_msg": "移除 '%@'？",
-        "subs.per_month": "/月",
-        "subs.not_installed": "未检测到安装",
-        "subs.copilot_note": "Copilot 已转为用量计费（AI Credits），超出月配额部分无法追踪。仅统计基础月费。",
-        "subs.empty": "未检测到已安装的订阅工具。",
-        "about.title": "AI Pulse",
-        "about.version": "1.0",
-        "about.desc": "知道你 AI 编程的真实成本。",
-        "about.privacy": "所有数据仅存储在本机。",
-        "about.privacy_link": "隐私政策",
-        "about.website": "网站",
-        "anomaly.title": "⚠️ AI 花费异常",
-        "onboarding.welcome": "你的 AI 油表",
-        "onboarding.window_title": "AI Pulse — 欢迎",
-        "onboarding.desc": "跟踪所有工具和订阅的 AI 花费。也可配置 AI 服务商余额监控。",
-        "onboarding.privacy": "所有数据仅存储在本机。",
-        "onboarding.detected": "支持的工具",
-        "onboarding.detected_hint": "启用后自动追踪花费。还可添加 AI 服务商余额监控。更多见设置 → 集成。",
-        "onboarding.no_tools": "未检测到 AI 工具。请在设置 → 集成中查看所有支持的工具。",
-        "onboarding.done_title": "一切就绪",
-        "onboarding.done_msg": "菜单栏将持续显示今日花费。",
-        "onboarding.done_cpl": "已启用 A 级工具，仪表盘可查看千行成本。",
-        "onboarding.back": "← 返回",
-        "onboarding.next": "下一步 →",
-        "onboarding.close": "关闭",
-        "integrations.title": "集成",
-                "integrations.desc": "支持的工具和服务显示如下。配置后即可自动追踪 AI 花费。填入 Key 仅用于校正用量，不解锁额外功能，所有数据仅存储在本地。",
-        "integrations.group_api_key_desc": "填入 Key 仅用于校正和精确化用量统计，不解锁任何额外功能。Key 由各 AI 服务商提供，我们不提供这些 Key。用户需自行在各厂商官网生成。Key 仅存储在本地。",
-        "integrations.group_editors": "开发工具",
-        "integrations.group_editors_desc": "AI 编程工具通过本地日志解析和订阅检测自动追踪。安装后自动发现，无需额外配置。",
-        "integrations.group_api_key": "AI 服务商余额检测",
-        "integrations.not_installed": "未安装",
-        "integrations.needs_config": "待配置",
-        "integrations.needs_config_note": "未配置 — 填入 Key 可校正用量统计",
-        "integrations.redetect": "重新检测",
-        "integrations.not_installed_note": "未安装 — 安装后即可追踪",
-        "integrations.key_placeholder": "填入 Key 以校正用量",
-        "integrations.key_save": "保存",
-        "integrations.key_change": "更换",
-        "integrations.select_plan": "选择套餐",
-        "integrations.preferred_api_key": "关联余额 Key",
-        "integrations.subscription_plan": "订阅套餐",
-        "integrations.not_used": "不关联",
-        "general.rerun_welcome_desc": "重新运行首次启动欢迎流程，重新检测工具并配置集成。",
-        "general.rerun_welcome": "重新运行欢迎设置",
-        "anomaly.body": "%@ 点花费 $%@，超过 7 日均值 3 倍（$%@/小时）",
-        "apikeys.title": "API 密钥",
-        "apikeys.desc": "配置 API Key 以获取官方用量数据。不配置则使用本地日志估算。",
-        "apikeys.placeholder": "输入 API Key…",
-        "apikeys.save": "保存",
-        "apikeys.no_balance": "无用量 API",
-        "apikeys.balance": "余额",
-        "apikeys.last_fetch": "上次获取",
-        "apikeys.change": "更换",
-        "apikeys.never": "尚未获取",
-        "apikeys.error": "错误",
-        "apikeys.note_anthropic": "无公开用量 API，请在 console.anthropic.com 查看余额。",
-        "apikeys.note_google": "无公开用量 API，请在 aistudio.google.com 查看使用量。",
-        "apikeys.note_xai": "无公开用量 API，每请求费用见响应体 cost_in_usd_ticks 字段。",
-        "apikeys.note_cohere": "无公开用量 API，请在 dashboard.cohere.com 查看。",
-        "apikeys.note_perplexity": "无公开用量 API，每请求费用见响应体 usage 字段。",
-        "apikeys.note_qwen": "无公开用量 API，请在 dashscope.console.aliyun.com 查看账单。",
-        "apikeys.note_baichuan": "无公开用量 API，请在 platform.baichuan-ai.com 查看。",
-        "apikeys.note_ernie": "无公开用量 API，请在 console.bce.baidu.com 查看账单。",
-        "apikeys.note_mistral": "有 Admin Billing API 但需 Admin Key，权限过高暂不支持。请在 console.mistral.ai 查看。",
-        "detect.claude_found": "~/.claude/projects 存在，%d 个会话",
-        "detect.claude_not_found": "~/.claude/projects 未找到",
-        "detect.aider_found": "%d 个仓库检测到 aider",
-        "detect.aider_not_found": "未检测到 aider",
-        "detect.key_configured": "已配置 API 密钥",
-        "detect.key_missing": "未配置 API 密钥",
-        "detect.app_installed": "%@ 已安装",
-        "detect.app_not_found": "%@ 未找到",
-        "dashboard.cost_chart": "花费",
-        "dashboard.code_chart": "代码变化",
-        "dashboard.week_added_del": "本周增减行",
-        "dashboard.sub_daily": "订阅日均",
-        "dashboard.api_cost": "API 余额消耗",
-        "dashboard.sub_cost": "订阅均摊",
-        "dashboard.cpl_card": "CPL（每千行成本）",
-        "dashboard.cpl_disclaimer": "按量计费 · 有日志 · 仅含 API Token 成本，不含订阅",
-        "dashboard.added": "新增",
-        "dashboard.deleted": "删除",
-        "dashboard.no_cpl_data": "暂无满足条件的 CPL 数据",
-        "dashboard.empty_state": "在 设置 → 集成 中启用工具后，这里将显示花费与代码变化图表。",
-        "dashboard.api_spent": "AI消费",
-        "dashboard.api_projected": "API预估",
-        "dashboard.sub_monthly_label": "订阅月总额",
-        "dashboard.code_added": "代码增加行",
-        "dashboard.code_deleted": "代码减少行",
-        "dashboard.api_total_title": "API 消费",
-        "dashboard.today": "今日",
-        "dashboard.this_week": "本周",
-        "dashboard.this_month": "本月",
-        "dashboard.total": "合计",
-        "dashboard.cpl_unavailable_title": "CPL 不可用",
-        "dashboard.cpl_unavailable_desc": "启用 Claude Code 或 aider 以计算 CPL 统计。这些工具会写入本地日志，可精确归因到仓库。",
-        "dashboard.cpl_claude_path": "Claude Code：`~/.claude/projects/`",
-        "dashboard.cpl_aider_path": "aider：仓库内 `.aider.llm.history`",
-        "dashboard.by_tool": "按开发工具",
-        "dashboard.by_repo": "按仓库",
-        "dashboard.daily_trend": "每日趋势",
-        "dashboard.month_projection": "本月已花 $%@ · 预计 $%@ · 剩余 %d 天",
-        "dashboard.tooltip_api": "API: $%@",
-        "dashboard.tooltip_sub": "订阅: $%@",
-        "dashboard.tooltip_added": "新增: +%d 行",
-        "dashboard.tooltip_deleted": "删除: -%d 行",
-        "dashboard.api_spend_label": "API 花费",
-        "dashboard.sub_label": "订阅",
-        "dashboard.added_lines": "新增行",
-        "dashboard.deleted_lines": "删除行",
-        "dashboard.api_paid": "API 付费",
-        "dashboard.sub_api_ratio": "订阅 / API 占比",
-        "dashboard.by_provider": "按 API 提供商",
-        "dashboard.over_limit": "超量",
-        "dashboard.usage_help": "用量接近上限，可能产生超额费用",
-        "dashboard.usage_percent": "当月用量百分比",
-        "dashboard.net_lines": "净增行",
-        "dashboard.request_count": "请求次数",
-        "dashboard.token_usage": "Token 消耗",
-        "dashboard.vs_yesterday": "比昨天",
-        "dashboard.vs_yesterday_flat": "与昨天持平",
-        "dashboard.vs_period": "比上期",
-        "dashboard.vs_period_flat": "与上期持平",
-        "dashboard.chart_cost": "花费",
-        "dashboard.chart_code": "代码",
-        "dashboard.no_data_title": "暂无数据",
-        "dashboard.no_data_today": "今日暂无活动，使用 AI 工具后这里将显示花费数据",
-        "dashboard.no_data_period": "该时间段暂无数据",
-        "dashboard.zero_cost": "$0.00",
-        "menu.approx_zero": "~$0",
-        "menu.dashboard_label": "仪表盘",
-        "menu.close_window": "关闭窗口",
-        "demo.banner": "📊 演示数据 · 前往 设置 → 集成 配置工具以查看真实数据",
-        "demo.menu_label": "📊 演示数据",
-        "demo.exit": "退出演示模式",
-        "demo.enter": "进入演示模式",
-        "demo.skip_welcome": "跳过，进入演示模式",
-        "demo.onboarding_title": "未配置任何工具",
-        "demo.onboarding_msg": "应用将以演示模式运行，展示模拟数据。随时前往 设置 → 集成 配置真实工具后自动退出。",
-        "limitation.auto_detected": "自动检测到，请在设置中配置订阅方案以精确计算",
-        "limitation.overage_unsupported": "超量费用暂不支持",
-        "limitation.assume_programming": "假设此 Key 仅用于编程任务",
-        "limitation.no_balance_api": "无余额 API，按 token × 定价表估算",
-        "menu.by_provider": "▸ 按服务商",
-        "menu.by_tool": "▸ 按开发工具",
-        "onboarding.repos_title": "选择要监控的 Git 仓库",
-        "onboarding.repos_hint": "自动扫描常用目录。可跳过，稍后在设置中配置。",
-        "onboarding.repos_scanning": "正在扫描…",
-        "onboarding.repos_count": "%d 个仓库",
-        "onboarding.skip": "跳过",
-        "onboarding.done_repos_count": "%d 个仓库已配置监控。",
-        "onboarding.grant_claude": "授权 Claude Code 目录",
-        "onboarding.grant_claude_hint": "需要读取 ~/.claude 才能统计 Claude Code 用量。点击后在弹窗中确认授权，数据仅保存在本机。",
-        "bookmark.grant": "授权",
-        "bookmark.claude_message": "AI Pulse 需要读取 ~/.claude 目录以统计 Claude Code 用量。请在此确认授权（仅本机使用）。",
-        "bookmark.repos_message": "选择存放代码仓库的目录（例如 ~/dev），AI Pulse 将扫描其中的 Git 仓库以统计代码变化。建议不要直接选择主目录。",
-        "repos.grant_empty": "尚未授权任何目录。点击“添加目录”选择存放代码仓库的目录（如 ~/dev），授权后即可扫描其中的 Git 仓库。",
-        "health.critical": "数据库异常 — 无法获取任何数据",
-        "health.impaired": "数据不完整 — 部分查询失败，数据可能缺失",
-        "health.degraded": "部分数据不可用 — 某些数据源暂时无法访问",
-        "health.open_log": "打开日志文件",
-        "health.send_to_dev": "可将日志发送给开发者协助定位问题",
-    ]
-
-    static let en: [String: String] = [
-        "menu.loading": "Loading…",
-        "menu.no_usage": "No AI usage this week",
-        "menu.unavailable": "Stats unavailable",
-        "menu.by_repo": "▸ By Repo",
-        "menu.preferences": "Settings…",
-        "menu.quit": "Quit",
-        "menu.lines": "lines",
-        "menu.per_line": "/K lines",
-        "menu.today": "Today",
-        "menu.this_week": "This week",
-        "menu.dashboard": "Dashboard…",
-        "dashboard.title": "AI Pulse Dashboard",
-        "dashboard.days_7": "7 days",
-        "dashboard.days_30": "30 days",
-        "dashboard.cost_usd": "USD",
-        "settings.title": "AI Pulse Preferences",
-        "settings.general": "General",
-        "settings.repos": "Repos",
-        "settings.about": "About",
-        "settings.integrations": "Integrations",
-        "settings.language": "Language",
-        "settings.language_zh": "中文",
-        "settings.language_en": "English",
-        "general.title": "General",
-        "general.desc": "Global application settings.",
-        "general.language_label": "Display Language",
-        "general.coin_sound": "Coin Sound",
-        "general.coin_sound_desc": "Play coin sound when balance spend is detected",
-        "tools.title": "Coding Tools",
-        "tools.desc": "AI coding tools auto-detected on your machine.",
-        "tools.no_tools": "No coding tools detected.",
-        "tools.sessions": "sessions",
-        "tools.claude_code": "Claude Code",
-        "repos.title": "Git Repositories",
-        "repos.directories": "Directories",
-        "repos.repositories": "Repositories",
-        "repos.add": "Add Directory",
-        "repos.no_repos": "No repos found.",
-        "repos.select_dir": "Select a directory.",
-        "repos.summary": "%d dirs · %d repos",
-        "repos.delete_title": "Remove Directory",
-        "repos.delete_msg": "Stop monitoring '%@'?\nIts repos will no longer be tracked.",
-        "repos.cancel": "Cancel",
-        "repos.remove": "Remove",
-        "subs.title": "Subscription Tools",
-        "subs.desc": "Monthly fee tools. Cost per line = fee / net committed lines.",
-        "subs.add": "Add",
-        "subs.choose": "Choose preset…",
-        "subs.delete_title": "Remove Subscription",
-        "subs.delete_msg": "Remove '%@'?",
-        "subs.per_month": "/mo",
-        "subs.not_installed": "Not installed",
-        "subs.copilot_note": "Copilot now uses credits-based billing. Over-quota usage cannot be tracked. Base monthly fee only.",
-        "subs.empty": "No subscription tools detected.",
-        "about.title": "AI Pulse",
-        "about.version": "1.0",
-        "about.desc": "Know what AI coding really costs you.",
-        "about.privacy": "All data stays on your machine.",
-        "about.privacy_link": "Privacy Policy",
-        "about.website": "Website",
-        "anomaly.title": "⚠️ AI Spending Spike",
-        "onboarding.welcome": "Your AI Fuel Gauge",
-        "onboarding.window_title": "AI Pulse — Welcome",
-        "onboarding.desc": "Track AI spend across all tools and subscriptions. Optionally configure AI provider balance monitoring.",
-        "onboarding.privacy": "All data stays on your machine.",
-        "onboarding.detected": "Supported Tools",
-        "onboarding.detected_hint": "Enable to automatically track spending. Add provider balance monitoring too. More in Settings → Integrations.",
-        "onboarding.no_tools": "No AI tools detected. Open Settings → Integrations to see all supported tools.",
-        "onboarding.done_title": "You're All Set",
-        "onboarding.done_msg": "Menu bar will show today's spend.",
-        "onboarding.done_cpl": "A-grade tools enabled — Dashboard with CPKL stats available.",
-        "onboarding.back": "← Back",
-        "onboarding.next": "Next →",
-        "onboarding.close": "Close",
-        "integrations.title": "Integrations",
-                "integrations.desc": "Supported tools and services are shown below. Configure them to automatically track AI spending. Keys only calibrate usage stats — they do not unlock features. All data stays on your machine.",
-        "integrations.group_api_key_desc": "Keys are used only to calibrate and refine usage statistics — they do not unlock any features. We do not provide these keys. Users generate them on each AI provider's website. Keys are stored locally only.",
-        "integrations.group_editors": "Dev Tools",
-        "integrations.group_editors_desc": "AI coding tools are tracked automatically via local log parsing and subscription detection. They are discovered on install — no additional setup needed.",
-        "integrations.group_api_key": "AI Provider Balance",
-        "integrations.not_installed": "NOT INSTALLED",
-        "integrations.needs_config": "NEEDS CONFIG",
-        "integrations.needs_config_note": "Not configured — add a key to calibrate usage stats",
-        "integrations.redetect": "Re-detect",
-        "integrations.not_installed_note": "Not installed — install to enable tracking",
-        "integrations.key_placeholder": "Enter key to calibrate usage",
-        "integrations.key_save": "Save",
-        "integrations.key_change": "Change",
-        "integrations.select_plan": "Select plan",
-        "integrations.preferred_api_key": "Linked Balance Key",
-        "integrations.subscription_plan": "Subscription Plan",
-        "integrations.not_used": "None",
-        "general.rerun_welcome_desc": "Re-run the first-launch welcome to re-detect tools and configure integrations.",
-        "general.rerun_welcome": "Re-run Welcome Setup",
-        "anomaly.body": "%@ spent $%@ — 3× the 7‑day hourly baseline ($%@/hr)",
-        "apikeys.title": "API",
-        "apikeys.desc": "Configure API keys for official usage data. Without a key, local log estimates are used.",
-        "apikeys.placeholder": "Enter API…",
-        "apikeys.save": "Save",
-        "apikeys.no_balance": "No usage API",
-        "apikeys.balance": "Balance",
-        "apikeys.last_fetch": "Last fetch",
-        "apikeys.change": "Change",
-        "apikeys.never": "Never fetched",
-        "apikeys.error": "Error",
-        "apikeys.note_anthropic": "No public usage API. Check balance at console.anthropic.com",
-        "apikeys.note_google": "No public usage API. Check usage at aistudio.google.com",
-        "apikeys.note_xai": "No public usage API. Per-request cost in response body (cost_in_usd_ticks).",
-        "apikeys.note_cohere": "No public usage API. Check at dashboard.cohere.com",
-        "apikeys.note_perplexity": "No public usage API. Per-request cost in response body (usage).",
-        "apikeys.note_qwen": "No public usage API. Check billing at dashscope.console.aliyun.com",
-        "apikeys.note_baichuan": "No public usage API. Check at platform.baichuan-ai.com",
-        "apikeys.note_ernie": "No public usage API. Check billing at console.bce.baidu.com",
-        "apikeys.note_mistral": "Admin Billing API exists but requires admin key — not supported. Check at console.mistral.ai",
-        "detect.claude_found": "~/.claude/projects found, %d sessions",
-        "detect.claude_not_found": "~/.claude/projects not found",
-        "detect.aider_found": "%d repos with aider",
-        "detect.aider_not_found": "no aider logs found",
-        "detect.key_configured": "API key configured",
-        "detect.key_missing": "no API key",
-        "detect.app_installed": "%@ installed",
-        "detect.app_not_found": "%@ not found",
-        "dashboard.cost_chart": "Cost",
-        "dashboard.code_chart": "Code Changes",
-        "dashboard.week_added_del": "Week ±Lines",
-        "dashboard.sub_daily": "Sub Daily",
-        "dashboard.api_cost": "API Balance",
-        "dashboard.sub_cost": "Subscription",
-        "dashboard.cpl_card": "CPL (Cost Per K Lines)",
-        "dashboard.cpl_disclaimer": "Metered · Has logs · API token cost only, excl. subscriptions",
-        "dashboard.added": "Added",
-        "dashboard.deleted": "Deleted",
-        "dashboard.no_cpl_data": "No CPL data available",
-        "dashboard.empty_state": "Enable tools in Settings → Integrations to see cost and code change charts here.",
-        "dashboard.api_spent": " AI Spent",
-        "dashboard.api_projected": " API Est.",
-        "dashboard.sub_monthly_label": "Sub Monthly",
-        "dashboard.code_added": " Code +Lines",
-        "dashboard.code_deleted": " Code -Lines",
-        "dashboard.api_total_title": "API Cost",
-        "dashboard.today": "Today",
-        "dashboard.this_week": "This week",
-        "dashboard.this_month": "This month",
-        "dashboard.total": "Total",
-        "dashboard.cpl_unavailable_title": "CPL Unavailable",
-        "dashboard.cpl_unavailable_desc": "Enable Claude Code or aider to calculate CPL stats. These tools write local logs that can be accurately attributed to repos.",
-        "dashboard.cpl_claude_path": "Claude Code: `~/.claude/projects/`",
-        "dashboard.cpl_aider_path": "aider: `.aider.llm.history` in repo",
-        "dashboard.by_tool": "By Dev Tool",
-        "dashboard.by_repo": "By Repo",
-        "dashboard.daily_trend": "Daily Trend",
-        "dashboard.month_projection": "Spent $%@ this month · $%@ projected · %d days left",
-        "dashboard.tooltip_api": "API: $%@",
-        "dashboard.tooltip_sub": "Sub: $%@",
-        "dashboard.tooltip_added": "Added: +%d lines",
-        "dashboard.tooltip_deleted": "Deleted: -%d lines",
-        "dashboard.api_spend_label": "API Spend",
-        "dashboard.sub_label": "Subscription",
-        "dashboard.added_lines": "Added Lines",
-        "dashboard.deleted_lines": "Deleted Lines",
-        "dashboard.api_paid": "API Paid",
-        "dashboard.sub_api_ratio": "Subscription / API Ratio",
-        "dashboard.by_provider": "By API Provider",
-        "dashboard.over_limit": "Over Limit",
-        "dashboard.usage_help": "Usage near limit — overage charges may apply",
-        "dashboard.usage_percent": "Monthly usage %",
-        "dashboard.net_lines": "Net Lines",
-        "dashboard.request_count": "Requests",
-        "dashboard.token_usage": "Token Usage",
-        "dashboard.vs_yesterday": "vs yesterday",
-        "dashboard.vs_yesterday_flat": "Same as yesterday",
-        "dashboard.vs_period": "vs previous period",
-        "dashboard.vs_period_flat": "Same as previous period",
-        "dashboard.chart_cost": "Cost",
-        "dashboard.chart_code": "Code",
-        "dashboard.no_data_title": "No Data",
-        "dashboard.no_data_today": "No activity yet today — your spending will appear here as you use AI tools.",
-        "dashboard.no_data_period": "No data for this period.",
-        "dashboard.zero_cost": "$0.00",
-        "menu.approx_zero": "~$0",
-        "menu.dashboard_label": "Dashboard",
-        "menu.close_window": "Close",
-        "demo.banner": "📊 Demo Data · Go to Settings → Integrations to see your real data",
-        "demo.menu_label": "📊 Demo Data",
-        "demo.exit": "Exit Demo Mode",
-        "demo.enter": "Enter Demo Mode",
-        "demo.skip_welcome": "Skip → Demo",
-        "demo.onboarding_title": "No Tools Configured",
-        "demo.onboarding_msg": "The app will run in demo mode with sample data. Configure real tools in Settings → Integrations to exit.",
-        "limitation.auto_detected": "Auto-detected — configure subscription tier in Settings for accurate calculation",
-        "limitation.overage_unsupported": "Overage charges not supported",
-        "limitation.assume_programming": "Assumes this key is used only for programming tasks",
-        "limitation.no_balance_api": "No balance API — estimated via token × pricing table",
-        "menu.by_provider": "▸ By Provider",
-        "menu.by_tool": "▸ By Dev Tool",
-        "onboarding.repos_title": "Select Git Repos to Monitor",
-        "onboarding.repos_hint": "Auto-scan common directories. You can skip and configure later in Settings.",
-        "onboarding.repos_scanning": "Scanning…",
-        "onboarding.repos_count": "%d repos",
-        "onboarding.skip": "Skip",
-        "onboarding.done_repos_count": "%d repos configured for monitoring.",
-        "onboarding.grant_claude": "Grant Access to Claude Code Folder",
-        "onboarding.grant_claude_hint": "Reading ~/.claude is required to track Claude Code usage. Confirm access in the dialog — data stays on your machine.",
-        "bookmark.grant": "Grant",
-        "bookmark.claude_message": "AI Pulse needs to read the ~/.claude folder to track Claude Code usage. Please grant access here (used locally only).",
-        "bookmark.repos_message": "Choose a directory that holds your code repositories (e.g. ~/dev). AI Pulse will scan it for Git repos to track code changes. Avoid selecting your home folder directly.",
-        "repos.grant_empty": "No directories authorized yet. Click “Add Directory” to choose where your code repositories live (e.g. ~/dev); AI Pulse will scan it for Git repos after you grant access.",
-        "health.critical": "Database Error — no data can be loaded",
-        "health.impaired": "Incomplete Data — some queries failed, data may be missing",
-        "health.degraded": "Partial Outage — some data sources are temporarily unavailable",
-        "health.open_log": "Open Log File",
-        "health.send_to_dev": "You can send this log to the developer for troubleshooting",
-    ]
-
     static let didChangeLanguage = Notification.Name("I18nDidChangeLanguage")
 
     private static let langKey = "app_language"
     private static let langLock = NSLock()
     private static nonisolated(unsafe) var _currentLang: String?
+    private static nonisolated(unsafe) var _cachedStrings: [String: String]?
+    private static nonisolated(unsafe) var _cacheLang: String?
 
+    /// All languages the app supports (for Settings picker).
+    /// Tag is the language code; label is shown in native script.
+    static let supportedLanguages: [(code: String, label: String)] = [
+        ("auto",           "跟随系统 / Follow System"),  // placeholder — UI uses t("settings.language_auto")
+        ("en",             "English"),
+        ("zh-Hans",        "简体中文"),
+        ("zh-Hant-TW",     "繁體中文（台灣）"),
+        ("zh-Hant-HK",     "繁體中文（香港）"),
+        ("ja",             "日本語"),
+        ("ko",             "한국어"),
+        ("de",             "Deutsch"),
+        ("fr",             "Français"),
+        ("es",             "Español"),
+        ("pt-BR",          "Português (Brasil)"),
+    ]
+
+    /// Set the app language. "auto" = follow system; otherwise an explicit code.
+    /// Posts `didChangeLanguage` notification so views rebuild.
     static func setLang(_ lang: String) {
         langLock.lock()
         _currentLang = lang
+        _cachedStrings = nil  // force reload on next t()
+        _cacheLang = nil
         langLock.unlock()
         UserDefaults.standard.set(lang, forKey: langKey)
+        if lang == "auto" {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.set([lang], forKey: "AppleLanguages")
+        }
         NotificationCenter.default.post(name: didChangeLanguage, object: nil)
     }
 
+    /// Get the stored language preference. "auto" = follow system; nil → auto.
     static func getLang() -> String {
         langLock.lock()
         if let l = _currentLang { langLock.unlock(); return l }
         langLock.unlock()
 
         let saved = UserDefaults.standard.string(forKey: langKey)
-        let lang: String
-        if let s = saved { lang = s }
-        else {
-            let preferred = Locale.preferredLanguages.first ?? ""
-            lang = preferred.hasPrefix("zh") ? "zh" : "en"
-        }
+        let lang = saved ?? "auto"
 
         langLock.lock()
         _currentLang = lang
@@ -464,8 +57,68 @@ enum I18n {
         return lang
     }
 
+    /// The effectively resolved language code (never "auto").
+    static func resolvedLang() -> String {
+        let stored = getLang()
+        if stored != "auto" { return stored }
+        let preferred = Locale.preferredLanguages.first ?? ""
+        if preferred.hasPrefix("zh-Hant-HK") { return "zh-Hant-HK" }
+        if preferred.hasPrefix("zh-Hant")    { return "zh-Hant-TW" }
+        if preferred.hasPrefix("zh")         { return "zh-Hans" }
+        if preferred.hasPrefix("ja")         { return "ja" }
+        if preferred.hasPrefix("ko")         { return "ko" }
+        if preferred.hasPrefix("de")         { return "de" }
+        if preferred.hasPrefix("fr")         { return "fr" }
+        if preferred.hasPrefix("es")         { return "es" }
+        if preferred.hasPrefix("pt")         { return "pt-BR" }
+        return "en"
+    }
+
+    /// The Locale matching the resolved language (for date/number formatting).
+    static var resolvedLocale: Locale {
+        switch resolvedLang() {
+        case "zh-Hans":    return Locale(identifier: "zh_CN")
+        case "zh-Hant-TW": return Locale(identifier: "zh_TW")
+        case "zh-Hant-HK": return Locale(identifier: "zh_HK")
+        case "ja":         return Locale(identifier: "ja_JP")
+        case "ko":         return Locale(identifier: "ko_KR")
+        case "de":         return Locale(identifier: "de_DE")
+        case "fr":         return Locale(identifier: "fr_FR")
+        case "es":         return Locale(identifier: "es_ES")
+        case "pt-BR":      return Locale(identifier: "pt_BR")
+        default:           return Locale(identifier: "en_US")
+        }
+    }
+
+    /// Load compiled .strings from bundle for a given language code.
+    private static func loadStrings(for lang: String) -> [String: String] {
+        guard let path = Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: "\(lang).lproj"),
+              let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
+            return [:]
+        }
+        return dict
+    }
+
+    /// Localized string for key. Reads from compiled .strings files in the bundle,
+    /// cached in memory for performance. Falls back: target lang → en → key itself.
     static func t(_ key: String) -> String {
-        let dict = getLang() == "zh" ? zh : en
-        return dict[key] ?? en[key] ?? key
+        let target = resolvedLang()
+
+        langLock.lock()
+        if _cacheLang != target || _cachedStrings == nil {
+            _cachedStrings = loadStrings(for: target)
+            _cacheLang = target
+        }
+        let dict = _cachedStrings ?? [:]
+        langLock.unlock()
+
+        if let v = dict[key] { return v }
+
+        // Fallback to English
+        if target != "en", let enPath = Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: "en.lproj"),
+           let enDict = NSDictionary(contentsOfFile: enPath) as? [String: String],
+           let v = enDict[key] { return v }
+
+        return key
     }
 }
