@@ -142,7 +142,7 @@ final class GitMonitor: @unchecked Sendable {
 
             Task { @MainActor [self, changes, newHash, repo, repoName] in
                 for change in changes { insertChange(change) }
-                if let h = newHash { lastSeenCommit[repo] = h }
+                if let h = newHash { lock.withLock { lastSeenCommit[repo] = h } }
                 persistLastSeen()
                 AppHealthMonitor.shared.clearAPIError(providerId: "git-\(repoName)")
             }

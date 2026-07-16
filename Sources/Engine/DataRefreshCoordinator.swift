@@ -181,7 +181,7 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         if playSound { pendingPlaySound = true }
         notifyTask?.cancel()
         let shouldPlay = pendingPlaySound
-        notifyTask = Task { [weak self] in
+        notifyTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
             guard let self, !Task.isCancelled else { return }
             self.pendingPlaySound = false
