@@ -29,6 +29,7 @@
 		C05A70043009163400B99D6F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		C05A700830091E2A00B99D6F /* AIPulse_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPulse_iOS.entitlements; sourceTree = "<group>"; };
 		C05A700930091FC500B99D6F /* CloudDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudDataService.swift; sourceTree = "<group>"; };
+		C05A700E300925D200B99D6F /* AIPulse_watchOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPulse_watchOS.entitlements; sourceTree = "<group>"; };
 		C0D7701B30090D2E00BC1E54 /* AIPulse_iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIPulse_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0D7703030090F0600BC1E54 /* AIPulse_watchOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIPulse_watchOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -140,6 +141,7 @@
 		C0D7701230090D2E00BC1E54 = {
 			isa = PBXGroup;
 			children = (
+				C05A700E300925D200B99D6F /* AIPulse_watchOS.entitlements */,
 				C05A700830091E2A00B99D6F /* AIPulse_iOS.entitlements */,
 				C05A70053009163400B99D6F /* watchOS */,
 				C05A6FFB3009162A00B99D6F /* iOS */,
@@ -483,6 +485,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AIPulse_watchOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
@@ -523,6 +526,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AIPulse_watchOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;

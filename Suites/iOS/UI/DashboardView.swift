@@ -13,8 +13,16 @@ struct DashboardView: View {
         return cloudData.dailyStats.filter { $0.date >= cutoff }
     }
 
+    @State private var todayCost: Double = 0
+    @State private var weekCost: Double = 0
+    @State private var monthCost: Double = 0
+
     private var totalCost: Double {
-        filteredStats.reduce(0) { $0 + $1.cost }
+        switch timeRange {
+        case .today: return todayCost
+        case .week: return weekCost
+        case .days30: return monthCost
+        }
     }
 
     private var totalCalls: Int {
@@ -126,8 +134,19 @@ struct DashboardView: View {
             Spacer()
         }
         .padding(.top)
-        .onAppear { barProgress = 1 }
+        .onAppear {
+            barProgress = 1
+            Task {
+                let totals = await cloudData.fetchTotals()
+                todayCost = totals.today; weekCost = totals.week; monthCost = totals.month
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            Task {
+                let totals = await cloudData.fetchTotals()
+                todayCost = totals.today; weekCost = totals.week; monthCost = totals.month
+                try? await cloudData.fetchAll(days: timeRange.days)
+            }
             Task { try? await cloudData.fetchAll(days: timeRange.days) }
         }
     }

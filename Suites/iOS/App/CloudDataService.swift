@@ -1,6 +1,7 @@
 import CloudKit
 import Combine
 import Foundation
+import os.log
 
 /// Reads aggregated spending data from iCloud Private DB (synced by macOS).
 @MainActor
@@ -11,7 +12,7 @@ final class CloudDataService: ObservableObject {
     @Published var codeChanges: [DailyCodeChange] = []
     @Published var providerCosts: [ProviderCost] = []
 
-    private let container = CKContainer.default()
+    private let container = CKContainer(identifier: "iCloud.com.wxy.aipulse")
     private let database: CKDatabase
 
     private init() {
@@ -20,9 +21,27 @@ final class CloudDataService: ObservableObject {
 
     /// Check if any data exists in iCloud (for welcome → dashboard transition).
     func hasData() async throws -> Bool {
-        let query = CKQuery(recordType: CKRecordType.dailyStat.rawValue, predicate: NSPredicate(value: true))
+        // Query on a queryable field to avoid 'recordName not queryable'
+        let predicate = NSPredicate(format: "cost > 0")
+        let query = CKQuery(recordType: CKRecordType.dailyStat.rawValue, predicate: predicate)
         let (results, _) = try await database.records(matching: query, resultsLimit: 1)
+        print("[CloudData] hasData: \(results.count) results")
         return !results.isEmpty
+    }
+
+    /// Fetch pre-computed totals (today/week/month) from the AppConfig record.
+    func fetchTotals() async -> (today: Double, week: Double, month: Double) {
+        do {
+            let recordID = CKRecord.ID(recordName: "app-config")
+            let record = try await database.record(for: recordID)
+            let today = record["todayCost"] as? Double ?? 0
+            let week = record["weekCost"] as? Double ?? 0
+            let month = record["monthCost"] as? Double ?? 0
+            return (today, week, month)
+        } catch {
+            print("[CloudData] fetchTotals error: \(error)")
+            return (0, 0, 0)
+        }
     }
 
     /// Fetch all data for the given time range.
