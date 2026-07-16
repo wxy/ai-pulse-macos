@@ -74,6 +74,22 @@ enum I18n {
         return "en"
     }
 
+    /// The Locale matching the resolved language (for date/number formatting).
+    static var resolvedLocale: Locale {
+        switch resolvedLang() {
+        case "zh-Hans":    return Locale(identifier: "zh_CN")
+        case "zh-Hant-TW": return Locale(identifier: "zh_TW")
+        case "zh-Hant-HK": return Locale(identifier: "zh_HK")
+        case "ja":         return Locale(identifier: "ja_JP")
+        case "ko":         return Locale(identifier: "ko_KR")
+        case "de":         return Locale(identifier: "de_DE")
+        case "fr":         return Locale(identifier: "fr_FR")
+        case "es":         return Locale(identifier: "es_ES")
+        case "pt-BR":      return Locale(identifier: "pt_BR")
+        default:           return Locale(identifier: "en_US")
+        }
+    }
+
     /// Load compiled .strings from bundle for a given language code.
     private static func loadStrings(for lang: String) -> [String: String] {
         guard let path = Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: "\(lang).lproj"),
