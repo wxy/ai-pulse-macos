@@ -87,9 +87,10 @@ ai-pulse-macos/                    # 仓库根（单仓库，不动现有结构�
 │       │   └── SpendComplication.swift
 │       └── Store/
 │           └── CloudDataService.swift
+├── AIPulse/                         # macOS 工程目录（已有）
+│   └── AIPulse.xcodeproj           # macOS project
+├── Suites/                          # 🆕 移动端（iOS/watchOS xcodeproj 在此）
 ├── AIPulse.xcworkspace             # 统一工作空间（已有）
-├── AIPulse.xcodeproj               # macOS 工程（已有）
-├── AIPulse                         # 🆕 iOS/watchOS targets（新建 xcodeproj）
 ├── Package.swift                   # SPM（已有）
 └── Resources/                      # 现有资源
 ```
