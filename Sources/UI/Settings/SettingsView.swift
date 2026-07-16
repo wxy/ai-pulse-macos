@@ -193,11 +193,16 @@ struct GeneralTab: View {
                 Text(I18n.t("general.language_label"))
                     .frame(width: 100, alignment: .leading)
                 Picker("", selection: $lang) {
-                    Text(I18n.t("settings.language_zh")).tag("zh")
-                    Text(I18n.t("settings.language_en")).tag("en")
+                    ForEach(I18n.supportedLanguages, id: \.code) { lang in
+                        if lang.code == "auto" {
+                            Text(I18n.t("settings.language_auto")).tag("auto")
+                        } else {
+                            Text(lang.label).tag(lang.code)
+                        }
+                    }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 160)
+                .pickerStyle(.menu)
+                .frame(width: 200)
             }
 
             Divider().padding(.vertical, 8)
