@@ -199,7 +199,7 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         Logger.debug("DataRefreshCoordinator: posting .dataDidChange\(playSound ? " + sound" : "")")
         NotificationCenter.default.post(name: .dataDidChange, object: nil)
         guard playSound else { return }
-        Task {
+        Task { @MainActor in
             let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
             let spend = await StatsService.combinedSpend(sinceMs: todayStartMs)
             let label = "$\(String(format: "%.2f", spend))"
