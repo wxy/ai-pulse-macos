@@ -6,6 +6,8 @@ enum I18n {
     private static let langKey = "app_language"
     private static let langLock = NSLock()
     private static nonisolated(unsafe) var _currentLang: String?
+    private static nonisolated(unsafe) var _cachedStrings: [String: String]?
+    private static nonisolated(unsafe) var _cacheLang: String?
 
     /// All languages the app supports (for Settings picker).
     /// Tag is the language code; label is shown in native script.
@@ -28,10 +30,11 @@ enum I18n {
     static func setLang(_ lang: String) {
         langLock.lock()
         _currentLang = lang
+        _cachedStrings = nil  // force reload on next t()
+        _cacheLang = nil
         langLock.unlock()
         UserDefaults.standard.set(lang, forKey: langKey)
         if lang == "auto" {
-            // Remove override — let system language take effect
             UserDefaults.standard.removeObject(forKey: "AppleLanguages")
         } else {
             UserDefaults.standard.set([lang], forKey: "AppleLanguages")
@@ -40,7 +43,6 @@ enum I18n {
     }
 
     /// Get the stored language preference. "auto" = follow system; nil → auto.
-    /// Resolved language for actual display can differ from this value.
     static func getLang() -> String {
         langLock.lock()
         if let l = _currentLang { langLock.unlock(); return l }
@@ -56,7 +58,6 @@ enum I18n {
     }
 
     /// The effectively resolved language code (never "auto").
-    /// Used internally when we need to know which language is actually active.
     static func resolvedLang() -> String {
         let stored = getLang()
         if stored != "auto" { return stored }
@@ -73,9 +74,35 @@ enum I18n {
         return "en"
     }
 
-    /// Localized string for key. Reads from compiled .xcstrings via Bundle.
-    /// Bundle uses AppleLanguages (or system locale if "auto") to pick language.
+    /// Load compiled .strings from bundle for a given language code.
+    private static func loadStrings(for lang: String) -> [String: String] {
+        guard let path = Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: "\(lang).lproj"),
+              let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
+            return [:]
+        }
+        return dict
+    }
+
+    /// Localized string for key. Reads from compiled .strings files in the bundle,
+    /// cached in memory for performance. Falls back: target lang → en → key itself.
     static func t(_ key: String) -> String {
-        return Bundle.main.localizedString(forKey: key, value: nil, table: nil)
+        let target = resolvedLang()
+
+        langLock.lock()
+        if _cacheLang != target || _cachedStrings == nil {
+            _cachedStrings = loadStrings(for: target)
+            _cacheLang = target
+        }
+        let dict = _cachedStrings ?? [:]
+        langLock.unlock()
+
+        if let v = dict[key] { return v }
+
+        // Fallback to English
+        if target != "en", let enPath = Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: "en.lproj"),
+           let enDict = NSDictionary(contentsOfFile: enPath) as? [String: String],
+           let v = enDict[key] { return v }
+
+        return key
     }
 }
