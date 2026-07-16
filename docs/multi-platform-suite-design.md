@@ -123,22 +123,84 @@ ai-pulse/
 - 每个平台独立审核（macOS / iOS / watchOS 分别上架）
 - 可选：Xcode 单一 project 通过多 target 管理（简化签名和依赖）
 
-### 4. Dashboard 响应式布局
+### 4. 平台定位（第一性原理）
 
-**方案**：macOS 保持现有 700x660 布局；iOS 使用 NavigationStack + TabView；watchOS 使用极简单屏。
+| 平台 | 用户场景 | 核心问题 | 角色 |
+|------|---------|---------|------|
+| macOS | 正在 Mac 上工作 | "我花了多少？花在哪？" | 数据采集 + 完整分析 |
+| watchOS | 离开 Mac，手腕上 | "现在在花钱吗？花了多少？" | 实时消费感知 |
+| iOS | 手机在口袋，快速扫一眼 | "今天哪个项目烧钱最多？" | 快捷 Dashboard |
+| iPad | 沙发/会议室，大屏便携 | "给我完整的仪表盘" | 完整只读 Dashboard |
 
-- 共享 View 组件接收 `sizeClass` 或 `horizontalSizeClass` 适配
-- watchOS 不显示完整图表，使用环形进度 + 数字
+### 5. 各平台布局与功能
+
+#### watchOS
+
+**布局**：极简
+
+- 今日花费总额（最大字号，占据屏幕中部）
+- 环形进度（月度预算 vs 实际）
+- 不需要 Tab 切换（只看今日）
+
+**Complication（表盘集成）**：
+
+- 小号：今日花费数字（如 "$12.50"）
+- 中号：今日花费 + 环形进度
+
+**设置**：无 app 内设置面板。通知 + 声音/震动跟随系统级推送通知权限。complication 按系统频率刷新（约 30 分钟），实时推送后期再做。
+
+#### iOS
+
+**布局**：保持机器人面部布局，donut 环缩小适配窄屏，单屏不滚动
+
+- 顶部：花费总额大数字 + Tab 切换（Today / Week / 30d）
+- 中间行：donut ~90px | 统计卡（精简为 3 行）| donut ~90px
+- 底部：仓库/工具花费 top 3
+- 去掉：趋势图、月度预估行、服务商 donut（仅保留订阅 vs API 一个环）
+
+**设置**：无 app 内设置面板。通知 + 声音跟随系统级推送通知权限。
+
+#### iPadOS
+
+**布局**：完整复用 macOS 仪表盘（两列 + donut + 趋势图 + 仓库排行），只读。
+
+**设置**：无 app 内设置面板。通知 + 声音跟随系统级推送通知权限。
+
+### 6. 无 macOS 端时的引导
+
+移动端首次启动检测 iCloud 中是否有数据：
+- **有数据** → 直接展示 Dashboard
+- **无数据** → 显示引导页 + App Store 链接到 macOS 版
+
+移动端不内置 Demo 模式（Demo 数据只存在于 macOS 端）。如果用户只想预览，引导他们下载 Mac 版。
+
+### 7. macOS → 移动端推送机制
+
+macOS 每次花费更新时：
+1. 写入 iCloud（聚合数据）
+2. 推送一条静默通知到 APNs → iOS/watchOS 设备
+
+移动端收到静默通知后刷新 Dashboard 并触发本地通知（声音/震动），通知行为跟随系统级通知权限，用户通过系统设置控制。
+
+不需要自建推送服务器——macOS 本身就是"服务端"，直接通过 CloudKit + APNs Provider API 推送。
+
+### 8. 首次安装 macOS 版的场景
+
+macOS 首次运行 → 引导流程（现有）→ 开始采集 → DataRefreshCoordinator 周期后：
+1. 将聚合数据写入 iCloud
+2. 推送静默通知到 APNs
+
+移动端下次进入前台时自动刷新 Dashboard。
 
 ## 优先级
 
-| 阶段 | 内容 | 工作量估计 |
-|------|------|-----------|
+| 阶段 | 内容 | 预估 |
+|------|------|-----|
 | 1 | 抽取共享 Models + I18n 到 ai-pulse-shared | 2-3 天 |
-| 2 | macOS 端 CloudSyncService | 2 天 |
-| 3 | iOS 端基础 Dashboard（Today + spending cards） | 3-5 天 |
-| 4 | iOS 端完整 Dashboard（Week/30d trend + donuts） | 3 天 |
-| 5 | watchOS complication + 基础 app | 2-3 天 |
+| 2 | macOS 端 CloudSyncService + 推送触发 | 2 天 |
+| 3 | iOS 端：引导页 + 单屏 Dashboard + 设置 | 4 天 |
+| 4 | iPad 端：复用 macOS 布局 + 设置 | 1 天 |
+| 5 | watchOS：complication + 手表 app + 设置 | 2 天 |
 | 6 | App Store 套装发布 | 1 天 |
 
-总计约 2-3 周。
+总计约 2-2.5 周。
