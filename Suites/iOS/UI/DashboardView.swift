@@ -3,10 +3,17 @@ import Charts
 
 // macOS color palette (mars green + deep red)
 extension Color {
+    // Dark mode: use lighter variants for better contrast
     static let marsGreen      = Color(red: 44/255, green: 91/255, blue: 72/255)
+    static let marsGreenBar   = Color(light: Color(red: 44/255, green: 91/255, blue: 72/255), dark: Color(red: 140/255, green: 196/255, blue: 170/255))
     static let marsGreenLight = Color(red: 140/255, green: 196/255, blue: 170/255)
     static let deepRed        = Color(red: 173/255, green: 46/255, blue: 35/255)
+    static let deepRedBar     = Color(light: Color(red: 173/255, green: 46/255, blue: 35/255), dark: Color(red: 235/255, green: 100/255, blue: 90/255))
     static let deepRed2       = Color(red: 196/255, green: 74/255, blue: 63/255)
+
+    init(light: Color, dark: Color) {
+        self.init(UIColor { $0.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light) })
+    }
 }
 
 /// Frosted card border matching macOS .ultraThinMaterial + separator.
@@ -46,9 +53,9 @@ struct DashboardView: View {
         ScrollView {
             VStack(spacing: 16) {
                 Picker("", selection: $timeRange) {
-                    Text("Today").tag(TimeRange.today)
-                    Text("Week").tag(TimeRange.week)
-                    Text("30d").tag(TimeRange.days30)
+                    Text(I18n.t("time.today")).tag(TimeRange.today)
+                    Text(I18n.t("time.week")).tag(TimeRange.week)
+                    Text(I18n.t("time.30d")).tag(TimeRange.days30)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -68,20 +75,22 @@ struct DashboardView: View {
                             .font(.system(size: 40, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.deepRed)
                             .scaleEffect(0.8 + 0.2 * barProgress)
-                        Text("\(timeRange.label) \(totalCost > 0 ? "Total" : "")")
+                        Text("\(timeRange.label) \(totalCost > 0 ? I18n.t("dashboard.total") : "")")
                             .font(.caption).foregroundColor(.secondary)
                         if let p = snap.prediction, p.monthProjected > 0.001 {
-                            Text(String(format: "Spent $%.2f this month · $%.2f projected · %d days left",
+                            Text(String(format: I18n.t("dashboard.spent_month"),
                                         p.monthSoFar, p.monthProjected, p.daysRemaining))
                                 .font(.caption2).foregroundColor(.secondary)
                         }
                     }
 
-                    // Donuts + stats
+                    // Donuts + stats — centered
                     HStack(alignment: .top, spacing: 6) {
+                        Spacer(minLength: 0)
                         subVsApiDonut
                         noseStatCards
                         providerDonut
+                        Spacer(minLength: 0)
                     }
 
                     // Tool + repo ("mouth")
@@ -128,12 +137,13 @@ struct DashboardView: View {
                 }
 
                 if let updated = cloudData.lastUpdated {
-                    Text("Updated \(updated, style: .relative) ago")
+                    Text(I18n.t("updated").replacingOccurrences(of: "%@", with: updated.formatted(date: .abbreviated, time: .shortened)))
                         .font(.caption2).foregroundColor(.secondary)
                 }
             }
             .padding()
         }
+        .environment(\.locale, Locale(identifier: I18n.lang == "zh" ? "zh_CN" : "en_US"))
         .onAppear {
             barProgress = 1
             Task { try? await cloudData.fetchSnapshot() }
@@ -168,9 +178,9 @@ struct DashboardView: View {
                 Text("$\(String(format: "%.2f", t))")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
-            HStack(spacing: 8) {
-                if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(Color.deepRed).frame(width: 6, height: 6); Text("API \(Int(apiSpend / max(t, 0.01) * 100))%").font(.caption2) } }
-                if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(Color.marsGreen).frame(width: 6, height: 6); Text("Sub \(Int(subTotal / max(t, 0.01) * 100))%").font(.caption2) } }
+            VStack(spacing: 2) {
+                if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(Color.deepRed).frame(width: 6, height: 6); Text("\(I18n.t("stat.api")) \(Int(apiSpend / max(t, 0.01) * 100))%").font(.caption2) } }
+                if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(Color.marsGreen).frame(width: 6, height: 6); Text("\(I18n.t("stat.sub")) \(Int(subTotal / max(t, 0.01) * 100))%").font(.caption2) } }
             }
         }
     }
@@ -208,12 +218,12 @@ struct DashboardView: View {
     private var noseStatCards: some View {
         let f = snap.codeChanges
         return VStack(spacing: 6) {
-            statCard("Net Lines", value: "\(f.reduce(0) { $0 + $1.netLines })")
-            statCard("Added", value: "+\(f.reduce(0) { $0 + $1.added })", color: .marsGreen)
-            statCard("Deleted", value: "-\(f.reduce(0) { $0 + $1.deleted })", color: .deepRed)
+            statCard(I18n.t("dashboard.net_lines"), value: "\(f.reduce(0) { $0 + $1.netLines })")
+            statCard(I18n.t("dashboard.added"), value: "+\(f.reduce(0) { $0 + $1.added })", color: .marsGreen)
+            statCard(I18n.t("dashboard.deleted"), value: "-\(f.reduce(0) { $0 + $1.deleted })", color: .deepRed)
             if timeRange == .today {
-                statCard("Calls", value: "\(snap.todayCalls)")
-                statCard("Tokens", value: tokenShort(snap.todayTokens))
+                statCard(I18n.t("dashboard.calls"), value: "\(snap.todayCalls)")
+                statCard(I18n.t("dashboard.tokens"), value: tokenShort(snap.todayTokens))
             }
         }.frame(width: 90)
     }
@@ -234,12 +244,12 @@ struct DashboardView: View {
     private var toolBars: some View {
         let maxCost = snap.toolBreakdown.map(\.cost).max() ?? 1
         VStack(alignment: .leading, spacing: 6) {
-            Text("By Tool").font(.caption).foregroundColor(.secondary)
+            Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
             ForEach(snap.toolBreakdown.prefix(5), id: \.name) { tool in
                 HStack {
                     Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 3).fill(Color.marsGreen)
+                        RoundedRectangle(cornerRadius: 3).fill(Color.marsGreenBar)
                             .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
                     }.frame(height: 8)
                     Spacer()
@@ -258,7 +268,7 @@ struct DashboardView: View {
         let maxCost = items.map(\.cost).max() ?? 1
         let maxCPL = items.compactMap { $0.cpl > 0 ? $0.cpl : nil }.max() ?? 1
         VStack(alignment: .leading, spacing: 6) {
-            Text("By Repo").font(.caption).foregroundColor(.secondary)
+            Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
             ForEach(Array(items), id: \.name) { repo in
                 HStack {
                     Text(repo.name).font(.caption).lineLimit(1)
@@ -268,14 +278,14 @@ struct DashboardView: View {
                 HStack(spacing: 4) {
                     Text("$\(String(format: "%.2f", repo.cost))").font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 2).fill(Color.marsGreen)
+                        RoundedRectangle(cornerRadius: 2).fill(Color.marsGreenBar)
                             .frame(width: max(geo.size.width * CGFloat(repo.cost / maxCost), 2))
                     }.frame(height: 4)
                 }
                 HStack(spacing: 4) {
                     Text("CPL $\(String(format: "%.2f", repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 2).fill(Color.deepRed.opacity(0.5))
+                        RoundedRectangle(cornerRadius: 2).fill(Color.deepRedBar.opacity(0.5))
                             .frame(width: max(geo.size.width * CGFloat(repo.cpl / maxCPL), 2))
                     }.frame(height: 4)
                 }
@@ -340,7 +350,7 @@ struct DashboardView: View {
         let scale = axis.scale
 
         VStack(spacing: 8) {
-            Text("Daily Trend").font(.headline)
+            Text(I18n.t("dashboard.daily_trend")).font(.headline)
             Chart {
                 ForEach(paddedStats, id: \.ts) { s in
                     let d = Date(timeIntervalSince1970: s.ts)
@@ -377,10 +387,10 @@ struct DashboardView: View {
             }
             .frame(height: 200)
             HStack(spacing: 12) {
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.marsGreen).frame(width: 8, height: 8); Text("API").font(.caption2) }
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.marsGreenLight).frame(width: 8, height: 8); Text("Sub").font(.caption2) }
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.deepRed2).frame(width: 8, height: 8); Text("Added").font(.caption2) }
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.deepRed.opacity(0.35)).frame(width: 8, height: 8); Text("Deleted").font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.marsGreen).frame(width: 8, height: 8); Text(I18n.t("stat.api")).font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.marsGreenLight).frame(width: 8, height: 8); Text(I18n.t("stat.sub")).font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.deepRed2).frame(width: 8, height: 8); Text(I18n.t("chart.added")).font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.deepRed.opacity(0.35)).frame(width: 8, height: 8); Text(I18n.t("chart.deleted")).font(.caption2) }
             }
         }
         .padding(12)
@@ -433,7 +443,7 @@ enum TimeRange: Hashable {
         case .days30: return 30
         }
     }
-    var label: String { switch self { case .today: "Today"; case .week: "This Week"; case .days30: "30 Days" } }
+    var label: String { switch self { case .today: I18n.t("time.today"); case .week: I18n.t("time.week"); case .days30: I18n.t("time.30d") } }
     var chartDays: Int { switch self { case .week: 7; default: days } }
 }
 

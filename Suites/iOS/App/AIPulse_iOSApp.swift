@@ -19,7 +19,7 @@ struct ContentView: View {
     var body: some View {
         Group {
             if hasData == nil {
-                ProgressView("Checking iCloud…")
+                ProgressView(I18n.t("loading"))
             } else if hasData == true {
                 DashboardView()
             } else {
