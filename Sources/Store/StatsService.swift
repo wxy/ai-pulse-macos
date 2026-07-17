@@ -503,17 +503,15 @@ enum StatsService {
         let weekMs = Int64(cal.date(byAdding: .day, value: -6, to: todayStart)!.timeIntervalSince1970 * 1000)
         let monthMs = Int64(cal.date(byAdding: .day, value: -29, to: todayStart)!.timeIntervalSince1970 * 1000)
 
-        async let todayCost = StatsService.combinedSpend(sinceMs: todayStartMs)
-        async let weekCost = StatsService.combinedSpend(sinceMs: weekMs)
-        async let monthCost = StatsService.combinedSpend(sinceMs: monthMs)
+        async let todayCombined = StatsService.combinedSpend(sinceMs: todayStartMs)
         async let stats = StatsService.dailyStats(days: days)
         async let bal = StatsService.balanceDailySpend(days: days, sinceMs: rangeStartMs)
         async let code = StatsService.dailyCodeChanges(days: days)
         async let repos = StatsService.repoBreakdown(days: days)
         async let pred = StatsService.prediction()
 
-        let (tc, wc, mc, st, bl, cd, rp, pr) = await (
-            todayCost, weekCost, monthCost,
+        let (tc, st, bl, cd, rp, pr) = await (
+            todayCombined,
             (try? stats) ?? [], (try? bal) ?? [], (try? code) ?? [],
             (try? repos) ?? [], pred
         )
@@ -544,6 +542,9 @@ enum StatsService {
             if case .apiKey(let pid) = cs.kind { return pid }; return nil
         })
         let apiSpend = bl.filter { enabledB.contains($0.providerId) }.reduce(0.0) { $0 + $1.spend }
+        let subTotalAll = subAmort * Double(days)
+        let weekCost = apiSpend + subAmort * 7
+        let monthCost = apiSpend + subAmort * 30
         let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
         let rawTools = toolMap.compactMap { (key, cost) -> (String, Double)? in
             guard cost * scale > 0.001 else { return nil }
@@ -562,9 +563,8 @@ enum StatsService {
 
         // Repos with subscription scaling
         let logTotal = rp.reduce(0.0) { $0 + $1.cost }
-        let subTotal = subAmort * Double(days)
         let repoScale = toolTotal > 0 ? apiSpend / logTotal : 1.0
-        let subScale = logTotal > 0 ? subTotal / logTotal : 0.0
+        let subScale = logTotal > 0 ? subTotalAll / logTotal : 0.0
         let repoItems: [RepoItem] = rp.map { r in
             let scaledCost = r.cost * repoScale + r.cost * subScale
             return RepoItem(name: r.repo, cost: scaledCost, added: r.added, deleted: r.deleted,
