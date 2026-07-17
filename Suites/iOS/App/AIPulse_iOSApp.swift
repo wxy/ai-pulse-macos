@@ -40,7 +40,10 @@ struct ContentView: View {
     var body: some View {
         Group {
             if hasData == nil {
-                ProgressView(I18n.t("loading"))
+                VStack(spacing: 20) {
+                    Image("AIPulse").resizable().frame(width: 80, height: 80).cornerRadius(18)
+                    ProgressView(I18n.t("loading"))
+                }
             } else if hasData == true {
                 DashboardView()
             } else {

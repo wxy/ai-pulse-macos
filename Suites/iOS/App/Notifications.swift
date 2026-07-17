@@ -16,7 +16,7 @@ final class NotificationService: NSObject {
 
     /// Play coin sound when app is in foreground and new data arrives.
     static func playCoinSound() {
-        AudioServicesPlaySystemSound(1004)  // system coin-like sound
+        AudioServicesPlayAlertSound(1104)  // coin-like alert sound
     }
 
     /// Request notification permission and register CloudKit subscription.

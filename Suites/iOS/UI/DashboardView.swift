@@ -71,7 +71,7 @@ struct DashboardView: View {
                 VStack(spacing: 12) {
                     // Big total
                     VStack(spacing: 2) {
-                        Text("$\(usd(totalCost))")
+                        Text(usd(totalCost))
                             .font(.system(size: 40, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.deepRed)
                             .scaleEffect(0.8 + 0.2 * barProgress)
@@ -137,7 +137,7 @@ struct DashboardView: View {
                 }
 
                 if let updated = cloudData.lastUpdated {
-                    Text("\(I18n.t("dashboard.updated")) \(updated.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
+                    Text("\(I18n.t("dashboard.updated")) \(updated, format: .dateTime.month(.abbreviated).day().hour().minute().locale(.current))")
                         .font(.caption2).foregroundColor(.secondary)
                 }
             }
@@ -188,7 +188,7 @@ struct DashboardView: View {
                 } else {
                     Circle().stroke(.secondary.opacity(0.15), lineWidth: 10).frame(width: 80, height: 80)
                 }
-                Text("$\(usd(t))")
+                Text(usd(t))
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
             VStack(spacing: 2) {
@@ -215,7 +215,7 @@ struct DashboardView: View {
                 } else {
                     Circle().stroke(.secondary.opacity(0.15), lineWidth: 10).frame(width: 80, height: 80)
                 }
-                Text("$\(usd(apiSpend))")
+                Text(usd(apiSpend))
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
             ForEach(snap.providerBreakdown.prefix(3), id: \.providerId) { p in
@@ -266,7 +266,7 @@ struct DashboardView: View {
                             .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
                     }.frame(height: 8)
                     Spacer()
-                    Text("$\(usd(tool.cost))").font(.caption2).monospacedDigit()
+                    Text(usd(tool.cost)).font(.caption2).monospacedDigit()
                 }
             }
         }
@@ -289,7 +289,7 @@ struct DashboardView: View {
                     Text("+\(repo.added)/-\(repo.deleted)").font(.caption2).foregroundColor(.secondary)
                 }
                 HStack(spacing: 4) {
-                    Text("$\(usd(repo.cost))").font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
+                    Text(usd(repo.cost)).font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 2).fill(Color.marsGreenBar)
                             .frame(width: max(geo.size.width * CGFloat(repo.cost / maxCost), 2))
