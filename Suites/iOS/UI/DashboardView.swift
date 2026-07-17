@@ -46,12 +46,10 @@ struct DashboardView: View {
                         .font(.system(size: 44, weight: .bold, design: .rounded))
                         .foregroundStyle(.red)
                         .scaleEffect(0.8 + 0.2 * barProgress)
-
                     HStack(spacing: 6) {
                         Text("\(timeRange.label) \(totalCost > 0 ? "Total" : "")")
                             .font(.caption).foregroundColor(.secondary)
                     }
-
                     if let p = snap.prediction, p.monthProjected > 0.001 {
                         Text(String(format: "Spent $%.2f this month · $%.2f projected · %d days left",
                                     p.monthSoFar, p.monthProjected, p.daysRemaining))
@@ -60,7 +58,6 @@ struct DashboardView: View {
                 }
                 .padding(.vertical, 12)
 
-                // Donuts + stats
                 HStack(alignment: .top, spacing: 8) {
                     subVsApiDonut
                     noseStatCards
@@ -99,10 +96,10 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var subVsApiDonut: some View {
-        let total = apiSpend + subTotal
+        let t = apiSpend + subTotal
         VStack(spacing: 2) {
             ZStack {
-                if total > 0.001 {
+                if t > 0.001 {
                     Chart {
                         if apiSpend > 0.001 {
                             SectorMark(angle: .value("API", apiSpend), innerRadius: .ratio(0.5))
@@ -115,14 +112,11 @@ struct DashboardView: View {
                     }
                     .frame(width: 80, height: 80)
                 } else {
-                    Circle().stroke(.secondary.opacity(0.15), lineWidth: 10)
-                        .frame(width: 80, height: 80)
+                    Circle().stroke(.secondary.opacity(0.15), lineWidth: 10).frame(width: 80, height: 80)
                 }
-                Text("$\(String(format: "%.2f", total))")
+                Text("$\(String(format: "%.2f", t))")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
-            // Legend with percentages
-            let t = apiSpend + subTotal
             HStack(spacing: 8) {
                 if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(.red).frame(width: 6, height: 6); Text("API \(Int(apiSpend / max(t, 0.01) * 100))%").font(.caption2) } }
                 if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(.green).frame(width: 6, height: 6); Text("Sub \(Int(subTotal / max(t, 0.01) * 100))%").font(.caption2) } }
@@ -141,16 +135,13 @@ struct DashboardView: View {
                                 .foregroundStyle(by: .value("Name", p.name))
                         }
                     }
-                    .chartLegend(.hidden)
-                    .frame(width: 80, height: 80)
+                    .chartLegend(.hidden).frame(width: 80, height: 80)
                 } else {
-                    Circle().stroke(.secondary.opacity(0.15), lineWidth: 10)
-                        .frame(width: 80, height: 80)
+                    Circle().stroke(.secondary.opacity(0.15), lineWidth: 10).frame(width: 80, height: 80)
                 }
                 Text("$\(String(format: "%.2f", apiSpend))")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
-            // Legend
             ForEach(snap.providerBreakdown.prefix(3), id: \.providerId) { p in
                 HStack(spacing: 2) {
                     Circle().fill(.blue).frame(width: 6, height: 6)
@@ -171,8 +162,7 @@ struct DashboardView: View {
                 statCard("Calls", value: "\(snap.todayCalls)")
                 statCard("Tokens", value: tokenShort(snap.todayTokens))
             }
-        }
-        .frame(width: 90)
+        }.frame(width: 90)
     }
 
     // MARK: - Tool & Repo
@@ -186,8 +176,7 @@ struct DashboardView: View {
                 HStack {
                     Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.green.opacity(0.6))
+                        RoundedRectangle(cornerRadius: 3).fill(Color.green.opacity(0.6))
                             .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
                     }.frame(height: 8)
                     Spacer()
@@ -195,116 +184,131 @@ struct DashboardView: View {
                 }
             }
         }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
     @ViewBuilder
     private var repoList: some View {
-        let maxCost = snap.topRepos.map(\.cost).max() ?? 1
-        let maxCPL = snap.topRepos.compactMap { $0.cpl > 0 ? $0.cpl : nil }.max() ?? 1
+        let items = snap.topRepos.filter { $0.added + $0.deleted > 0 }.prefix(6)
+        let maxCost = items.map(\.cost).max() ?? 1
+        let maxCPL = items.compactMap { $0.cpl > 0 ? $0.cpl : nil }.max() ?? 1
         VStack(alignment: .leading, spacing: 6) {
             Text("By Repo").font(.caption).foregroundColor(.secondary)
-            ForEach(snap.topRepos.filter { $0.added + $0.deleted > 0 }.prefix(6), id: \.name) { repo in
-                // Line 1: name + added/deleted
+            ForEach(Array(items), id: \.name) { repo in
                 HStack {
                     Text(repo.name).font(.caption).lineLimit(1)
                     Spacer()
-                    Text("+\(repo.added)/-\(repo.deleted)")
-                        .font(.caption2).foregroundColor(.secondary)
+                    Text("+\(repo.added)/-\(repo.deleted)").font(.caption2).foregroundColor(.secondary)
                 }
-                // Line 2: cost bar
                 HStack(spacing: 4) {
-                    Text("$\(String(format: "%.2f", repo.cost))")
-                        .font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
+                    Text("$\(String(format: "%.2f", repo.cost))").font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.green.opacity(0.5))
+                        RoundedRectangle(cornerRadius: 2).fill(Color.green.opacity(0.5))
                             .frame(width: max(geo.size.width * CGFloat(repo.cost / maxCost), 2))
                     }.frame(height: 4)
                 }
-                // Line 3: CPL bar
                 HStack(spacing: 4) {
-                    Text("CPL $\(String(format: "%.2f", repo.cpl))")
-                        .font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
+                    Text("CPL $\(String(format: "%.2f", repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.blue.opacity(0.4))
+                        RoundedRectangle(cornerRadius: 2).fill(Color.blue.opacity(0.4))
                             .frame(width: max(geo.size.width * CGFloat(repo.cpl / maxCPL), 2))
                     }.frame(height: 4)
                 }
             }
         }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
-    // MARK: - Trend
+    /// Axis calculation — moved outside ViewBuilder to avoid control-flow restriction.
+    private func trendAxis(cal: Calendar, chartStart: Date, chartDays: Int) -> (costMax: Double, codeMax: Double, scale: Double, costStep: Double) {
+        let padResult = TrendPadding.pad(snap: snap, days: chartDays, cal: cal, chartStart: chartStart)
+        if padResult.noData { return (0, 0, 1, 1) }
+        let paddedStats = padResult.stats
+        let paddedCode = padResult.code
+
+        let rawCostMax = paddedStats.map { s -> Double in
+            let api = snap.balanceDaily.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: Date(timeIntervalSince1970: s.ts)) })?.value ?? 0
+            return api + snap.subDaily
+        }.max() ?? 5
+        let cStep = niceStep(rawCostMax / 4)
+        let cMax = ceil(rawCostMax / cStep) * cStep
+
+        let rawCodeMax = Double(paddedCode.map { $0.added + $0.deleted }.max() ?? 1)
+        let sec = cMax / cStep
+        var cdStep = niceStep(rawCodeMax / sec)
+        while cdStep * sec < rawCodeMax { cdStep = nextNiceStep(cdStep) }
+        let cdMax = cdStep * sec
+        let sc = cMax / cdMax
+        return (cMax, cdMax, sc, cStep)
+    }
+
+    // MARK: - Trend (duplicate of macOS logic)
 
     @ViewBuilder
     private var trendChart: some View {
-        let filteredStats = snap.dailyStats
-        let filteredCode = snap.codeChanges
-        let filteredBalance = snap.balanceDaily
-        let balanceMap = Dictionary(uniqueKeysWithValues: filteredBalance.map { (Date(timeIntervalSince1970: $0.ts), $0.value) })
+        let chartDays = timeRange.chartDays
+        let cal = Calendar.current
+        let chartStart: Date = {
+            if case .week = timeRange {
+                var mc = cal; mc.firstWeekday = 2
+                return mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            }
+            return cal.date(byAdding: .day, value: -(chartDays - 1), to: cal.startOfDay(for: Date()))!
+        }()
+        let axis = trendAxis(cal: cal, chartStart: chartStart, chartDays: chartDays)
+        if axis.costMax == 0 { EmptyView() }
+        
+        let padResult = TrendPadding.pad(snap: snap, days: chartDays, cal: cal, chartStart: chartStart)
+        let paddedStats = padResult.stats
+        let paddedCode = padResult.code
+        let costMax = axis.costMax
+        let scale = axis.scale
 
         VStack(spacing: 8) {
             Text("Daily Trend").font(.headline)
-            let costMax = max(filteredBalance.map(\.value).max() ?? 1, snap.subDaily, 1)
-            let lineMax = max(filteredCode.map { Double(max($0.added, $0.deleted)) }.max() ?? 100, 100)
-            let lineScale = costMax / lineMax
-
-            if filteredStats.isEmpty && filteredCode.isEmpty {
-                Text("No data").font(.caption).foregroundColor(.secondary)
-            } else {
-                Chart {
-                    // Cost bars on left axis: API + Sub
-                    ForEach(filteredStats, id: \.ts) { s in
-                        let d = Date(timeIntervalSince1970: s.ts)
-                        BarMark(x: .value("Date", d, unit: .day), y: .value("Cost", (balanceMap[d] ?? 0) * barProgress))
-                            .foregroundStyle(Color.green)
-                    }
-                    ForEach(filteredStats, id: \.ts) { s in
-                        let d = Date(timeIntervalSince1970: s.ts)
-                        BarMark(x: .value("Date", d, unit: .day), y: .value("Cost", snap.subDaily * barProgress))
-                            .foregroundStyle(Color.green.opacity(0.4))
-                    }
-                    // Line bars scaled to cost axis
-                    ForEach(filteredCode, id: \.ts) { c in
-                        let d = Date(timeIntervalSince1970: c.ts)
-                        BarMark(x: .value("Date", d, unit: .day), y: .value("Cost", Double(c.added) * lineScale * barProgress))
-                            .foregroundStyle(Color.red.opacity(0.6))
-                    }
-                    ForEach(filteredCode, id: \.ts) { c in
-                        let d = Date(timeIntervalSince1970: c.ts)
-                        BarMark(x: .value("Date", d, unit: .day), y: .value("Cost", Double(c.deleted) * lineScale * barProgress))
-                            .foregroundStyle(Color.red.opacity(0.3))
-                    }
+            Chart {
+                ForEach(paddedStats, id: \.ts) { s in
+                    let d = Date(timeIntervalSince1970: s.ts)
+                    let api = snap.balanceDaily.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: d) })?.value ?? 0
+                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", api * barProgress))
+                        .foregroundStyle(Color.green).position(by: .value("Series", "Cost"))
                 }
-                .chartYScale(domain: 0...costMax)
-                .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic) { v in
-                        AxisGridLine().foregroundStyle(.gray.opacity(0.2))
-                        if let d = v.as(Double.self) { AxisValueLabel("$\(String(format: "%.0f", d))") }
-                    }
-                    AxisMarks(position: .trailing, values: .automatic) { v in
-                        AxisGridLine().foregroundStyle(.gray.opacity(0.1))
-                        if let d = v.as(Double.self) {
-                            AxisValueLabel("\(Int(d / lineScale))")
-                        }
-                    }
+                ForEach(paddedStats, id: \.ts) { s in
+                    let d = Date(timeIntervalSince1970: s.ts)
+                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", snap.subDaily * barProgress))
+                        .foregroundStyle(Color.green.opacity(0.4)).position(by: .value("Series", "Cost"))
                 }
-                .frame(height: 200)
-                HStack(spacing: 12) {
-                    HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green).frame(width: 8, height: 8); Text("API").font(.caption2) }
-                    HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green.opacity(0.4)).frame(width: 8, height: 8); Text("Sub").font(.caption2) }
-                    HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.red.opacity(0.6)).frame(width: 8, height: 8); Text("Added").font(.caption2) }
-                    HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.red.opacity(0.3)).frame(width: 8, height: 8); Text("Deleted").font(.caption2) }
+                ForEach(paddedCode, id: \.ts) { c in
+                    let d = Date(timeIntervalSince1970: c.ts)
+                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", Double(c.added) * scale * barProgress))
+                        .foregroundStyle(Color.red.opacity(0.6)).position(by: .value("Series", "Code"))
+                }
+                ForEach(paddedCode, id: \.ts) { c in
+                    let d = Date(timeIntervalSince1970: c.ts)
+                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", Double(c.deleted) * scale * barProgress))
+                        .foregroundStyle(Color.red.opacity(0.3)).position(by: .value("Series", "Code"))
                 }
             }
+            .chartYScale(domain: 0...costMax)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: .automatic) { v in
+                    AxisGridLine().foregroundStyle(.gray.opacity(0.2))
+                    if let d = v.as(Double.self) { AxisValueLabel("$\(String(format: "%.0f", d))") }
+                }
+                AxisMarks(position: .trailing, values: .automatic) { v in
+                    AxisGridLine().foregroundStyle(.gray.opacity(0.1))
+                    if let d = v.as(Double.self) { AxisValueLabel(shortNum(Int(d / scale))) }
+                }
+            }
+            .frame(height: 200)
+            HStack(spacing: 12) {
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green).frame(width: 8, height: 8); Text("API").font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green.opacity(0.4)).frame(width: 8, height: 8); Text("Sub").font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.red.opacity(0.6)).frame(width: 8, height: 8); Text("Added").font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.red.opacity(0.3)).frame(width: 8, height: 8); Text("Deleted").font(.caption2) }
+            }
         }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - Helpers
@@ -315,11 +319,27 @@ struct DashboardView: View {
             Text(label).font(.caption2).foregroundColor(.secondary)
         }
     }
-
+    private func shortNum(_ n: Int) -> String { n >= 1000 ? "\(n / 1000)K" : "\(n)" }
     private func tokenShort(_ n: Int) -> String {
         if n >= 1_000_000 { return "\(n / 1_000_000)M" }
         if n >= 1000 { return "\(n / 1000)K" }
         return "\(n)"
+    }
+}
+
+struct TrendPadding {
+    let stats: [TrendPoint]; let code: [TrendPoint]; let noData: Bool
+    static func pad(snap: DashboardSnapshot, days: Int, cal: Calendar, chartStart: Date) -> TrendPadding {
+        var s = [TrendPoint](), c = [TrendPoint]()
+        for i in 0..<days {
+            guard let d = cal.date(byAdding: .day, value: i, to: chartStart) else { continue }
+            let ts = d.timeIntervalSince1970
+            let zero = TrendPoint(ts: ts, value: 0, calls: 0, tokens: 0, netLines: 0)
+            s.append(snap.dailyStats.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: d) }) ?? zero)
+            c.append(snap.codeChanges.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: d) }) ?? zero)
+        }
+        let nd = s.allSatisfy({ $0.value == 0 }) && c.allSatisfy({ $0.added == 0 })
+        return TrendPadding(stats: s, code: c, noData: nd)
     }
 }
 
@@ -329,12 +349,26 @@ enum TimeRange: Hashable {
         switch self {
         case .today: return 1
         case .week:
-            let cal = Calendar.current
-            var monCal = cal; monCal.firstWeekday = 2
-            let monday = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-            return cal.dateComponents([.day], from: monday, to: cal.startOfDay(for: Date())).day! + 1
+            let cal = Calendar.current; var mc = cal; mc.firstWeekday = 2
+            let mon = mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            return cal.dateComponents([.day], from: mon, to: cal.startOfDay(for: Date())).day! + 1
         case .days30: return 30
         }
     }
     var label: String { switch self { case .today: "Today"; case .week: "This Week"; case .days30: "30 Days" } }
+    var chartDays: Int { switch self { case .week: 7; default: days } }
+}
+
+private func niceStep(_ x: Double) -> Double {
+    let e = pow(10, floor(log10(max(x, 0.001))))
+    let m = x / e
+    if m <= 1.5 { return e }
+    if m <= 3 { return 2 * e }
+    if m <= 7 { return 5 * e }
+    return 10 * e
+}
+private func nextNiceStep(_ s: Double) -> Double {
+    if s <= 1.5 { return 2 }
+    if s <= 2.5 { return 5 }
+    return s * 2
 }
