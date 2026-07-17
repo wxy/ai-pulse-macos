@@ -6,33 +6,53 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		C05A6FF13009161D00B99D6F /* CloudKitSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A6FEC3009161D00B99D6F /* CloudKitSchema.swift */; };
-		C05A6FF23009161D00B99D6F /* DailyStat.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A6FED3009161D00B99D6F /* DailyStat.swift */; };
-		C05A6FF33009161D00B99D6F /* CloudKitSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A6FEC3009161D00B99D6F /* CloudKitSchema.swift */; };
-		C05A6FF43009161D00B99D6F /* DailyStat.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A6FED3009161D00B99D6F /* DailyStat.swift */; };
-		C05A6FFD3009162A00B99D6F /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A6FF83009162A00B99D6F /* WelcomeView.swift */; };
-		C05A6FFE3009162A00B99D6F /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A6FF73009162A00B99D6F /* DashboardView.swift */; };
-		C05A6FFF3009162A00B99D6F /* AIPulse_iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A6FF53009162A00B99D6F /* AIPulse_iOSApp.swift */; };
-		C05A70073009163400B99D6F /* AIPulse_WatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A70003009163400B99D6F /* AIPulse_WatchApp.swift */; };
-		C05A700A30091FC500B99D6F /* CloudDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C05A700930091FC500B99D6F /* CloudDataService.swift */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXFileReference section */
-		C05A6FEC3009161D00B99D6F /* CloudKitSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitSchema.swift; sourceTree = "<group>"; };
-		C05A6FED3009161D00B99D6F /* DailyStat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyStat.swift; sourceTree = "<group>"; };
-		C05A6FF53009162A00B99D6F /* AIPulse_iOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPulse_iOSApp.swift; sourceTree = "<group>"; };
-		C05A6FF73009162A00B99D6F /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
-		C05A6FF83009162A00B99D6F /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
-		C05A6FFA3009162A00B99D6F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		C05A70003009163400B99D6F /* AIPulse_WatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPulse_WatchApp.swift; sourceTree = "<group>"; };
-		C05A70043009163400B99D6F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		C05A700830091E2A00B99D6F /* AIPulse_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPulse_iOS.entitlements; sourceTree = "<group>"; };
-		C05A700930091FC500B99D6F /* CloudDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudDataService.swift; sourceTree = "<group>"; };
 		C05A700E300925D200B99D6F /* AIPulse_watchOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPulse_watchOS.entitlements; sourceTree = "<group>"; };
 		C0D7701B30090D2E00BC1E54 /* AIPulse_iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIPulse_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0D7703030090F0600BC1E54 /* AIPulse_watchOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIPulse_watchOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C05A70323009E35100B99D6F /* Exceptions for "iOS" folder in "AIPulse_iOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C0D7701A30090D2E00BC1E54 /* AIPulse_iOS */;
+		};
+		C05A70333009E35D00B99D6F /* Exceptions for "watchOS" folder in "AIPulse_watchOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C0D7702930090F0600BC1E54 /* AIPulse_watchOS */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		C05A70163009E26B00B99D6F /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		C05A70223009E27D00B99D6F /* watchOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C05A70333009E35D00B99D6F /* Exceptions for "watchOS" folder in "AIPulse_watchOS" target */,
+			);
+			path = watchOS;
+			sourceTree = "<group>";
+		};
+		C05A702C3009E28800B99D6F /* iOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C05A70323009E35100B99D6F /* Exceptions for "iOS" folder in "AIPulse_iOS" target */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		C0D7701830090D2E00BC1E54 /* Frameworks */ = {
@@ -52,100 +72,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		C05A6FEE3009161D00B99D6F /* Models */ = {
-			isa = PBXGroup;
-			children = (
-				C05A6FEC3009161D00B99D6F /* CloudKitSchema.swift */,
-				C05A6FED3009161D00B99D6F /* DailyStat.swift */,
-			);
-			path = Models;
-			sourceTree = "<group>";
-		};
-		C05A6FEF3009161D00B99D6F /* UI */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = UI;
-			sourceTree = "<group>";
-		};
-		C05A6FF03009161D00B99D6F /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				C05A6FEE3009161D00B99D6F /* Models */,
-				C05A6FEF3009161D00B99D6F /* UI */,
-			);
-			path = Shared;
-			sourceTree = "<group>";
-		};
-		C05A6FF63009162A00B99D6F /* App */ = {
-			isa = PBXGroup;
-			children = (
-				C05A700930091FC500B99D6F /* CloudDataService.swift */,
-				C05A6FF53009162A00B99D6F /* AIPulse_iOSApp.swift */,
-			);
-			path = App;
-			sourceTree = "<group>";
-		};
-		C05A6FF93009162A00B99D6F /* UI */ = {
-			isa = PBXGroup;
-			children = (
-				C05A6FF73009162A00B99D6F /* DashboardView.swift */,
-				C05A6FF83009162A00B99D6F /* WelcomeView.swift */,
-			);
-			path = UI;
-			sourceTree = "<group>";
-		};
-		C05A6FFB3009162A00B99D6F /* iOS */ = {
-			isa = PBXGroup;
-			children = (
-				C05A6FF63009162A00B99D6F /* App */,
-				C05A6FF93009162A00B99D6F /* UI */,
-				C05A6FFA3009162A00B99D6F /* Info.plist */,
-			);
-			path = iOS;
-			sourceTree = "<group>";
-		};
-		C05A70013009163400B99D6F /* App */ = {
-			isa = PBXGroup;
-			children = (
-				C05A70003009163400B99D6F /* AIPulse_WatchApp.swift */,
-			);
-			path = App;
-			sourceTree = "<group>";
-		};
-		C05A70023009163400B99D6F /* Store */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Store;
-			sourceTree = "<group>";
-		};
-		C05A70033009163400B99D6F /* UI */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = UI;
-			sourceTree = "<group>";
-		};
-		C05A70053009163400B99D6F /* watchOS */ = {
-			isa = PBXGroup;
-			children = (
-				C05A70013009163400B99D6F /* App */,
-				C05A70023009163400B99D6F /* Store */,
-				C05A70033009163400B99D6F /* UI */,
-				C05A70043009163400B99D6F /* Info.plist */,
-			);
-			path = watchOS;
-			sourceTree = "<group>";
-		};
 		C0D7701230090D2E00BC1E54 = {
 			isa = PBXGroup;
 			children = (
+				C05A702C3009E28800B99D6F /* iOS */,
+				C05A70223009E27D00B99D6F /* watchOS */,
+				C05A70163009E26B00B99D6F /* Shared */,
 				C05A700E300925D200B99D6F /* AIPulse_watchOS.entitlements */,
 				C05A700830091E2A00B99D6F /* AIPulse_iOS.entitlements */,
-				C05A70053009163400B99D6F /* watchOS */,
-				C05A6FFB3009162A00B99D6F /* iOS */,
-				C05A6FF03009161D00B99D6F /* Shared */,
 				C0D7701C30090D2E00BC1E54 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -174,6 +108,10 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				C05A70163009E26B00B99D6F /* Shared */,
+				C05A702C3009E28800B99D6F /* iOS */,
+			);
 			name = AIPulse_iOS;
 			packageProductDependencies = (
 			);
@@ -192,6 +130,10 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C05A70163009E26B00B99D6F /* Shared */,
+				C05A70223009E27D00B99D6F /* watchOS */,
 			);
 			name = AIPulse_watchOS;
 			packageProductDependencies = (
@@ -257,12 +199,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C05A6FF33009161D00B99D6F /* CloudKitSchema.swift in Sources */,
-				C05A6FFD3009162A00B99D6F /* WelcomeView.swift in Sources */,
-				C05A6FFE3009162A00B99D6F /* DashboardView.swift in Sources */,
-				C05A700A30091FC500B99D6F /* CloudDataService.swift in Sources */,
-				C05A6FFF3009162A00B99D6F /* AIPulse_iOSApp.swift in Sources */,
-				C05A6FF43009161D00B99D6F /* DailyStat.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -270,9 +206,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C05A70073009163400B99D6F /* AIPulse_WatchApp.swift in Sources */,
-				C05A6FF13009161D00B99D6F /* CloudKitSchema.swift in Sources */,
-				C05A6FF23009161D00B99D6F /* DailyStat.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

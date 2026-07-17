@@ -30,15 +30,11 @@ struct ProviderItem: Codable {
     var providerId: String
     var name: String
     var cost: Double
-    var added: Int
-    var deleted: Int
 }
 
 struct NameCostItem: Codable {
     var name: String
     var cost: Double
-    var added: Int
-    var deleted: Int
 }
 
 struct RepoItem: Codable {
@@ -57,9 +53,11 @@ struct PredictionItem: Codable {
 }
 
 struct TrendPoint: Codable {
-    var ts: Double    // Date.timeIntervalSince1970
+    var ts: Double
     var value: Double
     var calls: Int
     var tokens: Int
     var netLines: Int
+    var added: Int = 0
+    var deleted: Int = 0
 }

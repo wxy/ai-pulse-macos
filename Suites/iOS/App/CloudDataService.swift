@@ -1,8 +1,9 @@
 import CloudKit
 import Combine
 import Foundation
+import os
 
-/// Reads the DashboardSnapshot_v1 record synced by macOS.
+/// Reads the DashboardCache_v1 record synced by macOS.
 @MainActor
 final class CloudDataService: ObservableObject {
     static let shared = CloudDataService()
@@ -11,6 +12,7 @@ final class CloudDataService: ObservableObject {
     @Published var lastUpdated: Date?
 
     private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
+    private let log = Logger(subsystem: "com.wxy.aipulse", category: "CloudData")
 
     private init() {}
 
@@ -18,7 +20,7 @@ final class CloudDataService: ObservableObject {
         let recordID = CKRecord.ID(recordName: "snapshot")
         do {
             let record = try await database.record(for: recordID)
-            // New format: version + json fields
+            log.info("hasData: record found, json present=\(record["json"] != nil)")
             if let json = record["json"] as? String,
                let data = json.data(using: .utf8),
                let snap = try? JSONDecoder().decode(DashboardSnapshot.self, from: data) {
@@ -26,8 +28,10 @@ final class CloudDataService: ObservableObject {
                 lastUpdated = record["updatedAt"] as? Date
                 return true
             }
+            log.warning("hasData: json parse failed")
             return false
         } catch {
+            log.error("hasData: \(error.localizedDescription)")
             return false
         }
     }

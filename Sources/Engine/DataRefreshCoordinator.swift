@@ -178,18 +178,26 @@ final class DataRefreshCoordinator: @unchecked Sendable {
             async let todayCost = StatsService.combinedSpend(sinceMs: todayMs)
             async let weekCost = StatsService.combinedSpend(sinceMs: weekMs)
             async let monthCost = StatsService.combinedSpend(sinceMs: monthMs)
+            async let todayStats = StatsService.dailyStats(days: 1)
             async let weekStats = StatsService.dailyStats(days: 7)
             async let monthStats = StatsService.dailyStats(days: 30)
             async let weekBal = StatsService.balanceDailySpend(days: 7, sinceMs: weekMs)
             async let monthBal = StatsService.balanceDailySpend(days: 30, sinceMs: monthMs)
+            async let weekCode = StatsService.dailyCodeChanges(days: 7)
+            async let monthCode = StatsService.dailyCodeChanges(days: 30)
+            async let weekRepos = StatsService.repoBreakdown(days: 7)
+            async let monthRepos = StatsService.repoBreakdown(days: 30)
+            async let pred = StatsService.prediction()
 
-            let (t, w, m, ws, ms, wb, mb) = await (
+            let (t, w, m, ts, ws, ms, wb, mb, wc, mc, wr, mr, pr) = await (
                 todayCost, weekCost, monthCost,
-                (try? weekStats) ?? [], (try? monthStats) ?? [],
-                (try? weekBal) ?? [], (try? monthBal) ?? []
+                (try? todayStats) ?? [], (try? weekStats) ?? [], (try? monthStats) ?? [],
+                (try? weekBal) ?? [], (try? monthBal) ?? [],
+                (try? weekCode) ?? [], (try? monthCode) ?? [],
+                (try? weekRepos) ?? [], (try? monthRepos) ?? [],
+                pred
             )
 
-            // Aggregate provider breakdown from balance data
             var provTotals: [String: (name: String, cost: Double)] = [:]
             for s in wb {
                 let name = providerNames[s.providerId] ?? s.providerId
@@ -197,19 +205,30 @@ final class DataRefreshCoordinator: @unchecked Sendable {
                 provTotals[s.providerId] = (name, prev + s.spend)
             }
             let providers = provTotals.map { ProviderItem(providerId: $0.key, name: $0.value.name, cost: $0.value.cost) }.sorted { $0.cost > $1.cost }
+            let toolCosts = providers.map { NameCostItem(name: $0.name, cost: $0.cost) }
+            let todayCall = ts.first?.calls ?? 0
+            let todayTok = ts.first?.tokens ?? 0
+
+            func tp(_ s: [DailyStat]) -> [TrendPoint] { s.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: $0.calls, tokens: $0.tokens, netLines: $0.netLines) } }
+            func cp(_ c: [DailyCodeChange]) -> [TrendPoint] { c.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: Double($0.added), calls: 0, tokens: 0, netLines: $0.added - $0.deleted, added: $0.added, deleted: $0.deleted) } }
+            func bp(_ s: [(providerId: String, date: Date, spend: Double)]) -> [TrendPoint] { Dictionary(grouping: s, by: { $0.date }).compactMap { d, v in TrendPoint(ts: d.timeIntervalSince1970, value: v.reduce(0) { $0 + $1.spend }, calls: 0, tokens: 0, netLines: 0) } }
+            func rp(_ r: [RepoBreakdown]) -> [RepoItem] { r.map { RepoItem(name: $0.repo, cost: $0.cost, added: $0.added, deleted: $0.deleted, cpl: ($0.added + $0.deleted) > 0 ? $0.cost * 1000 / Double(($0.added + $0.deleted)) : 0) } }
 
             let base = DashboardSnapshot(
-                todayCost: t, weekCost: w, monthCost: m, subDaily: subAmort,
-                providerBreakdown: providers, updatedAt: Date()
+                todayCost: t, weekCost: w, monthCost: m, yesterdaySpend: 0, previousPeriodSpend: 0,
+                subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok,
+                providerBreakdown: providers, toolBreakdown: toolCosts, topRepos: rp(wr),
+                prediction: PredictionItem(monthProjected: pr.monthProjected, dailyRate: pr.dailyRate, daysRemaining: pr.daysRemaining, monthSoFar: pr.monthSoFar),
+                dailyStats: tp(ts), codeChanges: cp(wc), balanceDaily: bp(wb), updatedAt: Date()
             )
             await DashboardCache.write(timeRange: "today", json: base.jsonString())
 
-            var weekSnap = base; weekSnap.dailyStats = ws.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: $0.calls, tokens: $0.tokens, netLines: $0.netLines) }
-            weekSnap.balanceDaily = Dictionary(grouping: wb, by: { $0.date }).compactMap { date, vals in TrendPoint(ts: date.timeIntervalSince1970, value: vals.reduce(0) { $0 + $1.spend }, calls: 0, tokens: 0, netLines: 0) }
+            var weekSnap = base
+            weekSnap.dailyStats = tp(ws); weekSnap.codeChanges = cp(wc); weekSnap.balanceDaily = bp(wb); weekSnap.topRepos = rp(wr)
             await DashboardCache.write(timeRange: "week", json: weekSnap.jsonString())
 
-            var monthSnap = base; monthSnap.dailyStats = ms.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: $0.calls, tokens: $0.tokens, netLines: $0.netLines) }
-            monthSnap.balanceDaily = Dictionary(grouping: mb, by: { $0.date }).compactMap { date, vals in TrendPoint(ts: date.timeIntervalSince1970, value: vals.reduce(0) { $0 + $1.spend }, calls: 0, tokens: 0, netLines: 0) }
+            var monthSnap = base
+            monthSnap.dailyStats = tp(ms); monthSnap.codeChanges = cp(mc); monthSnap.balanceDaily = bp(mb); monthSnap.topRepos = rp(mr)
             await DashboardCache.write(timeRange: "30d", json: monthSnap.jsonString())
 
             await CloudSyncService.shared.syncFromCache()

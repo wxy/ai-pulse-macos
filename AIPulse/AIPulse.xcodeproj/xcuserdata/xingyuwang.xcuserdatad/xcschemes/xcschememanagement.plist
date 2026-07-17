@@ -14,7 +14,7 @@
 			<key>orderHint</key>
 			<integer>10</integer>
 		</dict>
-		<key>AIPulse.xcscheme_^#shared#^_</key>
+		<key>AIPulse_macOS.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>0</integer>
