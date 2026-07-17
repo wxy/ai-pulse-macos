@@ -33,23 +33,26 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
+enum AppState: Equatable {
+    case loading
+    case ready
+    case noData
+    case error
+}
+
 struct ContentView: View {
     @EnvironmentObject var cloudData: CloudDataService
-    @State private var hasData: Bool?
+    @State private var state: AppState = .loading
     @State private var splashVisible = true
 
     var body: some View {
         Group {
-            if splashVisible || hasData == nil {
+            if splashVisible || state == .loading {
                 // Splash screen — shown for at least 1.5s while checking iCloud
                 VStack(spacing: 16) {
                     Spacer()
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 18).fill(.white)
-                        RoundedRectangle(cornerRadius: 18).stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
-                        Text("AI").font(.system(size: 28, weight: .bold)).foregroundStyle(Color.marsGreen)
-                    }.frame(width: 80, height: 80)
-                    Text("AI Pulse")
+                    Image("Logo").resizable().frame(width: 80, height: 80).cornerRadius(18)
+                    Text(I18n.t("welcome.title"))
                         .font(.title2).fontWeight(.bold)
                     ProgressView(I18n.t("loading"))
                         .padding(.top, 4)
@@ -57,23 +60,32 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .background(Color(.systemBackground))
-            } else if hasData == true {
+            } else if case .ready = state {
                 DashboardView()
-            } else {
+            } else if case .noData = state {
                 WelcomeView()
+            } else if case .error = state {
+                CloudErrorView { await checkCloud(isRetry: true) }
             }
         }
         .task {
             try? await UNUserNotificationCenter.current().setBadgeCount(0)
-            do {
-                hasData = try await cloudData.hasData()
-                if hasData == true { try? await cloudData.fetchSnapshot() }
-            } catch {
-                hasData = false
-            }
+            await checkCloud()
             // Keep splash visible at least 1.5s for smooth transition
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             withAnimation { splashVisible = false }
+        }
+    }
+
+    private func checkCloud(isRetry: Bool = false) async {
+        if !isRetry { state = .loading }
+        do {
+            _ = try await cloudData.hasData()
+            state = .ready
+        } catch CloudError.noData {
+            state = .noData
+        } catch {
+            state = .error
         }
     }
 }

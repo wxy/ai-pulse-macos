@@ -6,11 +6,7 @@ struct WelcomeView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            ZStack {
-                RoundedRectangle(cornerRadius: 18).fill(.white)
-                RoundedRectangle(cornerRadius: 18).stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
-                Text("AI").font(.system(size: 28, weight: .bold)).foregroundStyle(Color.marsGreen)
-            }.frame(width: 80, height: 80)
+            Image("Logo").resizable().frame(width: 80, height: 80).cornerRadius(18)
 
             Text(I18n.t("welcome.title"))
                 .font(.largeTitle).fontWeight(.bold)

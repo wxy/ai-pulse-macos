@@ -21,6 +21,9 @@ enum I18n {
             "loading": "Checking iCloud…",
             "notify.title": "AI Pulse",
             "notify.body": "Today's AI spend: $%.2f",
+            "cloud.error.title": "Cannot Connect to iCloud",
+            "cloud.error.body": "Please check:\n• Network connection is available\n• You are signed in to iCloud in Settings\n• iCloud Drive is enabled",
+            "cloud.error.retry": "Retry",
         ],
         "zh-Hans": [
             "time.today": "今日", "time.week": "本周", "time.30d": "30 天",
@@ -40,6 +43,9 @@ enum I18n {
             "loading": "检查 iCloud…",
             "notify.title": "AI Pulse",
             "notify.body": "今日 AI 花费: $%.2f",
+            "cloud.error.title": "无法连接到 iCloud",
+            "cloud.error.body": "请检查：\n• 网络连接是否正常\n• 设置中已登录 iCloud\n• iCloud Drive 已开启",
+            "cloud.error.retry": "重试",
         ],
         "zh-Hant-TW": [
             "time.today": "今日", "time.week": "本週", "time.30d": "30 天",
@@ -59,6 +65,9 @@ enum I18n {
             "loading": "檢查 iCloud…",
             "notify.title": "AI Pulse",
             "notify.body": "今日 AI 花費: $%.2f",
+            "cloud.error.title": "無法連接到 iCloud",
+            "cloud.error.body": "請檢查：\n• 網路連線是否正常\n• 設定中已登入 iCloud\n• iCloud Drive 已開啟",
+            "cloud.error.retry": "重試",
         ],
         "zh-Hant-HK": [
             "time.today": "今日", "time.week": "本週", "time.30d": "30 天",
@@ -78,6 +87,9 @@ enum I18n {
             "loading": "檢查 iCloud…",
             "notify.title": "AI Pulse",
             "notify.body": "今日 AI 花費: $%.2f",
+            "cloud.error.title": "無法連接到 iCloud",
+            "cloud.error.body": "請檢查：\n• 網絡連線是否正常\n• 設定中已登入 iCloud\n• iCloud Drive 已開啟",
+            "cloud.error.retry": "重試",
         ],
         "ja": [
             "time.today": "今日", "time.week": "今週", "time.30d": "30日",
@@ -97,6 +109,9 @@ enum I18n {
             "loading": "iCloudを確認中…",
             "notify.title": "AI Pulse",
             "notify.body": "今日のAI費用: $%.2f",
+            "cloud.error.title": "iCloudに接続できません",
+            "cloud.error.body": "以下をご確認ください：\n• ネットワーク接続が有効であること\n• 設定でiCloudにサインインしていること\n• iCloud Driveが有効であること",
+            "cloud.error.retry": "再試行",
         ],
         "ko": [
             "time.today": "오늘", "time.week": "이번 주", "time.30d": "30일",
@@ -116,6 +131,9 @@ enum I18n {
             "loading": "iCloud 확인 중…",
             "notify.title": "AI Pulse",
             "notify.body": "오늘의 AI 비용: $%.2f",
+            "cloud.error.title": "iCloud에 연결할 수 없음",
+            "cloud.error.body": "다음을 확인하세요:\n• 네트워크 연결이 가능한지\n• 설정에서 iCloud에 로그인했는지\n• iCloud Drive가 활성화되어 있는지",
+            "cloud.error.retry": "재시도",
         ],
         "de": [
             "time.today": "Heute", "time.week": "Woche", "time.30d": "30 Tage",
@@ -135,6 +153,9 @@ enum I18n {
             "loading": "iCloud wird überprüft…",
             "notify.title": "AI Pulse",
             "notify.body": "Heutige KI-Kosten: $%.2f",
+            "cloud.error.title": "Keine Verbindung zu iCloud",
+            "cloud.error.body": "Bitte prüfen:\n• Netzwerkverbindung verfügbar\n• In Einstellungen bei iCloud angemeldet\n• iCloud Drive aktiviert",
+            "cloud.error.retry": "Wiederholen",
         ],
         "fr": [
             "time.today": "Aujourd'hui", "time.week": "Semaine", "time.30d": "30 jours",
@@ -154,6 +175,9 @@ enum I18n {
             "loading": "Vérification iCloud…",
             "notify.title": "AI Pulse",
             "notify.body": "Coût IA du jour: $%.2f",
+            "cloud.error.title": "Impossible de se connecter à iCloud",
+            "cloud.error.body": "Veuillez vérifier :\n• Connexion réseau disponible\n• Vous êtes connecté à iCloud dans Réglages\n• iCloud Drive est activé",
+            "cloud.error.retry": "Réessayer",
         ],
         "es": [
             "time.today": "Hoy", "time.week": "Semana", "time.30d": "30 días",
@@ -173,6 +197,9 @@ enum I18n {
             "loading": "Verificando iCloud…",
             "notify.title": "AI Pulse",
             "notify.body": "Coste IA de hoy: $%.2f",
+            "cloud.error.title": "No se puede conectar a iCloud",
+            "cloud.error.body": "Compruebe:\n• Conexión de red disponible\n• Ha iniciado sesión en iCloud en Ajustes\n• iCloud Drive está activado",
+            "cloud.error.retry": "Reintentar",
         ],
         "pt-BR": [
             "time.today": "Hoje", "time.week": "Semana", "time.30d": "30 dias",
@@ -192,6 +219,9 @@ enum I18n {
             "loading": "Verificando iCloud…",
             "notify.title": "AI Pulse",
             "notify.body": "Custo IA de hoje: $%.2f",
+            "cloud.error.title": "Não foi possível conectar ao iCloud",
+            "cloud.error.body": "Verifique:\n• Conexão de rede disponível\n• Sessão iniciada no iCloud nos Ajustes\n• iCloud Drive ativado",
+            "cloud.error.retry": "Tentar novamente",
         ],
     ]
 
