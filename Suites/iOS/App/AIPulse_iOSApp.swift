@@ -20,6 +20,7 @@ struct AIPulse_iOSApp: App {
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        UserDefaults.standard.register(defaults: ["coin_sound_enabled": true])
         application.registerForRemoteNotifications()
         return true
     }
@@ -69,6 +70,9 @@ struct ContentView: View {
             } else if case .error = state {
                 CloudErrorView { await checkCloud(isRetry: true) }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            Task { await NotificationService.refreshSoundSetting() }
         }
         .task {
             try? await UNUserNotificationCenter.current().setBadgeCount(0)

@@ -13,16 +13,20 @@ final class NotificationService: NSObject {
     private static var audioPlayer: AVAudioPlayer?
     private static var lastCoinSoundTime: Date = .distantPast
 
+    /// Whether the user has notification sounds enabled in iOS Settings.
+    /// Defaults to true so we play the coin sound until we know the real setting.
+    static var notificationSoundEnabled = true
+
     private override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
     }
 
     /// Play coin sound when app is in foreground and new data arrives.
-    /// Throttled to once per minute to match macOS behavior.
+    /// Throttled to once per minute. Respects the iOS notification sound setting.
     static func playCoinSound() {
-        guard UserDefaults.standard.bool(forKey: "coin_sound_enabled") else {
-            log.debug("playCoinSound: skipped — coin_sound_enabled is false")
+        guard notificationSoundEnabled else {
+            log.debug("playCoinSound: skipped — notification sound disabled in Settings")
             return
         }
         let now = Date()
@@ -47,18 +51,28 @@ final class NotificationService: NSObject {
         log.info("playCoinSound: playing (duration: \(String(format: "%.2f", player.duration))s)")
     }
 
+    /// Refresh the cached notification sound setting.
+    static func refreshSoundSetting() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        let enabled = settings.soundSetting == .enabled
+        if enabled != notificationSoundEnabled {
+            log.info("refreshSoundSetting: sound \(enabled ? "enabled" : "disabled")")
+        }
+        notificationSoundEnabled = enabled
+    }
+
     /// Request notification permission and register CloudKit subscription.
     func setup() async {
-        // Request notification permission
         do {
             let granted = try await UNUserNotificationCenter.current()
-                .requestAuthorization(options: [.alert, .badge])
+                .requestAuthorization(options: [.alert, .badge, .sound])
             if granted {
                 await registerSubscription()
             }
         } catch {
             print("[Notify] permission error: \(error)")
         }
+        await NotificationService.refreshSoundSetting()
     }
 
     private var lastNotifiedCost: Double = 0
@@ -120,7 +134,7 @@ final class NotificationService: NSObject {
 extension NotificationService: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        // Show banner + sound even when app is in foreground
+        // Show banner even when app is in foreground (no system sound — we play coin.mp3)
         [.banner]
     }
 }

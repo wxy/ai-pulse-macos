@@ -200,7 +200,7 @@ struct DashboardView: View {
                 if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(Color.marsGreen).frame(width: 6, height: 6); Text("\(I18n.t("stat.sub")) \(Int(subTotal / max(t, 0.01) * 100))%").font(.caption2) } }
             }
         }
-        .frame(width: 80)
+        .frame(width: 90)
     }
 
     @ViewBuilder
@@ -231,7 +231,7 @@ struct DashboardView: View {
                 }
             }
         }
-        .frame(width: 80)
+        .frame(width: 90)
     }
 
     private var noseStatCards: some View {
