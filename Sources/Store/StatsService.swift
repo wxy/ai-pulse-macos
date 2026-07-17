@@ -500,8 +500,6 @@ enum StatsService {
         let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart)!
         let rangeStartMs = Int64(rangeStart.timeIntervalSince1970 * 1000)
         let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
-        let weekMs = Int64(cal.date(byAdding: .day, value: -6, to: todayStart)!.timeIntervalSince1970 * 1000)
-        let monthMs = Int64(cal.date(byAdding: .day, value: -29, to: todayStart)!.timeIntervalSince1970 * 1000)
 
         async let todayCombined = StatsService.combinedSpend(sinceMs: todayStartMs)
         async let stats = StatsService.dailyStats(days: days)
