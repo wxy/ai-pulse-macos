@@ -134,7 +134,6 @@ struct DashboardView: View {
                     }
                     .offset(x: 10, y: -60)
                 }
-                .padding(.top, 28).padding(.horizontal, 14).padding(.bottom, 14)
 
                 // ── Trend section (body) ──
                 if timeRange != .today {
@@ -201,6 +200,7 @@ struct DashboardView: View {
                 if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(Color.marsGreen).frame(width: 6, height: 6); Text("\(I18n.t("stat.sub")) \(Int(subTotal / max(t, 0.01) * 100))%").font(.caption2) } }
             }
         }
+        .frame(width: 80)
     }
 
     @ViewBuilder
@@ -231,6 +231,7 @@ struct DashboardView: View {
                 }
             }
         }
+        .frame(width: 80)
     }
 
     private var noseStatCards: some View {

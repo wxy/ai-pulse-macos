@@ -1,6 +1,7 @@
 import CloudKit
 import UserNotifications
 import AVFoundation
+import os
 
 /// Manages CloudKit subscription push + local notifications.
 @MainActor
@@ -8,6 +9,7 @@ final class NotificationService: NSObject {
     static let shared = NotificationService()
 
     private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
+    private static let log = Logger(subsystem: "com.wxy.aipulse", category: "Notify")
     private static var audioPlayer: AVAudioPlayer?
     private static var lastCoinSoundTime: Date = .distantPast
 
@@ -19,14 +21,30 @@ final class NotificationService: NSObject {
     /// Play coin sound when app is in foreground and new data arrives.
     /// Throttled to once per minute to match macOS behavior.
     static func playCoinSound() {
-        guard UserDefaults.standard.bool(forKey: "coin_sound_enabled") else { return }
+        guard UserDefaults.standard.bool(forKey: "coin_sound_enabled") else {
+            log.debug("playCoinSound: skipped — coin_sound_enabled is false")
+            return
+        }
         let now = Date()
-        guard now.timeIntervalSince(lastCoinSoundTime) >= 60 else { return }
+        let elapsed = now.timeIntervalSince(lastCoinSoundTime)
+        guard elapsed >= 60 else {
+            log.debug("playCoinSound: throttled — last was \(String(format: "%.0f", elapsed))s ago")
+            return
+        }
         lastCoinSoundTime = now
 
-        guard let url = Bundle.main.url(forResource: "coin", withExtension: "mp3") else { return }
-        audioPlayer = try? AVAudioPlayer(contentsOf: url)
-        audioPlayer?.play()
+        guard let url = Bundle.main.url(forResource: "coin", withExtension: "mp3") else {
+            log.error("playCoinSound: coin.mp3 not found in bundle")
+            return
+        }
+        log.debug("playCoinSound: loading \(url.lastPathComponent)")
+        guard let player = try? AVAudioPlayer(contentsOf: url) else {
+            log.error("playCoinSound: AVAudioPlayer init failed")
+            return
+        }
+        audioPlayer = player
+        player.play()
+        log.info("playCoinSound: playing (duration: \(String(format: "%.2f", player.duration))s)")
     }
 
     /// Request notification permission and register CloudKit subscription.
@@ -63,6 +81,7 @@ final class NotificationService: NSObject {
 
     /// Handle remote push notification — refresh + coin sound + notify if changed.
     func didReceiveRemoteNotification() {
+        Self.log.info("didReceiveRemoteNotification: push arrived, playing coin sound")
         NotificationService.playCoinSound()
         Task {
             try? await CloudDataService.shared.fetchSnapshot()
