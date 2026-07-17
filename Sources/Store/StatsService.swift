@@ -580,7 +580,7 @@ enum StatsService {
         let todayTok = st.reduce(0) { $0 + $1.tokens }
 
         return DashboardSnapshot(
-            todayCost: tc, weekCost: wc, monthCost: mc,
+            todayCost: tc, weekCost: weekCost, monthCost: monthCost,
             yesterdaySpend: 0, previousPeriodSpend: 0,
             subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok,
             providerBreakdown: providers, toolBreakdown: toolCosts, topRepos: repoItems,
