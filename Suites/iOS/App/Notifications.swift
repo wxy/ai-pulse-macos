@@ -11,10 +11,9 @@ final class NotificationService: NSObject {
     private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
     private static let log = Logger(subsystem: "com.wxy.aipulse", category: "Notify")
     private static var audioPlayer: AVAudioPlayer?
-    private static var lastCoinSoundTime: Date = .distantPast
+    private static var lastSoundTime: Date = .distantPast
 
     /// Whether the user has notification sounds enabled in iOS Settings.
-    /// Defaults to true so we play the coin sound until we know the real setting.
     static var notificationSoundEnabled = true
 
     private override init() {
@@ -22,33 +21,40 @@ final class NotificationService: NSObject {
         UNUserNotificationCenter.current().delegate = self
     }
 
-    /// Play coin sound when app is in foreground and new data arrives.
-    /// Throttled to once per minute. Respects the iOS notification sound setting.
-    static func playCoinSound() {
+    // MARK: - Sound playback
+
+    /// Play coin sound scaled to the spend delta. Respects notification setting + 60s throttle.
+    /// - Parameter delta: absolute cost change since last known value.
+    static func playCoinSound(for delta: Double) {
         guard notificationSoundEnabled else {
             log.debug("playCoinSound: skipped — notification sound disabled in Settings")
             return
         }
+        guard delta > 0.01 else {
+            log.debug("playCoinSound: skipped — delta \(String(format: "%.3f", delta)) too small")
+            return
+        }
         let now = Date()
-        let elapsed = now.timeIntervalSince(lastCoinSoundTime)
+        let elapsed = now.timeIntervalSince(lastSoundTime)
         guard elapsed >= 60 else {
             log.debug("playCoinSound: throttled — last was \(String(format: "%.0f", elapsed))s ago")
             return
         }
-        lastCoinSoundTime = now
+        lastSoundTime = now
 
-        guard let url = Bundle.main.url(forResource: "coin", withExtension: "mp3") else {
-            log.error("playCoinSound: coin.mp3 not found in bundle")
+        let name = delta >= 1.00 ? "coins" : "coin"
+        guard let url = Bundle.main.url(forResource: name, withExtension: "mp3") else {
+            log.error("playCoinSound: \(name).mp3 not found in bundle")
             return
         }
-        log.debug("playCoinSound: loading \(url.lastPathComponent)")
+        log.debug("playCoinSound: loading \(url.lastPathComponent) (delta: \(String(format: "%.2f", delta)))")
         guard let player = try? AVAudioPlayer(contentsOf: url) else {
-            log.error("playCoinSound: AVAudioPlayer init failed")
+            log.error("playCoinSound: AVAudioPlayer init failed for \(name).mp3")
             return
         }
         audioPlayer = player
         player.play()
-        log.info("playCoinSound: playing (duration: \(String(format: "%.2f", player.duration))s)")
+        log.info("playCoinSound: playing \(name).mp3 (duration: \(String(format: "%.2f", player.duration))s)")
     }
 
     /// Refresh the cached notification sound setting.
@@ -60,6 +66,8 @@ final class NotificationService: NSObject {
         }
         notificationSoundEnabled = enabled
     }
+
+    // MARK: - Setup
 
     /// Request notification permission and register CloudKit subscription.
     func setup() async {
@@ -75,39 +83,41 @@ final class NotificationService: NSObject {
         await NotificationService.refreshSoundSetting()
     }
 
-    private var lastNotifiedCost: Double = 0
+    // MARK: - Push handling
 
-    /// Send local notification only when today's cost actually changes.
-    private func maybeNotify() {
-        guard let today = CloudDataService.shared.snapshot?.todayCost,
-              today > 0.001,
-              abs(today - lastNotifiedCost) > 0.01 else { return }
-        lastNotifiedCost = today
+    private var lastKnownCost: Double = 0
 
-        let content = UNMutableNotificationContent()
-        content.title = I18n.t("notify.title")
-        content.body = String(format: I18n.t("notify.body"), today)
-        content.sound = nil       // silent — coin sound played by playCoinSound()
-        content.badge = 1
-        content.interruptionLevel = .timeSensitive
-        UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: "cost-update", content: content, trigger: nil))
-    }
-
-    /// Handle remote push notification — refresh + coin sound + notify if changed.
+    /// Handle remote push: fetch → compare cost delta → play sound if changed → notify.
     func didReceiveRemoteNotification() {
-        Self.log.info("didReceiveRemoteNotification: push arrived, playing coin sound")
-        NotificationService.playCoinSound()
+        Self.log.info("didReceiveRemoteNotification: push arrived")
+        let oldCost = CloudDataService.shared.snapshot?.todayCost ?? lastKnownCost
         Task {
             try? await CloudDataService.shared.fetchSnapshot()
-            maybeNotify()
+            let newCost = CloudDataService.shared.snapshot?.todayCost ?? 0
+            let delta = abs(newCost - oldCost)
+
+            if delta > 0.01 {
+                NotificationService.playCoinSound(for: delta)
+            }
+
+            if newCost > 0.001, delta > 0.01 {
+                lastKnownCost = newCost
+
+                let content = UNMutableNotificationContent()
+                content.title = I18n.t("notify.title")
+                content.body = String(format: I18n.t("notify.body"), newCost)
+                content.sound = nil       // silent — coin sound already played above
+                content.badge = 1
+                content.interruptionLevel = .timeSensitive
+                try? await UNUserNotificationCenter.current().add(
+                    UNNotificationRequest(identifier: "cost-update", content: content, trigger: nil))
+            }
         }
     }
 
     // MARK: - Private
 
     private func registerSubscription() async {
-        // Check if already registered
         let subs = try? await database.allSubscriptions()
         if subs?.contains(where: { $0.subscriptionID == "dashboard-changes" }) == true { return }
 
@@ -135,7 +145,6 @@ final class NotificationService: NSObject {
 extension NotificationService: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        // Show banner even when app is in foreground (no system sound — we play coin.mp3)
         [.banner]
     }
 }
