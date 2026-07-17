@@ -11,11 +11,6 @@ struct SettingsView: View {
     init(initialTab: String = "General") {
         _selectedTab = State(initialValue: initialTab)
     }
-    let tabs: [(String, String)] = [
-        ("General", "gear"), ("Integrations", "square.grid.2x2"), ("Repos", "folder"),
-        ("About", "info.circle"),
-    ]
-
     var langBinding: Binding<String> {
         Binding(get: { lang }, set: { v in lang = v; I18n.setLang(v) })
     }
@@ -31,33 +26,20 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Sidebar — native macOS style
-            VStack(spacing: 0) {
-                ForEach(tabs, id: \.0) { (name, icon) in
-                    HStack(spacing: 8) {
-                        Image(systemName: icon)
-                            .frame(width: 16)
-                            .foregroundColor(selectedTab == name ? .accentColor : .secondary)
-                        Text(labelFor(name))
-                            .font(.system(size: 13, weight: selectedTab == name ? .semibold : .regular))
-                            .foregroundColor(selectedTab == name ? .primary : .secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(selectedTab == name
-                        ? Color(nsColor: .quaternarySystemFill)
-                        : .clear)
-                    .cornerRadius(5).padding(.horizontal, 8)
-                    .contentShape(Rectangle())
-                    .onTapGesture { selectedTab = name }
-                }
-                Spacer()
+        NavigationSplitView {
+            List(selection: $selectedTab) {
+                Label(labelFor("General"), systemImage: "gear")
+                    .tag("General")
+                Label(labelFor("Integrations"), systemImage: "square.grid.2x2")
+                    .tag("Integrations")
+                Label(labelFor("Repos"), systemImage: "folder")
+                    .tag("Repos")
+                Label(labelFor("About"), systemImage: "info.circle")
+                    .tag("About")
             }
-            .frame(width: 184).padding(.top, 12)
-            .background(Color(nsColor: .controlBackgroundColor))
-
-            // Content
+            .listStyle(.sidebar)
+            .frame(minWidth: 160)
+        } detail: {
             Group {
                 switch selectedTab {
                 case "General":         GeneralTab(lang: langBinding).id("general.\(lang)")
