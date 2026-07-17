@@ -323,6 +323,16 @@ struct DashboardView: View {
 
 enum TimeRange: Hashable {
     case today, week, days30
-    var days: Int { switch self { case .today: 1; case .week: 7; case .days30: 30 } }
+    var days: Int {
+        switch self {
+        case .today: return 1
+        case .week:
+            let cal = Calendar.current
+            var monCal = cal; monCal.firstWeekday = 2
+            let monday = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            return cal.dateComponents([.day], from: monday, to: cal.startOfDay(for: Date())).day! + 1
+        case .days30: return 30
+        }
+    }
     var label: String { switch self { case .today: "Today"; case .week: "This Week"; case .days30: "30 Days" } }
 }
