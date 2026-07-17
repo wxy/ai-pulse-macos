@@ -489,4 +489,101 @@ enum StatsService {
             throw error
         }
     }
+
+    // MARK: - Full snapshot builder (shared by DashboardView and Phase 4 timer)
+
+    /// Computes everything needed for a complete DashboardSnapshot for `days`.
+    /// Used by both live Dashboard loading and background cache refresh.
+    static func dashboardSnapshot(days: Int) async -> DashboardSnapshot {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart)!
+        let rangeStartMs = Int64(rangeStart.timeIntervalSince1970 * 1000)
+        let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
+        let weekMs = Int64(cal.date(byAdding: .day, value: -6, to: todayStart)!.timeIntervalSince1970 * 1000)
+        let monthMs = Int64(cal.date(byAdding: .day, value: -29, to: todayStart)!.timeIntervalSince1970 * 1000)
+
+        async let todayCost = StatsService.combinedSpend(sinceMs: todayStartMs)
+        async let weekCost = StatsService.combinedSpend(sinceMs: weekMs)
+        async let monthCost = StatsService.combinedSpend(sinceMs: monthMs)
+        async let stats = StatsService.dailyStats(days: days)
+        async let bal = StatsService.balanceDailySpend(days: days, sinceMs: rangeStartMs)
+        async let code = StatsService.dailyCodeChanges(days: days)
+        async let repos = StatsService.repoBreakdown(days: days)
+        async let pred = StatsService.prediction()
+
+        let (tc, wc, mc, st, bl, cd, rp, pr) = await (
+            todayCost, weekCost, monthCost,
+            (try? stats) ?? [], (try? bal) ?? [], (try? code) ?? [],
+            (try? repos) ?? [], pred
+        )
+
+        let subAmort = subscriptionDailyAmortization()
+
+        // Provider breakdown
+        let names = Dictionary(uniqueKeysWithValues: IntegrationRegistry.all.map { ($0.id, $0.displayName) })
+        var provTotals: [String: (name: String, cost: Double)] = [:]
+        for s in bl {
+            let name = names[s.providerId] ?? s.providerId
+            let prev = provTotals[s.providerId]?.cost ?? 0
+            provTotals[s.providerId] = (name, prev + s.spend)
+        }
+        let providers = provTotals.map { ProviderItem(providerId: $0.key, name: $0.value.name, cost: $0.value.cost) }.sorted { $0.cost > $1.cost }
+
+        // Tool costs from usage_event source aggregation
+        let toolStartMs = rangeStartMs
+        let toolRows: [GRDB.Row] = (try? await AppDatabase.shared.read { db in
+            try GRDB.Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [toolStartMs])
+        }) ?? []
+        var toolMap: [String: Double] = [:]
+        for r in toolRows {
+            if let s: String = r["s"], let c: Double = r["c"], c > 0 { toolMap[s] = c }
+        }
+        let toolTotal = toolMap.reduce(0.0) { $0 + $1.value }
+        let apiSpend = bl.reduce(0.0) { $0 + $1.spend }
+        let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
+        let rawTools = toolMap.compactMap { (key, cost) -> (String, Double)? in
+            guard cost * scale > 0.001 else { return nil }
+            let label: String
+            switch key {
+            case "claude-code": label = "Claude Code"
+            case "aider":       label = "aider"
+            case "cursor":      label = "Cursor"
+            case "copilot":     label = "Copilot"
+            case "windsurf":    label = "Windsurf"
+            default:            label = key
+            }
+            return (label, cost * scale)
+        }.sorted { $0.1 > $1.1 }
+        let toolCosts: [NameCostItem] = rawTools.map { NameCostItem(name: $0.0, cost: $0.1) }
+
+        // Repos with subscription scaling
+        let logTotal = rp.reduce(0.0) { $0 + $1.cost }
+        let subTotal = subAmort * Double(days)
+        let repoScale = toolTotal > 0 ? apiSpend / logTotal : 1.0
+        let subScale = logTotal > 0 ? subTotal / logTotal : 0.0
+        let repoItems: [RepoItem] = rp.map { r in
+            let scaledCost = r.cost * repoScale + r.cost * subScale
+            return RepoItem(name: r.repo, cost: scaledCost, added: r.added, deleted: r.deleted,
+                            cpl: (r.added + r.deleted) > 0 ? scaledCost * 1000 / Double(r.added + r.deleted) : 0)
+        }
+
+        // Daily/balance trend points
+        let fmt = ISO8601DateFormatter(); fmt.formatOptions = [.withFullDate]
+        let dailyPts = st.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: $0.calls, tokens: $0.tokens, netLines: $0.netLines) }
+        let codePts = cd.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: Double($0.added), calls: 0, tokens: 0, netLines: $0.added - $0.deleted, added: $0.added, deleted: $0.deleted) }
+        let balPts = Dictionary(grouping: bl, by: { $0.date }).compactMap { d, v in TrendPoint(ts: d.timeIntervalSince1970, value: v.reduce(0) { $0 + $1.spend }, calls: 0, tokens: 0, netLines: 0) }
+        let todayCall = st.reduce(0) { $0 + $1.calls }
+        let todayTok = st.reduce(0) { $0 + $1.tokens }
+
+        return DashboardSnapshot(
+            todayCost: tc, weekCost: wc, monthCost: mc,
+            yesterdaySpend: 0, previousPeriodSpend: 0,
+            subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok,
+            providerBreakdown: providers, toolBreakdown: toolCosts, topRepos: repoItems,
+            prediction: PredictionItem(monthProjected: pr.monthProjected, dailyRate: pr.dailyRate, daysRemaining: pr.daysRemaining, monthSoFar: pr.monthSoFar),
+            dailyStats: dailyPts, codeChanges: codePts, balanceDaily: balPts,
+            updatedAt: Date()
+        )
+    }
 }
