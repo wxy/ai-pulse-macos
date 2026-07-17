@@ -258,6 +258,8 @@ struct DashboardView: View {
         .task {
             ApiPoller.shared.pollAll()
             await load()
+            // Sync to iCloud after Dashboard opens with fresh data
+            triggerCloudSync()
         }
         .onChange(of: timeRange) { _, _ in
             barProgress = 0  // collapse bars immediately, avoid stale-data render
@@ -1582,6 +1584,55 @@ struct DashboardView: View {
         .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.2), value: barProgress)
     }
 
+    /// Sync the cached dashboard snapshot to iCloud, throttled to 5 min.
+    private func triggerCloudSync() {
+        let syncKey = "lastCloudSyncTime"
+        let lastSync = UserDefaults.standard.double(forKey: syncKey)
+        let syncNow = Date().timeIntervalSince1970
+        guard syncNow - lastSync >= 300 else { return }
+        UserDefaults.standard.set(syncNow, forKey: syncKey)
+
+        Task.detached(priority: .background) {
+            await CloudSyncService.shared.syncFromCache()
+        }
+    }
+
+    /// Apply a cached snapshot to @State variables, skipping all DB queries.
+    private func applySnapshot(_ snap: DashboardSnapshot) {
+        todayCombinedSpend = snap.todayCost
+        todayCalls = snap.todayCalls
+        todayTokens = snap.todayTokens
+        yesterdaySpend = snap.yesterdaySpend
+        previousPeriodSpend = snap.previousPeriodSpend
+        toolCostBreakdown = snap.toolBreakdown.map { (name: $0.name, cost: $0.cost) }
+        balanceSpend = snap.providerBreakdown.map { (providerId: $0.providerId, name: $0.name, spend: $0.cost) }
+        dailyBalanceSpend = snap.balanceDaily.reduce(into: [Date: Double]()) { map, p in
+            map[Date(timeIntervalSince1970: p.ts)] = p.value
+        }
+        dailyStats = snap.dailyStats.map { p in
+            DailyStat(date: Date(timeIntervalSince1970: p.ts), cost: p.value, calls: p.calls, tokens: p.tokens, netLines: p.netLines, costPerLine: 0)
+        }
+        codeChanges = snap.codeChanges.map { p in
+            DailyCodeChange(date: Date(timeIntervalSince1970: p.ts), added: p.added, deleted: p.deleted)
+        }
+        repos = snap.topRepos.map { RepoBreakdown(repo: $0.name, cost: $0.cost, added: $0.added, deleted: $0.deleted, apiSources: [], subscriptionSources: []) }
+        prediction = snap.prediction.map { Prediction(monthProjected: $0.monthProjected, dailyRate: $0.dailyRate, daysRemaining: $0.daysRemaining, monthSoFar: $0.monthSoFar) }
+        providerCosts = snap.providerBreakdown.map { ProviderDailyCost(date: Date(), providerId: $0.providerId, cost: $0.cost) }
+        paddedChanges = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
+        isDemoMode = false
+        loadedTimeRange = timeRange
+
+        // Same entry animation as the full load path
+        if barProgress < 0.5 {
+            barProgress = 0
+            DispatchQueue.main.async {
+                withAnimation(.spring(response: 0.65, dampingFraction: 0.7)) {
+                    self.barProgress = 1
+                }
+            }
+        }
+    }
+
     func load() async {
         // Bump generation so only the latest load() applies its results.
         // When tab-switching or rapid refresh triggers two concurrent loads,
@@ -1589,10 +1640,16 @@ struct DashboardView: View {
         loadGeneration += 1
         let myGen = loadGeneration
 
+        // ── Cache check — if recent snapshot exists, apply instantly ──
+        if let cached = await DashboardCache.read(timeRange: timeRange.label, maxAge: 30) {
+            guard myGen == loadGeneration else { return }
+            applySnapshot(cached)
+            Logger.debug("Dashboard: loaded from cache (\(timeRange.label))")
+            return
+        }
+
         // ── Synchronous prep ──
         let currentTimeRange = timeRange  // capture before async closures for sendability
-        let newEditorMappings = EditorDetector.certainMappings()
-        let cal = Calendar.current
 
         // ── Demo mode: auto-activates when no integrations configured ──
         let demoActive = DemoData.isActive
@@ -1620,181 +1677,15 @@ struct DashboardView: View {
             }
             return
         }
-        isDemoMode = false
-        let todayStart = cal.startOfDay(for: Date())
-        let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
-        let rangeStartMs = Int64(chartStart.timeIntervalSince1970 * 1000)
+        
+        // ── Real data: use shared StatsService builder ──
+        let snap = await StatsService.dashboardSnapshot(days: currentTimeRange.days)
 
-        // ── Phase 1a: fire all independent async queries in parallel ──
-        async let rawDailyStats       = StatsService.dailyStats(days: currentTimeRange.days)
-        async let rawProviderCosts    = StatsService.providerDailyCosts(days: currentTimeRange.days)
-        async let rawCodeChanges      = StatsService.dailyCodeChanges(days: currentTimeRange.days)
-        async let rawRepos            = StatsService.repoBreakdown(days: currentTimeRange.days, editorMappings: newEditorMappings)
-        async let rawPrediction       = StatsService.prediction()
-        async let rawSpend            = StatsService.balanceDailySpend(days: currentTimeRange.days, sinceMs: rangeStartMs)
-        async let rawTodayCombined    = StatsService.combinedSpend(sinceMs: todayStartMs)
-
-        // Conditional combined-spend queries (return 0 when not applicable).
-        // Compare timeRange outside async closures to avoid Sendable warnings.
-        let isToday = currentTimeRange == .today
-        let isDays30 = currentTimeRange == .days30
-
-        async let rawYesterdaySpend: Double = {
-            guard isToday else { return 0 }
-            if let y = cal.date(byAdding: .day, value: -1, to: todayStart) {
-                return await StatsService.combinedSpend(sinceMs: Int64(y.timeIntervalSince1970 * 1000))
-            }
-            return 0
-        }()
-
-        async let rawPreviousPeriodSpend: Double = {
-            guard isDays30 else { return 0 }
-            if let curr = cal.date(byAdding: .day, value: -29, to: todayStart),
-               let prev = cal.date(byAdding: .day, value: -59, to: todayStart) {
-                let prev60 = await StatsService.combinedSpend(sinceMs: Int64(prev.timeIntervalSince1970 * 1000))
-                let curr30 = await StatsService.combinedSpend(sinceMs: Int64(curr.timeIntervalSince1970 * 1000))
-                return prev60 - curr30
-            }
-            return 0
-        }()
-
-        // ── Phase 1b: await all parallel results ──
-        let newLoadError: String?
-        let newDailyStats: [DailyStat]
-        do {
-            newDailyStats = padStats(try await rawDailyStats, days: timeRange.days)
-            newLoadError = nil
-        } catch { newLoadError = error.localizedDescription; newDailyStats = [] }
-
-        let newProviderCosts        = (try? await rawProviderCosts) ?? []
-        let newCodeChanges          = (try? await rawCodeChanges) ?? []
-        let newRepos                = (try? await rawRepos) ?? []
-        let newPrediction           = await rawPrediction
-        let newTodayCombinedSpend   = await rawTodayCombined
-        let newYesterdaySpend       = await rawYesterdaySpend
-        let newPreviousPeriodSpend  = await rawPreviousPeriodSpend
-
-        // Derived chart data (sync, depends on above)
-        let newPaddedChanges = Self.padChanges(newCodeChanges, chartStart: chartStart, chartDays: chartDays)
-        let newSubDaily = subDailyData()
-        let newApiDaily = apiDailyData()
-
-        // Balance spend aggregation (sync processing of rawSpend)
-        let rawSpendResolved = (try? await rawSpend) ?? []
-        var dbs = [Date: Double]()
-        for s in rawSpendResolved { dbs[s.date, default: 0] += s.spend }
-        let newDailyBalanceSpend = dbs
-
-        var spendMap: [(String, Double)] = []
-        for s in rawSpendResolved {
-            if let idx = spendMap.firstIndex(where: { $0.0 == s.providerId }) {
-                spendMap[idx].1 += s.spend
-            } else {
-                spendMap.append((s.providerId, s.spend))
-            }
-        }
-        let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
-            if case .apiKey(let pid) = cs.kind { return pid }; return nil
-        })
-        let newBalanceSpend = spendMap.compactMap { (pid, spend) -> (String, String, Double)? in
-            guard enabledB.contains(pid), spend > 0.001 else { return nil }
-            let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
-            return (pid, name, spend)
-        }.sorted(by: { $0.2 > $1.2 })
-
-        var dailyAgg: [String: (date: Date, label: String, cost: Double)] = [:]
-        for s in rawSpendResolved {
-            guard let name = IntegrationRegistry.all.first(where: { $0.id == s.providerId })?.displayName else { continue }
-            let key = "\(Int(s.date.timeIntervalSince1970))-\(name)"
-            if let existing = dailyAgg[key] {
-                dailyAgg[key] = (s.date, name, existing.cost + s.spend)
-            } else {
-                dailyAgg[key] = (s.date, name, s.spend)
-            }
-        }
-        let newBalanceDaily = dailyAgg.values.map { ChartDataPoint(date: $0.date, label: $0.label, cost: $0.cost) }
-
-        // Today-specific metrics (sync, depends on newDailyStats)
-        let newTodayCalls: Int, newTodayTokens: Int
-        if timeRange == .today, let today = newDailyStats.first {
-            newTodayCalls = today.calls; newTodayTokens = today.tokens
-        } else { newTodayCalls = 0; newTodayTokens = 0 }
-
-        // ── Phase 1c: tool cost & usage queries (depend on balance data) ──
-        let toolStartMs = Int64(chartStart.timeIntervalSince1970 * 1000)
-        async let rawToolData: [(String, Double)] = AppDatabase.shared.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [toolStartMs])
-            return rows.compactMap { r in
-                guard let s: String = r["s"], let c: Double = r["c"], c > 0 else { return nil }
-                return (s, c)
-            }
-        }
-
-        async let rawUsageData: [String: (Double, String)] = AppDatabase.shared.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT id, usage_percent, usage_limit_status FROM cost_source WHERE usage_percent IS NOT NULL")
-            var map: [String: (Double, String)] = [:]
-            for r in rows {
-                if let id: String = r["id"], let pct: Double = r["usage_percent"] {
-                    map[id] = (pct, r["usage_limit_status"] ?? "")
-                }
-            }
-            return map
-        }
-
-        // ── Phase 1d: process tool data ──
-        let newToolCostBreakdown: [(name: String, cost: Double)]
-        do {
-            let toolData = try await rawToolData
-            let toolAPITotal = toolData.reduce(0.0) { $0 + $1.1 }
-            let apiSpend = newBalanceSpend.reduce(0.0) { $0 + $1.2 }
-            let subTotal = StatsService.subscriptionDailyAmortization() * Double(timeRange.days)
-            let displayTotal = timeRange == .today ? newTodayCombinedSpend : (apiSpend + subTotal)
-            let toolScale = toolAPITotal > 0 ? displayTotal / toolAPITotal : 1.0
-
-            var tmap: [String: Double] = [:]
-            for (s, c) in toolData { tmap[s] = c * toolScale }
-            newToolCostBreakdown = tmap.compactMap { (key, cost) -> (String, Double)? in
-                guard cost > 0.001 else { return nil }
-                let label: String = switch key {
-                case "claude-code": "Claude Code"
-                case "aider": "aider"
-                case "cursor": "Cursor"
-                case "copilot": "Copilot"
-                case "windsurf": "Windsurf"
-                default: key
-                }
-                return (label, cost)
-            }.sorted(by: { $0.1 > $1.1 }).map { (name: $0.0, cost: $0.1) }
-        } catch { newToolCostBreakdown = [] }
-
-        let newUsageData = (try? await rawUsageData) ?? [:]
-
-        // Discard results if a newer load() has started (tab switch, concurrent refresh)
         guard myGen == loadGeneration else { return }
 
-        // ── Apply ALL state changes atomically ──
-        loadError = newLoadError
-        dailyStats = newDailyStats
-        providerCosts = newProviderCosts
-        codeChanges = newCodeChanges
-        editorMappings = newEditorMappings
-        repos = newRepos
-        prediction = newPrediction
-        paddedChanges = newPaddedChanges
-        subDaily = newSubDaily
-        apiDaily = newApiDaily
-        dailyBalanceSpend = newDailyBalanceSpend
-        balanceSpend = newBalanceSpend
-        balanceDaily = newBalanceDaily
-        todayCombinedSpend = newTodayCombinedSpend
-        todayCalls = newTodayCalls
-        todayTokens = newTodayTokens
-        yesterdaySpend = newYesterdaySpend
-        previousPeriodSpend = newPreviousPeriodSpend
-        toolCostBreakdown = newToolCostBreakdown
-        usageData = newUsageData
-        loadedTimeRange = timeRange  // mark data as matching current tab
-        balanceErrors = AppHealthMonitor.shared.failingProviders
+        applySnapshot(snap)
+
+        Task { await DashboardCache.write(timeRange: currentTimeRange.label, json: snap.jsonString()) }
 
         // ── Trigger entry animations (only when bars were reset by tab switch) ──
         if barProgress < 0.5 {

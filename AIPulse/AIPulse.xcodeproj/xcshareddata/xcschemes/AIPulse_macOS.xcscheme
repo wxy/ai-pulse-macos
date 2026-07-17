@@ -15,8 +15,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "C0843E1C2FF555ED00E3F6C4"
-               BuildableName = "AIPulse.app"
-               BlueprintName = "AIPulse"
+               BuildableName = "AIPulse_macOS.app"
+               BlueprintName = "AIPulse_macOS"
                ReferencedContainer = "container:AIPulse.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -45,8 +45,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "C0843E1C2FF555ED00E3F6C4"
-            BuildableName = "AIPulse.app"
-            BlueprintName = "AIPulse"
+            BuildableName = "AIPulse_macOS.app"
+            BlueprintName = "AIPulse_macOS"
             ReferencedContainer = "container:AIPulse.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -62,8 +62,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "C0843E1C2FF555ED00E3F6C4"
-            BuildableName = "AIPulse.app"
-            BlueprintName = "AIPulse"
+            BuildableName = "AIPulse_macOS.app"
+            BlueprintName = "AIPulse_macOS"
             ReferencedContainer = "container:AIPulse.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -84,8 +84,8 @@
                   <BuildableReference
                      BuildableIdentifier = "primary"
                      BlueprintIdentifier = "C0843E1C2FF555ED00E3F6C4"
-                     BuildableName = "AIPulse.app"
-                     BlueprintName = "AIPulse"
+                     BuildableName = "AIPulse_macOS.app"
+                     BlueprintName = "AIPulse_macOS"
                      ReferencedContainer = "container:AIPulse.xcodeproj">
                   </BuildableReference>
                </EnvironmentBuildable>

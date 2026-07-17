@@ -92,6 +92,14 @@ final class AppDatabase: @unchecked Sendable {
                     t.column("usage_limit_status", .text)
                 }
             }),
+            ("dashboard_cache", { db in
+                try db.create(table: "dashboard_cache", ifNotExists: true) { t in
+                    t.column("time_range", .text).notNull()
+                    t.column("json", .text).notNull()
+                    t.column("updated_at", .datetime).notNull()
+                    t.primaryKey(["time_range"])
+                }
+            })
         ]
 
         for (name, migration) in tables {

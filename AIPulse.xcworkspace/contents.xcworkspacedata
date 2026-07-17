@@ -4,4 +4,7 @@
    <FileRef
       location = "group:AIPulse/AIPulse.xcodeproj">
    </FileRef>
+   <FileRef
+      location = "group:Suites/AIPulse_Suites.xcodeproj">
+   </FileRef>
 </Workspace>

@@ -7,6 +7,7 @@ import Foundation
 /// - Phase 1 (30s): LogWatcher incremental scan + RepoDiscovery
 /// - Phase 2 (5min): GitMonitor commit polling
 /// - Phase 3 (1h): ApiPoller balance fetching
+/// - Phase 4 (5min): Refresh dashboard cache (all 3 time ranges) for iCloud sync
 ///
 /// Ingestion modules push-change notifications to the coordinator when they
 /// successfully write new data. The coordinator applies a 500ms debounce and
@@ -17,6 +18,7 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     private var phase1Timer: DispatchSourceTimer?
     private var phase2Timer: DispatchSourceTimer?
     private var phase3Timer: DispatchSourceTimer?
+    private var phase4Timer: DispatchSourceTimer?
     private var pendingNotifyWorkItem: DispatchWorkItem?
     private var pendingPlaySound = false  // sticky: true if any caller wants sound
     private var lastNotifyTime: Date = .distantPast
@@ -92,6 +94,7 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         phase1Timer?.cancel(); phase1Timer = nil
         phase2Timer?.cancel(); phase2Timer = nil
         phase3Timer?.cancel(); phase3Timer = nil
+        phase4Timer?.cancel(); phase4Timer = nil
         pendingNotifyWorkItem?.cancel(); pendingNotifyWorkItem = nil
     }
 
@@ -106,6 +109,9 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         }
         phase3Timer = makeTimer(interval: .seconds(3600), firstDeadline: .now() + 10) { [weak self] in
             Task { @MainActor [weak self] in self?.runPhase3() }
+        }
+        phase4Timer = makeTimer(interval: .seconds(300), firstDeadline: .now() + 20) { [weak self] in
+            Task { @MainActor [weak self] in self?.runPhase4() }
         }
     }
 
@@ -156,6 +162,89 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         // ApiPoller.cacheBalance() pushes notifyPhaseBalance() with playSound: true
     }
 
+    /// Phase 4: Refresh dashboard cache for all three time ranges.
+    /// Runs every 5 min in the background, independent of Dashboard open state.
+    /// Ensures iCloud sync always has fresh data for iOS/watchOS.
+    private func runPhase4() {
+        let providerNames = Dictionary(uniqueKeysWithValues: IntegrationRegistry.all.map { ($0.id, $0.displayName) })
+        let subAmort = StatsService.subscriptionDailyAmortization()
+        Task.detached(priority: .background) {
+            let cal = Calendar.current
+            let todayStart = cal.startOfDay(for: Date())
+            let todayMs = Int64(todayStart.timeIntervalSince1970 * 1000)
+            let weekMs = Int64(cal.date(byAdding: .day, value: -6, to: todayStart)!.timeIntervalSince1970 * 1000)
+            let monthMs = Int64(cal.date(byAdding: .day, value: -29, to: todayStart)!.timeIntervalSince1970 * 1000)
+
+            async let todayCost = StatsService.combinedSpend(sinceMs: todayMs)
+            async let weekCost = StatsService.combinedSpend(sinceMs: weekMs)
+            async let monthCost = StatsService.combinedSpend(sinceMs: monthMs)
+            async let todayStats = StatsService.dailyStats(days: 1)
+            async let weekStats = StatsService.dailyStats(days: 7)
+            async let monthStats = StatsService.dailyStats(days: 30)
+            async let todayBal  = StatsService.balanceDailySpend(days: 1, sinceMs: todayMs)
+            async let weekBal   = StatsService.balanceDailySpend(days: 7, sinceMs: weekMs)
+            async let monthBal  = StatsService.balanceDailySpend(days: 30, sinceMs: monthMs)
+            async let todayCode = StatsService.dailyCodeChanges(days: 1)
+            async let weekCode  = StatsService.dailyCodeChanges(days: 7)
+            async let monthCode = StatsService.dailyCodeChanges(days: 30)
+            async let todayRepos = StatsService.repoBreakdown(days: 1)
+            async let weekRepos  = StatsService.repoBreakdown(days: 7)
+            async let monthRepos = StatsService.repoBreakdown(days: 30)
+            async let pred = StatsService.prediction()
+
+            let (t, w, m, ts, ws, ms, tb, wb, mb, tc, wc, mc, tr, wr, mr, pr) = await (
+                todayCost, weekCost, monthCost,
+                (try? todayStats) ?? [], (try? weekStats) ?? [], (try? monthStats) ?? [],
+                (try? todayBal) ?? [], (try? weekBal) ?? [], (try? monthBal) ?? [],
+                (try? todayCode) ?? [], (try? weekCode) ?? [], (try? monthCode) ?? [],
+                (try? todayRepos) ?? [], (try? weekRepos) ?? [], (try? monthRepos) ?? [],
+                pred
+            )
+
+            func aggProviders(_ s: [(String, Date, Double)]) -> [ProviderItem] {
+                var totals: [String: (name: String, cost: Double)] = [:]
+                for e in s {
+                    let name = providerNames[e.0] ?? e.0
+                    let prev = totals[e.0]?.cost ?? 0
+                    totals[e.0] = (name, prev + e.2)
+                }
+                return totals.map { ProviderItem(providerId: $0.key, name: $0.value.name, cost: $0.value.cost) }.sorted { $0.cost > $1.cost }
+            }
+            let todayProviders = aggProviders(tb)
+            let weekProviders = aggProviders(wb)
+            let monthProviders = aggProviders(mb)
+            let toolCosts = weekProviders.map { NameCostItem(name: $0.name, cost: $0.cost) }
+            let todayCall = ts.reduce(0) { $0 + $1.calls }
+            let todayTok = ts.reduce(0) { $0 + $1.tokens }
+
+            func tp(_ s: [DailyStat]) -> [TrendPoint] { s.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: $0.calls, tokens: $0.tokens, netLines: $0.netLines) } }
+            func cp(_ c: [DailyCodeChange]) -> [TrendPoint] { c.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: Double($0.added), calls: 0, tokens: 0, netLines: $0.added - $0.deleted, added: $0.added, deleted: $0.deleted) } }
+            func bp(_ s: [(String, Date, Double)]) -> [TrendPoint] { Dictionary(grouping: s, by: { $0.1 }).compactMap { d, v in TrendPoint(ts: d.timeIntervalSince1970, value: v.reduce(0) { $0 + $1.2 }, calls: 0, tokens: 0, netLines: 0) } }
+            func rp(_ r: [RepoBreakdown]) -> [RepoItem] { r.map { RepoItem(name: $0.repo, cost: $0.cost, added: $0.added, deleted: $0.deleted, cpl: ($0.added + $0.deleted) > 0 ? $0.cost * 1000 / Double($0.added + $0.deleted) : 0) } }
+            let predItem = PredictionItem(monthProjected: pr.monthProjected, dailyRate: pr.dailyRate, daysRemaining: pr.daysRemaining, monthSoFar: pr.monthSoFar)
+
+            let todaySnap = DashboardSnapshot(todayCost: t, weekCost: w, monthCost: m, yesterdaySpend: 0, previousPeriodSpend: 0, subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok, providerBreakdown: todayProviders, toolBreakdown: toolCosts, topRepos: rp(tr), prediction: predItem, dailyStats: tp(ts), codeChanges: cp(tc), balanceDaily: bp(tb), updatedAt: Date())
+            await DashboardCache.write(timeRange: "today", json: todaySnap.jsonString())
+
+            let weekSnap = DashboardSnapshot(todayCost: t, weekCost: w, monthCost: m, yesterdaySpend: 0, previousPeriodSpend: 0, subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok, providerBreakdown: weekProviders, toolBreakdown: toolCosts, topRepos: rp(wr), prediction: predItem, dailyStats: tp(ws), codeChanges: cp(wc), balanceDaily: bp(wb), updatedAt: Date())
+            await DashboardCache.write(timeRange: "week", json: weekSnap.jsonString())
+
+            let monthSnap = DashboardSnapshot(todayCost: t, weekCost: w, monthCost: m, yesterdaySpend: 0, previousPeriodSpend: 0, subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok, providerBreakdown: monthProviders, toolBreakdown: toolCosts, topRepos: rp(mr), prediction: predItem, dailyStats: tp(ms), codeChanges: cp(mc), balanceDaily: bp(mb), updatedAt: Date())
+            await DashboardCache.write(timeRange: "30d", json: monthSnap.jsonString())
+            // Overwrite with correct StatsService.dashboardSnapshot for each range
+            let sCal = Calendar.current
+            var sMonCal = sCal; sMonCal.firstWeekday = 2
+            let sTodayStart = sCal.startOfDay(for: Date())
+            let weekDays = sCal.dateComponents([.day], from: sMonCal.date(from: sMonCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: sTodayStart).day! + 1
+            for (key, days) in [("today", 1), ("week", weekDays), ("30d", 30)] {
+                let snap = await StatsService.dashboardSnapshot(days: days)
+                await DashboardCache.write(timeRange: key, json: snap.jsonString())
+            }
+            await CloudSyncService.shared.syncFromCache()
+            Task { @MainActor in Logger.debug("DataRefreshCoordinator: Phase 4 cache refreshed + synced") }
+        }
+    }
+
     // MARK: - Push-change notification (called by ingestion modules)
 
     /// Called by LogWatcher after a usage_event row is inserted.
@@ -198,6 +287,7 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         lastNotifyTime = now
         Logger.debug("DataRefreshCoordinator: posting .dataDidChange\(playSound ? " + sound" : "")")
         NotificationCenter.default.post(name: .dataDidChange, object: nil)
+
         guard playSound else { return }
         Task { @MainActor in
             let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
