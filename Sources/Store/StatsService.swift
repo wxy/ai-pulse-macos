@@ -540,7 +540,10 @@ enum StatsService {
             if let s: String = r["s"], let c: Double = r["c"], c > 0 { toolMap[s] = c }
         }
         let toolTotal = toolMap.reduce(0.0) { $0 + $1.value }
-        let apiSpend = bl.reduce(0.0) { $0 + $1.spend }
+        let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
+            if case .apiKey(let pid) = cs.kind { return pid }; return nil
+        })
+        let apiSpend = bl.filter { enabledB.contains($0.providerId) }.reduce(0.0) { $0 + $1.spend }
         let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
         let rawTools = toolMap.compactMap { (key, cost) -> (String, Double)? in
             guard cost * scale > 0.001 else { return nil }

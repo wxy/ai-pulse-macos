@@ -252,46 +252,49 @@ struct DashboardView: View {
             Text("Daily Trend").font(.headline)
             let maxCost = max(filteredBalance.map(\.value).max() ?? 1, snap.subDaily)
             let maxLines = max(filteredCode.map { Double(max($0.added, $0.deleted)) }.max() ?? 1, 1)
-            let scale = maxCost > 0 ? maxLines / maxCost : 1.0
+            let codeScale = maxCost > 0 ? maxLines / maxCost : 1.0
 
             if filteredStats.isEmpty && filteredCode.isEmpty {
                 Text("No data").font(.caption).foregroundColor(.secondary)
             } else {
                 Chart {
-                    // Cost series (left axis): API + Sub
                     ForEach(filteredStats, id: \.ts) { s in
                         let d = Date(timeIntervalSince1970: s.ts)
                         BarMark(x: .value("Date", d, unit: .day), y: .value("Spend", (balanceMap[d] ?? 0) * barProgress))
-                            .foregroundStyle(Color.green).position(by: .value("Series", "Cost"))
-                        BarMark(x: .value("Date", d, unit: .day), y: .value("Spend", snap.subDaily * barProgress))
-                            .foregroundStyle(Color.green.opacity(0.4)).position(by: .value("Series", "Cost"))
+                            .foregroundStyle(Color.green)
                     }
-                    // Code series (right axis): Added + Deleted
+                    ForEach(filteredStats, id: \.ts) { s in
+                        let d = Date(timeIntervalSince1970: s.ts)
+                        BarMark(x: .value("Date", d, unit: .day), y: .value("Spend", snap.subDaily * barProgress))
+                            .foregroundStyle(Color.green.opacity(0.4))
+                    }
                     ForEach(filteredCode, id: \.ts) { c in
                         let d = Date(timeIntervalSince1970: c.ts)
-                        BarMark(x: .value("Date", d, unit: .day), y: .value("Lines", Double(c.added) * scale * barProgress))
-                            .foregroundStyle(Color.red.opacity(0.6)).position(by: .value("Series", "Code"))
-                        BarMark(x: .value("Date", d, unit: .day), y: .value("Lines", Double(c.deleted) * scale * barProgress))
-                            .foregroundStyle(Color.red.opacity(0.3)).position(by: .value("Series", "Code"))
+                        BarMark(x: .value("Date", d, unit: .day), y: .value("Lines", Double(c.added) * codeScale * barProgress))
+                            .foregroundStyle(Color.red.opacity(0.6))
+                    }
+                    ForEach(filteredCode, id: \.ts) { c in
+                        let d = Date(timeIntervalSince1970: c.ts)
+                        BarMark(x: .value("Date", d, unit: .day), y: .value("Lines", Double(c.deleted) * codeScale * barProgress))
+                            .foregroundStyle(Color.red.opacity(0.3))
                     }
                 }
-                .chartForegroundStyleScale(["Cost": Color.green, "Code": Color.red])
                 .chartYScale(domain: 0...maxCost)
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic) { v in
-                        AxisGridLine()
+                        AxisGridLine().foregroundStyle(.gray.opacity(0.2))
                         if let d = v.as(Double.self) { AxisValueLabel("$\(String(format: "%.0f", d))") }
                     }
                     AxisMarks(position: .trailing, values: .automatic) { v in
-                        AxisGridLine().foregroundStyle(.gray.opacity(0.15))
-                        if let d = v.as(Double.self), let lines = Optional(Int(d / scale)) {
-                            AxisValueLabel("\(lines)")
+                        AxisGridLine().foregroundStyle(.gray.opacity(0.1))
+                        if let d = v.as(Double.self) {
+                            AxisValueLabel("\(Int(d / codeScale))")
                         }
                     }
                 }
                 .frame(height: 200)
                 HStack(spacing: 12) {
-                    HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green).frame(width: 8, height: 8); Text("API").font(.caption2) }
+                    HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green).frame(width: 8, height: 8); Text("API $").font(.caption2) }
                     HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green.opacity(0.4)).frame(width: 8, height: 8); Text("Sub").font(.caption2) }
                     HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.red.opacity(0.6)).frame(width: 8, height: 8); Text("Added").font(.caption2) }
                     HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.red.opacity(0.3)).frame(width: 8, height: 8); Text("Deleted").font(.caption2) }
