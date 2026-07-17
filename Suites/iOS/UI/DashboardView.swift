@@ -99,7 +99,7 @@ struct DashboardView: View {
                     // Tool + repo ("mouth")
                     outputSection
                 }
-                .padding(.top, 28).padding(.horizontal, 14).padding(.bottom, 14)
+                .padding(.top, 28).padding(.horizontal, 12).padding(.bottom, 14)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -281,6 +281,7 @@ struct DashboardView: View {
                     withAnimation { toolsExpanded.toggle() }
                 }
                 .font(.caption2)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
         .padding(12)
@@ -322,6 +323,7 @@ struct DashboardView: View {
                     withAnimation { reposExpanded.toggle() }
                 }
                 .font(.caption2)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
         .padding(12)
