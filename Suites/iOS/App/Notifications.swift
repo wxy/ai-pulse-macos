@@ -87,6 +87,7 @@ final class NotificationService: NSObject {
         let content = UNMutableNotificationContent()
         content.title = I18n.t("notify.title")
         content.body = String(format: I18n.t("notify.body"), today)
+        content.sound = nil       // silent — coin sound played by playCoinSound()
         content.badge = 1
         content.interruptionLevel = .timeSensitive
         UNUserNotificationCenter.current().add(
