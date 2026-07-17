@@ -1,6 +1,6 @@
 import CloudKit
 import UserNotifications
-import AudioToolbox
+import AVFoundation
 
 /// Manages CloudKit subscription push + local notifications.
 @MainActor
@@ -8,6 +8,8 @@ final class NotificationService: NSObject {
     static let shared = NotificationService()
 
     private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
+    private static var audioPlayer: AVAudioPlayer?
+    private static var lastCoinSoundTime: Date = .distantPast
 
     private override init() {
         super.init()
@@ -15,8 +17,16 @@ final class NotificationService: NSObject {
     }
 
     /// Play coin sound when app is in foreground and new data arrives.
+    /// Throttled to once per minute to match macOS behavior.
     static func playCoinSound() {
-        AudioServicesPlayAlertSound(1104)  // coin-like alert sound
+        guard UserDefaults.standard.bool(forKey: "coin_sound_enabled") else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastCoinSoundTime) >= 60 else { return }
+        lastCoinSoundTime = now
+
+        guard let url = Bundle.main.url(forResource: "coin", withExtension: "mp3") else { return }
+        audioPlayer = try? AVAudioPlayer(contentsOf: url)
+        audioPlayer?.play()
     }
 
     /// Request notification permission and register CloudKit subscription.
