@@ -83,6 +83,8 @@ struct DashboardView: View {
     @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
     @State private var isDemoMode = false
     @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
+    @State private var toolsExpanded = false
+    @State private var reposExpanded = false
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -540,7 +542,7 @@ struct DashboardView: View {
         VStack(spacing: 2) {
             Text(value).font(.subheadline).fontWeight(.semibold).monospacedDigit()
                 .foregroundColor(color)
-            Text(title).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+            Text(title).font(.caption).foregroundColor(.secondary).lineLimit(1)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 8)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
@@ -1070,10 +1072,18 @@ struct DashboardView: View {
         return VStack(spacing: 12) {
             // ── Tool bars ("mouth") — hidden when no data ──
             if !toolCosts.isEmpty {
+                let shown = toolsExpanded ? toolCosts : Array(toolCosts.prefix(4))
                 VStack(alignment: .leading, spacing: 6) {
                     Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
-                    ForEach(Array(toolCosts.prefix(6).enumerated()), id: \.element.name) { idx, tc in
+                    ForEach(Array(shown.enumerated()), id: \.element.name) { idx, tc in
                         toolBarRow(name: tc.name, cost: tc.cost, total: totalCost, index: idx)
+                    }
+                    if toolCosts.count > 4 {
+                        Button(toolsExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
+                            withAnimation { toolsExpanded.toggle() }
+                        }
+                        .font(.caption2)
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
                 .padding(12)
@@ -1101,9 +1111,10 @@ struct DashboardView: View {
                 }
                 let maxCost = reposWithSub.map(\.1).max() ?? 1
                 let maxCPL = cplRepos.compactMap { r in r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : nil }.max() ?? 1
+                let shown = reposExpanded ? reposWithSub : Array(reposWithSub.prefix(5))
                 VStack(alignment: .leading, spacing: 6) {
                     Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-                    ForEach(Array(reposWithSub.prefix(8).enumerated()), id: \.element.0.id) { idx, item in
+                    ForEach(Array(shown.enumerated()), id: \.element.0.id) { idx, item in
                         let (r, totalCost) = item
                         let combinedCPL = r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : 0
                         let costRatio = maxCost > 0 ? totalCost / maxCost : 0
@@ -1139,9 +1150,16 @@ struct DashboardView: View {
                         }
                         .padding(.vertical, 4)
                         .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(Double(idx) * 0.03), value: progress)
-                        if r.id != cplRepos.prefix(8).last?.id {
+                        if r.id != shown.last?.0.id {
                             Divider()
                         }
+                    }
+                    if reposWithSub.count > 5 {
+                        Button(reposExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
+                            withAnimation { reposExpanded.toggle() }
+                        }
+                        .font(.caption2)
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
                 .padding(12)
@@ -1316,19 +1334,19 @@ struct DashboardView: View {
                 HStack(spacing: 16) {
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.marsGreen).frame(width: 10, height: 10)
-                        Text(I18n.t("dashboard.api_spend_label")).font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.api_spend_label")).font(.caption).foregroundColor(.secondary)
                     }
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.marsGreenLight).frame(width: 10, height: 10)
-                        Text(I18n.t("dashboard.sub_label")).font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.sub_label")).font(.caption).foregroundColor(.secondary)
                     }
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.deepRed2).frame(width: 10, height: 10)
-                        Text(I18n.t("dashboard.added_lines")).font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.added_lines")).font(.caption).foregroundColor(.secondary)
                     }
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(Color.deepRed).frame(width: 10, height: 10)
-                        Text(I18n.t("dashboard.deleted_lines")).font(.caption2).foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.deleted_lines")).font(.caption).foregroundColor(.secondary)
                     }
                 }
         }
@@ -1491,7 +1509,7 @@ struct DashboardView: View {
             Text(title).font(.caption).foregroundColor(.secondary)
             ZStack {
                 Circle()
-                    .stroke(Color.secondary.opacity(0.15), lineWidth: 12)
+                    .stroke(Color.secondary.opacity(0.12), lineWidth: 60)
                     .frame(width: 120, height: 120)
                 Text(I18n.t("dashboard.zero_cost"))
                     .font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
