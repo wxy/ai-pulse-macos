@@ -27,28 +27,12 @@ final class NotificationService: NSObject {
         }
     }
 
-    /// Handle remote push notification — refresh data + show local notification.
+    /// Handle remote push notification — refresh data + notify if cost changed.
     func didReceiveRemoteNotification() {
         Task {
             try? await CloudDataService.shared.fetchSnapshot()
-            await sendLocalNotification()
+            CloudDataService.shared.maybeNotify()
         }
-    }
-
-    private func sendLocalNotification() async {
-        let snap = CloudDataService.shared.snapshot
-        guard snap != nil else { return }
-
-        let content = UNMutableNotificationContent()
-        content.title = I18n.t("notify.title")
-        content.body = String(format: I18n.t("notify.body"), snap!.todayCost)
-        content.badge = 1
-        content.interruptionLevel = .timeSensitive
-
-        let request = UNNotificationRequest(identifier: UUID().uuidString,
-                                            content: content,
-                                            trigger: nil)  // deliver immediately
-        try? await UNUserNotificationCenter.current().add(request)
     }
 
     // MARK: - Private

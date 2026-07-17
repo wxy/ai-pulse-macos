@@ -14,8 +14,24 @@ final class CloudDataService: ObservableObject {
 
     private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
     private let log = Logger(subsystem: "com.wxy.aipulse", category: "CloudData")
+    private var lastNotifiedCost: Double = 0
 
     private init() {}
+
+    /// Only send one notification when today's cost actually changes.
+    func maybeNotify() {
+        guard let today = snapshot?.todayCost, today > 0.001,
+              abs(today - lastNotifiedCost) > 0.01 else { return }
+        lastNotifiedCost = today
+
+        let content = UNMutableNotificationContent()
+        content.title = I18n.t("notify.title")
+        content.body = String(format: I18n.t("notify.body"), today)
+        content.badge = 1
+        content.interruptionLevel = .timeSensitive
+        let request = UNNotificationRequest(identifier: "cost-update", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+    }
 
     private func recordName(for range: String) -> String {
         "snapshot-\(range)"
