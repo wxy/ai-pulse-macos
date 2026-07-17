@@ -6,9 +6,10 @@ struct WelcomeView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            Image(systemName: "chart.bar.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.accentColor)
+            Image("AIPulse")
+                .resizable()
+                .frame(width: 80, height: 80)
+                .cornerRadius(18)
 
             Text(I18n.t("welcome.title"))
                 .font(.largeTitle).fontWeight(.bold)
@@ -20,12 +21,6 @@ struct WelcomeView: View {
                 .multilineTextAlignment(.center)
                 .font(.body).foregroundColor(.secondary)
                 .padding(.horizontal, 40)
-
-            if let url = URL(string: "macappstore://apps.apple.com/app/id1234567890") {
-                Link(I18n.t("welcome.appstore"), destination: url)
-                    .font(.headline)
-                    .padding(.top, 8)
-            }
 
             Spacer()
         }

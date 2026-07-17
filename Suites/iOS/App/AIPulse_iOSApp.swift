@@ -36,14 +36,27 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 struct ContentView: View {
     @EnvironmentObject var cloudData: CloudDataService
     @State private var hasData: Bool?
+    @State private var splashVisible = true
 
     var body: some View {
         Group {
-            if hasData == nil {
-                VStack(spacing: 20) {
-                    Image("AIPulse").resizable().frame(width: 80, height: 80).cornerRadius(18)
+            if splashVisible || hasData == nil {
+                // Splash screen — shown for at least 1.5s while checking iCloud
+                VStack(spacing: 16) {
+                    Spacer()
+                    if let img = UIImage(named: "AIPulse") {
+                        Image(uiImage: img).resizable().frame(width: 80, height: 80).cornerRadius(18)
+                    } else {
+                        Image(systemName: "chart.bar.fill").font(.system(size: 60)).foregroundColor(.accentColor)
+                    }
+                    Text("AI Pulse")
+                        .font(.title2).fontWeight(.bold)
                     ProgressView(I18n.t("loading"))
+                        .padding(.top, 4)
+                    Spacer()
                 }
+                .frame(maxWidth: .infinity)
+                .background(Color(.systemBackground))
             } else if hasData == true {
                 DashboardView()
             } else {
@@ -58,6 +71,9 @@ struct ContentView: View {
             } catch {
                 hasData = false
             }
+            // Keep splash visible at least 1.5s for smooth transition
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            withAnimation { splashVisible = false }
         }
     }
 }
