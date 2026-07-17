@@ -42,7 +42,7 @@ final class NotificationService: NSObject {
         let content = UNMutableNotificationContent()
         content.title = I18n.t("notify.title")
         content.body = String(format: I18n.t("notify.body"), snap!.todayCost)
-        content.badge = NSNumber(value: Int(snap!.todayCost * 100))
+        content.badge = 1
         content.interruptionLevel = .timeSensitive
 
         let request = UNNotificationRequest(identifier: UUID().uuidString,

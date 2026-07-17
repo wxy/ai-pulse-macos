@@ -1,5 +1,6 @@
 import SwiftUI
 import CloudKit
+import UserNotifications
 
 @main
 struct AIPulse_iOSApp: App {
@@ -47,6 +48,7 @@ struct ContentView: View {
             }
         }
         .task {
+            try? await UNUserNotificationCenter.current().setBadgeCount(0)
             do {
                 hasData = try await cloudData.hasData()
                 if hasData == true { try? await cloudData.fetchSnapshot() }

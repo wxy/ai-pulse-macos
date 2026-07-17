@@ -71,7 +71,7 @@ struct DashboardView: View {
                 VStack(spacing: 12) {
                     // Big total
                     VStack(spacing: 2) {
-                        Text("$\(String(format: "%.2f", totalCost))")
+                        Text("$\(usd(totalCost))")
                             .font(.system(size: 40, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.deepRed)
                             .scaleEffect(0.8 + 0.2 * barProgress)
@@ -137,13 +137,26 @@ struct DashboardView: View {
                 }
 
                 if let updated = cloudData.lastUpdated {
-                    Text("\(I18n.t("updated")) \(updated.formatted(.iso8601))")
+                    Text("\(I18n.t("dashboard.updated")) \(updated.formatted(date: .abbreviated, time: .shortened))")
                         .font(.caption2).foregroundColor(.secondary)
                 }
             }
             .padding()
         }
-        .environment(\.locale, Locale(identifier: I18n.lang == "zh" ? "zh_CN" : "en_US"))
+        .environment(\.locale, Locale(identifier: {
+            switch I18n.lang {
+            case "zh-Hans":    return "zh_CN"
+            case "zh-Hant-TW": return "zh_TW"
+            case "zh-Hant-HK": return "zh_HK"
+            case "ja":         return "ja_JP"
+            case "ko":         return "ko_KR"
+            case "de":         return "de_DE"
+            case "fr":         return "fr_FR"
+            case "es":         return "es_ES"
+            case "pt-BR":      return "pt_BR"
+            default:           return "en_US"
+            }
+        }()))
         .onAppear {
             barProgress = 1
             Task { try? await cloudData.fetchSnapshot() }
@@ -175,7 +188,7 @@ struct DashboardView: View {
                 } else {
                     Circle().stroke(.secondary.opacity(0.15), lineWidth: 10).frame(width: 80, height: 80)
                 }
-                Text("$\(String(format: "%.2f", t))")
+                Text("$\(usd(t))")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
             VStack(spacing: 2) {
@@ -202,7 +215,7 @@ struct DashboardView: View {
                 } else {
                     Circle().stroke(.secondary.opacity(0.15), lineWidth: 10).frame(width: 80, height: 80)
                 }
-                Text("$\(String(format: "%.2f", apiSpend))")
+                Text("$\(usd(apiSpend))")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
             ForEach(snap.providerBreakdown.prefix(3), id: \.providerId) { p in
@@ -253,7 +266,7 @@ struct DashboardView: View {
                             .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
                     }.frame(height: 8)
                     Spacer()
-                    Text("$\(String(format: "%.2f", tool.cost))").font(.caption2).monospacedDigit()
+                    Text("$\(usd(tool.cost))").font(.caption2).monospacedDigit()
                 }
             }
         }
@@ -276,14 +289,14 @@ struct DashboardView: View {
                     Text("+\(repo.added)/-\(repo.deleted)").font(.caption2).foregroundColor(.secondary)
                 }
                 HStack(spacing: 4) {
-                    Text("$\(String(format: "%.2f", repo.cost))").font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
+                    Text("$\(usd(repo.cost))").font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 2).fill(Color.marsGreenBar)
                             .frame(width: max(geo.size.width * CGFloat(repo.cost / maxCost), 2))
                     }.frame(height: 4)
                 }
                 HStack(spacing: 4) {
-                    Text("CPL $\(String(format: "%.2f", repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
+                    Text("CPL $\(usd(repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 2).fill(Color.deepRedBar.opacity(0.5))
                             .frame(width: max(geo.size.width * CGFloat(repo.cpl / maxCPL), 2))
@@ -358,7 +371,7 @@ struct DashboardView: View {
                     BarMark(x: .value("Date", d, unit: .day), y: .value("Value", api * barProgress))
                         .foregroundStyle(Color.marsGreen).position(by: .value("Series", "Cost"))
                 }
-                ForEach(paddedStats, id: \.ts) { s in
+                ForEach(paddedStats.filter { $0.ts <= Date().timeIntervalSince1970 }, id: \.ts) { s in
                     let d = Date(timeIntervalSince1970: s.ts)
                     BarMark(x: .value("Date", d, unit: .day), y: .value("Value", snap.subDaily * barProgress))
                         .foregroundStyle(Color.marsGreenLight).position(by: .value("Series", "Cost"))
@@ -408,6 +421,14 @@ struct DashboardView: View {
         }
     }
     private func shortNum(_ n: Int) -> String { n >= 1000 ? "\(n / 1000)K" : "\(n)" }
+    private func usd(_ v: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.locale = Locale(identifier: "en_US")
+        return f.string(from: NSNumber(value: v)) ?? "$0.00"
+    }
+
     private func tokenShort(_ n: Int) -> String {
         if n >= 1_000_000 { return "\(n / 1_000_000)M" }
         if n >= 1000 { return "\(n / 1000)K" }
