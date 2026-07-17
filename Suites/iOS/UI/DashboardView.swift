@@ -1,6 +1,24 @@
 import SwiftUI
 import Charts
 
+// macOS color palette (mars green + deep red)
+extension Color {
+    static let marsGreen      = Color(red: 44/255, green: 91/255, blue: 72/255)
+    static let marsGreenLight = Color(red: 140/255, green: 196/255, blue: 170/255)
+    static let deepRed        = Color(red: 173/255, green: 46/255, blue: 35/255)
+    static let deepRed2       = Color(red: 196/255, green: 74/255, blue: 63/255)
+}
+
+/// Frosted card border matching macOS .ultraThinMaterial + separator.
+struct FrostedCard: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+    }
+}
+
 struct DashboardView: View {
     @EnvironmentObject var cloudData: CloudDataService
     @State private var timeRange = TimeRange.today
@@ -44,7 +62,7 @@ struct DashboardView: View {
                 VStack(spacing: 4) {
                     Text("$\(String(format: "%.2f", totalCost))")
                         .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Color.deepRed)
                         .scaleEffect(0.8 + 0.2 * barProgress)
                     HStack(spacing: 6) {
                         Text("\(timeRange.label) \(totalCost > 0 ? "Total" : "")")
@@ -103,11 +121,11 @@ struct DashboardView: View {
                     Chart {
                         if apiSpend > 0.001 {
                             SectorMark(angle: .value("API", apiSpend), innerRadius: .ratio(0.5))
-                                .foregroundStyle(Color.red)
+                                .foregroundStyle(Color.deepRed)
                         }
                         if subTotal > 0.001 {
                             SectorMark(angle: .value("Sub", subTotal), innerRadius: .ratio(0.5))
-                                .foregroundStyle(Color.green)
+                                .foregroundStyle(Color.marsGreen)
                         }
                     }
                     .frame(width: 80, height: 80)
@@ -118,8 +136,8 @@ struct DashboardView: View {
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
             HStack(spacing: 8) {
-                if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(.red).frame(width: 6, height: 6); Text("API \(Int(apiSpend / max(t, 0.01) * 100))%").font(.caption2) } }
-                if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(.green).frame(width: 6, height: 6); Text("Sub \(Int(subTotal / max(t, 0.01) * 100))%").font(.caption2) } }
+                if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(Color.deepRed).frame(width: 6, height: 6); Text("API \(Int(apiSpend / max(t, 0.01) * 100))%").font(.caption2) } }
+                if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(Color.marsGreen).frame(width: 6, height: 6); Text("Sub \(Int(subTotal / max(t, 0.01) * 100))%").font(.caption2) } }
             }
         }
     }
@@ -136,6 +154,8 @@ struct DashboardView: View {
                         }
                     }
                     .chartLegend(.hidden).frame(width: 80, height: 80)
+                    .chartForegroundStyleScale(domain: snap.providerBreakdown.map(\.name),
+                        range: [Color.deepRed, .marsGreen, Color.deepRed2])
                 } else {
                     Circle().stroke(.secondary.opacity(0.15), lineWidth: 10).frame(width: 80, height: 80)
                 }
@@ -144,7 +164,7 @@ struct DashboardView: View {
             }
             ForEach(snap.providerBreakdown.prefix(3), id: \.providerId) { p in
                 HStack(spacing: 2) {
-                    Circle().fill(.blue).frame(width: 6, height: 6)
+                    Circle().fill(Color.deepRed).frame(width: 6, height: 6)
                     Text("\(p.name) \(Int(p.cost / max(apiSpend, 0.01) * 100))%")
                         .font(.caption2).foregroundColor(.secondary)
                 }
@@ -156,8 +176,8 @@ struct DashboardView: View {
         let f = snap.codeChanges
         return VStack(spacing: 6) {
             statCard("Net Lines", value: "\(f.reduce(0) { $0 + $1.netLines })")
-            statCard("Added", value: "+\(f.reduce(0) { $0 + $1.added })", color: .green)
-            statCard("Deleted", value: "-\(f.reduce(0) { $0 + $1.deleted })", color: .red)
+            statCard("Added", value: "+\(f.reduce(0) { $0 + $1.added })", color: .marsGreen)
+            statCard("Deleted", value: "-\(f.reduce(0) { $0 + $1.deleted })", color: .deepRed)
             if timeRange == .today {
                 statCard("Calls", value: "\(snap.todayCalls)")
                 statCard("Tokens", value: tokenShort(snap.todayTokens))
@@ -176,7 +196,7 @@ struct DashboardView: View {
                 HStack {
                     Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 3).fill(Color.green.opacity(0.6))
+                        RoundedRectangle(cornerRadius: 3).fill(Color.marsGreen)
                             .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
                     }.frame(height: 8)
                     Spacer()
@@ -203,14 +223,14 @@ struct DashboardView: View {
                 HStack(spacing: 4) {
                     Text("$\(String(format: "%.2f", repo.cost))").font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 2).fill(Color.green.opacity(0.5))
+                        RoundedRectangle(cornerRadius: 2).fill(Color.marsGreen)
                             .frame(width: max(geo.size.width * CGFloat(repo.cost / maxCost), 2))
                     }.frame(height: 4)
                 }
                 HStack(spacing: 4) {
                     Text("CPL $\(String(format: "%.2f", repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 2).fill(Color.blue.opacity(0.4))
+                        RoundedRectangle(cornerRadius: 2).fill(Color.deepRed.opacity(0.5))
                             .frame(width: max(geo.size.width * CGFloat(repo.cpl / maxCPL), 2))
                     }.frame(height: 4)
                 }
@@ -271,22 +291,22 @@ struct DashboardView: View {
                     let d = Date(timeIntervalSince1970: s.ts)
                     let api = snap.balanceDaily.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: d) })?.value ?? 0
                     BarMark(x: .value("Date", d, unit: .day), y: .value("Value", api * barProgress))
-                        .foregroundStyle(Color.green).position(by: .value("Series", "Cost"))
+                        .foregroundStyle(Color.marsGreen).position(by: .value("Series", "Cost"))
                 }
                 ForEach(paddedStats, id: \.ts) { s in
                     let d = Date(timeIntervalSince1970: s.ts)
                     BarMark(x: .value("Date", d, unit: .day), y: .value("Value", snap.subDaily * barProgress))
-                        .foregroundStyle(Color.green.opacity(0.4)).position(by: .value("Series", "Cost"))
+                        .foregroundStyle(Color.marsGreenLight).position(by: .value("Series", "Cost"))
                 }
                 ForEach(paddedCode, id: \.ts) { c in
                     let d = Date(timeIntervalSince1970: c.ts)
                     BarMark(x: .value("Date", d, unit: .day), y: .value("Value", Double(c.added) * scale * barProgress))
-                        .foregroundStyle(Color.red.opacity(0.6)).position(by: .value("Series", "Code"))
+                        .foregroundStyle(Color.deepRed2).position(by: .value("Series", "Code"))
                 }
                 ForEach(paddedCode, id: \.ts) { c in
                     let d = Date(timeIntervalSince1970: c.ts)
                     BarMark(x: .value("Date", d, unit: .day), y: .value("Value", Double(c.deleted) * scale * barProgress))
-                        .foregroundStyle(Color.red.opacity(0.3)).position(by: .value("Series", "Code"))
+                        .foregroundStyle(Color.deepRed.opacity(0.35)).position(by: .value("Series", "Code"))
                 }
             }
             .chartYScale(domain: 0...costMax)
@@ -302,10 +322,10 @@ struct DashboardView: View {
             }
             .frame(height: 200)
             HStack(spacing: 12) {
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green).frame(width: 8, height: 8); Text("API").font(.caption2) }
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green.opacity(0.4)).frame(width: 8, height: 8); Text("Sub").font(.caption2) }
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.red.opacity(0.6)).frame(width: 8, height: 8); Text("Added").font(.caption2) }
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.red.opacity(0.3)).frame(width: 8, height: 8); Text("Deleted").font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.marsGreen).frame(width: 8, height: 8); Text("API").font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.marsGreenLight).frame(width: 8, height: 8); Text("Sub").font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.deepRed2).frame(width: 8, height: 8); Text("Added").font(.caption2) }
+                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.deepRed.opacity(0.35)).frame(width: 8, height: 8); Text("Deleted").font(.caption2) }
             }
         }
         .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
