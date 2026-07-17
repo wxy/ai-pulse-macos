@@ -29,7 +29,9 @@ final class CloudSyncService {
                 // Verify read-back
                 if let check = try? await database.record(for: recordID) {
                     let js = (check["json"] as? String) ?? ""
-                    Logger.debug("CloudSync: synced + read-back OK: \(js.prefix(200))")
+                    let hasCC = js.contains("codeChanges")
+                    let hasTR = js.contains("topRepos")
+                    Logger.debug("CloudSync: synced OK, len=\(js.count), codeChanges=\(hasCC), topRepos=\(hasTR)")
                 } else {
                     Logger.warning("CloudSync: synced but read-back failed")
                 }
