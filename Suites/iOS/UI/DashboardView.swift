@@ -137,7 +137,7 @@ struct DashboardView: View {
                 }
 
                 if let updated = cloudData.lastUpdated {
-                    Text("\(I18n.t("dashboard.updated")) \(updated.formatted(date: .abbreviated, time: .shortened))")
+                    Text("\(I18n.t("dashboard.updated")) \(updated.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
                         .font(.caption2).foregroundColor(.secondary)
                 }
             }
