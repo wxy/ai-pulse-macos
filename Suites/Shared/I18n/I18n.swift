@@ -32,7 +32,7 @@ enum I18n {
         "chart.added": "新增",
         "chart.deleted": "删除",
         "loading": "检查 iCloud…",
-        "updated": "更新于 %@",
+        "updated": "更新于: ",
     ]
     static let en: [String: String] = [
         "dashboard.today": "Today",
@@ -64,7 +64,7 @@ enum I18n {
         "chart.added": "Added",
         "chart.deleted": "Deleted",
         "loading": "Checking iCloud…",
-        "updated": "Updated %@",
+        "updated": "Updated: ",
     ]
 
     /// Auto-follows system language. iOS has no app-internal language picker.

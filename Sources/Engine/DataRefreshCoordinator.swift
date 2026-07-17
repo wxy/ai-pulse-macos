@@ -167,19 +167,25 @@ final class DataRefreshCoordinator: @unchecked Sendable {
     /// Ensures iCloud sync always has fresh data for iOS/watchOS.
     private func runPhase4() {
         Task.detached(priority: .background) {
-            let sCal = Calendar.current
-            var sMonCal = sCal; sMonCal.firstWeekday = 2
+            let now = Date().timeIntervalSince1970
+            // Per-range throttles: today=5min, week=1h, 30d=12h
+            let intervals: [(String, Int, TimeInterval)] = [
+                ("today", 1, 300), ("week", 7, 3600), ("30d", 30, 43200)
+            ]
+            // Compute actual weekDays
+            let sCal = Calendar.current; var sMonCal = sCal; sMonCal.firstWeekday = 2
             let sTodayStart = sCal.startOfDay(for: Date())
             let weekDays = sCal.dateComponents([.day], from: sMonCal.date(from: sMonCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: sTodayStart).day! + 1
+            let dayMap: [String: Int] = ["today": 1, "week": weekDays, "30d": 30]
 
-            // Single source of truth — StatsService.dashboardSnapshot
-            let todaySnap = await StatsService.dashboardSnapshot(days: 1)
-            let weekSnap  = await StatsService.dashboardSnapshot(days: weekDays)
-            let monthSnap = await StatsService.dashboardSnapshot(days: 30)
-
-            await DashboardCache.write(timeRange: "today", json: todaySnap.jsonString())
-            await DashboardCache.write(timeRange: "week", json: weekSnap.jsonString())
-            await DashboardCache.write(timeRange: "30d", json: monthSnap.jsonString())
+            for (key, _, interval) in intervals {
+                let lastKey = "cache_refresh_\(key)"
+                let last = UserDefaults.standard.double(forKey: lastKey)
+                guard now - last >= interval else { continue }
+                UserDefaults.standard.set(now, forKey: lastKey)
+                let snap = await StatsService.dashboardSnapshot(days: dayMap[key] ?? 1)
+                await DashboardCache.write(timeRange: key, json: snap.jsonString())
+            }
 
             await CloudSyncService.shared.syncFromCache()
             Task { @MainActor in Logger.debug("Phase 4 refreshed") }

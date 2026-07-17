@@ -137,7 +137,7 @@ struct DashboardView: View {
                 }
 
                 if let updated = cloudData.lastUpdated {
-                    Text(I18n.t("updated").replacingOccurrences(of: "%@", with: updated.formatted(date: .abbreviated, time: .shortened)))
+                    Text("\(I18n.t("updated")) \(updated.formatted(.iso8601))")
                         .font(.caption2).foregroundColor(.secondary)
                 }
             }
