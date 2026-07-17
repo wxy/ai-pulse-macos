@@ -52,6 +52,7 @@ struct DashboardView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
+                .padding(.top, 4).padding(.bottom, 12)
                 .onChange(of: timeRange) { _, newRange in
                     barProgress = 0
                     withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 }
@@ -59,37 +60,69 @@ struct DashboardView: View {
                     Task { try? await cloudData.fetchSnapshot(for: key) }
                 }
 
-                VStack(spacing: 4) {
-                    Text("$\(String(format: "%.2f", totalCost))")
-                        .font(.system(size: 44, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.deepRed)
-                        .scaleEffect(0.8 + 0.2 * barProgress)
-                    HStack(spacing: 6) {
+                // ── Robot head frame (face) — spending + output ──
+                VStack(spacing: 12) {
+                    // Big total
+                    VStack(spacing: 2) {
+                        Text("$\(String(format: "%.2f", totalCost))")
+                            .font(.system(size: 40, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.deepRed)
+                            .scaleEffect(0.8 + 0.2 * barProgress)
                         Text("\(timeRange.label) \(totalCost > 0 ? "Total" : "")")
                             .font(.caption).foregroundColor(.secondary)
+                        if let p = snap.prediction, p.monthProjected > 0.001 {
+                            Text(String(format: "Spent $%.2f this month · $%.2f projected · %d days left",
+                                        p.monthSoFar, p.monthProjected, p.daysRemaining))
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
                     }
-                    if let p = snap.prediction, p.monthProjected > 0.001 {
-                        Text(String(format: "Spent $%.2f this month · $%.2f projected · %d days left",
-                                    p.monthSoFar, p.monthProjected, p.daysRemaining))
-                            .font(.caption2).foregroundColor(.secondary)
+
+                    // Donuts + stats
+                    HStack(alignment: .top, spacing: 6) {
+                        subVsApiDonut
+                        noseStatCards
+                        providerDonut
                     }
-                }
-                .padding(.vertical, 12)
 
-                HStack(alignment: .top, spacing: 8) {
-                    subVsApiDonut
-                    noseStatCards
-                    providerDonut
+                    // Tool + repo ("mouth")
+                    outputSection
                 }
+                .padding(.top, 28).padding(.horizontal, 14).padding(.bottom, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
+                        .overlay(alignment: .top) {
+                            // Antenna
+                            ZStack(alignment: .top) {
+                                Path { p in
+                                    p.addArc(center: CGPoint(x: 16, y: 2), radius: 16,
+                                             startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+                                }
+                                .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
+                                .frame(width: 32, height: 18)
+                                Circle().fill(Color.marsGreen.opacity(0.4)).frame(width: 5, height: 5).offset(y: -6)
+                            }
+                            .offset(y: -3)
+                        }
+                        .overlay(alignment: .leading) {
+                            // Left ears
+                            HStack(spacing: 4) {
+                                earBar(width: 10, height: 26)
+                                earBar(width: 6, height: 16)
+                            }
+                            .offset(x: -10, y: -60)
+                        }
+                        .overlay(alignment: .trailing) {
+                            // Right ears
+                            HStack(spacing: 4) {
+                                earBar(width: 6, height: 16)
+                                earBar(width: 10, height: 26)
+                            }
+                            .offset(x: 10, y: -60)
+                        }
+                )
 
-                if !snap.toolBreakdown.isEmpty {
-                    toolBars
-                }
-
-                if !snap.topRepos.isEmpty {
-                    repoList
-                }
-
+                // ── Trend section (body) ──
                 if timeRange != .today {
                     trendChart
                 }
@@ -185,7 +218,17 @@ struct DashboardView: View {
         }.frame(width: 90)
     }
 
-    // MARK: - Tool & Repo
+    // MARK: - Tool & Repo (output section)
+
+    @ViewBuilder
+    private var outputSection: some View {
+        if !snap.toolBreakdown.isEmpty {
+            toolBars
+        }
+        if !snap.topRepos.isEmpty {
+            repoList
+        }
+    }
 
     @ViewBuilder
     private var toolBars: some View {
@@ -204,7 +247,9 @@ struct DashboardView: View {
                 }
             }
         }
-        .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
     }
 
     @ViewBuilder
@@ -236,7 +281,17 @@ struct DashboardView: View {
                 }
             }
         }
-        .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+    }
+
+    private func earBar(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(Color.marsGreen.opacity(0.2))
+            .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .stroke(Color.marsGreen.opacity(0.35), lineWidth: 1))
+            .frame(width: width, height: height)
     }
 
     /// Axis calculation — moved outside ViewBuilder to avoid control-flow restriction.
@@ -328,7 +383,10 @@ struct DashboardView: View {
                 HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.deepRed.opacity(0.35)).frame(width: 8, height: 8); Text("Deleted").font(.caption2) }
             }
         }
-        .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.marsGreen.opacity(0.25), lineWidth: 2))
     }
 
     // MARK: - Helpers
