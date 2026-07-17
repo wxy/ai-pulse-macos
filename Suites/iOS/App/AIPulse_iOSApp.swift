@@ -44,11 +44,11 @@ struct ContentView: View {
                 // Splash screen — shown for at least 1.5s while checking iCloud
                 VStack(spacing: 16) {
                     Spacer()
-                    if let img = UIImage(named: "AIPulse") {
-                        Image(uiImage: img).resizable().frame(width: 80, height: 80).cornerRadius(18)
-                    } else {
-                        Image(systemName: "chart.bar.fill").font(.system(size: 60)).foregroundColor(.accentColor)
-                    }
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 18).fill(.white)
+                        RoundedRectangle(cornerRadius: 18).stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
+                        Text("AI").font(.system(size: 28, weight: .bold)).foregroundStyle(Color.marsGreen)
+                    }.frame(width: 80, height: 80)
                     Text("AI Pulse")
                         .font(.title2).fontWeight(.bold)
                     ProgressView(I18n.t("loading"))
