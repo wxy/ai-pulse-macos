@@ -61,6 +61,7 @@ final class CloudDataService: ObservableObject {
                 let snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
                 snapshot = snap
                 lastUpdated = record["updatedAt"] as? Date
+                await MainActor.run { UIApplication.shared.applicationIconBadgeNumber = Int(snap.todayCost * 100) }
             }
         } catch {
             log.error("fetchSnapshot(\(range)): \(error.localizedDescription)")

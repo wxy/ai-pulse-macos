@@ -18,7 +18,7 @@ final class NotificationService: NSObject {
         // Request notification permission
         do {
             let granted = try await UNUserNotificationCenter.current()
-                .requestAuthorization(options: [.alert, .sound, .badge])
+                .requestAuthorization(options: [.alert, .badge])
             if granted {
                 await registerSubscription()
             }
@@ -40,9 +40,9 @@ final class NotificationService: NSObject {
         guard snap != nil else { return }
 
         let content = UNMutableNotificationContent()
-        content.title = "AI Pulse"
-        content.body = String(format: "Today's AI spend: $%.2f", snap!.todayCost)
-        content.sound = .default
+        content.title = I18n.t("notify.title")
+        content.body = String(format: I18n.t("notify.body"), snap!.todayCost)
+        content.badge = NSNumber(value: Int(snap!.todayCost * 100))
         content.interruptionLevel = .timeSensitive
 
         let request = UNNotificationRequest(identifier: UUID().uuidString,
@@ -83,6 +83,6 @@ extension NotificationService: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         // Show banner + sound even when app is in foreground
-        [.banner, .sound]
+        [.banner]
     }
 }
