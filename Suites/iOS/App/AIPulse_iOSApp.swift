@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// iOS + iPadOS app entry point.
-/// Read-only: displays spending data synced from macOS via iCloud.
 @main
 struct AIPulse_iOSApp: App {
     @StateObject private var cloudData = CloudDataService.shared
@@ -14,8 +12,6 @@ struct AIPulse_iOSApp: App {
     }
 }
 
-/// Content root: shows Dashboard if iCloud data exists,
-/// otherwise shows Welcome guide to install macOS version.
 struct ContentView: View {
     @EnvironmentObject var cloudData: CloudDataService
     @State private var hasData: Bool? = nil
@@ -33,7 +29,7 @@ struct ContentView: View {
         .task {
             do {
                 hasData = try await cloudData.hasData()
-                if hasData == true { try? await cloudData.fetchAll() }
+                if hasData == true { try? await cloudData.fetchSnapshot() }
             } catch {
                 hasData = false
             }

@@ -4,13 +4,14 @@ import Charts
 struct DashboardView: View {
     @EnvironmentObject var cloudData: CloudDataService
     @State private var timeRange = TimeRange.today
-    @State private var barProgress: CGFloat = 0
+
+    private var snap: DashboardSnapshot { cloudData.snapshot ?? DashboardSnapshot() }
 
     private var totalCost: Double {
         switch timeRange {
-        case .today:  return cloudData.todayCost
-        case .week:   return cloudData.weekCost
-        case .days30: return cloudData.monthCost
+        case .today:  return snap.todayCost
+        case .week:   return snap.weekCost
+        case .days30: return snap.monthCost
         }
     }
 
@@ -23,15 +24,10 @@ struct DashboardView: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
-            .onChange(of: timeRange) { _, _ in
-                barProgress = 0
-                withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 }
-            }
 
             Text("$\(String(format: "%.2f", totalCost))")
                 .font(.system(size: 44, weight: .bold, design: .rounded))
                 .foregroundStyle(.red)
-                .scaleEffect(0.8 + 0.2 * barProgress)
 
             HStack(alignment: .top, spacing: 6) {
                 providerDonut
@@ -39,10 +35,10 @@ struct DashboardView: View {
                 subDonut
             }
 
-            if !cloudData.providerBreakdown.isEmpty {
+            if !snap.providerBreakdown.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Top Providers").font(.caption).foregroundColor(.secondary)
-                    ForEach(cloudData.providerBreakdown.prefix(3), id: \.providerId) { p in
+                    ForEach(snap.providerBreakdown.prefix(3), id: \.providerId) { p in
                         HStack {
                             Text(p.name).font(.caption)
                             Spacer()
@@ -53,28 +49,30 @@ struct DashboardView: View {
                 .padding(.horizontal)
             }
 
+            // Last sync time
+            if let updated = cloudData.lastUpdated {
+                Text("Updated \(updated, style: .relative) ago")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+
             Spacer()
         }
         .padding(.top)
-        .onAppear {
-            barProgress = 1
-            Task { try? await cloudData.fetchAll() }
-        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            Task { try? await cloudData.fetchAll() }
+            Task { try? await cloudData.fetchSnapshot() }
         }
     }
 
     @ViewBuilder
     private var providerDonut: some View {
         VStack(spacing: 4) {
-            if cloudData.providerBreakdown.isEmpty {
+            if snap.providerBreakdown.isEmpty {
                 Circle().stroke(.secondary.opacity(0.15), lineWidth: 10)
                     .frame(width: 80, height: 80)
                     .overlay { Text("$0").font(.caption2).foregroundColor(.secondary) }
             } else {
                 Chart {
-                    ForEach(cloudData.providerBreakdown, id: \.providerId) { p in
+                    ForEach(snap.providerBreakdown, id: \.providerId) { p in
                         SectorMark(angle: .value("Cost", p.cost), innerRadius: .ratio(0.5))
                             .foregroundStyle(by: .value("Name", p.name))
                     }
@@ -90,16 +88,16 @@ struct DashboardView: View {
         VStack(spacing: 4) {
             Circle().stroke(.secondary.opacity(0.15), lineWidth: 10)
                 .frame(width: 80, height: 80)
-                .overlay { Text("Sub").font(.caption2).foregroundColor(.secondary) }
-            Text("Subs").font(.caption2).foregroundColor(.secondary)
+                .overlay { Text("$\(String(format: "%.2f", snap.subDaily))").font(.caption2).foregroundColor(.secondary) }
+            Text("Subs/day").font(.caption2).foregroundColor(.secondary)
         }
     }
 
     private var noseStatCards: some View {
         VStack(spacing: 4) {
-            StatRow(label: "Providers", value: "\(cloudData.providerBreakdown.count)")
-            StatRow(label: "Today", value: "$\(String(format: "%.2f", cloudData.todayCost))")
-            StatRow(label: "Week", value: "$\(String(format: "%.2f", cloudData.weekCost))")
+            StatRow(label: "Net Lines", value: "\(snap.dailyStats.reduce(0) { $0 + $1.calls })")
+            StatRow(label: "Providers", value: "\(snap.providerBreakdown.count)")
+            StatRow(label: "Tools", value: "\(snap.toolBreakdown.count)")
         }
         .frame(width: 90)
     }

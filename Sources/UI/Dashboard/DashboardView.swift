@@ -1584,47 +1584,79 @@ struct DashboardView: View {
         .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.2), value: barProgress)
     }
 
-    /// Sync dashboard data to iCloud after refresh, respecting the 5-min throttle.
+    /// Sync the cached dashboard snapshot to iCloud, throttled to 5 min.
     private func triggerCloudSync() {
-        Logger.debug("Dashboard: triggerCloudSync called")
         let syncKey = "lastCloudSyncTime"
         let lastSync = UserDefaults.standard.double(forKey: syncKey)
         let syncNow = Date().timeIntervalSince1970
-        guard syncNow - lastSync >= 300 else {
-            Logger.debug("Dashboard: sync throttled (last was \(Int(syncNow - lastSync))s ago)")
-            return
-        }
+        guard syncNow - lastSync >= 300 else { return }
         UserDefaults.standard.set(syncNow, forKey: syncKey)
-        Logger.debug("Dashboard: starting cloud sync task")
 
-        let providerNames = Dictionary(uniqueKeysWithValues: IntegrationRegistry.all.map { ($0.id, $0.displayName) })
         Task.detached(priority: .background) {
-            let cal = Calendar.current
-            let todayStart = cal.startOfDay(for: Date())
-            let todayMs = Int64(todayStart.timeIntervalSince1970 * 1000)
-            let weekMs = Int64(cal.date(byAdding: .day, value: -6, to: todayStart)!.timeIntervalSince1970 * 1000)
-            let monthMs = Int64(cal.date(byAdding: .day, value: -29, to: todayStart)!.timeIntervalSince1970 * 1000)
-            async let t = StatsService.combinedSpend(sinceMs: todayMs)
-            async let w = StatsService.combinedSpend(sinceMs: weekMs)
-            async let m = StatsService.combinedSpend(sinceMs: monthMs)
-            let (todayCost, weekCost, monthCost) = await (t, w, m)
-            var providers: [(providerId: String, name: String, cost: Double)] = []
-            if let spend = try? await StatsService.balanceDailySpend(days: 7, sinceMs: weekMs) {
-                var totals: [String: (name: String, cost: Double)] = [:]
-                for s in spend {
-                    let name = providerNames[s.providerId] ?? s.providerId
-                    let prev = totals[s.providerId]?.cost ?? 0
-                    totals[s.providerId] = (name, prev + s.spend)
+            await CloudSyncService.shared.syncFromCache()
+        }
+    }
+
+    private func buildSnapshot(
+        todayCost: Double, weekCost: Double, monthCost: Double,
+        yesterdaySpend: Double, previousPeriodSpend: Double,
+        balanceSpend: [(providerId: String, name: String, spend: Double)],
+        toolBreakdown: [(name: String, cost: Double)],
+        repos: [RepoBreakdown], prediction: Prediction?,
+        dailyStats: [DailyStat], codeChanges: [DailyCodeChange],
+        dailyBalanceSpend: [Date: Double],
+        todayCalls: Int, todayTokens: Int
+    ) -> DashboardSnapshot {
+        return DashboardSnapshot(
+            version: 1,
+            todayCost: todayCost, weekCost: weekCost, monthCost: monthCost,
+            yesterdaySpend: yesterdaySpend, previousPeriodSpend: previousPeriodSpend,
+            subDaily: StatsService.subscriptionDailyAmortization(),
+            todayCalls: todayCalls, todayTokens: todayTokens,
+            providerBreakdown: balanceSpend.map { ProviderItem(providerId: $0.providerId, name: $0.name, cost: $0.spend) },
+            toolBreakdown: toolBreakdown.map { NameCostItem(name: $0.name, cost: $0.cost) },
+            topRepos: repos.map { RepoItem(name: $0.repo, cost: $0.cost, added: $0.added, deleted: $0.deleted, cpl: $0.totalChanges > 0 ? $0.cost * 1000 / Double($0.totalChanges) : 0) },
+            prediction: prediction.map { PredictionItem(monthProjected: $0.monthProjected, dailyRate: $0.dailyRate, daysRemaining: $0.daysRemaining, monthSoFar: $0.monthSoFar) },
+            dailyStats: dailyStats.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: $0.calls, tokens: $0.tokens, netLines: $0.netLines) },
+            codeChanges: codeChanges.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: Double($0.added), calls: 0, tokens: 0, netLines: $0.added - $0.deleted, added: $0.added, deleted: $0.deleted) },
+            balanceDaily: dailyBalanceSpend.map { TrendPoint(ts: $0.key.timeIntervalSince1970, value: $0.value, calls: 0, tokens: 0, netLines: 0) },
+            updatedAt: Date()
+        )
+    }
+
+    /// Apply a cached snapshot to @State variables, skipping all DB queries.
+    private func applySnapshot(_ snap: DashboardSnapshot) {
+        todayCombinedSpend = snap.todayCost
+        todayCalls = snap.todayCalls
+        todayTokens = snap.todayTokens
+        yesterdaySpend = snap.yesterdaySpend
+        previousPeriodSpend = snap.previousPeriodSpend
+        toolCostBreakdown = snap.toolBreakdown.map { (name: $0.name, cost: $0.cost) }
+        balanceSpend = snap.providerBreakdown.map { (providerId: $0.providerId, name: $0.name, spend: $0.cost) }
+        dailyBalanceSpend = snap.balanceDaily.reduce(into: [Date: Double]()) { map, p in
+            map[Date(timeIntervalSince1970: p.ts)] = p.value
+        }
+        dailyStats = snap.dailyStats.map { p in
+            DailyStat(date: Date(timeIntervalSince1970: p.ts), cost: p.value, calls: p.calls, tokens: p.tokens, netLines: p.netLines, costPerLine: 0)
+        }
+        codeChanges = snap.codeChanges.map { p in
+            DailyCodeChange(date: Date(timeIntervalSince1970: p.ts), added: p.added, deleted: p.deleted)
+        }
+        repos = snap.topRepos.map { RepoBreakdown(repo: $0.name, cost: $0.cost, added: $0.added, deleted: $0.deleted, apiSources: [], subscriptionSources: []) }
+        prediction = snap.prediction.map { Prediction(monthProjected: $0.monthProjected, dailyRate: $0.dailyRate, daysRemaining: $0.daysRemaining, monthSoFar: $0.monthSoFar) }
+        providerCosts = snap.providerBreakdown.map { ProviderDailyCost(date: Date(), providerId: $0.providerId, cost: $0.cost) }
+        paddedChanges = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
+        isDemoMode = false
+        loadedTimeRange = timeRange
+
+        // Same entry animation as the full load path
+        if barProgress < 0.5 {
+            barProgress = 0
+            DispatchQueue.main.async {
+                withAnimation(.spring(response: 0.65, dampingFraction: 0.7)) {
+                    self.barProgress = 1
                 }
-                providers = totals.map { (providerId: $0.key, name: $0.value.name, cost: $0.value.cost) }.sorted { $0.cost > $1.cost }
             }
-            let weekStats = (try? await StatsService.dailyStats(days: 7)) ?? []
-            let repos = Array(weekStats.map { (name: "Day", cost: $0.cost) }.suffix(3))
-            let trend = weekStats.map { (date: $0.date, cost: $0.cost) }
-            await CloudSyncService.shared.syncDashboard(
-                todayCost: todayCost, weekCost: weekCost, monthCost: monthCost,
-                providerBreakdown: providers, topRepos: repos, weekTrend: trend
-            )
         }
     }
 
@@ -1634,6 +1666,14 @@ struct DashboardView: View {
         // the stale one is discarded.
         loadGeneration += 1
         let myGen = loadGeneration
+
+        // ── Cache check — if recent snapshot exists, apply instantly ──
+        if let cached = await DashboardCache.read(timeRange: timeRange.label, maxAge: 30) {
+            guard myGen == loadGeneration else { return }
+            applySnapshot(cached)
+            Logger.debug("Dashboard: loaded from cache (\(timeRange.label))")
+            return
+        }
 
         // ── Synchronous prep ──
         let currentTimeRange = timeRange  // capture before async closures for sendability
@@ -1841,6 +1881,29 @@ struct DashboardView: View {
         usageData = newUsageData
         loadedTimeRange = timeRange  // mark data as matching current tab
         balanceErrors = AppHealthMonitor.shared.failingProviders
+
+        // Persist computed snapshot to local cache for CloudKit sync
+        let subAmort = StatsService.subscriptionDailyAmortization()
+        let apiTotal = newBalanceSpend.reduce(0.0) { $0 + $1.2 }
+        let snap = buildSnapshot(
+            todayCost: newTodayCombinedSpend,
+            weekCost: apiTotal + subAmort * Double(currentTimeRange.days),
+            monthCost: apiTotal + subAmort * 30,
+            yesterdaySpend: newYesterdaySpend,
+            previousPeriodSpend: newPreviousPeriodSpend,
+            balanceSpend: newBalanceSpend,
+            toolBreakdown: newToolCostBreakdown,
+            repos: newRepos,
+            prediction: newPrediction,
+            dailyStats: newDailyStats,
+            codeChanges: newCodeChanges,
+            dailyBalanceSpend: newDailyBalanceSpend,
+            todayCalls: todayCalls,
+            todayTokens: todayTokens
+        )
+        guard let data = try? JSONEncoder().encode(snap),
+              let json = String(data: data, encoding: .utf8) else { return }
+        Task { await DashboardCache.write(timeRange: currentTimeRange.label, json: json) }
 
         // ── Trigger entry animations (only when bars were reset by tab switch) ──
         if barProgress < 0.5 {
