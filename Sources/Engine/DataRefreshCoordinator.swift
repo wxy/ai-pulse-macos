@@ -231,6 +231,11 @@ final class DataRefreshCoordinator: @unchecked Sendable {
 
             let monthSnap = DashboardSnapshot(todayCost: t, weekCost: w, monthCost: m, yesterdaySpend: 0, previousPeriodSpend: 0, subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok, providerBreakdown: monthProviders, toolBreakdown: toolCosts, topRepos: rp(mr), prediction: predItem, dailyStats: tp(ms), codeChanges: cp(mc), balanceDaily: bp(mb), updatedAt: Date())
             await DashboardCache.write(timeRange: "30d", json: monthSnap.jsonString())
+            // Overwrite with correct StatsService.dashboardSnapshot for each range
+            for (key, days) in [("today", 1), ("week", 7), ("30d", 30)] {
+                let snap = await StatsService.dashboardSnapshot(days: days)
+                await DashboardCache.write(timeRange: key, json: snap.jsonString())
+            }
             await CloudSyncService.shared.syncFromCache()
             Task { @MainActor in Logger.debug("DataRefreshCoordinator: Phase 4 cache refreshed + synced") }
         }

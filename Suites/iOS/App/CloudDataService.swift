@@ -16,8 +16,12 @@ final class CloudDataService: ObservableObject {
 
     private init() {}
 
+    private func recordName(for range: String) -> String {
+        "snapshot-\(range)"
+    }
+
     func hasData() async throws -> Bool {
-        let recordID = CKRecord.ID(recordName: "snapshot")
+        let recordID = CKRecord.ID(recordName: recordName(for: "today"))
         do {
             let record = try await database.record(for: recordID)
             log.info("hasData: record found, json present=\(record["json"] != nil)")
@@ -48,7 +52,18 @@ final class CloudDataService: ObservableObject {
         }
     }
 
-    func fetchSnapshot() async throws {
-        _ = try await hasData()
+    func fetchSnapshot(for range: String = "today") async throws {
+        let recordID = CKRecord.ID(recordName: recordName(for: range))
+        do {
+            let record = try await database.record(for: recordID)
+            if let json = record["json"] as? String,
+               let data = json.data(using: .utf8) {
+                let snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
+                snapshot = snap
+                lastUpdated = record["updatedAt"] as? Date
+            }
+        } catch {
+            log.error("fetchSnapshot(\(range)): \(error.localizedDescription)")
+        }
     }
 }

@@ -1650,8 +1650,6 @@ struct DashboardView: View {
 
         // ── Synchronous prep ──
         let currentTimeRange = timeRange  // capture before async closures for sendability
-        let newEditorMappings = EditorDetector.certainMappings()
-        let cal = Calendar.current
 
         // ── Demo mode: auto-activates when no integrations configured ──
         let demoActive = DemoData.isActive

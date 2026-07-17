@@ -24,31 +24,9 @@ struct DashboardView: View {
         snap.subDaily * Double(timeRange.days)
     }
 
-    private var filteredStats: [TrendPoint] {
-        guard !snap.dailyStats.isEmpty else { return [] }
-        let days = timeRange.days
-        let cutoff = Calendar.current.date(byAdding: .day, value: -(days - 1), to: Calendar.current.startOfDay(for: Date()))!
-        return snap.dailyStats.filter { Date(timeIntervalSince1970: $0.ts) >= cutoff }
-    }
-
-    private var filteredCode: [TrendPoint] {
-        guard !snap.codeChanges.isEmpty else { return [] }
-        let days = timeRange.days
-        let cutoff = Calendar.current.date(byAdding: .day, value: -(days - 1), to: Calendar.current.startOfDay(for: Date()))!
-        return snap.codeChanges.filter { Date(timeIntervalSince1970: $0.ts) >= cutoff }
-    }
-
-    private var filteredBalance: [TrendPoint] {
-        guard !snap.balanceDaily.isEmpty else { return [] }
-        let days = timeRange.days
-        let cutoff = Calendar.current.date(byAdding: .day, value: -(days - 1), to: Calendar.current.startOfDay(for: Date()))!
-        return snap.balanceDaily.filter { Date(timeIntervalSince1970: $0.ts) >= cutoff }
-    }
-
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                // Tab picker
                 Picker("", selection: $timeRange) {
                     Text("Today").tag(TimeRange.today)
                     Text("Week").tag(TimeRange.week)
@@ -56,21 +34,21 @@ struct DashboardView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
-                .onChange(of: timeRange) { _, _ in
+                .onChange(of: timeRange) { _, newRange in
                     barProgress = 0
                     withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 }
+                    let key = newRange == .today ? "today" : newRange == .week ? "week" : "30d"
+                    Task { try? await cloudData.fetchSnapshot(for: key) }
                 }
 
-                // Big total
                 VStack(spacing: 4) {
                     Text("$\(String(format: "%.2f", totalCost))")
                         .font(.system(size: 44, weight: .bold, design: .rounded))
                         .foregroundStyle(.red)
                         .scaleEffect(0.8 + 0.2 * barProgress)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
 
                     HStack(spacing: 6) {
-                        Text("\(timeRange.label) Total")
+                        Text("\(timeRange.label) \(totalCost > 0 ? "Total" : "")")
                             .font(.caption).foregroundColor(.secondary)
                     }
 
@@ -84,49 +62,23 @@ struct DashboardView: View {
 
                 // Donuts + stats
                 HStack(alignment: .top, spacing: 8) {
-                    // Left: Sub vs API donut
-                    if apiSpend + subTotal > 0.001 {
-                        subVsApiDonut
-                    } else {
-                        emptyDonut("Sub vs API")
-                    }
-
-                    // Center stats
-                    VStack(spacing: 6) {
-                        statCard("Net Lines", value: "\(filteredCode.reduce(0) { $0 + $1.netLines })")
-                        statCard("Added", value: "+\(filteredCode.reduce(0) { $0 + $1.added })", color: .green)
-                        statCard("Deleted", value: "-\(filteredCode.reduce(0) { $0 + $1.deleted })", color: .red)
-                        if timeRange == .today {
-                            statCard("Calls", value: "\(snap.todayCalls)")
-                            statCard("Tokens", value: tokenShort(snap.todayTokens))
-                        }
-                    }
-                    .frame(width: 90)
-
-                    // Right: Provider donut
-                    if !snap.providerBreakdown.isEmpty {
-                        providerDonut
-                    } else {
-                        emptyDonut("Providers")
-                    }
+                    subVsApiDonut
+                    noseStatCards
+                    providerDonut
                 }
 
-                // Provider breakdown
-                if !snap.providerBreakdown.isEmpty {
-                    providerBars
+                if !snap.toolBreakdown.isEmpty {
+                    toolBars
                 }
 
-                // Repo list
                 if !snap.topRepos.isEmpty {
                     repoList
                 }
 
-                // Trend chart (week/30d)
-                if timeRange != .today && !filteredStats.isEmpty {
+                if timeRange != .today {
                     trendChart
                 }
 
-                // Last updated
                 if let updated = cloudData.lastUpdated {
                     Text("Updated \(updated, style: .relative) ago")
                         .font(.caption2).foregroundColor(.secondary)
@@ -147,66 +99,99 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var subVsApiDonut: some View {
-        VStack(spacing: 4) {
-            Chart {
-                if apiSpend > 0.001 {
-                    SectorMark(angle: .value("API", apiSpend), innerRadius: .ratio(0.5))
-                        .foregroundStyle(Color.red)
+        let total = apiSpend + subTotal
+        VStack(spacing: 2) {
+            ZStack {
+                if total > 0.001 {
+                    Chart {
+                        if apiSpend > 0.001 {
+                            SectorMark(angle: .value("API", apiSpend), innerRadius: .ratio(0.5))
+                                .foregroundStyle(Color.red)
+                        }
+                        if subTotal > 0.001 {
+                            SectorMark(angle: .value("Sub", subTotal), innerRadius: .ratio(0.5))
+                                .foregroundStyle(Color.green)
+                        }
+                    }
+                    .frame(width: 80, height: 80)
+                } else {
+                    Circle().stroke(.secondary.opacity(0.15), lineWidth: 10)
+                        .frame(width: 80, height: 80)
                 }
-                if subTotal > 0.001 {
-                    SectorMark(angle: .value("Sub", subTotal), innerRadius: .ratio(0.5))
-                        .foregroundStyle(Color.green)
-                }
+                Text("$\(String(format: "%.2f", total))")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
-            .chartLegend(.hidden)
-            .frame(width: 90, height: 90)
-            Text("Sub vs API").font(.caption2).foregroundColor(.secondary)
+            // Legend with percentages
+            let t = apiSpend + subTotal
+            HStack(spacing: 8) {
+                if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(.red).frame(width: 6, height: 6); Text("API \(Int(apiSpend / max(t, 0.01) * 100))%").font(.caption2) } }
+                if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(.green).frame(width: 6, height: 6); Text("Sub \(Int(subTotal / max(t, 0.01) * 100))%").font(.caption2) } }
+            }
         }
     }
 
     @ViewBuilder
     private var providerDonut: some View {
-        VStack(spacing: 4) {
-            Chart {
-                ForEach(snap.providerBreakdown, id: \.providerId) { p in
-                    SectorMark(angle: .value("Cost", p.cost), innerRadius: .ratio(0.5))
-                        .foregroundStyle(by: .value("Name", p.name))
+        VStack(spacing: 2) {
+            ZStack {
+                if !snap.providerBreakdown.isEmpty {
+                    Chart {
+                        ForEach(snap.providerBreakdown, id: \.providerId) { p in
+                            SectorMark(angle: .value("Cost", p.cost), innerRadius: .ratio(0.5))
+                                .foregroundStyle(by: .value("Name", p.name))
+                        }
+                    }
+                    .chartLegend(.hidden)
+                    .frame(width: 80, height: 80)
+                } else {
+                    Circle().stroke(.secondary.opacity(0.15), lineWidth: 10)
+                        .frame(width: 80, height: 80)
+                }
+                Text("$\(String(format: "%.2f", apiSpend))")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+            }
+            // Legend
+            ForEach(snap.providerBreakdown.prefix(3), id: \.providerId) { p in
+                HStack(spacing: 2) {
+                    Circle().fill(.blue).frame(width: 6, height: 6)
+                    Text("\(p.name) \(Int(p.cost / max(apiSpend, 0.01) * 100))%")
+                        .font(.caption2).foregroundColor(.secondary)
                 }
             }
-            .chartLegend(.hidden)
-            .frame(width: 90, height: 90)
-            Text("Providers").font(.caption2).foregroundColor(.secondary)
         }
     }
 
-    @ViewBuilder
-    private func emptyDonut(_ label: String) -> some View {
-        VStack(spacing: 4) {
-            Circle().stroke(.secondary.opacity(0.15), lineWidth: 10)
-                .frame(width: 90, height: 90)
-                .overlay { Text("$0").font(.caption2).foregroundColor(.secondary) }
-            Text(label).font(.caption2).foregroundColor(.secondary)
+    private var noseStatCards: some View {
+        let f = snap.codeChanges
+        return VStack(spacing: 6) {
+            statCard("Net Lines", value: "\(f.reduce(0) { $0 + $1.netLines })")
+            statCard("Added", value: "+\(f.reduce(0) { $0 + $1.added })", color: .green)
+            statCard("Deleted", value: "-\(f.reduce(0) { $0 + $1.deleted })", color: .red)
+            if timeRange == .today {
+                statCard("Calls", value: "\(snap.todayCalls)")
+                statCard("Tokens", value: tokenShort(snap.todayTokens))
+            }
         }
+        .frame(width: 90)
     }
 
     // MARK: - Tool & Repo
 
     @ViewBuilder
-    private var providerBars: some View {
-        let maxCost = snap.providerBreakdown.map(\.cost).max() ?? 1
+    private var toolBars: some View {
+        let maxCost = snap.toolBreakdown.map(\.cost).max() ?? 1
         VStack(alignment: .leading, spacing: 6) {
-            Text("By Provider").font(.caption).foregroundColor(.secondary)
-            ForEach(snap.providerBreakdown.prefix(5), id: \.name) { p in
+            Text("By Tool").font(.caption).foregroundColor(.secondary)
+            ForEach(snap.toolBreakdown.prefix(5), id: \.name) { tool in
                 HStack {
-                    Text(p.name).font(.caption).frame(width: 80, alignment: .leading)
+                    Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 3)
                             .fill(Color.green.opacity(0.6))
-                            .frame(width: max(geo.size.width * CGFloat(p.cost / maxCost), 2))
-                    }
-                    .frame(height: 8)
+                            .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
+                    }.frame(height: 8)
                     Spacer()
-                    Text("$\(String(format: "%.2f", p.cost))").font(.caption2).monospacedDigit()
+                    Text("$\(String(format: "%.2f", tool.cost))").font(.caption2).monospacedDigit()
                 }
             }
         }
@@ -217,23 +202,36 @@ struct DashboardView: View {
     @ViewBuilder
     private var repoList: some View {
         let maxCost = snap.topRepos.map(\.cost).max() ?? 1
+        let maxCPL = snap.topRepos.compactMap { $0.cpl > 0 ? $0.cpl : nil }.max() ?? 1
         VStack(alignment: .leading, spacing: 6) {
             Text("By Repo").font(.caption).foregroundColor(.secondary)
-            ForEach(snap.topRepos.prefix(6), id: \.name) { repo in
+            ForEach(snap.topRepos.filter { $0.added + $0.deleted > 0 }.prefix(6), id: \.name) { repo in
+                // Line 1: name + added/deleted
                 HStack {
                     Text(repo.name).font(.caption).lineLimit(1)
                     Spacer()
-                    Text("$\(String(format: "%.2f", repo.cost))").font(.caption2).monospacedDigit()
+                    Text("+\(repo.added)/-\(repo.deleted)")
+                        .font(.caption2).foregroundColor(.secondary)
                 }
+                // Line 2: cost bar
                 HStack(spacing: 4) {
+                    Text("$\(String(format: "%.2f", repo.cost))")
+                        .font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Color.green.opacity(0.5))
                             .frame(width: max(geo.size.width * CGFloat(repo.cost / maxCost), 2))
-                    }
-                    .frame(height: 4)
+                    }.frame(height: 4)
+                }
+                // Line 3: CPL bar
+                HStack(spacing: 4) {
                     Text("CPL $\(String(format: "%.2f", repo.cpl))")
-                        .font(.caption2).foregroundColor(.secondary)
+                        .font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
+                    GeometryReader { geo in
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.blue.opacity(0.4))
+                            .frame(width: max(geo.size.width * CGFloat(repo.cpl / maxCPL), 2))
+                    }.frame(height: 4)
                 }
             }
         }
@@ -245,28 +243,48 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var trendChart: some View {
+        let filteredStats = snap.dailyStats
+        let filteredCode = snap.codeChanges
+        let filteredBalance = snap.balanceDaily
         let balanceMap = Dictionary(uniqueKeysWithValues: filteredBalance.map { (Date(timeIntervalSince1970: $0.ts), $0.value) })
+
         VStack(spacing: 8) {
             Text("Daily Trend").font(.headline)
-            Chart {
-                ForEach(filteredStats, id: \.ts) { s in
-                    let d = Date(timeIntervalSince1970: s.ts)
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("API", (balanceMap[d] ?? 0) * barProgress))
-                        .foregroundStyle(Color.green)
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Sub", (snap.subDaily) * barProgress))
-                        .foregroundStyle(Color.green.opacity(0.4))
+            if filteredStats.isEmpty && filteredCode.isEmpty {
+                Text("No data").font(.caption).foregroundColor(.secondary)
+            } else {
+                Chart {
+                    // Left axis: API spend + subscription (cost)
+                    ForEach(filteredStats, id: \.ts) { s in
+                        let d = Date(timeIntervalSince1970: s.ts)
+                        BarMark(x: .value("Date", d, unit: .day), y: .value("API", (balanceMap[d] ?? 0) * barProgress))
+                            .foregroundStyle(Color.green)
+                        BarMark(x: .value("Date", d, unit: .day), y: .value("Sub", snap.subDaily * barProgress))
+                            .foregroundStyle(Color.green.opacity(0.4))
+                    }
+                    // Right axis: code changes (lines)
+                    ForEach(filteredCode, id: \.ts) { c in
+                        let d = Date(timeIntervalSince1970: c.ts)
+                        BarMark(x: .value("Date", d, unit: .day), y: .value("Added", Double(c.added) * barProgress))
+                            .foregroundStyle(Color.red.opacity(0.6))
+                        BarMark(x: .value("Date", d, unit: .day), y: .value("Deleted", Double(c.deleted) * barProgress))
+                            .foregroundStyle(Color.red.opacity(0.3))
+                    }
                 }
-                ForEach(filteredCode, id: \.ts) { c in
-                    let d = Date(timeIntervalSince1970: c.ts)
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Added", Double(c.added) * barProgress))
-                        .foregroundStyle(Color.red.opacity(0.6))
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Deleted", Double(c.deleted) * barProgress))
-                        .foregroundStyle(Color.red.opacity(0.3))
+                .chartYAxis {
+                    AxisMarks(position: .leading, values: .automatic) { _ in
+                        AxisGridLine().foregroundStyle(.gray.opacity(0.2))
+                        AxisValueLabel()
+                    }
                 }
-            }
-            .frame(height: 200)
-            .chartYAxis {
-                AxisMarks(position: .leading)
+                .frame(height: 200)
+                // Legend
+                HStack(spacing: 12) {
+                    HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green).frame(width: 8, height: 8); Text("API").font(.caption2) }
+                    HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.green.opacity(0.4)).frame(width: 8, height: 8); Text("Sub").font(.caption2) }
+                    HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.red.opacity(0.6)).frame(width: 8, height: 8); Text("Added").font(.caption2) }
+                    HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(.red.opacity(0.3)).frame(width: 8, height: 8); Text("Deleted").font(.caption2) }
+                }
             }
         }
         .padding(12)
@@ -292,17 +310,5 @@ struct DashboardView: View {
 enum TimeRange: Hashable {
     case today, week, days30
     var days: Int { switch self { case .today: 1; case .week: 7; case .days30: 30 } }
-    var label: String {
-        switch self { case .today: "Today"; case .week: "This Week"; case .days30: "30 Days" }
-    }
-}
-
-struct StatRow: View {
-    let label: String; let value: String
-    var body: some View {
-        VStack(spacing: 0) {
-            Text(value).font(.caption).fontWeight(.semibold)
-            Text(label).font(.caption2).foregroundColor(.secondary)
-        }
-    }
+    var label: String { switch self { case .today: "Today"; case .week: "This Week"; case .days30: "30 Days" } }
 }

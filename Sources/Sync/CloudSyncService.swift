@@ -1,8 +1,8 @@
 import CloudKit
 import Foundation
 
-/// Syncs the cached dashboard snapshot from GRDB to iCloud.
-/// iOS/watchOS read the same snapshot to display their dashboards.
+/// Syncs the cached dashboard snapshots from GRDB to iCloud.
+/// iOS/watchOS read per-range snapshots to display correct data per tab.
 @MainActor
 final class CloudSyncService {
     static let shared = CloudSyncService()
@@ -11,35 +11,23 @@ final class CloudSyncService {
 
     private init() {}
 
-    /// Read the latest snapshot from the local cache and sync to iCloud.
     func syncFromCache() async {
-        guard let snapshot = await DashboardCache.read(timeRange: "today", maxAge: 600),
-              let data = try? JSONEncoder().encode(snapshot),
-              let json = String(data: data, encoding: .utf8) else { return }
+        for (key, recordName) in [("today", "snapshot-today"), ("week", "snapshot-week"), ("30d", "snapshot-30d")] {
+            guard let snap = await DashboardCache.read(timeRange: key, maxAge: 600),
+                  let data = try? JSONEncoder().encode(snap),
+                  let json = String(data: data, encoding: .utf8) else { continue }
 
-        let recordID = CKRecord.ID(recordName: "snapshot")
-        let record = CKRecord(recordType: "DashboardCache_v1", recordID: recordID)
-        record["json"] = json
-        record["updatedAt"] = snapshot.updatedAt
+            let record = CKRecord(recordType: "DashboardCache_v1", recordID: CKRecord.ID(recordName: recordName))
+            record["json"] = json
+            record["updatedAt"] = snap.updatedAt
 
-        do {
-            let (_, results) = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
-            let failures = results.compactMap { _, r in if case .failure(let e) = r { return e }; return nil }
-            if failures.isEmpty {
-                // Verify read-back
-                if let check = try? await database.record(for: recordID) {
-                    let js = (check["json"] as? String) ?? ""
-                    let hasCC = js.contains("codeChanges")
-                    let hasTR = js.contains("topRepos")
-                    Logger.debug("CloudSync: synced OK, len=\(js.count), codeChanges=\(hasCC), topRepos=\(hasTR)")
-                } else {
-                    Logger.warning("CloudSync: synced but read-back failed")
-                }
-            } else {
-                Logger.warning("CloudSync: \(failures.count) failures — \(failures.first!.localizedDescription)")
+            do {
+                let (_, results) = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
+                let ok = results.compactMap({ _, r in if case .failure = r { return true }; return nil }).isEmpty
+                if ok { Logger.debug("CloudSync: synced \(key) len=\(json.count)") }
+            } catch {
+                Logger.warning("CloudSync: \(key) save failed")
             }
-        } catch {
-            Logger.warning("CloudSync: save failed — \(error.localizedDescription)")
         }
     }
 }
