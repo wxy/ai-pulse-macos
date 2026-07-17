@@ -93,7 +93,7 @@ struct DashboardView: View {
 
                     // Center stats
                     VStack(spacing: 6) {
-                        statCard("Net Lines", value: "\(filteredStats.reduce(0) { $0 + $1.netLines })")
+                        statCard("Net Lines", value: "\(filteredCode.reduce(0) { $0 + $1.netLines })")
                         statCard("Added", value: "+\(filteredCode.reduce(0) { $0 + $1.added })", color: .green)
                         statCard("Deleted", value: "-\(filteredCode.reduce(0) { $0 + $1.deleted })", color: .red)
                         if timeRange == .today {
@@ -111,9 +111,9 @@ struct DashboardView: View {
                     }
                 }
 
-                // Tool breakdown
-                if !snap.toolBreakdown.isEmpty {
-                    toolBars
+                // Provider breakdown
+                if !snap.providerBreakdown.isEmpty {
+                    providerBars
                 }
 
                 // Repo list
@@ -192,21 +192,21 @@ struct DashboardView: View {
     // MARK: - Tool & Repo
 
     @ViewBuilder
-    private var toolBars: some View {
-        let maxCost = snap.toolBreakdown.map(\.cost).max() ?? 1
+    private var providerBars: some View {
+        let maxCost = snap.providerBreakdown.map(\.cost).max() ?? 1
         VStack(alignment: .leading, spacing: 6) {
-            Text("By Tool").font(.caption).foregroundColor(.secondary)
-            ForEach(snap.toolBreakdown.prefix(5), id: \.name) { tool in
+            Text("By Provider").font(.caption).foregroundColor(.secondary)
+            ForEach(snap.providerBreakdown.prefix(5), id: \.name) { p in
                 HStack {
-                    Text(tool.name).font(.caption).frame(width: 80, alignment: .leading)
+                    Text(p.name).font(.caption).frame(width: 80, alignment: .leading)
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 3)
                             .fill(Color.green.opacity(0.6))
-                            .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
+                            .frame(width: max(geo.size.width * CGFloat(p.cost / maxCost), 2))
                     }
                     .frame(height: 8)
                     Spacer()
-                    Text("$\(String(format: "%.2f", tool.cost))").font(.caption2).monospacedDigit()
+                    Text("$\(String(format: "%.2f", p.cost))").font(.caption2).monospacedDigit()
                 }
             }
         }
