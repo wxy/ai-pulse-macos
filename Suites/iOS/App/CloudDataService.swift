@@ -1,7 +1,13 @@
 import CloudKit
 import Combine
 import Foundation
+import UserNotifications
 import os
+
+enum CloudError: Error {
+    case noData
+    case unavailable
+}
 
 /// Reads the DashboardCache_v1 record synced by macOS.
 @MainActor
@@ -13,7 +19,6 @@ final class CloudDataService: ObservableObject {
 
     private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
     private let log = Logger(subsystem: "com.wxy.aipulse", category: "CloudData")
-
     private init() {}
 
     private func recordName(for range: String) -> String {
@@ -41,14 +46,27 @@ final class CloudDataService: ObservableObject {
                         default: break
                         }
                     }
-                    return false
+                    throw CloudError.noData
                 }
             }
             log.warning("hasData: json field missing")
-            return false
+            throw CloudError.noData
+        } catch let cloudError as CloudError {
+            throw cloudError
+        } catch let ckError as CKError {
+            switch ckError.code {
+            case .unknownItem:
+                throw CloudError.noData
+            case .networkUnavailable, .notAuthenticated, .permissionFailure:
+                log.error("hasData: iCloud unavailable — \(ckError.localizedDescription)")
+                throw CloudError.unavailable
+            default:
+                log.error("hasData: CKError — \(ckError.localizedDescription)")
+                throw CloudError.unavailable
+            }
         } catch {
             log.error("hasData: \(error.localizedDescription)")
-            return false
+            throw CloudError.unavailable
         }
     }
 

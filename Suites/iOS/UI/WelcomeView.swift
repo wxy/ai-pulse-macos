@@ -6,26 +6,18 @@ struct WelcomeView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            Image(systemName: "chart.bar.fill")
-                .font(.system(size: 60))
-                .foregroundColor(.accentColor)
+            Image("Logo").resizable().frame(width: 80, height: 80).cornerRadius(18)
 
-            Text("AI Pulse")
-                .font(.largeTitle).fontWeight(.bold)
+            Text(I18n.t("welcome.title"))
+                .font(.title2).fontWeight(.bold)
 
-            Text("AI 花费追踪仪表盘")
+            Text(I18n.t("welcome.subtitle"))
                 .font(.title3).foregroundColor(.secondary)
 
-            Text("数据由 macOS 版 AI Pulse 采集并同步到你的 iCloud。请先在 Mac 上安装 AI Pulse 以开始追踪。")
+            Text(I18n.t("welcome.body"))
                 .multilineTextAlignment(.center)
                 .font(.body).foregroundColor(.secondary)
                 .padding(.horizontal, 40)
-
-            if let url = URL(string: "macappstore://apps.apple.com/app/id1234567890") {
-                Link("在 App Store 获取 macOS 版", destination: url)
-                    .font(.headline)
-                    .padding(.top, 8)
-            }
 
             Spacer()
         }
