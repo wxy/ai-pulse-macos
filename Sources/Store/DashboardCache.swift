@@ -74,6 +74,11 @@ struct DashboardSnapshot: Codable {
     var balanceDaily: [TrendPoint] = []  // API-only spend per day
 
     var updatedAt: Date = Date()
+
+    func jsonString() -> String {
+        guard let data = try? JSONEncoder().encode(self) else { return "{}" }
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
 }
 
 struct ProviderItem: Codable {

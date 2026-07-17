@@ -15,25 +15,24 @@ final class CloudDataService: ObservableObject {
     private init() {}
 
     func hasData() async throws -> Bool {
-        let recordID = CKRecord.ID(recordName: "dashboard-snapshot")
+        let recordID = CKRecord.ID(recordName: "snapshot")
         do {
-            _ = try await database.record(for: recordID)
-            return true
+            let record = try await database.record(for: recordID)
+            // New format: version + json fields
+            if let json = record["json"] as? String,
+               let data = json.data(using: .utf8),
+               let snap = try? JSONDecoder().decode(DashboardSnapshot.self, from: data) {
+                snapshot = snap
+                lastUpdated = record["updatedAt"] as? Date
+                return true
+            }
+            return false
         } catch {
             return false
         }
     }
 
     func fetchSnapshot() async throws {
-        let recordID = CKRecord.ID(recordName: "dashboard-snapshot")
-        let record = try await database.record(for: recordID)
-
-        guard let jsonStr = record["json"] as? String,
-              let jsonData = jsonStr.data(using: .utf8),
-              let snap = try? JSONDecoder().decode(DashboardSnapshot.self, from: jsonData)
-        else { return }
-
-        snapshot = snap
-        lastUpdated = record["updatedAt"] as? Date
+        _ = try await hasData()
     }
 }
