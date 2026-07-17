@@ -9,7 +9,7 @@ struct WelcomeView: View {
             Image("Logo").resizable().frame(width: 80, height: 80).cornerRadius(18)
 
             Text(I18n.t("welcome.title"))
-                .font(.largeTitle).fontWeight(.bold)
+                .font(.title2).fontWeight(.bold)
 
             Text(I18n.t("welcome.subtitle"))
                 .font(.title3).foregroundColor(.secondary)

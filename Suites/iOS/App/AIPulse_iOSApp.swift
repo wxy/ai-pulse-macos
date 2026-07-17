@@ -60,6 +60,7 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .background(Color(.systemBackground))
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
             } else if case .ready = state {
                 DashboardView()
             } else if case .noData = state {
@@ -73,7 +74,7 @@ struct ContentView: View {
             await checkCloud()
             // Keep splash visible at least 1.5s for smooth transition
             try? await Task.sleep(nanoseconds: 1_500_000_000)
-            withAnimation { splashVisible = false }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { splashVisible = false }
         }
     }
 

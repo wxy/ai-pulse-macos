@@ -30,6 +30,8 @@ struct DashboardView: View {
     @EnvironmentObject var cloudData: CloudDataService
     @State private var timeRange = TimeRange.today
     @State private var barProgress: CGFloat = 0
+    @State private var toolsExpanded = false
+    @State private var reposExpanded = false
 
     private var snap: DashboardSnapshot { cloudData.snapshot ?? DashboardSnapshot() }
 
@@ -255,10 +257,12 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var toolBars: some View {
-        let maxCost = snap.toolBreakdown.map(\.cost).max() ?? 1
+        let all = snap.toolBreakdown
+        let shown = toolsExpanded ? all : Array(all.prefix(3))
+        let maxCost = all.map(\.cost).max() ?? 1
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
-            ForEach(snap.toolBreakdown.prefix(5), id: \.name) { tool in
+            ForEach(shown, id: \.name) { tool in
                 HStack {
                     Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
                     GeometryReader { geo in
@@ -269,6 +273,12 @@ struct DashboardView: View {
                     Text(usd(tool.cost)).font(.caption2).monospacedDigit()
                 }
             }
+            if all.count > 3 {
+                Button(toolsExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
+                    withAnimation { toolsExpanded.toggle() }
+                }
+                .font(.caption2)
+            }
         }
         .padding(12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
@@ -277,12 +287,13 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var repoList: some View {
-        let items = snap.topRepos.filter { $0.added + $0.deleted > 0 }.prefix(6)
-        let maxCost = items.map(\.cost).max() ?? 1
-        let maxCPL = items.compactMap { $0.cpl > 0 ? $0.cpl : nil }.max() ?? 1
+        let all = snap.topRepos.filter { $0.added + $0.deleted > 0 }
+        let shown = reposExpanded ? all : Array(all.prefix(3))
+        let maxCost = all.map(\.cost).max() ?? 1
+        let maxCPL = all.compactMap { $0.cpl > 0 ? $0.cpl : nil }.max() ?? 1
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-            ForEach(Array(items), id: \.name) { repo in
+            ForEach(shown, id: \.name) { repo in
                 HStack {
                     Text(repo.name).font(.caption).lineLimit(1)
                     Spacer()
@@ -302,6 +313,12 @@ struct DashboardView: View {
                             .frame(width: max(geo.size.width * CGFloat(repo.cpl / maxCPL), 2))
                     }.frame(height: 4)
                 }
+            }
+            if all.count > 3 {
+                Button(reposExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
+                    withAnimation { reposExpanded.toggle() }
+                }
+                .font(.caption2)
             }
         }
         .padding(12)
