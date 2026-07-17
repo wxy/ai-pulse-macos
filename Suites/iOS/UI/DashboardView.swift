@@ -62,6 +62,7 @@ struct DashboardView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .padding(.top, 4).padding(.bottom, 12)
+                .sensoryFeedback(.selection, trigger: timeRange)
                 .onChange(of: timeRange) { _, newRange in
                     barProgress = 0
                     withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 }
@@ -99,39 +100,41 @@ struct DashboardView: View {
                     outputSection
                 }
                 .padding(.top, 28).padding(.horizontal, 14).padding(.bottom, 14)
-                .background(
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
-                        .overlay(alignment: .top) {
-                            // Antenna
-                            ZStack(alignment: .top) {
-                                Path { p in
-                                    p.addArc(center: CGPoint(x: 16, y: 2), radius: 16,
-                                             startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
-                                }
-                                .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
-                                .frame(width: 32, height: 18)
-                                Circle().fill(Color.marsGreen.opacity(0.4)).frame(width: 5, height: 5).offset(y: -6)
-                            }
-                            .offset(y: -3)
-                        }
-                        .overlay(alignment: .leading) {
-                            // Left ears
-                            HStack(spacing: 4) {
-                                earBar(width: 10, height: 26)
-                                earBar(width: 6, height: 16)
-                            }
-                            .offset(x: -10, y: -60)
-                        }
-                        .overlay(alignment: .trailing) {
-                            // Right ears
-                            HStack(spacing: 4) {
-                                earBar(width: 6, height: 16)
-                                earBar(width: 10, height: 26)
-                            }
-                            .offset(x: 10, y: -60)
-                        }
                 )
+                .overlay(alignment: .top) {
+                    // Antenna
+                    ZStack(alignment: .top) {
+                        Path { p in
+                            p.addArc(center: CGPoint(x: 16, y: 2), radius: 16,
+                                     startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+                        }
+                        .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
+                        .frame(width: 32, height: 18)
+                        Circle().fill(Color.marsGreen.opacity(0.4)).frame(width: 5, height: 5).offset(y: -6)
+                    }
+                    .offset(y: -3)
+                }
+                .overlay(alignment: .leading) {
+                    // Left ears
+                    HStack(spacing: 4) {
+                        earBar(width: 10, height: 26)
+                        earBar(width: 6, height: 16)
+                    }
+                    .offset(x: -10, y: -60)
+                }
+                .overlay(alignment: .trailing) {
+                    // Right ears
+                    HStack(spacing: 4) {
+                        earBar(width: 6, height: 16)
+                        earBar(width: 10, height: 26)
+                    }
+                    .offset(x: 10, y: -60)
+                }
+                .padding(.top, 28).padding(.horizontal, 14).padding(.bottom, 14)
 
                 // ── Trend section (body) ──
                 if timeRange != .today {

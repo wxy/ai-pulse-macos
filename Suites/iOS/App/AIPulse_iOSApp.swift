@@ -1,6 +1,7 @@
 import SwiftUI
 import CloudKit
 import UserNotifications
+import UIKit
 
 @main
 struct AIPulse_iOSApp: App {
@@ -83,6 +84,7 @@ struct ContentView: View {
         do {
             _ = try await cloudData.hasData()
             state = .ready
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } catch CloudError.noData {
             state = .noData
         } catch {

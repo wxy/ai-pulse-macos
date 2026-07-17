@@ -38,6 +38,7 @@ struct CloudErrorView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(retrying)
+            .sensoryFeedback(.selection, trigger: retrying)
 
             Spacer()
         }
