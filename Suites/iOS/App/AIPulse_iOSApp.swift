@@ -76,9 +76,9 @@ struct ContentView: View {
         }
         .task {
             try? await UNUserNotificationCenter.current().setBadgeCount(0)
-            await checkCloud()
-            // Keep splash visible at least 1.5s for smooth transition
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            async let cloud = checkCloud()
+            async let minimum = try? await Task.sleep(nanoseconds: 1_000_000_000)
+            _ = await (cloud, minimum)
             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { splashVisible = false }
         }
     }
