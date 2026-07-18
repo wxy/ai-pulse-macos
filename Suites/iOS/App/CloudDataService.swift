@@ -22,20 +22,25 @@ final class CloudDataService: ObservableObject {
     private init() {}
 
     private func recordName(for range: String) -> String {
-        "snapshot-\(range)"
+        switch range {
+        case "today": return CKSchema.RecordName.today
+        case "week":  return CKSchema.RecordName.week
+        case "30d":   return CKSchema.RecordName.month
+        default:      return "snapshot-\(range)"
+        }
     }
 
     func hasData() async throws -> Bool {
         let recordID = CKRecord.ID(recordName: recordName(for: "today"))
         do {
             let record = try await database.record(for: recordID)
-            log.info("hasData: record found, json present=\(record["json"] != nil)")
-            if let json = record["json"] as? String,
+            log.info("hasData: record found, json present=\(record[CKSchema.Field.json] != nil)")
+            if let json = record[CKSchema.Field.json] as? String,
                let data = json.data(using: .utf8) {
                 do {
                     let snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
                     snapshot = snap
-                    lastUpdated = record["updatedAt"] as? Date
+                    lastUpdated = record[CKSchema.Field.updatedAt] as? Date
                     return true
                 } catch {
                     log.error("hasData: decode failed — \(error.localizedDescription)")
@@ -74,11 +79,11 @@ final class CloudDataService: ObservableObject {
         let recordID = CKRecord.ID(recordName: recordName(for: range))
         do {
             let record = try await database.record(for: recordID)
-            if let json = record["json"] as? String,
+            if let json = record[CKSchema.Field.json] as? String,
                let data = json.data(using: .utf8) {
                 let snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
                 snapshot = snap
-                lastUpdated = record["updatedAt"] as? Date
+                lastUpdated = record[CKSchema.Field.updatedAt] as? Date
             }
         } catch {
             log.error("fetchSnapshot(\(range)): \(error.localizedDescription)")

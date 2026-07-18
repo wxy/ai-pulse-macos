@@ -119,13 +119,13 @@ final class NotificationService: NSObject {
 
     private func registerSubscription() async {
         let subs = try? await database.allSubscriptions()
-        if subs?.contains(where: { $0.subscriptionID == "dashboard-changes" }) == true { return }
+        if subs?.contains(where: { $0.subscriptionID == CKSchema.Subscription.dashboardChanges }) == true { return }
 
         let predicate = NSPredicate(value: true)
         let subscription = CKQuerySubscription(
-            recordType: "DashboardCache_v1",
+            recordType: CKSchema.recordType,
             predicate: predicate,
-            subscriptionID: "dashboard-changes",
+            subscriptionID: CKSchema.Subscription.dashboardChanges,
             options: [.firesOnRecordCreation, .firesOnRecordUpdate]
         )
         let notification = CKSubscription.NotificationInfo()

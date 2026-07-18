@@ -12,14 +12,14 @@ final class CloudSyncService {
     private init() {}
 
     func syncFromCache() async {
-        for (key, recordName) in [("today", "snapshot-today"), ("week", "snapshot-week"), ("30d", "snapshot-30d")] {
+        for (key, recordName) in [("today", CKSchema.RecordName.today), ("week", CKSchema.RecordName.week), ("30d", CKSchema.RecordName.month)] {
             guard let snap = await DashboardCache.read(timeRange: key, maxAge: 600),
                   let data = try? JSONEncoder().encode(snap),
                   let json = String(data: data, encoding: .utf8) else { continue }
 
-            let record = CKRecord(recordType: "DashboardCache_v1", recordID: CKRecord.ID(recordName: recordName))
-            record["json"] = json
-            record["updatedAt"] = snap.updatedAt
+            let record = CKRecord(recordType: CKSchema.recordType, recordID: CKRecord.ID(recordName: recordName))
+            record[CKSchema.Field.json] = json
+            record[CKSchema.Field.updatedAt] = snap.updatedAt
 
             do {
                 let (_, results) = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
