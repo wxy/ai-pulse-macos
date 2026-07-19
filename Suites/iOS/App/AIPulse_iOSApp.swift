@@ -89,6 +89,9 @@ struct ContentView: View {
             _ = try await cloudData.hasData()
             state = .ready
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            // Fetch week + 30d snapshots for accurate rings (today already set by hasData)
+            await cloudData.fetchAndMergeWeek()
+            await cloudData.fetchAndMergeMonth()
         } catch CloudError.noData {
             state = .noData
         } catch {

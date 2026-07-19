@@ -90,14 +90,68 @@ final class CloudDataService: ObservableObject {
             return
         }
 
+        // Fetch all three time ranges and merge into a complete snapshot
+        log.info("refresh: fetching all ranges")
+        await fetchAndMerge(range: "today")
+        await fetchAndMerge(range: "week")
+        await fetchAndMerge(range: "30d")
+        log.info("refresh: final — today=\(self.snapshot?.todayCost ?? -1) week=\(self.snapshot?.weekCost ?? -1) month=\(self.snapshot?.monthCost ?? -1)")
+    }
+
+    /// Fetch a single snapshot record and merge it into self.snapshot.
+    func fetchAndMergeWeek() async { await fetchAndMerge(range: "week") }
+    func fetchAndMergeMonth() async { await fetchAndMerge(range: "30d") }
+
+    private func fetchAndMerge(range: String) async {
+        let rid = CKRecord.ID(recordName: recordName(for: range))
+        let record: CKRecord
         do {
-            try await fetchSnapshot(for: "today")
-            log.info("refresh: snapshot fetched, cost=\(self.snapshot?.todayCost ?? -1)")
-        } catch let ckError as CKError {
-            log.error("refresh: CKError code=\(ckError.code.rawValue) userInfo=\(ckError.errorUserInfo)")
+            record = try await database.record(for: rid)
         } catch {
-            log.error("refresh: \(error.localizedDescription)")
+            log.error("fetchAndMerge(\(range)): CK fetch failed — \(error.localizedDescription)")
+            return
         }
+        let rawValue = record[CKSchema.Field.json]
+        log.info("fetchAndMerge(\(range)): json field type = \(type(of: rawValue))")
+        guard let json = rawValue as? String else {
+            log.error("fetchAndMerge(\(range)): json field is not String — type=\(type(of: rawValue)), value=\(String(describing: rawValue).prefix(200))")
+            return
+        }
+        guard let data = json.data(using: .utf8) else {
+            log.error("fetchAndMerge(\(range)): json utf8 encoding failed")
+            return
+        }
+        let snap: DashboardSnapshot
+        do {
+            snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
+        } catch let dc as DecodingError {
+            log.error("fetchAndMerge(\(range)): decode error — \(String(describing: dc))")
+            // Dump raw JSON to see what's actually in the record
+            let preview = String(json.prefix(200))
+            log.error("fetchAndMerge(\(range)): raw JSON preview: \(preview)")
+            return
+        } catch {
+            log.error("fetchAndMerge(\(range)): decode failed — \(error.localizedDescription)")
+            return
+        }
+        log.info("fetchAndMerge(\(range)): today=\(snap.todayCost) week=\(snap.weekCost) month=\(snap.monthCost) yday=\(snap.yesterdaySpend)")
+        var merged = self.snapshot ?? DashboardSnapshot()
+
+        // Only merge fields relevant to each range to avoid overwriting fresh data with stale
+        switch range {
+        case "today":
+            if snap.todayCost > 0 { merged.todayCost = snap.todayCost }
+            if snap.yesterdaySpend > 0 { merged.yesterdaySpend = snap.yesterdaySpend }
+        case "week":
+            if snap.weekCost > 0 { merged.weekCost = snap.weekCost }
+        case "30d":
+            if snap.monthCost > 0 { merged.monthCost = snap.monthCost }
+            if let p = snap.prediction { merged.prediction = p }
+        default: break
+        }
+        if let ts = record[CKSchema.Field.updatedAt] as? Date { merged.updatedAt = ts }
+        self.snapshot = merged
+        self.lastUpdated = merged.updatedAt
     }
 
     func fetchSnapshot(for range: String = "today") async throws {

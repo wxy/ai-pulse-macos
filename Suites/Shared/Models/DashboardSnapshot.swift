@@ -11,8 +11,8 @@ struct DashboardSnapshot: Codable {
     var yesterdaySpend: Double = 0
     var previousPeriodSpend: Double = 0
     var subDaily: Double = 0
-    var todayCalls: Int = 0
-    var todayTokens: Int = 0
+    var todayCalls: Int64 = 0
+    var todayTokens: Int64 = 0
 
     var providerBreakdown: [ProviderItem] = []
     var toolBreakdown: [NameCostItem] = []
@@ -55,8 +55,8 @@ struct PredictionItem: Codable {
 struct TrendPoint: Codable {
     var ts: Double
     var value: Double
-    var calls: Int
-    var tokens: Int
+    var calls: Int64
+    var tokens: Int64
     var netLines: Int
     var added: Int = 0
     var deleted: Int = 0

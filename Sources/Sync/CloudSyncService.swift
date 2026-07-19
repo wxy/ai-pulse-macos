@@ -26,7 +26,7 @@ final class CloudSyncService {
                 let ok = results.compactMap({ _, r in if case .failure = r { return true }; return nil }).isEmpty
                 if ok { Logger.debug("CloudSync: synced \(key) len=\(json.count)") }
             } catch {
-                Logger.warning("CloudSync: \(key) save failed")
+                Logger.warning("CloudSync: \(key) save failed: \(error)")
             }
         }
     }

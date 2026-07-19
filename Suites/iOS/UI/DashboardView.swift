@@ -312,7 +312,7 @@ struct DashboardView: View {
                     }.frame(height: 4)
                 }
                 HStack(spacing: 4) {
-                    Text("CPL $\(usd(repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
+                    Text("CPL \(usd(repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 2).fill(Color.deepRedBar.opacity(0.5))
                             .frame(width: max(geo.size.width * CGFloat(repo.cpl / maxCPL), 2))
@@ -452,7 +452,7 @@ struct DashboardView: View {
         Self.usdFormatter.string(from: NSNumber(value: v)) ?? "$0.00"
     }
 
-    private func tokenShort(_ n: Int) -> String {
+    private func tokenShort(_ n: Int64) -> String {
         if n >= 1_000_000 { return "\(n / 1_000_000)M" }
         if n >= 1000 { return "\(n / 1000)K" }
         return "\(n)"

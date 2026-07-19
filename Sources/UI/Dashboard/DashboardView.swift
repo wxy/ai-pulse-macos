@@ -258,9 +258,8 @@ struct DashboardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .environment(\.locale, I18n.resolvedLocale)
         .task {
-            ApiPoller.shared.pollAll()
             await load()
-            // Sync to iCloud after Dashboard opens with fresh data
+            ApiPoller.shared.pollAll()
             triggerCloudSync()
         }
         .onChange(of: timeRange) { _, _ in
@@ -1658,8 +1657,9 @@ struct DashboardView: View {
         loadGeneration += 1
         let myGen = loadGeneration
 
-        // ── Cache check — if recent snapshot exists, apply instantly ──
-        if let cached = await DashboardCache.read(timeRange: timeRange.label, maxAge: 30) {
+        // ── Cache check — skip on initial load to avoid stale-data flash ──
+        if loadedTimeRange != nil,
+           let cached = await DashboardCache.read(timeRange: timeRange.label, maxAge: 30) {
             guard myGen == loadGeneration else { return }
             applySnapshot(cached)
             Logger.debug("Dashboard: loaded from cache (\(timeRange.label))")
