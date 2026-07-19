@@ -444,12 +444,12 @@ struct DashboardView: View {
         }
     }
     private func shortNum(_ n: Int) -> String { n >= 1000 ? "\(n / 1000)K" : "\(n)" }
+    private static let usdFormatter: NumberFormatter = {
+        let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = "USD"
+        f.locale = Locale(identifier: "en_US"); return f
+    }()
     private func usd(_ v: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        f.locale = Locale(identifier: "en_US")
-        return f.string(from: NSNumber(value: v)) ?? "$0.00"
+        Self.usdFormatter.string(from: NSNumber(value: v)) ?? "$0.00"
     }
 
     private func tokenShort(_ n: Int) -> String {

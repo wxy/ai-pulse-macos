@@ -96,11 +96,14 @@ struct SpendView: View {
         }
     }
 
-    private func formatUSD(_ v: Double) -> String {
+    private static let usdFormatter: NumberFormatter = {
         let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = "USD"
-        f.locale = Locale(identifier: "en_US")
-        if v >= 100 { f.maximumFractionDigits = 0 }
-        return f.string(from: NSNumber(value: v)) ?? "$0"
+        f.locale = Locale(identifier: "en_US"); return f
+    }()
+    private func formatUSD(_ v: Double) -> String {
+        if v >= 100 { Self.usdFormatter.maximumFractionDigits = 0 }
+        else { Self.usdFormatter.maximumFractionDigits = 2 }
+        return Self.usdFormatter.string(from: NSNumber(value: v)) ?? "$0"
     }
 }
 

@@ -16,7 +16,10 @@ final class CloudDataService: ObservableObject {
     @Published var snapshot: DashboardSnapshot?
     @Published var lastUpdated: Date?
 
-    private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
+    private lazy var database: CKDatabase = {
+        let db = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
+        return db
+    }()
     private let log = Logger(subsystem: "com.wxy.aipulse", category: "CloudData")
     private init() {}
 
