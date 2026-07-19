@@ -1,7 +1,6 @@
 import CloudKit
 import Combine
 import Foundation
-import UserNotifications
 import os
 
 enum CloudError: Error {
@@ -17,7 +16,7 @@ final class CloudDataService: ObservableObject {
     @Published var snapshot: DashboardSnapshot?
     @Published var lastUpdated: Date?
 
-    private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
+    private let database = CKContainer.default().privateCloudDatabase
     private let log = Logger(subsystem: "com.wxy.aipulse", category: "CloudData")
     private init() {}
 
@@ -34,7 +33,7 @@ final class CloudDataService: ObservableObject {
         let recordID = CKRecord.ID(recordName: recordName(for: "today"))
         do {
             let record = try await database.record(for: recordID)
-            log.info("hasData: record found, json present=\(record[CKSchema.Field.json] != nil)")
+            print("hasData: record found, json present=\(record[CKSchema.Field.json] != nil)")
             if let json = record[CKSchema.Field.json] as? String,
                let data = json.data(using: .utf8) {
                 do {
@@ -43,18 +42,18 @@ final class CloudDataService: ObservableObject {
                     lastUpdated = record[CKSchema.Field.updatedAt] as? Date
                     return true
                 } catch {
-                    log.error("hasData: decode failed — \(error.localizedDescription)")
+                    print("hasData: decode failed — \(error.localizedDescription)")
                     if let dc = error as? DecodingError {
                         switch dc {
-                        case .keyNotFound(let key, _): log.error("  missing key: \(key.stringValue)")
-                        case .typeMismatch(let t, let ctx): log.error("  type mismatch: \(String(describing: t)) at \(ctx.codingPath.map(\.stringValue).joined(separator: "."))")
+                        case .keyNotFound(let key, _): print("  missing key: \(key.stringValue)")
+                        case .typeMismatch(let t, let ctx): print("  type mismatch: \(String(describing: t)) at \(ctx.codingPath.map(\.stringValue).joined(separator: "."))")
                         default: break
                         }
                     }
                     throw CloudError.noData
                 }
             }
-            log.warning("hasData: json field missing")
+            print("hasData: json field missing")
             throw CloudError.noData
         } catch let cloudError as CloudError {
             throw cloudError
@@ -63,15 +62,47 @@ final class CloudDataService: ObservableObject {
             case .unknownItem:
                 throw CloudError.noData
             case .networkUnavailable, .notAuthenticated, .permissionFailure:
-                log.error("hasData: iCloud unavailable — \(ckError.localizedDescription)")
+                print("hasData: iCloud unavailable — \(ckError.localizedDescription)")
                 throw CloudError.unavailable
             default:
-                log.error("hasData: CKError — \(ckError.localizedDescription)")
+                print("hasData: CKError — \(ckError.localizedDescription)")
                 throw CloudError.unavailable
             }
         } catch {
-            log.error("hasData: \(error.localizedDescription)")
+            print("hasData: \(error.localizedDescription)")
             throw CloudError.unavailable
+        }
+    }
+
+    /// Lightweight refresh for watchOS — fetch today snapshot, silently ignore errors.
+    func refresh() async {
+        do {
+            // Check iCloud account status first
+            let status = try await CKContainer.default().accountStatus()
+            switch status {
+            case .available:
+                break
+            case .noAccount:
+                print("refresh: no iCloud account")
+                return
+            case .restricted:
+                print("refresh: iCloud restricted")
+                return
+            case .couldNotDetermine:
+                print("refresh: could not determine iCloud status")
+                return
+            case .temporarilyUnavailable:
+                print("refresh: iCloud temporarily unavailable")
+                return
+            @unknown default:
+                print("refresh: unknown iCloud status")
+                return
+            }
+            try await fetchSnapshot(for: "today")
+        } catch let ckError as CKError {
+            print("refresh: CKError code=\(ckError.code.rawValue) — \(ckError.localizedDescription)")
+        } catch {
+            print("refresh: \(error.localizedDescription)")
         }
     }
 
@@ -86,7 +117,7 @@ final class CloudDataService: ObservableObject {
                 lastUpdated = record[CKSchema.Field.updatedAt] as? Date
             }
         } catch {
-            log.error("fetchSnapshot(\(range)): \(error.localizedDescription)")
+            print("fetchSnapshot(\(range)): \(error.localizedDescription)")
         }
     }
 }
