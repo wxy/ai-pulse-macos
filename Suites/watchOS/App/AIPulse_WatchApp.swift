@@ -1,9 +1,6 @@
 import SwiftUI
-
 import WatchKit
 
-/// watchOS app — three-ring spend rings with today's total in the center.
-/// Reads DashboardCache_v1 from iCloud via CloudDataService (Shared module).
 @main
 struct AIPulse_WatchApp: App {
     @StateObject private var cloudData = CloudDataService.shared
@@ -20,78 +17,105 @@ struct AIPulse_WatchApp: App {
     }
 }
 
-// MARK: - Spend View
-
 struct SpendView: View {
     @EnvironmentObject var cloudData: CloudDataService
 
     private var snap: DashboardSnapshot { cloudData.snapshot ?? DashboardSnapshot() }
     private var dailyRate: Double { max(snap.prediction?.dailyRate ?? 20, 0.01) }
-
-    private var todayPct: Double { min(snap.todayCost / dailyRate, 1.0) }
-    private var weekPct: Double { min(snap.weekCost / (dailyRate * 7), 1.0) }
+    private var weeklyAvg: Double { dailyRate * 7 }
+    private var todayPct: Double { snap.todayCost / dailyRate }
+    private var todayLaps: Int { Int(todayPct) }
+    private var weekPct: Double { snap.weekCost / weeklyAvg }
     private var monthPct: Double {
         guard let p = snap.prediction, p.monthProjected > 0.001 else { return 0 }
         return min(p.monthSoFar / p.monthProjected, 1.0)
     }
+    private var yesterdayDelta: Double {
+        snap.yesterdaySpend > 0.001 ? (snap.todayCost - snap.yesterdaySpend) / snap.yesterdaySpend : 0
+    }
 
     var body: some View {
-        ZStack {
-            // Outer ring — 30 days
-            Ring(progress: monthPct, thickness: 4, color: .marsGreenLight)
+        NavigationStack {
+            Color.clear
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) { Spacer().frame(width: 0) }
+                    ToolbarItem(placement: .topBarTrailing) { Spacer().frame(width: 0) }
+                }
+                .toolbarBackground(.hidden, for: .navigationBar)
+        }
+        .ignoresSafeArea(.all)
+        .overlay {
+            GeometryReader { geo in
+            let cx = geo.size.width / 2
+            let cy = geo.size.height / 2
+            ZStack {
+                // Anchor frame + corner labels
+                Rectangle().fill(.clear).frame(width: 170, height: 170)
+                    .overlay(alignment: .topLeading) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(I18n.t("time.today")).font(.system(size: 10)).foregroundColor(.secondary)
+                            if todayLaps > 0 { Text("\(todayLaps)×").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.deepRed) }
+                        }.offset(x: -5, y: -5)
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text(I18n.t("time.week")).font(.system(size: 10)).foregroundColor(.secondary)
+                            Text(formatUSD(snap.weekCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreen)
+                        }.offset(x: 5, y: -5)
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        if snap.yesterdaySpend > 0.001 {
+                            Text(yesterdayDelta > 0 ? "↑\(Int(yesterdayDelta * 100))%" : "↓\(Int(-yesterdayDelta * 100))%")
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen).offset(x: -5, y: 5)
+                        }
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text(I18n.t("time.30d")).font(.system(size: 10)).foregroundColor(.secondary)
+                            Text(formatUSD(snap.monthCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreenLight)
+                        }.offset(x: 5, y: 5)
+                    }
 
-            // Middle ring — Week
-            Ring(progress: weekPct, thickness: 5, color: .marsGreen)
+                // Rings
+                ActivityRing(progress: monthPct, thickness: 5, color: .marsGreenLight).frame(width: 160, height: 160)
+                ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .marsGreen).frame(width: 144, height: 144)
+                ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .deepRed).frame(width: 128, height: 128)
 
-            // Inner ring — Today
-            Ring(progress: todayPct, thickness: 6, color: .deepRed)
-
-            // Center: today's spend
-            VStack(spacing: 2) {
-                Text(formatUSD(snap.todayCost))
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-
-                if let updated = cloudData.lastUpdated {
-                    Text(updated, format: .dateTime.hour().minute())
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                // Center text
+                VStack(spacing: 1) {
+                    Text(formatUSD(snap.todayCost)).font(.system(size: 32, weight: .bold, design: .rounded)).minimumScaleFactor(0.5).lineLimit(1)
+                    if let updated = cloudData.lastUpdated {
+                        Text(updated, format: .dateTime.hour().minute()).font(.system(size: 10)).foregroundColor(.secondary)
+                    }
                 }
             }
-            .padding(20)
+            .position(x: cx, y: cy)
+            }
         }
-        .contentShape(Circle())
+        .contentShape(Rectangle())
         .onTapGesture { Task { await cloudData.refresh() } }
     }
 
     private func formatUSD(_ v: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
+        let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = "USD"
         f.locale = Locale(identifier: "en_US")
         if v >= 100 { f.maximumFractionDigits = 0 }
         return f.string(from: NSNumber(value: v)) ?? "$0"
     }
 }
 
-// MARK: - Ring
-
-struct Ring: View {
-    let progress: Double  // 0…1
-    let thickness: CGFloat
-    let color: Color
-
+struct ActivityRing: View {
+    let progress: Double; let thickness: CGFloat; let color: Color
     var body: some View {
-        Circle()
-            .trim(from: 0, to: progress)
-            .stroke(color, style: StrokeStyle(lineWidth: thickness, lineCap: .round))
-            .rotationEffect(.degrees(-90))
-            .animation(.spring(response: 0.6, dampingFraction: 0.7), value: progress)
+        ZStack {
+            Circle().stroke(color.opacity(0.20), style: StrokeStyle(lineWidth: thickness, lineCap: .round))
+            Circle().trim(from: 0, to: max(0, min(progress, 1)))
+                .stroke(color, style: StrokeStyle(lineWidth: thickness, lineCap: .round))
+                .rotationEffect(.degrees(-90)).animation(.easeInOut(duration: 0.6), value: progress)
+        }
     }
 }
-
-// MARK: - Color extensions
 
 extension Color {
     static let marsGreen = Color(red: 44/255, green: 91/255, blue: 72/255)
