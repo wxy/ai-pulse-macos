@@ -19,6 +19,7 @@ struct AIPulse_WatchApp: App {
 
 struct SpendView: View {
     @EnvironmentObject var cloudData: CloudDataService
+    @State private var refreshTrigger = 0
 
     private var snap: DashboardSnapshot { cloudData.snapshot ?? DashboardSnapshot() }
     private var dailyRate: Double { max(snap.prediction?.dailyRate ?? 20, 0.01) }
@@ -36,65 +37,63 @@ struct SpendView: View {
 
     var body: some View {
         NavigationStack {
-            Color.clear
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) { Spacer().frame(width: 0) }
-                    ToolbarItem(placement: .topBarTrailing) { Spacer().frame(width: 0) }
-                }
-                .toolbarBackground(.hidden, for: .navigationBar)
-        }
-        .ignoresSafeArea(.all)
-        .overlay {
             GeometryReader { geo in
-            let cx = geo.size.width / 2
-            let cy = geo.size.height / 2
             ZStack {
-                // Anchor frame + corner labels
-                Rectangle().fill(.clear).frame(width: 170, height: 170)
+                // Anchor frame with corner labels (overlays BEFORE position)
+                Rectangle().fill(.clear).frame(width: 168, height: 168)
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 0) {
                             Text(I18n.t("time.today")).font(.system(size: 10)).foregroundColor(.secondary)
-                            if todayLaps > 0 { Text("\(todayLaps)×").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.deepRed) }
-                        }.offset(x: -5, y: -5)
+                            Text("\(todayLaps)×").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
+                        }.offset(x: -8, y: -8)
                     }
                     .overlay(alignment: .topTrailing) {
                         VStack(alignment: .trailing, spacing: 0) {
                             Text(I18n.t("time.week")).font(.system(size: 10)).foregroundColor(.secondary)
                             Text(formatUSD(snap.weekCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreen)
-                        }.offset(x: 5, y: -5)
+                        }.offset(x: 8, y: -8)
                     }
                     .overlay(alignment: .bottomLeading) {
                         if snap.yesterdaySpend > 0.001 {
                             Text(yesterdayDelta > 0 ? "↑\(Int(yesterdayDelta * 100))%" : "↓\(Int(-yesterdayDelta * 100))%")
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen).offset(x: -5, y: 5)
+                                .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen).offset(x: -8, y: 8)
                         }
                     }
                     .overlay(alignment: .bottomTrailing) {
                         VStack(alignment: .trailing, spacing: 0) {
                             Text(I18n.t("time.30d")).font(.system(size: 10)).foregroundColor(.secondary)
                             Text(formatUSD(snap.monthCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreenLight)
-                        }.offset(x: 5, y: 5)
+                        }.offset(x: 8, y: 8)
                     }
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
 
-                // Rings
-                ActivityRing(progress: monthPct, thickness: 5, color: .marsGreenLight).frame(width: 160, height: 160)
-                ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .marsGreen).frame(width: 144, height: 144)
-                ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .deepRed).frame(width: 128, height: 128)
-
-                // Center text
-                VStack(spacing: 1) {
-                    Text(formatUSD(snap.todayCost)).font(.system(size: 32, weight: .bold, design: .rounded)).minimumScaleFactor(0.5).lineLimit(1)
-                    if let updated = cloudData.lastUpdated {
-                        Text(updated, format: .dateTime.hour().minute()).font(.system(size: 10)).foregroundColor(.secondary)
+                // Rings + center, positioned at geometry center
+                ZStack {
+                    ActivityRing(progress: monthPct, thickness: 5, color: .marsGreenLight).frame(width: 160, height: 160)
+                    ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .marsGreen).frame(width: 144, height: 144)
+                    ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .deepRed).frame(width: 128, height: 128)
+                    VStack(spacing: 1) {
+                        Text(formatUSD(snap.todayCost)).font(.system(size: 32, weight: .bold, design: .rounded)).minimumScaleFactor(0.5).lineLimit(1)
+                        if let updated = cloudData.lastUpdated { Text(updated, format: .dateTime.hour().minute()).font(.system(size: 10)).foregroundColor(.secondary) }
                     }
                 }
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
-            .position(x: cx, y: cy)
             }
+            .ignoresSafeArea(.all)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Spacer().frame(width: 0) }
+                ToolbarItem(placement: .topBarTrailing) { Spacer().frame(width: 0) }
+            }
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
         .contentShape(Rectangle())
-        .onTapGesture { Task { await cloudData.refresh() } }
+        .onTapGesture {
+            WKInterfaceDevice.current().play(.click)
+            refreshTrigger += 1
+            Task { await cloudData.refresh() }
+        }
     }
 
     private func formatUSD(_ v: Double) -> String {
