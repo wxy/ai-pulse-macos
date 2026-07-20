@@ -140,7 +140,7 @@ final class CloudDataService: ObservableObject {
             return
         }
 
-        // Fetch all three time ranges independently
+        // Fetch all three time ranges independently.
         log.info("refresh: fetching all ranges")
         await fetchAndStore(range: "today")
         await fetchAndStore(range: "week")

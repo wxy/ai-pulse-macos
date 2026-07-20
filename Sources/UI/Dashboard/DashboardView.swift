@@ -1,6 +1,5 @@
 import SwiftUI
 import Charts
-import GRDB
 
 // MARK: - Color palette (#2C5B48 green / #AD2E23 red)
 extension Color {
@@ -959,7 +958,6 @@ struct DashboardView: View {
     // MARK: - Spend overview
 
     var spendingOverview: some View {
-        _ = costSourceBreakdown
         let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
         let subDaily = StatsService.subscriptionDailyAmortization()
         let subTotal = subDaily * Double(timeRange.days)

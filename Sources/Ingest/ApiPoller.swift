@@ -137,13 +137,13 @@ final class ApiPoller: @unchecked Sendable {
     private nonisolated func simpleParser(for providerId: String) -> @Sendable ([String: Any]) -> [BalanceEntry] {
         switch providerId {
         case "deepseek":
-            return { json in
+            return { [parseDouble] json in
                 (json["balance_infos"] as? [[String: Any]] ?? []).map { b in
                     BalanceEntry(
                         currency: b["currency"] as? String ?? "CNY",
-                        totalBalance: Double(b["total_balance"] as? String ?? "0") ?? 0,
-                        grantedBalance: Double(b["granted_balance"] as? String ?? "0") ?? 0,
-                        toppedUpBalance: Double(b["topped_up_balance"] as? String ?? "0") ?? 0
+                        totalBalance: parseDouble(b["total_balance"]) ?? 0,
+                        grantedBalance: parseDouble(b["granted_balance"]) ?? 0,
+                        toppedUpBalance: parseDouble(b["topped_up_balance"]) ?? 0
                     )
                 }
             }

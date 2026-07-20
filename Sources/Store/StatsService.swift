@@ -515,8 +515,7 @@ enum StatsService {
         let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart)!
         let rangeStartMs = Int64(rangeStart.timeIntervalSince1970 * 1000)
         let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
-        // 30-day window for correct cross-range costs (weekCost / monthCost)
-        // Add 14-day lookback so the first balance delta at the window boundary is captured.
+        // 30-day window + 14d lookback for correct balance delta computation.
         let monthStart = cal.date(byAdding: .day, value: -29, to: todayStart)!
         let monthStartMs = Int64(monthStart.timeIntervalSince1970 * 1000)
         let lookbackStart = cal.date(byAdding: .day, value: -14, to: monthStart)!
