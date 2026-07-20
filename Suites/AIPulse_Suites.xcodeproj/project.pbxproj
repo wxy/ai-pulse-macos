@@ -6,6 +6,33 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C096E2EF300E5D3D004D0062 /* AIPulse_watchOS.app in CopyFiles */ = {isa = PBXBuildFile; fileRef = C0D7703030090F0600BC1E54 /* AIPulse_watchOS.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C05F66ED300E50C300D40121 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0D7701330090D2E00BC1E54 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0D7702930090F0600BC1E54;
+			remoteInfo = AIPulse_watchOS;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C096E2EE300E5D05004D0062 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Watch;
+			dstSubfolderSpec = 1;
+			files = (
+				C096E2EF300E5D3D004D0062 /* AIPulse_watchOS.app in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		C05A700830091E2A00B99D6F /* AIPulse_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPulse_iOS.entitlements; sourceTree = "<group>"; };
 		C05A700E300925D200B99D6F /* AIPulse_watchOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPulse_watchOS.entitlements; sourceTree = "<group>"; };
@@ -73,6 +100,13 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		C05F66EB300E50C300D40121 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		C0D7701230090D2E00BC1E54 = {
 			isa = PBXGroup;
 			children = (
@@ -82,6 +116,7 @@
 				C05A70163009E26B00B99D6F /* Shared */,
 				C05A700E300925D200B99D6F /* AIPulse_watchOS.entitlements */,
 				C05A700830091E2A00B99D6F /* AIPulse_iOS.entitlements */,
+				C05F66EB300E50C300D40121 /* Frameworks */,
 				C0D7701C30090D2E00BC1E54 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -105,10 +140,12 @@
 				C0D7701730090D2E00BC1E54 /* Sources */,
 				C0D7701830090D2E00BC1E54 /* Frameworks */,
 				C0D7701930090D2E00BC1E54 /* Resources */,
+				C096E2EE300E5D05004D0062 /* CopyFiles */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C05F66EE300E50C300D40121 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C05A70163009E26B00B99D6F /* Shared */,
@@ -212,6 +249,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C05F66EE300E50C300D40121 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0D7702930090F0600BC1E54 /* AIPulse_watchOS */;
+			targetProxy = C05F66ED300E50C300D40121 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C0D7702430090D3000BC1E54 /* Debug */ = {
@@ -361,8 +406,9 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.wxy.AIPulse-iOS";
+				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = NO;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -401,8 +447,9 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.wxy.AIPulse-iOS";
+				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = NO;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -441,8 +488,9 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.wxy.AIPulse-iOS.watchkit";
+				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "watchsimulator watchos";
 				SUPPORTS_MACCATALYST = NO;
@@ -482,8 +530,9 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.wxy.AIPulse-iOS.watchkit";
+				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "watchsimulator watchos";
 				SUPPORTS_MACCATALYST = NO;
