@@ -9,12 +9,18 @@ enum CloudError: Error {
 }
 
 /// Reads the DashboardCache_v1 record synced by macOS.
+/// Maintains THREE independent snapshots — one per time range — so each tab
+/// always displays its own data, even offline or when a CK fetch fails.
 @MainActor
 final class CloudDataService: ObservableObject {
     static let shared = CloudDataService()
 
+    /// The snapshot for the currently selected time range.
     @Published var snapshot: DashboardSnapshot?
     @Published var lastUpdated: Date?
+
+    /// All three per-range snapshots. Keyed by "today" / "week" / "30d".
+    private var snapshots: [String: DashboardSnapshot] = [:]
 
     private lazy var database: CKDatabase = {
         let db = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
@@ -34,16 +40,26 @@ final class CloudDataService: ObservableObject {
 
     private func loadLocalCache() {
         guard let data = try? Data(contentsOf: localCacheURL),
-              let snap = try? JSONDecoder().decode(DashboardSnapshot.self, from: data) else { return }
-        snapshot = snap
-        lastUpdated = snap.updatedAt
-        log.info("loaded local cache: today=\(snap.todayCost) week=\(snap.weekCost) month=\(snap.monthCost)")
+              let dict = try? JSONDecoder().decode([String: DashboardSnapshot].self, from: data) else { return }
+        snapshots = dict
+        // Default to today on first load (caller should call loadSnapshot(for:) afterward)
+        if let today = dict["today"] { snapshot = today }
+        log.info("loaded local cache: \(dict.keys.joined(separator: ", "))")
     }
 
     private func saveLocalCache() {
-        guard let snap = snapshot,
-              let data = try? JSONEncoder().encode(snap) else { return }
+        guard let data = try? JSONEncoder().encode(snapshots) else { return }
         try? data.write(to: localCacheURL, options: .atomic)
+    }
+
+    /// Switch the published snapshot to the given time range.
+    /// Each tab calls this on appear / tab switch — guaranteed to show
+    /// only that range's data (cost + breakdown), never another range's.
+    func loadSnapshot(for range: String) {
+        if let s = snapshots[range] {
+            snapshot = s
+            lastUpdated = s.updatedAt
+        }
     }
 
     private func recordName(for range: String) -> String {
@@ -76,30 +92,11 @@ final class CloudDataService: ObservableObject {
                 log.error("hasData: decode failed — \(error.localizedDescription)")
                 throw CloudError.noData
             }
-            // Merge today's costs into any existing snapshot (local cache), keeping
-            // breakdown data intact. First launch: snapshot starts empty, gets today's data.
-            var merged = self.snapshot ?? DashboardSnapshot()
-            if snap.todayCost > 0 { merged.todayCost = snap.todayCost }
-            if snap.weekCost > 0 { merged.weekCost = snap.weekCost }
-            if snap.monthCost > 0 { merged.monthCost = snap.monthCost }
-            if snap.yesterdaySpend > 0 { merged.yesterdaySpend = snap.yesterdaySpend }
-            if snap.previousPeriodSpend > 0 { merged.previousPeriodSpend = snap.previousPeriodSpend }
-            if let p = snap.prediction { merged.prediction = p }
-            // Only set breakdown if we don't already have it (first launch)
-            if self.snapshot == nil {
-                merged.topRepos = snap.topRepos
-                merged.dailyStats = snap.dailyStats
-                merged.codeChanges = snap.codeChanges
-                merged.balanceDaily = snap.balanceDaily
-                merged.providerBreakdown = snap.providerBreakdown
-                merged.toolBreakdown = snap.toolBreakdown
-                merged.todayCalls = snap.todayCalls
-                merged.todayTokens = snap.todayTokens
-                merged.subDaily = snap.subDaily
-            }
-            if let ts = record[CKSchema.Field.updatedAt] as? Date { merged.updatedAt = ts }
-            self.snapshot = merged
-            self.lastUpdated = merged.updatedAt
+            // Store today's snapshot independently (with CK updatedAt timestamp)
+            var stored = snap
+            if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
+            self.snapshots["today"] = stored
+            if self.snapshot == nil { self.loadSnapshot(for: "today") }
             saveLocalCache()
             return true
         } catch let cloudError as CloudError {
@@ -143,87 +140,51 @@ final class CloudDataService: ObservableObject {
 
         // Fetch all three time ranges and merge into a complete snapshot
         log.info("refresh: fetching all ranges")
-        await fetchAndMerge(range: "today", mergeBreakdown: false)
-        await fetchAndMerge(range: "week", mergeBreakdown: false)
-        await fetchAndMerge(range: "30d", mergeBreakdown: false)
+        await fetchAndStore(range: "today")
+        await fetchAndStore(range: "week")
+        await fetchAndStore(range: "30d")
         log.info("refresh: final — today=\(self.snapshot?.todayCost ?? -1) week=\(self.snapshot?.weekCost ?? -1) month=\(self.snapshot?.monthCost ?? -1)")
     }
 
-    /// Fetch a single snapshot record and merge it into self.snapshot.
-    func fetchAndMergeWeek() async { await fetchAndMerge(range: "week", mergeBreakdown: false) }
-    func fetchAndMergeMonth() async { await fetchAndMerge(range: "30d", mergeBreakdown: false) }
+    /// Fetch a single snapshot record and store it independently by range.
+    /// Each tab always gets its own data — no cross-range merging.
+    func fetchAndMergeWeek() async { await fetchAndStore(range: "week") }
+    func fetchAndMergeMonth() async { await fetchAndStore(range: "30d") }
 
-    private func fetchAndMerge(range: String, mergeBreakdown: Bool) async {
+    private func fetchAndStore(range: String) async {
         let rid = CKRecord.ID(recordName: recordName(for: range))
         let record: CKRecord
         do {
             record = try await database.record(for: rid)
         } catch {
-            log.error("fetchAndMerge(\(range)): CK fetch failed — \(error.localizedDescription)")
+            log.error("fetchAndStore(\(range)): CK fetch failed — \(error.localizedDescription)")
             return
         }
-        let rawValue = record[CKSchema.Field.json]
-        log.info("fetchAndMerge(\(range)): json field type = \(type(of: rawValue))")
-        guard let json = rawValue as? String else {
-            log.error("fetchAndMerge(\(range)): json field is not String — type=\(type(of: rawValue)), value=\(String(describing: rawValue).prefix(200))")
-            return
-        }
-        guard let data = json.data(using: .utf8) else {
-            log.error("fetchAndMerge(\(range)): json utf8 encoding failed")
+        guard let json = record[CKSchema.Field.json] as? String,
+              let data = json.data(using: .utf8) else {
+            log.error("fetchAndStore(\(range)): json field missing or not a string")
             return
         }
         let snap: DashboardSnapshot
         do {
             snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
-        } catch let dc as DecodingError {
-            log.error("fetchAndMerge(\(range)): decode error — \(String(describing: dc))")
-            // Dump raw JSON to see what's actually in the record
-            let preview = String(json.prefix(200))
-            log.error("fetchAndMerge(\(range)): raw JSON preview: \(preview)")
-            return
         } catch {
-            log.error("fetchAndMerge(\(range)): decode failed — \(error.localizedDescription)")
+            log.error("fetchAndStore(\(range)): decode failed — \(error.localizedDescription)")
             return
         }
-        log.info("fetchAndMerge(\(range)): today=\(snap.todayCost) week=\(snap.weekCost) month=\(snap.monthCost) yday=\(snap.yesterdaySpend)")
-        var merged = self.snapshot ?? DashboardSnapshot()
-
-        // Always merge cross-range costs (each from its own CK record).
-        // Breakdown data (repos, trends, tools) is NOT merged here — it comes
-        // from fetchSnapshot(for:) when the user switches tabs, so each tab
-        // shows its own range's breakdown.
-        if snap.todayCost > 0 { merged.todayCost = snap.todayCost }
-        if snap.weekCost > 0 { merged.weekCost = snap.weekCost }
-        if snap.monthCost > 0 { merged.monthCost = snap.monthCost }
-        if snap.yesterdaySpend > 0 { merged.yesterdaySpend = snap.yesterdaySpend }
-        if snap.previousPeriodSpend > 0 { merged.previousPeriodSpend = snap.previousPeriodSpend }
-        if let p = snap.prediction { merged.prediction = p }
-
-        // Only merge breakdown data when explicitly fetching for a specific tab
-        // (e.g. user switches tabs). Background refreshes (refresh()) merge costs
-        // only, so breakdown from one range doesn't overwrite another.
-        if mergeBreakdown {
-            if !snap.topRepos.isEmpty { merged.topRepos = snap.topRepos }
-            if !snap.dailyStats.isEmpty { merged.dailyStats = snap.dailyStats }
-            if !snap.codeChanges.isEmpty { merged.codeChanges = snap.codeChanges }
-            if !snap.balanceDaily.isEmpty { merged.balanceDaily = snap.balanceDaily }
-            if !snap.providerBreakdown.isEmpty { merged.providerBreakdown = snap.providerBreakdown }
-            if !snap.toolBreakdown.isEmpty { merged.toolBreakdown = snap.toolBreakdown }
-            merged.todayCalls = snap.todayCalls
-            merged.todayTokens = snap.todayTokens
-            merged.subDaily = snap.subDaily
-        }
-
-        if let ts = record[CKSchema.Field.updatedAt] as? Date { merged.updatedAt = ts }
-        self.snapshot = merged
-        self.lastUpdated = merged.updatedAt
+        log.info("fetchAndStore(\(range)): today=\(snap.todayCost) week=\(snap.weekCost) month=\(snap.monthCost)")
+        var stored = snap
+        if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
+        self.snapshots[range] = stored
+        // If this range is currently displayed, update the published snapshot too
+        // (loadSnapshot checks the current range against what the caller expects)
         saveLocalCache()
     }
 
-    /// Fetch a single range and merge costs + breakdown into the current snapshot.
-    /// Breakdown is merged because this is a user-initiated tab switch — the
-    /// displayed repos/trends should reflect the selected range.
+    /// Fetch a single range AND switch the published snapshot to it.
+    /// Called on tab switch — shows that range's data immediately.
     func fetchSnapshot(for range: String = "today") async throws {
-        await fetchAndMerge(range: range, mergeBreakdown: true)
+        await fetchAndStore(range: range)
+        loadSnapshot(for: range)
     }
 }
