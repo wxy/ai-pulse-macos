@@ -284,7 +284,7 @@ struct OnboardingView: View {
     }
 
     func runDetection() {
-        detectionResults = IntegrationRegistry.all.map { ($0, $0.detect()) }
+        detectionResults = IntegrationRegistry.visible.map { ($0, $0.detect()) }
         // Auto-enable log-based integrations that are detected
         for (i, r) in detectionResults where r.found && i.costSources.isEmpty && i is any Collectable {
             enabledIds.insert(i.id)

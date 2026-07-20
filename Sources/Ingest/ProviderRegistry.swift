@@ -89,7 +89,7 @@ enum ProviderRegistry {
             baseUrl: "https://open.bigmodel.cn",
             balanceType: .quota,
             canFetchBalance: true, canFetchStatus: true,
-            balanceAPI: .zhipu(url: "https://bigmodel.cn/api/monitor/usage/quota/limit"),
+            balanceAPI: .zhipu(url: "https://www.bigmodel.cn/api/biz/account/query-customer-account-report"),
             statusURL: "https://open.bigmodel.cn/api/paas/v4/models", statusAuthHeader: nil,
             noBalanceNoteKey: nil
         ),

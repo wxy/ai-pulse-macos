@@ -1095,7 +1095,6 @@ struct DashboardView: View {
     // MARK: - Output section
 
     var outputSection: some View {
-        let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
         let totalCost: Double = {
             switch timeRange {
             case .today: return todayCombinedSpend
