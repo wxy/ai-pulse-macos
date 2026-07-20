@@ -59,8 +59,8 @@ struct DashboardSnapshot: Codable {
     var subDaily: Double = 0
 
     // Stats
-    var todayCalls: Int = 0
-    var todayTokens: Int = 0
+    var todayCalls: Int64 = 0
+    var todayTokens: Int64 = 0
 
     // Charts & Breakdowns
     var providerBreakdown: [ProviderItem] = []

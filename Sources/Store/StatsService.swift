@@ -515,8 +515,7 @@ enum StatsService {
         let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart)!
         let rangeStartMs = Int64(rangeStart.timeIntervalSince1970 * 1000)
         let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
-        // 30-day window for correct cross-range costs (weekCost / monthCost)
-        // Add 14-day lookback so the first balance delta at the window boundary is captured.
+        // 30-day window + 14d lookback for correct balance delta computation.
         let monthStart = cal.date(byAdding: .day, value: -29, to: todayStart)!
         let monthStartMs = Int64(monthStart.timeIntervalSince1970 * 1000)
         let lookbackStart = cal.date(byAdding: .day, value: -14, to: monthStart)!
@@ -615,8 +614,8 @@ enum StatsService {
         let dailyPts = st.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: $0.calls, tokens: $0.tokens, netLines: $0.netLines) }
         let codePts = cd.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: Double($0.added), calls: 0, tokens: 0, netLines: $0.added - $0.deleted, added: $0.added, deleted: $0.deleted) }
         let balPts = Dictionary(grouping: bl, by: { $0.date }).compactMap { d, v in TrendPoint(ts: d.timeIntervalSince1970, value: v.reduce(0) { $0 + $1.spend }, calls: 0, tokens: 0, netLines: 0) }
-        let todayCall = st.reduce(0) { $0 + $1.calls }
-        let todayTok = st.reduce(0) { $0 + $1.tokens }
+        let todayCall = Int64(st.reduce(0) { $0 + $1.calls })
+        let todayTok = Int64(st.reduce(0) { $0 + $1.tokens })
 
         return DashboardSnapshot(
             todayCost: tc, weekCost: wc, monthCost: mc,

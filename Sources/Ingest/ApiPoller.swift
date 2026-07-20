@@ -137,13 +137,13 @@ final class ApiPoller: @unchecked Sendable {
     private nonisolated func simpleParser(for providerId: String) -> @Sendable ([String: Any]) -> [BalanceEntry] {
         switch providerId {
         case "deepseek":
-            return { json in
+            return { [parseDouble] json in
                 (json["balance_infos"] as? [[String: Any]] ?? []).map { b in
                     BalanceEntry(
                         currency: b["currency"] as? String ?? "CNY",
-                        totalBalance: Double(b["total_balance"] as? String ?? "0") ?? 0,
-                        grantedBalance: Double(b["granted_balance"] as? String ?? "0") ?? 0,
-                        toppedUpBalance: Double(b["topped_up_balance"] as? String ?? "0") ?? 0
+                        totalBalance: parseDouble(b["total_balance"]) ?? 0,
+                        grantedBalance: parseDouble(b["granted_balance"]) ?? 0,
+                        toppedUpBalance: parseDouble(b["topped_up_balance"]) ?? 0
                     )
                 }
             }
@@ -160,7 +160,7 @@ final class ApiPoller: @unchecked Sendable {
     }
 
     /// Parse a Double from either String or Number JSON values.
-    private func parseDouble(_ value: Any?) -> Double? {
+    private nonisolated func parseDouble(_ value: Any?) -> Double? {
         guard let value else { return nil }
         if let s = value as? String { return Double(s) }
         if let n = value as? Double { return n }
@@ -176,28 +176,38 @@ final class ApiPoller: @unchecked Sendable {
 
         // Detect spend: compare new balance with previous cached balance
         let prevBalance = cache[pid]?.balances.first?.totalBalance
+        let provider = ProviderRegistry.byId(pid)
+        let isUsageType = provider?.balanceType == .usage
 
         cache[pid] = CachedBalance(balances: entries, lastFetchTimestamp: now, error: nil)
         saveBalanceCache(cache)
 
         // Play coin sound for detected spend
         for entry in entries {
-            if let prev = prevBalance, entry.totalBalance < prev {
-                let spend = prev - entry.totalBalance
+            let detected: Bool = if isUsageType {
+                (prevBalance.map { entry.totalBalance > $0 } ?? false)
+            } else {
+                (prevBalance.map { entry.totalBalance < $0 } ?? false)
+            }
+            if detected, let prev = prevBalance {
+                let spend = isUsageType ? (entry.totalBalance - prev) : (prev - entry.totalBalance)
                 DispatchQueue.main.async { CoinSound.play(for: spend) }
             }
         }
 
-        // Record balance snapshot for daily spend calculation
+        // Record balance snapshot for daily spend calculation.
+        // For usage-type providers (OpenAI), cumulative spend grows over time —
+        // store as negative so that "balance decreases" correctly represents spend.
         for entry in entries {
             Task {
                 do {
                     try await AppDatabase.shared.write { db in
                         let csId = "api-key:\(pid)"
+                        let storedBalance = isUsageType ? -entry.totalBalance : entry.totalBalance
                         try db.execute(sql: """
                             INSERT INTO balance_snapshot (ts, provider_id, balance, currency, cost_source_id)
                             VALUES (?, ?, ?, ?, ?)
-                            """, arguments: [now, pid, entry.totalBalance, entry.currency, csId])
+                            """, arguments: [now, pid, storedBalance, entry.currency, csId])
                     }
                     DataRefreshCoordinator.shared.notifyPhaseBalance()
                 } catch {

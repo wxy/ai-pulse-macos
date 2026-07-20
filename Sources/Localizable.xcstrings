@@ -506,9 +506,6 @@
     "Added" : {
 
     },
-    "AI Pulse" : {
-
-    },
     "anomaly.body" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -1891,6 +1888,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "API"
+          }
+        }
+      }
+    },
+    "app.name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Pulse"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Pulse"
+          }
+        }
+      }
+    },
+    "bookmark.authorize_access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant Access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授权访问"
           }
         }
       }
@@ -6144,57 +6175,6 @@
         }
       }
     },
-    "bookmark.authorize_access" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Grant Access"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "授权访问"
-          }
-        }
-      }
-    },
-    "general.password_placeholder" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "••••••••"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "••••••••"
-          }
-        }
-      }
-    },
-    "app.name" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI Pulse"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI Pulse"
-          }
-        }
-      }
-    },
     "dashboard.zero_cost" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -7517,6 +7497,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示語言"
+          }
+        }
+      }
+    },
+    "general.password_placeholder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "••••••••"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "••••••••"
           }
         }
       }

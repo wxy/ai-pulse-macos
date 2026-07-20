@@ -66,7 +66,7 @@ struct DashboardView: View {
                 .onChange(of: timeRange) { _, newRange in
                     barProgress = 0
                     withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 }
-                    let key = newRange == .today ? "today" : newRange == .week ? "week" : "30d"
+                    let key = newRange.cacheKey
                     Task { try? await cloudData.fetchSnapshot(for: key) }
                 }
 
@@ -185,11 +185,11 @@ struct DashboardView: View {
         }
         .onAppear {
             barProgress = 1
-            let key = timeRange == .today ? "today" : timeRange == .week ? "week" : "30d"
+            let key = timeRange.cacheKey
             Task { try? await cloudData.fetchSnapshot(for: key) }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            let key = timeRange == .today ? "today" : timeRange == .week ? "week" : "30d"
+            let key = timeRange.cacheKey
             Task { try? await cloudData.fetchSnapshot(for: key) }
         }
     }
@@ -534,6 +534,7 @@ enum TimeRange: Hashable {
     }
     var label: String { switch self { case .today: I18n.t("time.today"); case .week: I18n.t("time.week"); case .days30: I18n.t("time.30d") } }
     var chartDays: Int { switch self { case .week: 7; default: days } }
+    var cacheKey: String { switch self { case .today: "today"; case .week: "week"; case .days30: "30d" } }
 }
 
 private func niceStep(_ x: Double) -> Double {
