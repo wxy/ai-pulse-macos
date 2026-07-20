@@ -220,12 +220,7 @@ struct IntegrationRow: View {
     }
 
     private var toolDisplayName: String {
-        switch integration.id {
-        case "cursor":   return "Cursor"
-        case "copilot":  return "GitHub Copilot"
-        case "windsurf": return "Windsurf"
-        default:         return integration.displayName
-        }
+        IntegrationRegistry.toolDisplayName(for: integration.id)
     }
 
     private func saveConfig() {

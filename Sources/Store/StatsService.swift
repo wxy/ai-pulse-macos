@@ -595,15 +595,7 @@ enum StatsService {
         let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
         let rawTools = toolMap.compactMap { (key, cost) -> (String, Double)? in
             guard cost * scale > 0.001 else { return nil }
-            let label: String
-            switch key {
-            case "claude-code": label = "Claude Code"
-            case "aider":       label = "aider"
-            case "cursor":      label = "Cursor"
-            case "copilot":     label = "Copilot"
-            case "windsurf":    label = "Windsurf"
-            default:            label = key
-            }
+            let label = IntegrationRegistry.toolDisplayName(for: key)
             return (label, cost * scale)
         }.sorted { $0.1 > $1.1 }
         let toolCosts: [NameCostItem] = rawTools.map { NameCostItem(name: $0.0, cost: $0.1) }

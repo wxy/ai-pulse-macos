@@ -132,4 +132,17 @@ enum IntegrationRegistry {
             c.stop()
         }
     }
+
+    /// Centralized tool display name for the given integration ID.
+    /// Used by Dashboard, MenuBar, Settings — single source of truth.
+    static func toolDisplayName(for integrationId: String) -> String {
+        switch integrationId {
+        case "claude-code": return "Claude Code"
+        case "aider":       return "aider"
+        case "cursor":      return "Cursor"
+        case "copilot":     return "GitHub Copilot"
+        case "windsurf":    return "Windsurf"
+        default:            return integrationId
+        }
+    }
 }

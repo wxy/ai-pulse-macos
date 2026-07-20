@@ -4564,13 +4564,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Daily avg %1$@ · %2$@ projected · %3$d days left"
+            "value" : "Projected %1$@ · %2$d days left"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "日均 %1$@ · 预计 %2$@ · 剩余 %3$d 天"
+            "value" : "预计 %1$@ · 剩余 %2$d 天"
           }
         }
       }
@@ -6140,6 +6140,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本周已花 %1$@ · 预计 %2$@ · 剩余 %3$d 天"
+          }
+        }
+      }
+    },
+    "bookmark.authorize_access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant Access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授权访问"
+          }
+        }
+      }
+    },
+    "general.password_placeholder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "••••••••"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "••••••••"
+          }
+        }
+      }
+    },
+    "app.name" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Pulse"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI Pulse"
           }
         }
       }

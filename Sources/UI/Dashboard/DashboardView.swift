@@ -599,12 +599,7 @@ struct DashboardView: View {
     }
 
     func toolName(for id: String) -> String {
-        switch id {
-        case "cursor": return "Cursor"
-        case "copilot": return "GitHub Copilot"
-        case "windsurf": return "Windsurf"
-        default: return id
-        }
+        IntegrationRegistry.toolDisplayName(for: id)
     }
 
     // MARK: - Cost chart (API balance + subscription amortization, stacked)
@@ -1000,16 +995,16 @@ struct DashboardView: View {
                         .offset(x: 56)  // push badge to the right of the number
                     }
                 HStack(spacing: 4) {
-                    Text("\(timeRange.label)\(I18n.t("dashboard.api_spent"))")
+                    Text("\(timeRange.label) \(I18n.t("dashboard.api_spent"))")
                         .font(.caption).foregroundColor(.secondary)
                     // Per-tab context: today=projected, week/30d=daily avg + projected + remaining
                     if let p = prediction, p.monthProjected > 0.001 {
                         if timeRange == .today {
                             Text("· \(String(format: I18n.t("dashboard.today_expected"), String(format: "%.2f", p.dailyRate)))")
                         } else if timeRange == .thisWeek {
-                            Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate), String(format: "%.2f", p.dailyRate * 7), 7 - timeRange.days))")
+                            Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 7), 7 - timeRange.days))")
                         } else {
-                            Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate), String(format: "%.2f", p.dailyRate * 30), p.daysRemaining))")
+                            Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 30), p.daysRemaining))")
                         }
                     }
                 }
@@ -1101,8 +1096,6 @@ struct DashboardView: View {
 
     var outputSection: some View {
         let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
-        let subDaily = StatsService.subscriptionDailyAmortization()
-        let subTotal = subDaily * Double(timeRange.days)
         let totalCost: Double = {
             switch timeRange {
             case .today: return todayCombinedSpend
@@ -1144,24 +1137,19 @@ struct DashboardView: View {
             }
 
             // ── Repo list with cost + CPL ("chin/beard") ──
-            let cplRepos = repos.filter { $0.totalChanges > 0 }
-            if !cplRepos.isEmpty {
-                let logTotal = cplRepos.map(\.cost).reduce(0, +)
-                let scale = logTotal > 0 ? apiSpend / logTotal : 1.0
-                let reposWithSub = cplRepos.map { r -> (RepoBreakdown, Double) in
-                    let repoAPI = r.cost * scale
-                    let subPortion = logTotal > 0 ? subTotal * r.cost / logTotal : 0
-                    return (r, repoAPI + subPortion)
-                }
-                let maxCost = reposWithSub.map(\.1).max() ?? 1
-                let maxCPL = cplRepos.compactMap { r in r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : nil }.max() ?? 1
-                let shown = reposExpanded ? reposWithSub : Array(reposWithSub.prefix(5))
+            // Use snapshot's pre-computed topRepos.cost directly — already
+            // includes subscription scaling from dashboardSnapshot. Consistent
+            // with what iOS reads from CloudKit.
+            let shownRepos = repos.filter { $0.totalChanges > 0 }
+            if !shownRepos.isEmpty {
+                let maxCost = shownRepos.map(\.cost).max() ?? 1
+                let maxCPL = shownRepos.compactMap { r in r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : nil }.max() ?? 1
+                let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
                 VStack(alignment: .leading, spacing: 6) {
                     Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-                    ForEach(Array(shown.enumerated()), id: \.element.0.id) { idx, item in
-                        let (r, totalCost) = item
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { idx, r in
                         let combinedCPL = r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : 0
-                        let costRatio = maxCost > 0 ? totalCost / maxCost : 0
+                        let costRatio = maxCost > 0 ? r.cost / maxCost : 0
                         let cplRatio = maxCPL > 0 ? combinedCPL / maxCPL : 0
                         let progress = dataReady ? barProgress : 0
                         VStack(alignment: .leading, spacing: 3) {
@@ -1172,7 +1160,7 @@ struct DashboardView: View {
                                     .font(.caption2).foregroundColor(.secondary).monospacedDigit()
                             }
                             HStack(spacing: 6) {
-                                Text("$\(String(format: "%.2f", totalCost))")
+                                Text("$\(String(format: "%.2f", r.cost))")
                                     .font(.caption2).monospacedDigit().frame(width: 64, alignment: .leading)
                                 GeometryReader { geo in
                                     RoundedRectangle(cornerRadius: 5)
@@ -1194,11 +1182,11 @@ struct DashboardView: View {
                         }
                         .padding(.vertical, 4)
                         .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(Double(idx) * 0.03), value: progress)
-                        if r.id != shown.last?.0.id {
+                        if r.id != shown.last?.id {
                             Divider()
                         }
                     }
-                    if reposWithSub.count > 5 {
+                    if shownRepos.count > 5 {
                         Button(reposExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
                             withAnimation { reposExpanded.toggle() }
                         }
@@ -1429,7 +1417,7 @@ struct DashboardView: View {
         VStack(spacing: 12) {
             Image(nsImage: AppIconLoader.uiImage(size: 56))
                 .resizable().frame(width: 56, height: 56)
-            Text("AI Pulse").font(.headline)
+            Text(I18n.t("app.name")).font(.headline)
             Text(I18n.t("dashboard.empty_state"))
                 .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
         }

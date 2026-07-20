@@ -84,6 +84,7 @@ struct ContentView: View {
     }
 
     private func checkCloud(isRetry: Bool = false) async {
+        let hasCache = cloudData.snapshot != nil
         if !isRetry { state = .loading }
         do {
             _ = try await cloudData.hasData()
@@ -95,7 +96,13 @@ struct ContentView: View {
         } catch CloudError.noData {
             state = .noData
         } catch {
-            state = .error
+            // If we have cached data from a previous session, show it even when offline.
+            // Only show the error screen if there's nothing to display.
+            if hasCache {
+                state = .ready
+            } else {
+                state = .error
+            }
         }
     }
 }

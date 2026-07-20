@@ -78,37 +78,32 @@ struct DashboardView: View {
                             .font(.system(size: 40, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.deepRed)
                             .scaleEffect(0.8 + 0.2 * barProgress)
-                        Text("\(timeRange.label) \(totalCost > 0 ? I18n.t("dashboard.total") : "")")
-                            .font(.caption).foregroundColor(.secondary)
-                        // Day-over-day badge (today only)
-                        if timeRange == .today, snap.yesterdaySpend > 0.001 {
-                            comparisonBadge(current: totalCost, previous: snap.yesterdaySpend)
-                        }
-                        if timeRange == .days30, snap.previousPeriodSpend > 0.001 {
-                            comparisonBadge(current: totalCost, previous: snap.previousPeriodSpend)
-                        }
-                        // Per-tab context below the big number.
-                        // Today: daily avg · Week/30d: daily avg + projected + remaining.
-                        if let p = snap.prediction, p.monthProjected > 0.001 {
-                            Group {
+                            .overlay(alignment: .trailing) {
+                                HStack(spacing: 4) {
+                                    if timeRange == .today, snap.yesterdaySpend > 0.001 {
+                                        comparisonBadge(current: totalCost, previous: snap.yesterdaySpend)
+                                    }
+                                    if timeRange == .days30, snap.previousPeriodSpend > 0.001 {
+                                        comparisonBadge(current: totalCost, previous: snap.previousPeriodSpend)
+                                    }
+                                }
+                                .offset(x: 44)
+                            }
+                        HStack(spacing: 4) {
+                            Text("\(timeRange.label)\(I18n.t("dashboard.total"))")
+                                .font(.caption).foregroundColor(.secondary)
+                            // Per-tab context: today=projected, week/30d=daily avg + projected + remaining
+                            if let p = snap.prediction, p.monthProjected > 0.001 {
                                 if timeRange == .today {
-                                    Text(String(format: I18n.t("dashboard.today_expected"),
-                                                String(format: "%.2f", p.dailyRate)))
+                                    Text("· \(String(format: I18n.t("dashboard.today_expected"), String(format: "%.2f", p.dailyRate)))")
                                 } else if timeRange == .week {
-                                    Text(String(format: I18n.t("dashboard.range_context"),
-                                                String(format: "%.2f", p.dailyRate),
-                                                String(format: "%.2f", p.dailyRate * 7),
-                                                7 - timeRange.days))
+                                    Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 7), 7 - timeRange.days))")
                                 } else {
-                                    Text(String(format: I18n.t("dashboard.range_context"),
-                                                String(format: "%.2f", p.dailyRate),
-                                                String(format: "%.2f", p.dailyRate * 30),
-                                                p.daysRemaining))
+                                    Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 30), p.daysRemaining))")
                                 }
                             }
-                            .font(.caption2).foregroundColor(.secondary)
                         }
-                        }
+                        .font(.caption2).foregroundColor(.secondary)
                     }
 
                     // Donuts + stats — centered
@@ -190,10 +185,12 @@ struct DashboardView: View {
         }
         .onAppear {
             barProgress = 1
-            Task { try? await cloudData.fetchSnapshot() }
+            let key = timeRange == .today ? "today" : timeRange == .week ? "week" : "30d"
+            Task { try? await cloudData.fetchSnapshot(for: key) }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            Task { try? await cloudData.fetchSnapshot() }
+            let key = timeRange == .today ? "today" : timeRange == .week ? "week" : "30d"
+            Task { try? await cloudData.fetchSnapshot(for: key) }
         }
     }
 
@@ -471,6 +468,7 @@ struct DashboardView: View {
         }
     }
 
+    @ViewBuilder
     private func comparisonBadge(current: Double, previous: Double) -> some View {
         let pct = (current - previous) / previous * 100
         if abs(pct) < 1 {
