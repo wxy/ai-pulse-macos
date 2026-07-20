@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleIconFile</key>
+	<string>AIPulse</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>
@@ -15,9 +17,5 @@
 		<string>es</string>
 		<string>pt-BR</string>
 	</array>
-	<key>CFBundleIconFile</key>
-	<string>AIPulse</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 </dict>
 </plist>
