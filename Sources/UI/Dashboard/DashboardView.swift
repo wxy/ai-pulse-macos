@@ -1710,8 +1710,8 @@ struct DashboardView: View {
         todayCombinedSpend = snap.todayCost
         weekCombinedSpend = snap.weekCost
         monthCombinedSpend = snap.monthCost
-        todayCalls = snap.todayCalls
-        todayTokens = snap.todayTokens
+        todayCalls = Int(snap.todayCalls)
+        todayTokens = Int(snap.todayTokens)
         yesterdaySpend = snap.yesterdaySpend
         previousPeriodSpend = snap.previousPeriodSpend
         toolCostBreakdown = snap.toolBreakdown.map { (name: $0.name, cost: $0.cost) }

@@ -18,6 +18,7 @@ final class CloudDataService: ObservableObject {
     /// The snapshot for the currently selected time range.
     @Published var snapshot: DashboardSnapshot?
     @Published var lastUpdated: Date?
+    private var currentRange: String = "today"
 
     /// All three per-range snapshots. Keyed by "today" / "week" / "30d".
     private var snapshots: [String: DashboardSnapshot] = [:]
@@ -56,6 +57,7 @@ final class CloudDataService: ObservableObject {
     /// Each tab calls this on appear / tab switch — guaranteed to show
     /// only that range's data (cost + breakdown), never another range's.
     func loadSnapshot(for range: String) {
+        currentRange = range
         if let s = snapshots[range] {
             snapshot = s
             lastUpdated = s.updatedAt
@@ -138,12 +140,14 @@ final class CloudDataService: ObservableObject {
             return
         }
 
-        // Fetch all three time ranges and merge into a complete snapshot
+        // Fetch all three time ranges independently
         log.info("refresh: fetching all ranges")
         await fetchAndStore(range: "today")
         await fetchAndStore(range: "week")
         await fetchAndStore(range: "30d")
-        log.info("refresh: final — today=\(self.snapshot?.todayCost ?? -1) week=\(self.snapshot?.weekCost ?? -1) month=\(self.snapshot?.monthCost ?? -1)")
+        // Reload the currently displayed range so the UI reflects new data
+        loadSnapshot(for: currentRange)
+        log.info("refresh: final — today=\(snapshots["today"]?.todayCost ?? -1) week=\(snapshots["week"]?.weekCost ?? -1) month=\(snapshots["30d"]?.monthCost ?? -1)")
     }
 
     /// Fetch a single snapshot record and store it independently by range.
