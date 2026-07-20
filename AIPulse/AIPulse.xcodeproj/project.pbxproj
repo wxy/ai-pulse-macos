@@ -31,7 +31,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		C0843E1D2FF555ED00E3F6C4 /* AIPulse(macOS).app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "AIPulse(macOS).app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0843E1D2FF555ED00E3F6C4 /* AI Pulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "AI Pulse.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libgit2.1.9.dylib; path = ../Libraries/libgit2/lib/libgit2.1.9.dylib; sourceTree = SOURCE_ROOT; };
 		C0843EB12FF5561900E3F6C4 /* AIPulse.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = AIPulse.icns; path = ../Resources/AIPulse.icns; sourceTree = SOURCE_ROOT; };
 		C0843EB22FF5561900E3F6C4 /* AIPulse.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = AIPulse.png; path = ../Resources/AIPulse.png; sourceTree = SOURCE_ROOT; };
@@ -85,7 +85,7 @@
 		C0843E1E2FF555ED00E3F6C4 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				C0843E1D2FF555ED00E3F6C4 /* AIPulse(macOS).app */,
+				C0843E1D2FF555ED00E3F6C4 /* AI Pulse.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -93,9 +93,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		C0843E1C2FF555ED00E3F6C4 /* AIPulse(macOS) */ = {
+		C0843E1C2FF555ED00E3F6C4 /* AI Pulse */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = C0843E292FF555EE00E3F6C4 /* Build configuration list for PBXNativeTarget "AIPulse(macOS)" */;
+			buildConfigurationList = C0843E292FF555EE00E3F6C4 /* Build configuration list for PBXNativeTarget "AI Pulse" */;
 			buildPhases = (
 				C0843E192FF555ED00E3F6C4 /* Sources */,
 				C0843E1A2FF555ED00E3F6C4 /* Frameworks */,
@@ -109,12 +109,12 @@
 			fileSystemSynchronizedGroups = (
 				C0843E1F2FF555ED00E3F6C4 /* ../Sources */,
 			);
-			name = "AIPulse(macOS)";
+			name = "AI Pulse";
 			packageProductDependencies = (
 				C0843E2D2FF5561900E3F6C4 /* GRDB */,
 			);
 			productName = AIPulse;
-			productReference = C0843E1D2FF555ED00E3F6C4 /* AIPulse(macOS).app */;
+			productReference = C0843E1D2FF555ED00E3F6C4 /* AI Pulse.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -149,7 +149,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				C0843E1C2FF555ED00E3F6C4 /* AIPulse(macOS) */,
+				C0843E1C2FF555ED00E3F6C4 /* AI Pulse */,
 			);
 		};
 /* End PBXProject section */
@@ -313,7 +313,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 21;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -329,7 +329,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				OTHER_LDFLAGS = (
 					"-L$(SRCROOT)/../Libraries/libgit2/lib",
 					"-lgit2",
@@ -356,7 +356,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 21;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -373,7 +373,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				OTHER_LDFLAGS = (
 					"-L$(SRCROOT)/../Libraries/libgit2/lib",
 					"-lgit2",
@@ -403,7 +403,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		C0843E292FF555EE00E3F6C4 /* Build configuration list for PBXNativeTarget "AIPulse(macOS)" */ = {
+		C0843E292FF555EE00E3F6C4 /* Build configuration list for PBXNativeTarget "AI Pulse" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				C0843E2A2FF555EE00E3F6C4 /* Debug */,

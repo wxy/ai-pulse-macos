@@ -42,14 +42,14 @@ final class CloudDataService: ObservableObject {
     private func loadLocalCache() {
         guard let data = try? Data(contentsOf: localCacheURL),
               let dict = try? JSONDecoder().decode([String: DashboardSnapshot].self, from: data) else { return }
-        snapshots = dict
+        self.snapshots = dict
         // Default to today on first load (caller should call loadSnapshot(for:) afterward)
-        if let today = dict["today"] { snapshot = today }
+        if let today = dict["today"] { self.snapshot = today }
         log.info("loaded local cache: \(dict.keys.joined(separator: ", "))")
     }
 
     private func saveLocalCache() {
-        guard let data = try? JSONEncoder().encode(snapshots) else { return }
+        guard let data = try? JSONEncoder().encode(self.snapshots) else { return }
         try? data.write(to: localCacheURL, options: .atomic)
     }
 
@@ -57,10 +57,10 @@ final class CloudDataService: ObservableObject {
     /// Each tab calls this on appear / tab switch — guaranteed to show
     /// only that range's data (cost + breakdown), never another range's.
     func loadSnapshot(for range: String) {
-        currentRange = range
-        if let s = snapshots[range] {
-            snapshot = s
-            lastUpdated = s.updatedAt
+        self.currentRange = range
+        if let s = self.snapshots[range] {
+            self.snapshot = s
+            self.lastUpdated = s.updatedAt
         }
     }
 
@@ -99,7 +99,7 @@ final class CloudDataService: ObservableObject {
             if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
             self.snapshots["today"] = stored
             if self.snapshot == nil { self.loadSnapshot(for: "today") }
-            saveLocalCache()
+            self.saveLocalCache()
             return true
         } catch let cloudError as CloudError {
             throw cloudError
@@ -147,7 +147,7 @@ final class CloudDataService: ObservableObject {
         await fetchAndStore(range: "30d")
         // Reload the currently displayed range so the UI reflects new data
         loadSnapshot(for: currentRange)
-        log.info("refresh: final — today=\(snapshots["today"]?.todayCost ?? -1) week=\(snapshots["week"]?.weekCost ?? -1) month=\(snapshots["30d"]?.monthCost ?? -1)")
+        log.info("refresh: final — today=\(self.snapshots["today"]?.todayCost ?? -1) week=\(self.snapshots["week"]?.weekCost ?? -1) month=\(self.snapshots["30d"]?.monthCost ?? -1)")
     }
 
     /// Fetch a single snapshot record and store it independently by range.
@@ -180,7 +180,7 @@ final class CloudDataService: ObservableObject {
         var stored = snap
         if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
         self.snapshots[range] = stored
-        saveLocalCache()
+        self.saveLocalCache()
     }
 
     /// Fetch a single range AND switch the published snapshot to it.
