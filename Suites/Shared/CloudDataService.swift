@@ -180,8 +180,6 @@ final class CloudDataService: ObservableObject {
         var stored = snap
         if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
         self.snapshots[range] = stored
-        // If this range is currently displayed, update the published snapshot too
-        // (loadSnapshot checks the current range against what the caller expects)
         saveLocalCache()
     }
 

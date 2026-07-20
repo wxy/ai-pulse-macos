@@ -844,24 +844,6 @@ struct DashboardView: View {
         return result
     }
 
-    func padCodeChanges() -> [DailyCodeChange] {
-        let cal = Calendar.current
-        let start = chartStart
-        var map = [Date: DailyCodeChange]()
-        for c in codeChanges { map[cal.startOfDay(for: c.date)] = c }
-
-        var result = [DailyCodeChange]()
-        for offset in 0..<chartDays {
-            guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
-            if let c = map[date] {
-                result.append(c)
-            } else {
-                result.append(DailyCodeChange(date: date, added: 0, deleted: 0))
-            }
-        }
-        return result
-    }
-
     func codeTooltip(date: Date, added: Int, deleted: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(date, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
@@ -1225,7 +1207,7 @@ struct DashboardView: View {
 
     /// Right axis: code lines. Same section count as left.
     private var trendCodeAxis: (max: Double, step: Double, values: [Double], scale: Double) {
-        let padded = padCodeChanges()
+        let padded = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
         let rawMax = Double(padded.map { $0.added + $0.deleted }.max() ?? 1)
         let sections = Double(trendSpendAxis.sections)
         guard rawMax > 0, trendSpendAxis.max > 0, sections > 0 else { return (10, 2, [0, 2, 4, 6, 8, 10], 1) }
@@ -1240,7 +1222,7 @@ struct DashboardView: View {
 
     var trendSection: some View {
         let padStats = padStats(dailyStats, days: timeRange.days)
-        let padCode = padCodeChanges()
+        let padCode = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
         let noData = padStats.allSatisfy({ $0.cost == 0 }) && padCode.allSatisfy({ $0.added == 0 })
         let scale = trendCodeAxis.scale
         let leftMax = trendSpendAxis.max
