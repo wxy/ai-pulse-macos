@@ -21,9 +21,9 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>com.wxy.aipulse.ios</string>
-	<key>WKExtensionDelegateClassName</key>
-	<string>AIPulse_WatchApp</string>
+	<string>com.wxy.AIPulse-iOS</string>
+	<key>WKApplication</key>
+	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>

@@ -78,13 +78,32 @@ struct DashboardView: View {
                             .font(.system(size: 40, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.deepRed)
                             .scaleEffect(0.8 + 0.2 * barProgress)
-                        Text("\(timeRange.label) \(totalCost > 0 ? I18n.t("dashboard.total") : "")")
-                            .font(.caption).foregroundColor(.secondary)
-                        if let p = snap.prediction, p.monthProjected > 0.001 {
-                            Text(String(format: I18n.t("dashboard.spent_month"),
-                                        p.monthSoFar, p.monthProjected, p.daysRemaining))
-                                .font(.caption2).foregroundColor(.secondary)
+                            .overlay(alignment: .trailing) {
+                                HStack(spacing: 4) {
+                                    if timeRange == .today, snap.yesterdaySpend > 0.001 {
+                                        comparisonBadge(current: totalCost, previous: snap.yesterdaySpend)
+                                    }
+                                    if timeRange == .days30, snap.previousPeriodSpend > 0.001 {
+                                        comparisonBadge(current: totalCost, previous: snap.previousPeriodSpend)
+                                    }
+                                }
+                                .offset(x: 44)
+                            }
+                        HStack(spacing: 4) {
+                            Text("\(timeRange.label)\(I18n.t("dashboard.total"))")
+                                .font(.caption).foregroundColor(.secondary)
+                            // Per-tab context: today=projected, week/30d=daily avg + projected + remaining
+                            if let p = snap.prediction, p.monthProjected > 0.001 {
+                                if timeRange == .today {
+                                    Text("· \(String(format: I18n.t("dashboard.today_expected"), String(format: "%.2f", p.dailyRate)))")
+                                } else if timeRange == .week {
+                                    Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 7), 7 - timeRange.days))")
+                                } else {
+                                    Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 30), p.daysRemaining))")
+                                }
+                            }
                         }
+                        .font(.caption2).foregroundColor(.secondary)
                     }
 
                     // Donuts + stats — centered
@@ -161,12 +180,17 @@ struct DashboardView: View {
             default:           return "en_US"
             }
         }()))
+        .refreshable {
+            await cloudData.refresh()
+        }
         .onAppear {
             barProgress = 1
-            Task { try? await cloudData.fetchSnapshot() }
+            let key = timeRange == .today ? "today" : timeRange == .week ? "week" : "30d"
+            Task { try? await cloudData.fetchSnapshot(for: key) }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            Task { try? await cloudData.fetchSnapshot() }
+            let key = timeRange == .today ? "today" : timeRange == .week ? "week" : "30d"
+            Task { try? await cloudData.fetchSnapshot(for: key) }
         }
     }
 
@@ -312,7 +336,7 @@ struct DashboardView: View {
                     }.frame(height: 4)
                 }
                 HStack(spacing: 4) {
-                    Text("CPL $\(usd(repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
+                    Text("CPL \(usd(repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 2).fill(Color.deepRedBar.opacity(0.5))
                             .frame(width: max(geo.size.width * CGFloat(repo.cpl / maxCPL), 2))
@@ -443,16 +467,37 @@ struct DashboardView: View {
             Text(label).font(.caption2).foregroundColor(.secondary)
         }
     }
+
+    @ViewBuilder
+    private func comparisonBadge(current: Double, previous: Double) -> some View {
+        let pct = (current - previous) / previous * 100
+        if abs(pct) < 1 {
+            Text("→")
+                .font(.caption2).foregroundColor(.secondary)
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+        } else if pct > 0 {
+            Text("↑\(Int(round(pct)))%")
+                .font(.caption2).foregroundColor(.deepRed)
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(Color.deepRed.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+        } else {
+            Text("↓\(Int(round(-pct)))%")
+                .font(.caption2).foregroundColor(.marsGreen)
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(Color.marsGreen.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+        }
+    }
     private func shortNum(_ n: Int) -> String { n >= 1000 ? "\(n / 1000)K" : "\(n)" }
+    private static let usdFormatter: NumberFormatter = {
+        let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = "USD"
+        f.locale = Locale(identifier: "en_US"); return f
+    }()
     private func usd(_ v: Double) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        f.locale = Locale(identifier: "en_US")
-        return f.string(from: NSNumber(value: v)) ?? "$0.00"
+        Self.usdFormatter.string(from: NSNumber(value: v)) ?? "$0.00"
     }
 
-    private func tokenShort(_ n: Int) -> String {
+    private func tokenShort(_ n: Int64) -> String {
         if n >= 1_000_000 { return "\(n / 1_000_000)M" }
         if n >= 1000 { return "\(n / 1000)K" }
         return "\(n)"

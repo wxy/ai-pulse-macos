@@ -284,15 +284,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             }
             var toolCosts: [ToolCost] = toolCostMap.compactMap { (key, cost) in
                 guard cost > 0.001 else { return nil }
-                let label: String
-                switch key {
-                case "claude-code": label = "Claude Code"
-                case "aider":       label = "aider"
-                case "cursor":      label = "Cursor"
-                case "copilot":     label = "Copilot"
-                case "windsurf":    label = "Windsurf"
-                default:            label = key
-                }
+                let label = IntegrationRegistry.toolDisplayName(for: key)
                 return ToolCost(name: label, cost: cost)
             }
             toolCosts.sort { $0.cost > $1.cost }

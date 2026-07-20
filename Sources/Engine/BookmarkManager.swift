@@ -75,7 +75,7 @@ enum BookmarkManager {
         let home = FileManager.default.realHomeDirectory
         let panel = NSOpenPanel()
         panel.message = message
-        panel.prompt = "授权访问"
+        panel.prompt = I18n.t("bookmark.authorize_access")
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false

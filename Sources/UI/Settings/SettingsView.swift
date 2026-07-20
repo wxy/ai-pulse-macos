@@ -147,13 +147,13 @@ struct IntegrationsSettingsTab: View {
     }
 
     func runDetection() {
-        results = IntegrationRegistry.all.map { ($0, $0.detect()) }
+        results = IntegrationRegistry.visible.map { ($0, $0.detect()) }
     }
 
     func reDetect() {
         isDetecting = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            results = IntegrationRegistry.all.map { ($0, $0.detect()) }
+            results = IntegrationRegistry.visible.map { ($0, $0.detect()) }
             isDetecting = false
         }
     }

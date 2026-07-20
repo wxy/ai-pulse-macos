@@ -17,6 +17,20 @@ enum IntegrationRegistry {
         WindsurfIntegration(),
     ]
 
+    /// Integrations visible in Settings. Filters out OpenAI/Anthropic in mainland
+    /// China to comply with regional restrictions.
+    static var visible: [any Detectable] {
+        all.filter { !isRestrictedInChina($0.id) }
+    }
+
+    /// Provider IDs restricted in mainland China (regulatory compliance).
+    private static let chinaRestrictedIds: Set<String> = ["openai", "anthropic"]
+
+    private static func isRestrictedInChina(_ integrationId: String) -> Bool {
+        guard chinaRestrictedIds.contains(integrationId) else { return false }
+        return Locale.current.region?.identifier == "CN"
+    }
+
     /// Integrations that are both detected AND enabled.
     static func enabledIntegrations() -> [any Detectable] {
         all.filter { config(for: $0.id).enabled }
@@ -130,6 +144,19 @@ enum IntegrationRegistry {
         for i in all {
             guard let c = i as? Collectable else { continue }
             c.stop()
+        }
+    }
+
+    /// Centralized tool display name for the given integration ID.
+    /// Used by Dashboard, MenuBar, Settings — single source of truth.
+    static func toolDisplayName(for integrationId: String) -> String {
+        switch integrationId {
+        case "claude-code": return "Claude Code"
+        case "aider":       return "aider"
+        case "cursor":      return "Cursor"
+        case "copilot":     return "GitHub Copilot"
+        case "windsurf":    return "Windsurf"
+        default:            return integrationId
         }
     }
 }

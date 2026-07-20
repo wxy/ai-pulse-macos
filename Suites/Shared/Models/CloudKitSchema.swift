@@ -1,22 +1,25 @@
 import Foundation
 
-/// CloudKit record keys shared between macOS writer and iOS/watchOS readers.
-enum CKRecordType: String {
-    case dailyStat     = "DailyStat"
-    case dailyCodeChange = "DailyCodeChange"
-    case providerCost  = "ProviderCost"
-}
+/// CloudKit schema — shared between macOS writer and iOS/watchOS readers.
+///
+/// Architecture: single record type (`DashboardCache_v1`) with one record
+/// per time range. Each record stores a JSON blob of the full dashboard snapshot
+/// under the `json` field, plus an `updatedAt` timestamp.
+enum CKSchema {
+    static let recordType = "DashboardCache_v1"
 
-/// Fields within each CKRecord type.
-enum CKField {
-    static let date       = "date"
-    static let cost       = "cost"
-    static let calls      = "calls"
-    static let tokens     = "tokens"
-    static let netLines   = "netLines"
-    static let costPerLine = "costPerLine"
-    static let added      = "added"
-    static let deleted    = "deleted"
-    static let providerId = "providerId"
-    static let spend      = "spend"
+    enum RecordName {
+        static let today = "snapshot-today"
+        static let week  = "snapshot-week"
+        static let month = "snapshot-30d"
+    }
+
+    enum Field {
+        static let json      = "json"
+        static let updatedAt = "updatedAt"
+    }
+
+    enum Subscription {
+        static let dashboardChanges = "dashboard-changes"
+    }
 }

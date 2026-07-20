@@ -34,11 +34,12 @@ enum I18n {
         _cacheLang = nil
         langLock.unlock()
         UserDefaults.standard.set(lang, forKey: langKey)
-        if lang == "auto" {
-            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
-        } else {
-            UserDefaults.standard.set([lang], forKey: "AppleLanguages")
-        }
+        // Always set AppleLanguages to the resolved language code — never leave
+        // it unset. Otherwise CFBundle tries to load strings for the raw system
+        // locale (e.g. "zh-Hans-CN") and logs a scary-but-harmless error when no
+        // exact .lproj match exists.
+        let code = lang == "auto" ? resolvedLang() : lang
+        UserDefaults.standard.set([code], forKey: "AppleLanguages")
         NotificationCenter.default.post(name: didChangeLanguage, object: nil)
     }
 

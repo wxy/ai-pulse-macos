@@ -160,7 +160,7 @@ final class AppHealthMonitor: @unchecked Sendable {
     private func sendCriticalNotification(message: String) {
         guard Bundle.main.bundleIdentifier != nil else { return }
         let content = UNMutableNotificationContent()
-        content.title = "AI Pulse"
+        content.title = I18n.t("app.name")
         content.body = message
         content.sound = .default
         let req = UNNotificationRequest(

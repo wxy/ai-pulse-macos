@@ -35,6 +35,15 @@ enum TimeRange: Hashable {
         case .days30: return I18n.t("dashboard.days_30")
         }
     }
+
+    /// Stable cache key matching Phase 4 / CloudKit record names.
+    var cacheKey: String {
+        switch self {
+        case .today: return "today"
+        case .thisWeek: return "week"
+        case .days30: return "30d"
+        }
+    }
 }
 
 struct DashboardView: View {
@@ -48,6 +57,12 @@ struct DashboardView: View {
     @State private var prediction: Prediction?
     @State private var timeRange: TimeRange
     @State private var costHoverDate: Date? = nil
+    @State private var lastUpdated: Date? = nil
+    @State private var isRefreshing = false
+    @State private var isLoading = false
+    @State private var lastSnapshotTS: Date? = nil
+    @State private var lastDataChangeLoad: Date = .distantPast
+    private let dataChangeThrottle: TimeInterval = 15  // min interval for data-change-driven reloads
 
     init(initialTimeRange: TimeRange = .today) {
         self.initialTimeRange = initialTimeRange
@@ -74,6 +89,8 @@ struct DashboardView: View {
     @State private var dailyBalanceSpend: [Date: Double] = [:]  // date → USD spend
     @State private var i18nToken = 0  // bumped on language change to force re-render
     @State private var todayCombinedSpend: Double = 0
+    @State private var weekCombinedSpend: Double = 0
+    @State private var monthCombinedSpend: Double = 0
     @State private var todayCalls: Int = 0
     @State private var todayTokens: Int = 0
     @State private var yesterdaySpend: Double = 0
@@ -251,6 +268,8 @@ struct DashboardView: View {
                     } else {
                         emptyStateCard
                     }
+
+                    lastUpdatedFooter
                 }
             }
         }
@@ -258,9 +277,8 @@ struct DashboardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .environment(\.locale, I18n.resolvedLocale)
         .task {
-            ApiPoller.shared.pollAll()
             await load()
-            // Sync to iCloud after Dashboard opens with fresh data
+            ApiPoller.shared.pollAll()
             triggerCloudSync()
         }
         .onChange(of: timeRange) { _, _ in
@@ -268,9 +286,14 @@ struct DashboardView: View {
             Task { await load() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
+            // Manual refresh / forceRefresh — immediate, no throttle
             Task { await load() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dataDidChange)) { _ in
+            // Background data change — throttle to avoid redundant work
+            let now = Date()
+            guard now.timeIntervalSince(lastDataChangeLoad) >= dataChangeThrottle else { return }
+            lastDataChangeLoad = now
             Task { await load() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .appHealthDidChange)) { _ in
@@ -576,12 +599,7 @@ struct DashboardView: View {
     }
 
     func toolName(for id: String) -> String {
-        switch id {
-        case "cursor": return "Cursor"
-        case "copilot": return "GitHub Copilot"
-        case "windsurf": return "Windsurf"
-        default: return id
-        }
+        IntegrationRegistry.toolDisplayName(for: id)
     }
 
     // MARK: - Cost chart (API balance + subscription amortization, stacked)
@@ -945,7 +963,13 @@ struct DashboardView: View {
         let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
         let subDaily = StatsService.subscriptionDailyAmortization()
         let subTotal = subDaily * Double(timeRange.days)
-        let totalCost = timeRange == .today ? todayCombinedSpend : apiSpend + subTotal
+        let totalCost: Double = {
+            switch timeRange {
+            case .today: return todayCombinedSpend
+            case .thisWeek: return weekCombinedSpend
+            case .days30: return monthCombinedSpend
+            }
+        }()
 
         let apiData = apiDonutData()
         let subVsApi = subVsApiDonutData(api: apiSpend, sub: subTotal)
@@ -953,29 +977,38 @@ struct DashboardView: View {
         return VStack(spacing: 16) {
             // Big total
             VStack(spacing: 4) {
+                // Cost number centered, badge as trailing overlay — doesn't affect centering
                 Text("$\(String(format: "%.2f", totalCost))")
                     .font(.system(size: 48, weight: .bold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.deepRed)
                     .scaleEffect(loadedTimeRange == timeRange ? (0.8 + 0.2 * barProgress) : 0.8)
                     .animation(.spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
-                HStack(spacing: 6) {
-                    Text("\(timeRange.label)\(I18n.t("dashboard.api_spent"))")
+                    .overlay(alignment: .trailing) {
+                        HStack(spacing: 4) {
+                            if timeRange == .today, yesterdaySpend > 0.001 {
+                                comparisonBadge(current: totalCost, previous: yesterdaySpend)
+                            }
+                            if timeRange == .days30, previousPeriodSpend > 0.001 {
+                                comparisonBadge(current: totalCost, previous: previousPeriodSpend)
+                            }
+                        }
+                        .offset(x: 56)  // push badge to the right of the number
+                    }
+                HStack(spacing: 4) {
+                    Text("\(timeRange.label) \(I18n.t("dashboard.api_spent"))")
                         .font(.caption).foregroundColor(.secondary)
-                    // Day-over-day badge (today only)
-                    if timeRange == .today, yesterdaySpend > 0.001 {
-                        comparisonBadge(current: totalCost, previous: yesterdaySpend, upLabel: I18n.t("dashboard.vs_yesterday"), downLabel: I18n.t("dashboard.vs_yesterday"), flatLabel: I18n.t("dashboard.vs_yesterday_flat"))
-                    }
-                    // Period-over-period badge (30-day only)
-                    if timeRange == .days30, previousPeriodSpend > 0.001 {
-                        comparisonBadge(current: totalCost, previous: previousPeriodSpend, upLabel: I18n.t("dashboard.vs_period"), downLabel: I18n.t("dashboard.vs_period"), flatLabel: I18n.t("dashboard.vs_period_flat"))
+                    // Per-tab context: today=projected, week/30d=daily avg + projected + remaining
+                    if let p = prediction, p.monthProjected > 0.001 {
+                        if timeRange == .today {
+                            Text("· \(String(format: I18n.t("dashboard.today_expected"), String(format: "%.2f", p.dailyRate)))")
+                        } else if timeRange == .thisWeek {
+                            Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 7), 7 - timeRange.days))")
+                        } else {
+                            Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 30), p.daysRemaining))")
+                        }
                     }
                 }
-                // Monthly projection — all time ranges
-                if let p = prediction, p.monthProjected > 0.001 {
-                    Text(String(format: I18n.t("dashboard.month_projection"), String(format: "%.2f", p.monthSoFar), String(format: "%.2f", p.monthProjected), p.daysRemaining))
-                        .font(.caption2).foregroundColor(.secondary)
-                        .padding(.top, 2)
-                }
+                .font(.caption2).foregroundColor(.secondary)
             }
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity)
@@ -1062,10 +1095,13 @@ struct DashboardView: View {
     // MARK: - Output section
 
     var outputSection: some View {
-        let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
-        let subDaily = StatsService.subscriptionDailyAmortization()
-        let subTotal = subDaily * Double(timeRange.days)
-        let totalCost = timeRange == .today ? todayCombinedSpend : apiSpend + subTotal
+        let totalCost: Double = {
+            switch timeRange {
+            case .today: return todayCombinedSpend
+            case .thisWeek: return weekCombinedSpend
+            case .days30: return monthCombinedSpend
+            }
+        }()
         let toolCosts = computeToolCosts()
         let dataReady = loadedTimeRange == timeRange
 
@@ -1100,24 +1136,19 @@ struct DashboardView: View {
             }
 
             // ── Repo list with cost + CPL ("chin/beard") ──
-            let cplRepos = repos.filter { $0.totalChanges > 0 }
-            if !cplRepos.isEmpty {
-                let logTotal = cplRepos.map(\.cost).reduce(0, +)
-                let scale = logTotal > 0 ? apiSpend / logTotal : 1.0
-                let reposWithSub = cplRepos.map { r -> (RepoBreakdown, Double) in
-                    let repoAPI = r.cost * scale
-                    let subPortion = logTotal > 0 ? subTotal * r.cost / logTotal : 0
-                    return (r, repoAPI + subPortion)
-                }
-                let maxCost = reposWithSub.map(\.1).max() ?? 1
-                let maxCPL = cplRepos.compactMap { r in r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : nil }.max() ?? 1
-                let shown = reposExpanded ? reposWithSub : Array(reposWithSub.prefix(5))
+            // Use snapshot's pre-computed topRepos.cost directly — already
+            // includes subscription scaling from dashboardSnapshot. Consistent
+            // with what iOS reads from CloudKit.
+            let shownRepos = repos.filter { $0.totalChanges > 0 }
+            if !shownRepos.isEmpty {
+                let maxCost = shownRepos.map(\.cost).max() ?? 1
+                let maxCPL = shownRepos.compactMap { r in r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : nil }.max() ?? 1
+                let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
                 VStack(alignment: .leading, spacing: 6) {
                     Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-                    ForEach(Array(shown.enumerated()), id: \.element.0.id) { idx, item in
-                        let (r, totalCost) = item
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { idx, r in
                         let combinedCPL = r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : 0
-                        let costRatio = maxCost > 0 ? totalCost / maxCost : 0
+                        let costRatio = maxCost > 0 ? r.cost / maxCost : 0
                         let cplRatio = maxCPL > 0 ? combinedCPL / maxCPL : 0
                         let progress = dataReady ? barProgress : 0
                         VStack(alignment: .leading, spacing: 3) {
@@ -1128,7 +1159,7 @@ struct DashboardView: View {
                                     .font(.caption2).foregroundColor(.secondary).monospacedDigit()
                             }
                             HStack(spacing: 6) {
-                                Text("$\(String(format: "%.2f", totalCost))")
+                                Text("$\(String(format: "%.2f", r.cost))")
                                     .font(.caption2).monospacedDigit().frame(width: 64, alignment: .leading)
                                 GeometryReader { geo in
                                     RoundedRectangle(cornerRadius: 5)
@@ -1150,11 +1181,11 @@ struct DashboardView: View {
                         }
                         .padding(.vertical, 4)
                         .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(Double(idx) * 0.03), value: progress)
-                        if r.id != shown.last?.0.id {
+                        if r.id != shown.last?.id {
                             Divider()
                         }
                     }
-                    if reposWithSub.count > 5 {
+                    if shownRepos.count > 5 {
                         Button(reposExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
                             withAnimation { reposExpanded.toggle() }
                         }
@@ -1385,7 +1416,7 @@ struct DashboardView: View {
         VStack(spacing: 12) {
             Image(nsImage: AppIconLoader.uiImage(size: 56))
                 .resizable().frame(width: 56, height: 56)
-            Text("AI Pulse").font(.headline)
+            Text(I18n.t("app.name")).font(.headline)
             Text(I18n.t("dashboard.empty_state"))
                 .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
         }
@@ -1474,26 +1505,26 @@ struct DashboardView: View {
         return "\(tokens)"
     }
 
-    /// Generalized comparison badge. Shows percentage change with arrow and configurable labels.
+    /// Comparison badge — just the arrow + percentage, no label.
     @ViewBuilder
-    func comparisonBadge(current: Double, previous: Double, upLabel: String, downLabel: String, flatLabel: String) -> some View {
+    func comparisonBadge(current: Double, previous: Double) -> some View {
         let pct = (current - previous) / previous * 100
         if abs(pct) < 1 {
-            Text(flatLabel)
+            Text("→")
                 .font(.caption2).foregroundColor(.secondary)
-                .padding(.horizontal, 6).padding(.vertical, 1)
+                .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color(nsColor: .quaternarySystemFill))
                 .cornerRadius(4)
         } else if pct > 0 {
-            Text("\(upLabel) ↑\(Int(round(pct)))%")
+            Text("↑\(Int(round(pct)))%")
                 .font(.caption2).foregroundColor(.deepRed)
-                .padding(.horizontal, 6).padding(.vertical, 1)
+                .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.deepRed.opacity(0.1))
                 .cornerRadius(4)
         } else {
-            Text("\(downLabel) ↓\(Int(round(-pct)))%")
+            Text("↓\(Int(round(-pct)))%")
                 .font(.caption2).foregroundColor(.marsGreen)
-                .padding(.horizontal, 6).padding(.vertical, 1)
+                .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.marsGreen.opacity(0.1))
                 .cornerRadius(4)
         }
@@ -1615,9 +1646,70 @@ struct DashboardView: View {
         }
     }
 
+    @ViewBuilder
+    private var lastUpdatedFooter: some View {
+        if let updated = lastUpdated {
+            HStack {
+                if isRefreshing {
+                    ProgressView().scaleEffect(0.6).frame(width: 12, height: 12)
+                    Text(I18n.t("general.refreshing"))
+                        .font(.caption2).foregroundColor(.secondary)
+                } else {
+                    Text("\(I18n.t("dashboard.updated")) \(updated, format: .dateTime.minute().hour().day().month(.abbreviated))")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16).padding(.horizontal, 20)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.pointingHand.push() }
+                else { NSCursor.pop() }
+            }
+            .onTapGesture {
+                guard !isRefreshing else { return }
+                isRefreshing = true
+                Task {
+                    await forceRefresh()
+                    isRefreshing = false
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func animateBarIfNeeded() {
+        guard barProgress < 0.5 else { return }
+        barProgress = 0
+        withAnimation(.spring(response: 0.65, dampingFraction: 0.7)) {
+            barProgress = 1
+        }
+    }
+
+    @MainActor
+    private func forceRefresh() async {
+        // Recompute and cache all three time ranges.
+        // Then post a dashboardRefresh notification — the onReceive handler
+        // calls load(), which reads the fresh cache. Single code path, no races.
+        let sCal = Calendar.current; var sMonCal = sCal; sMonCal.firstWeekday = 2
+        let sTodayStart = sCal.startOfDay(for: Date())
+        let weekDays = sCal.dateComponents([.day], from: sMonCal.date(from: sMonCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: sTodayStart).day! + 1
+        let dayMap: [String: Int] = ["today": 1, "week": weekDays, "30d": 30]
+        for (key, days) in dayMap {
+            let snap = await StatsService.dashboardSnapshot(days: days)
+            await DashboardCache.write(timeRange: key, json: snap.jsonString())
+        }
+        triggerCloudSync()
+        // Invalidate any in-flight load so the cache we just wrote is used
+        loadGeneration += 1
+        NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
+    }
+
     /// Apply a cached snapshot to @State variables, skipping all DB queries.
     private func applySnapshot(_ snap: DashboardSnapshot) {
         todayCombinedSpend = snap.todayCost
+        weekCombinedSpend = snap.weekCost
+        monthCombinedSpend = snap.monthCost
         todayCalls = snap.todayCalls
         todayTokens = snap.todayTokens
         yesterdaySpend = snap.yesterdaySpend
@@ -1635,32 +1727,38 @@ struct DashboardView: View {
         }
         repos = snap.topRepos.map { RepoBreakdown(repo: $0.name, cost: $0.cost, added: $0.added, deleted: $0.deleted, apiSources: [], subscriptionSources: []) }
         prediction = snap.prediction.map { Prediction(monthProjected: $0.monthProjected, dailyRate: $0.dailyRate, daysRemaining: $0.daysRemaining, monthSoFar: $0.monthSoFar) }
+        lastUpdated = snap.updatedAt
+        lastSnapshotTS = snap.updatedAt
         providerCosts = snap.providerBreakdown.map { ProviderDailyCost(date: Date(), providerId: $0.providerId, cost: $0.cost) }
         paddedChanges = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
         isDemoMode = false
         loadedTimeRange = timeRange
 
         // Same entry animation as the full load path
-        if barProgress < 0.5 {
-            barProgress = 0
-            DispatchQueue.main.async {
-                withAnimation(.spring(response: 0.65, dampingFraction: 0.7)) {
-                    self.barProgress = 1
-                }
-            }
-        }
+        animateBarIfNeeded()
     }
 
+    @MainActor
     func load() async {
+        // Prevent concurrent loads — only one at a time.
+        guard !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
+
         // Bump generation so only the latest load() applies its results.
-        // When tab-switching or rapid refresh triggers two concurrent loads,
-        // the stale one is discarded.
         loadGeneration += 1
         let myGen = loadGeneration
 
-        // ── Cache check — if recent snapshot exists, apply instantly ──
-        if let cached = await DashboardCache.read(timeRange: timeRange.label, maxAge: 30) {
+        // ── Cache check — skip on initial load to avoid stale-data flash ──
+        // Max age matches Phase 4 refresh intervals: today=5min, week=1h, 30d=12h
+        let cacheMaxAge: TimeInterval = {
+            switch timeRange { case .today: return 300; case .thisWeek: return 3600; default: return 43200 }
+        }()
+        if loadedTimeRange != nil,
+           let cached = await DashboardCache.read(timeRange: timeRange.cacheKey, maxAge: cacheMaxAge) {
             guard myGen == loadGeneration else { return }
+            // Skip if cache unchanged since last apply (debounce Phase-1 driven reloads)
+            if let last = lastSnapshotTS, abs(cached.updatedAt.timeIntervalSince(last)) < 1 { return }
             applySnapshot(cached)
             Logger.debug("Dashboard: loaded from cache (\(timeRange.label))")
             return
@@ -1703,17 +1801,10 @@ struct DashboardView: View {
 
         applySnapshot(snap)
 
-        Task { await DashboardCache.write(timeRange: currentTimeRange.label, json: snap.jsonString()) }
+        Task { await DashboardCache.write(timeRange: currentTimeRange.cacheKey, json: snap.jsonString()) }
 
         // ── Trigger entry animations (only when bars were reset by tab switch) ──
-        if barProgress < 0.5 {
-            barProgress = 0
-            DispatchQueue.main.async {
-                withAnimation(.spring(response: 0.65, dampingFraction: 0.7)) {
-                    self.barProgress = 1
-                }
-            }
-        }
+        animateBarIfNeeded()
     }
 
 }

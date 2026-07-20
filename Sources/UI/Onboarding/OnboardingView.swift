@@ -75,7 +75,7 @@ struct OnboardingView: View {
     var welcomeStep: some View {
         VStack(spacing: 16) {
             Image(nsImage: AppIconLoader.uiImage(size: 72))
-            Text("AI Pulse").font(.title).fontWeight(.bold)
+            Text(I18n.t("app.name")).font(.title).fontWeight(.bold)
             Text(I18n.t("onboarding.welcome"))
                 .font(.title2).foregroundColor(.secondary)
             Text(I18n.t("onboarding.desc"))
@@ -284,7 +284,7 @@ struct OnboardingView: View {
     }
 
     func runDetection() {
-        detectionResults = IntegrationRegistry.all.map { ($0, $0.detect()) }
+        detectionResults = IntegrationRegistry.visible.map { ($0, $0.detect()) }
         // Auto-enable log-based integrations that are detected
         for (i, r) in detectionResults where r.found && i.costSources.isEmpty && i is any Collectable {
             enabledIds.insert(i.id)

@@ -126,11 +126,12 @@ final class ApiPoller: @unchecked Sendable {
 
     // MARK: - Zhipu parser
 
+    /// Parses account balance from query-customer-account-report.
+    /// Uses availableBalance (CNY) as the usable total.
     private nonisolated func zhipuParser(_ json: [String: Any]) -> [BalanceEntry] {
-        let limits = (json["data"] as? [String: Any])?["limits"] as? [[String: Any]] ?? []
-        let tokenLimit = limits.first { ($0["type"] as? String) == "TOKENS_LIMIT" }
-        let remaining = tokenLimit?["remaining"] as? Double ?? tokenLimit?["currentValue"] as? Double ?? 0
-        return [BalanceEntry(currency: "tokens", totalBalance: remaining, grantedBalance: 0, toppedUpBalance: 0)]
+        let balance = json["balance"] as? [String: Any] ?? json["data"] as? [String: Any] ?? [:]
+        let available = parseDouble(balance["availableBalance"]) ?? parseDouble(balance["balance"]) ?? 0
+        return [BalanceEntry(currency: "CNY", totalBalance: available, grantedBalance: 0, toppedUpBalance: 0)]
     }
 
     private nonisolated func simpleParser(for providerId: String) -> @Sendable ([String: Any]) -> [BalanceEntry] {
@@ -149,12 +150,22 @@ final class ApiPoller: @unchecked Sendable {
         case "moonshot":
             return { json in
                 let data = json["data"] as? [String: Any] ?? json
-                let bal = Double(data["balance"] as? String ?? data["total_balance"] as? String ?? "0") ?? 0
+                // Moonshot API returns { "available_balance": 14.7286 } — numeric, not string.
+                let bal = self.parseDouble(data["available_balance"]) ?? self.parseDouble(data["balance"]) ?? 0
                 return [BalanceEntry(currency: "CNY", totalBalance: bal, grantedBalance: 0, toppedUpBalance: 0)]
             }
         default:
             return { _ in [] }
         }
+    }
+
+    /// Parse a Double from either String or Number JSON values.
+    private func parseDouble(_ value: Any?) -> Double? {
+        guard let value else { return nil }
+        if let s = value as? String { return Double(s) }
+        if let n = value as? Double { return n }
+        if let n = value as? NSNumber { return n.doubleValue }
+        return nil
     }
 
     // MARK: - Caching
