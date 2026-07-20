@@ -80,10 +80,34 @@ struct DashboardView: View {
                             .scaleEffect(0.8 + 0.2 * barProgress)
                         Text("\(timeRange.label) \(totalCost > 0 ? I18n.t("dashboard.total") : "")")
                             .font(.caption).foregroundColor(.secondary)
+                        // Day-over-day badge (today only)
+                        if timeRange == .today, snap.yesterdaySpend > 0.001 {
+                            comparisonBadge(current: totalCost, previous: snap.yesterdaySpend)
+                        }
+                        if timeRange == .days30, snap.previousPeriodSpend > 0.001 {
+                            comparisonBadge(current: totalCost, previous: snap.previousPeriodSpend)
+                        }
+                        // Per-tab context below the big number.
+                        // Today: daily avg · Week/30d: daily avg + projected + remaining.
                         if let p = snap.prediction, p.monthProjected > 0.001 {
-                            Text(String(format: I18n.t("dashboard.spent_month"),
-                                        p.monthSoFar, p.monthProjected, p.daysRemaining))
-                                .font(.caption2).foregroundColor(.secondary)
+                            Group {
+                                if timeRange == .today {
+                                    Text(String(format: I18n.t("dashboard.today_expected"),
+                                                String(format: "%.2f", p.dailyRate)))
+                                } else if timeRange == .week {
+                                    Text(String(format: I18n.t("dashboard.range_context"),
+                                                String(format: "%.2f", p.dailyRate),
+                                                String(format: "%.2f", p.dailyRate * 7),
+                                                7 - timeRange.days))
+                                } else {
+                                    Text(String(format: I18n.t("dashboard.range_context"),
+                                                String(format: "%.2f", p.dailyRate),
+                                                String(format: "%.2f", p.dailyRate * 30),
+                                                p.daysRemaining))
+                                }
+                            }
+                            .font(.caption2).foregroundColor(.secondary)
+                        }
                         }
                     }
 
@@ -161,6 +185,9 @@ struct DashboardView: View {
             default:           return "en_US"
             }
         }()))
+        .refreshable {
+            await cloudData.refresh()
+        }
         .onAppear {
             barProgress = 1
             Task { try? await cloudData.fetchSnapshot() }
@@ -441,6 +468,26 @@ struct DashboardView: View {
         VStack(spacing: 1) {
             Text(value).font(.caption).fontWeight(.semibold).foregroundStyle(color)
             Text(label).font(.caption2).foregroundColor(.secondary)
+        }
+    }
+
+    private func comparisonBadge(current: Double, previous: Double) -> some View {
+        let pct = (current - previous) / previous * 100
+        if abs(pct) < 1 {
+            Text("→")
+                .font(.caption2).foregroundColor(.secondary)
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+        } else if pct > 0 {
+            Text("↑\(Int(round(pct)))%")
+                .font(.caption2).foregroundColor(.deepRed)
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(Color.deepRed.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+        } else {
+            Text("↓\(Int(round(-pct)))%")
+                .font(.caption2).foregroundColor(.marsGreen)
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(Color.marsGreen.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
         }
     }
     private func shortNum(_ n: Int) -> String { n >= 1000 ? "\(n / 1000)K" : "\(n)" }

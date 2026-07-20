@@ -17,6 +17,9 @@
     "--" : {
 
     },
+    "· %@" : {
+
+    },
     "(%lld)" : {
 
     },
@@ -30,22 +33,12 @@
         }
       }
     },
-    "%@ ↑%lld%%" : {
+    "%@ %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@ ↑%2$lld%%"
-          }
-        }
-      }
-    },
-    "%@ ↓%lld%%" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ ↓%2$lld%%"
+            "value" : "%1$@ %2$@"
           }
         }
       }
@@ -77,6 +70,15 @@
 
     },
     "••••••••" : {
+
+    },
+    "→" : {
+
+    },
+    "↑%lld%%" : {
+
+    },
+    "↓%lld%%" : {
 
     },
     "+%lld %@ / -%lld %@" : {
@@ -3681,6 +3683,23 @@
         }
       }
     },
+    "dashboard.daily_avg" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daily avg %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日均 %@"
+          }
+        }
+      }
+    },
     "dashboard.daily_trend" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -4539,6 +4558,23 @@
         }
       }
     },
+    "dashboard.range_context" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daily avg %1$@ · %2$@ projected · %3$d days left"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日均 %1$@ · 预计 %2$@ · 剩余 %3$d 天"
+          }
+        }
+      }
+    },
     "dashboard.request_count" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -5195,6 +5231,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "今天"
+          }
+        }
+      }
+    },
+    "dashboard.today_expected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projected %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预计 %@"
+          }
+        }
+      }
+    },
+    "dashboard.today_projection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spent %1$@ · projected %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已花费 %1$@ · 预计 %2$@"
           }
         }
       }
@@ -6053,6 +6123,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本週 +- 行數"
+          }
+        }
+      }
+    },
+    "dashboard.week_projection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spent %1$@ this week · %2$@ projected · %3$d days left"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本周已花 %1$@ · 预计 %2$@ · 剩余 %3$d 天"
           }
         }
       }
@@ -7379,6 +7466,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示語言"
+          }
+        }
+      }
+    },
+    "general.refreshing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refreshing…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在刷新…"
           }
         }
       }

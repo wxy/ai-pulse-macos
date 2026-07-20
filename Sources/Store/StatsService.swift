@@ -294,29 +294,44 @@ enum StatsService {
 
     // MARK: - Prediction
 
-    /// Project this month's spending based on per-day rate so far.
+    /// Rolling 30-day projection — matches the 30d tab logic, not the natural month.
+    /// `dailyRate` = last-30-day average; `monthProjected` = dailyRate × 30.
+    /// `monthSoFar` stays as calendar-month spend (used in the 30d tab prediction text).
+    /// `daysRemaining` = calendar days left in this month.
     static func prediction() async -> Prediction {
         let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+
+        // Calendar month for "spent X this month" and "remaining Z days" display
         guard let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: Date())) else {
             return Prediction(monthProjected: 0, dailyRate: 0, daysRemaining: 0, monthSoFar: 0)
         }
-        let todayStart = cal.startOfDay(for: Date())
         let daysElapsed = max(1, (cal.dateComponents([.day], from: monthStart, to: todayStart).day ?? 0) + 1)
-        let range = cal.range(of: .day, in: .month, for: Date())
-        let totalDays = range?.count ?? 30
+        let totalDays = cal.range(of: .day, in: .month, for: Date())?.count ?? 30
         let daysRemaining = totalDays - daysElapsed
 
-        let ms = Int64(monthStart.timeIntervalSince1970 * 1000)
+        // Rolling 30-day window for stable daily rate
+        let rollingStart = cal.date(byAdding: .day, value: -29, to: todayStart)!
+        let rollingMs = Int64(rollingStart.timeIntervalSince1970 * 1000)
+        let monthMs = Int64(monthStart.timeIntervalSince1970 * 1000)
+
         do {
-            let spent: Double = try await AppDatabase.shared.read { db in
+            async let rollingSpent: Double = AppDatabase.shared.read { db in
                 try Double.fetchOne(db, sql: """
                     SELECT COALESCE(SUM(cost_usd), 0) FROM usage_event
                     WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
-                    """, arguments: [ms]) ?? 0
+                    """, arguments: [rollingMs]) ?? 0
             }
-            let dailyRate = spent / Double(daysElapsed)
-            let projected = spent + dailyRate * Double(daysRemaining)
-            return Prediction(monthProjected: projected, dailyRate: dailyRate, daysRemaining: daysRemaining, monthSoFar: spent)
+            async let monthSpent: Double = AppDatabase.shared.read { db in
+                try Double.fetchOne(db, sql: """
+                    SELECT COALESCE(SUM(cost_usd), 0) FROM usage_event
+                    WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
+                    """, arguments: [monthMs]) ?? 0
+            }
+            let (rs, ms_) = try await (rollingSpent, monthSpent)
+            let dailyRate = rs / 30.0
+            let projected = dailyRate * Double(totalDays)
+            return Prediction(monthProjected: projected, dailyRate: dailyRate, daysRemaining: daysRemaining, monthSoFar: ms_)
         } catch {
             Logger.error("StatsService.prediction: query failed — \(error)")
             return Prediction(monthProjected: 0, dailyRate: 0, daysRemaining: 0, monthSoFar: 0)
@@ -500,26 +515,59 @@ enum StatsService {
         let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart)!
         let rangeStartMs = Int64(rangeStart.timeIntervalSince1970 * 1000)
         let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
+        // 30-day window for correct cross-range costs (weekCost / monthCost)
+        // Add 14-day lookback so the first balance delta at the window boundary is captured.
+        let monthStart = cal.date(byAdding: .day, value: -29, to: todayStart)!
+        let monthStartMs = Int64(monthStart.timeIntervalSince1970 * 1000)
+        let lookbackStart = cal.date(byAdding: .day, value: -14, to: monthStart)!
+        let lookbackStartMs = Int64(lookbackStart.timeIntervalSince1970 * 1000)
 
+        // Monday of this week (for unified week cost)
+        var monCal = cal; monCal.firstWeekday = 2
+        let mondayStart = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+        let mondayStartMs = Int64(mondayStart.timeIntervalSince1970 * 1000)
+        let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart)!
+        let yesterdayStartMs = Int64(yesterdayStart.timeIntervalSince1970 * 1000)
+        // Previous 30-day window for period-over-period comparison
+        let prevPeriodStart = cal.date(byAdding: .day, value: -30, to: todayStart)!
+
+        //
+        // ── Unified cost computation: all three ranges use combinedSpend ──
+        // combinedSpend = balance API (with 14d lookback) + subscription × days
         async let todayCombined = StatsService.combinedSpend(sinceMs: todayStartMs)
+        async let weekCombined = StatsService.combinedSpend(sinceMs: mondayStartMs)
+        async let monthCombined = StatsService.combinedSpend(sinceMs: monthStartMs)
+        async let yesterdayCombined = StatsService.combinedSpend(sinceMs: yesterdayStartMs)
         async let stats = StatsService.dailyStats(days: days)
         async let bal = StatsService.balanceDailySpend(days: days, sinceMs: rangeStartMs)
+        // Query full 30 days of balance data + 14d lookback for provider breakdown
+        async let balMonth = StatsService.balanceDailySpend(days: 44, sinceMs: lookbackStartMs)
         async let code = StatsService.dailyCodeChanges(days: days)
         async let repos = StatsService.repoBreakdown(days: days)
         async let pred = StatsService.prediction()
 
-        let (tc, st, bl, cd, rp, pr) = await (
-            todayCombined,
-            (try? stats) ?? [], (try? bal) ?? [], (try? code) ?? [],
+        let (tc, wc, mc, yc, st, bl, bm, cd, rp, pr) = await (
+            todayCombined, weekCombined, monthCombined, yesterdayCombined,
+            (try? stats) ?? [], (try? bal) ?? [],
+            (try? balMonth) ?? [],
+            (try? code) ?? [],
             (try? repos) ?? [], pred
         )
 
         let subAmort = subscriptionDailyAmortization()
 
-        // Provider breakdown
+        // Previous 30-day period spend (for 30d period-over-period badge)
+        let prevPeriodApiSpend = bm.filter {
+            let ts = $0.date.timeIntervalSince1970
+            return ts >= prevPeriodStart.timeIntervalSince1970 && ts < todayStart.timeIntervalSince1970
+        }.reduce(0.0) { $0 + $1.spend }
+        let prevPeriodDays = Double(min(30, cal.dateComponents([.day], from: prevPeriodStart, to: todayStart).day ?? 30))
+        let previousPeriodSpend = prevPeriodApiSpend + subAmort * prevPeriodDays
+
+        // Provider breakdown — use 30-day query (bm) filtered to `days` range
         let names = Dictionary(uniqueKeysWithValues: IntegrationRegistry.all.map { ($0.id, $0.displayName) })
         var provTotals: [String: (name: String, cost: Double)] = [:]
-        for s in bl {
+        for s in bm where s.date.timeIntervalSince1970 >= rangeStart.timeIntervalSince1970 {
             let name = names[s.providerId] ?? s.providerId
             let prev = provTotals[s.providerId]?.cost ?? 0
             provTotals[s.providerId] = (name, prev + s.spend)
@@ -539,10 +587,11 @@ enum StatsService {
         let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
             if case .apiKey(let pid) = cs.kind { return pid }; return nil
         })
-        let apiSpend = bl.filter { enabledB.contains($0.providerId) }.reduce(0.0) { $0 + $1.spend }
+        // API spend for the current `days` range (for tool/repo scaling)
+        let apiSpend = bm.filter {
+            enabledB.contains($0.providerId) && $0.date.timeIntervalSince1970 >= rangeStart.timeIntervalSince1970
+        }.reduce(0.0) { $0 + $1.spend }
         let subTotalAll = subAmort * Double(days)
-        let weekCost = apiSpend + subAmort * 7
-        let monthCost = apiSpend + subAmort * 30
         let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
         let rawTools = toolMap.compactMap { (key, cost) -> (String, Double)? in
             guard cost * scale > 0.001 else { return nil }
@@ -578,8 +627,8 @@ enum StatsService {
         let todayTok = st.reduce(0) { $0 + $1.tokens }
 
         return DashboardSnapshot(
-            todayCost: tc, weekCost: weekCost, monthCost: monthCost,
-            yesterdaySpend: 0, previousPeriodSpend: 0,
+            todayCost: tc, weekCost: wc, monthCost: mc,
+            yesterdaySpend: yc, previousPeriodSpend: previousPeriodSpend,
             subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok,
             providerBreakdown: providers, toolBreakdown: toolCosts, topRepos: repoItems,
             prediction: PredictionItem(monthProjected: pr.monthProjected, dailyRate: pr.dailyRate, daysRemaining: pr.daysRemaining, monthSoFar: pr.monthSoFar),
