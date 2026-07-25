@@ -97,6 +97,7 @@ struct DashboardView: View {
     @State private var barProgress: CGFloat = 0  // 0→1 drives all entry animations
     @State private var loadedTimeRange: TimeRange? = nil  // set after data lands; gates bars against stale renders
     @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
+    @State private var remainingBalances: [RemainingBalanceItem] = []
     @State private var isDemoMode = false
     @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
     @State private var toolsExpanded = false
@@ -257,6 +258,14 @@ struct DashboardView: View {
                         // ── Trend frame (body) — daily trend chart ──
                         if timeRange != .today {
                             trendSection
+                                .padding(20)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                        .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
+                                )
+                                .padding(.horizontal, 60).padding(.bottom, 60)
+                        } else if !remainingBalances.isEmpty {
+                            remainingBalanceSection
                                 .padding(20)
                                 .background(
                                     RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -1220,6 +1229,23 @@ struct DashboardView: View {
         return (max, step, vals, scale)
     }
 
+    var remainingBalanceSection: some View {
+        VStack(spacing: 12) {
+            Text(I18n.t("dashboard.remaining_balance")).font(.headline)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+            ForEach(remainingBalances, id: \.providerId) { item in
+                HStack {
+                    Text(item.displayName)
+                        .font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    Text(balanceString(item.balance, currency: item.currency))
+                        .font(.caption).fontWeight(.semibold).monospacedDigit()
+                }
+            }
+        }
+    }
+
     var trendSection: some View {
         let padStats = padStats(dailyStats, days: timeRange.days)
         let padCode = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
@@ -1485,6 +1511,14 @@ struct DashboardView: View {
         return "\(tokens)"
     }
 
+    func balanceString(_ v: Double, currency: String) -> String {
+        let symbol: String = {
+            switch currency { case "CNY": return "¥"; case "EUR": return "€"; default: return "$" }
+        }()
+        if v >= 1000 { return "\(symbol)\(String(format: "%.0f", v))" }
+        return "\(symbol)\(String(format: "%.2f", v))"
+    }
+
     /// Comparison badge — just the arrow + percentage, no label.
     @ViewBuilder
     func comparisonBadge(current: Double, previous: Double) -> some View {
@@ -1709,6 +1743,7 @@ struct DashboardView: View {
         prediction = snap.prediction.map { Prediction(monthProjected: $0.monthProjected, dailyRate: $0.dailyRate, daysRemaining: $0.daysRemaining, monthSoFar: $0.monthSoFar) }
         lastUpdated = snap.updatedAt
         lastSnapshotTS = snap.updatedAt
+        remainingBalances = snap.remainingBalances
         providerCosts = snap.providerBreakdown.map { ProviderDailyCost(date: Date(), providerId: $0.providerId, cost: $0.cost) }
         paddedChanges = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
         isDemoMode = false

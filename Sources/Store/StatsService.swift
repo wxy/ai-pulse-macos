@@ -431,6 +431,43 @@ enum StatsService {
         return total
     }
 
+    // MARK: - Remaining balance
+
+    /// Latest remaining balance per balance-tracked provider.
+    /// For usage-type providers (OpenAI), stored value is negative — reverse to positive.
+    static func latestRemainingBalances(sinceMs: Int64) async throws -> [RemainingBalanceItem] {
+        let balanceTrackedIds = Set(ProviderRegistry.all.filter { $0.canFetchBalance }.map { $0.id })
+        guard !balanceTrackedIds.isEmpty else { return [] }
+        let rows = try await AppDatabase.shared.read { db -> [Row] in
+            try Row.fetchAll(db, sql: """
+                SELECT bs.provider_id, bs.balance, bs.currency
+                FROM balance_snapshot bs
+                INNER JOIN (
+                    SELECT provider_id, MAX(ts) AS max_ts
+                    FROM balance_snapshot
+                    WHERE ts >= ?
+                    GROUP BY provider_id
+                ) latest ON bs.provider_id = latest.provider_id AND bs.ts = latest.max_ts
+                """, arguments: [sinceMs])
+        }
+        let names = Dictionary(uniqueKeysWithValues: IntegrationRegistry.all.map { ($0.id, $0.displayName) })
+        return rows.compactMap { row in
+            guard let pid: String = row["provider_id"],
+                  let storedBal: Double = row["balance"],
+                  let cur: String = row["currency"],
+                  balanceTrackedIds.contains(pid)
+            else { return nil }
+            let provider = ProviderRegistry.byId(pid)
+            let displayBalance = provider?.balanceType == .usage ? -storedBal : storedBal
+            return RemainingBalanceItem(
+                providerId: pid,
+                displayName: names[pid] ?? pid,
+                balance: displayBalance,
+                currency: cur
+            )
+        }
+    }
+
     // MARK: - Provider daily cost
 
     /// Daily cost grouped by provider_id for the cost chart.
@@ -544,13 +581,15 @@ enum StatsService {
         async let code = StatsService.dailyCodeChanges(days: days)
         async let repos = StatsService.repoBreakdown(days: days)
         async let pred = StatsService.prediction()
+        async let latestBals = StatsService.latestRemainingBalances(sinceMs: lookbackStartMs)
 
-        let (tc, wc, mc, yc, st, bl, bm, cd, rp, pr) = await (
+        let (tc, wc, mc, yc, st, bl, bm, cd, rp, pr, lb) = await (
             todayCombined, weekCombined, monthCombined, yesterdayCombined,
             (try? stats) ?? [], (try? bal) ?? [],
             (try? balMonth) ?? [],
             (try? code) ?? [],
-            (try? repos) ?? [], pred
+            (try? repos) ?? [], pred,
+            (try? latestBals) ?? []
         )
 
         let subAmort = subscriptionDailyAmortization()
@@ -624,6 +663,7 @@ enum StatsService {
             providerBreakdown: providers, toolBreakdown: toolCosts, topRepos: repoItems,
             prediction: PredictionItem(monthProjected: pr.monthProjected, dailyRate: pr.dailyRate, daysRemaining: pr.daysRemaining, monthSoFar: pr.monthSoFar),
             dailyStats: dailyPts, codeChanges: codePts, balanceDaily: balPts,
+            remainingBalances: lb,
             updatedAt: Date()
         )
     }

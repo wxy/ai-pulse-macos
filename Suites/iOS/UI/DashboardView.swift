@@ -1,14 +1,11 @@
 import SwiftUI
 import Charts
 
-// macOS color palette (mars green + deep red)
+// Additional color palette variants (base colors in Shared/Views/ActivityRing.swift)
 extension Color {
     // Dark mode: use lighter variants for better contrast
-    static let marsGreen      = Color(red: 44/255, green: 91/255, blue: 72/255)
-    static let marsGreenBar   = Color(light: Color(red: 44/255, green: 91/255, blue: 72/255), dark: Color(red: 140/255, green: 196/255, blue: 170/255))
-    static let marsGreenLight = Color(red: 140/255, green: 196/255, blue: 170/255)
-    static let deepRed        = Color(red: 173/255, green: 46/255, blue: 35/255)
-    static let deepRedBar     = Color(light: Color(red: 173/255, green: 46/255, blue: 35/255), dark: Color(red: 235/255, green: 100/255, blue: 90/255))
+    static let marsGreenBar   = Color(light: .marsGreen, dark: .marsGreenLight)
+    static let deepRedBar     = Color(light: .deepRed, dark: Color(red: 235/255, green: 100/255, blue: 90/255))
     static let deepRed2       = Color(red: 196/255, green: 74/255, blue: 63/255)
 
     init(light: Color, dark: Color) {
@@ -157,6 +154,14 @@ struct DashboardView: View {
                 // ── Trend section (body) ──
                 if timeRange != .today {
                     trendChart
+                } else if !snap.remainingBalances.isEmpty {
+                    remainingBalanceRow
+                        .padding(12)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
+                        )
                 }
 
                 if let updated = cloudData.lastUpdated {
@@ -281,6 +286,37 @@ struct DashboardView: View {
         if !snap.topRepos.isEmpty {
             repoList
         }
+    }
+
+    @ViewBuilder
+    private var remainingBalanceRow: some View {
+        let items = snap.remainingBalances.filter { $0.balance > 0.001 }
+        if items.isEmpty {
+            EmptyView()
+        } else {
+            VStack(spacing: 10) {
+                Text(I18n.t("dashboard.remaining_balance")).font(.headline)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                ForEach(items, id: \.providerId) { item in
+                    HStack {
+                        Text(item.displayName)
+                            .font(.caption).foregroundColor(.secondary)
+                        Spacer()
+                        Text(balanceShort(item.balance, currency: item.currency))
+                            .font(.caption).fontWeight(.semibold).monospacedDigit()
+                    }
+                }
+            }
+        }
+    }
+
+    private func balanceShort(_ v: Double, currency: String) -> String {
+        let symbol: String = {
+            switch currency { case "CNY": return "¥"; case "EUR": return "€"; default: return "$" }
+        }()
+        if v >= 1000 { return "\(symbol)\(String(format: "%.0f", v))" }
+        return "\(symbol)\(String(format: "%.2f", v))"
     }
 
     @ViewBuilder
