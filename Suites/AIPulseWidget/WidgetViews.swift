@@ -21,58 +21,135 @@ struct AIPulseWidgetEntryView: View {
         }
     }
 
-    // MARK: - systemSmall (Home Screen 2×2)
+    // MARK: - Helpers (same compute pattern as watchOS SpendView)
+
+    private var dailyRate: Double { max(entry.dailyRate, 0.01) }
+    private var weeklyAvg: Double { dailyRate * 7 }
+    private var todayPct: Double { entry.todayCost / dailyRate }
+    private var todayLaps: Int { Int(todayPct) }
+    private var weekPct: Double { entry.weekCost / weeklyAvg }
+    private var monthPct: Double {
+        guard entry.monthProjected > 0.001 else { return 0 }
+        return min(entry.monthSoFar / entry.monthProjected, 1.0)
+    }
+    private var yesterdayDelta: Double {
+        entry.yesterdaySpend > 0.001 ? (entry.todayCost - entry.yesterdaySpend) / entry.yesterdaySpend : 0
+    }
+
+    // MARK: - systemSmall
 
     var systemSmallView: some View {
-        let todayPct = min(entry.todayCost / entry.dailyRate, 1.0)
-        let todayLaps = Int(entry.todayCost / entry.dailyRate)
-        let weekPct = min(entry.weekCost / entry.weeklyAvg, 1.0)
-        let monthPct = min(entry.monthSoFar / entry.monthProjected, 1.0)
+        // anchor = outerRing + 8 (same formula as watchOS: 160+8=168)
+        let outer: CGFloat = 116
+        let off: CGFloat = 7
 
         return ZStack {
-            ActivityRing(progress: monthPct, thickness: 5, color: .marsGreenLight)
-                .frame(width: 120, height: 120)
+            Rectangle().fill(.clear).frame(width: outer + 8, height: outer + 8)
+                .overlay(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Today").font(.system(size: 8)).foregroundColor(.secondary)
+                        Text("\(todayLaps)×").font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
+                    }.offset(x: -off, y: -off)
+                }
+                .overlay(alignment: .topTrailing) {
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text("Week").font(.system(size: 8)).foregroundColor(.secondary)
+                        Text(formatUSD(entry.weekCost)).font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.marsGreen)
+                    }.offset(x: off, y: -off)
+                }
+                .overlay(alignment: .bottomLeading) {
+                    if entry.yesterdaySpend > 0.001 {
+                        Text(yesterdayDelta > 0 ? "↑\(Int(yesterdayDelta * 100))%" : "↓\(Int(-yesterdayDelta * 100))%")
+                            .font(.system(size: 8, weight: .medium, design: .rounded))
+                            .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen)
+                            .offset(x: -off, y: off)
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text("30 Days").font(.system(size: 8)).foregroundColor(.secondary)
+                        Text(formatUSD(entry.monthCost)).font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.marsGreenLight)
+                    }.offset(x: off, y: off)
+                }
+
+            ActivityRing(progress: monthPct, thickness: 4, color: .marsGreenLight)
+                .frame(width: outer, height: outer)
             ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1),
-                         thickness: 5, color: .marsGreen)
-                .frame(width: 108, height: 108)
+                         thickness: 4, color: .marsGreen)
+                .frame(width: outer - 12, height: outer - 12)
             ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1),
-                         thickness: 5, color: .deepRed)
-                .frame(width: 96, height: 96)
+                         thickness: 4, color: .deepRed)
+                .frame(width: outer - 24, height: outer - 24)
+
             VStack(spacing: 1) {
                 Text(formatUSD(entry.todayCost))
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
                     .minimumScaleFactor(0.5).lineLimit(1)
-                if todayLaps > 0 {
-                    Text("\(todayLaps)× daily avg")
-                        .font(.system(size: 8))
-                        .foregroundColor(.secondary)
-                }
+                Text(entry.updatedAt, format: .dateTime.hour().minute())
+                    .font(.system(size: 8))
+                    .foregroundColor(.secondary)
             }
         }
         .containerBackground(.fill.tertiary, for: .widget)
     }
 
-    // MARK: - systemMedium (Home Screen 4×2)
+    // MARK: - systemMedium
 
     var systemMediumView: some View {
-        let todayPct = min(entry.todayCost / entry.dailyRate, 1.0)
-        let weekPct = min(entry.weekCost / entry.weeklyAvg, 1.0)
-        let monthPct = min(entry.monthSoFar / entry.monthProjected, 1.0)
+        // anchor = outerRing + 8, offset = 8 (exact watchOS formula: 160+8=168, offset±8)
+        let outer: CGFloat = 152
+        let off: CGFloat = 8
 
-        return HStack(spacing: 16) {
+        return HStack(spacing: 24) {
             ZStack {
+                Rectangle().fill(.clear).frame(width: outer + 8, height: outer + 8)
+                    .overlay(alignment: .topLeading) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Today").font(.system(size: 10)).foregroundColor(.secondary)
+                            Text("\(todayLaps)×").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
+                        }.offset(x: -off, y: -off)
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text("Week").font(.system(size: 10)).foregroundColor(.secondary)
+                            Text(formatUSD(entry.weekCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreen)
+                        }.offset(x: off, y: -off)
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        if entry.yesterdaySpend > 0.001 {
+                            Text(yesterdayDelta > 0 ? "↑\(Int(yesterdayDelta * 100))%" : "↓\(Int(-yesterdayDelta * 100))%")
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen)
+                                .offset(x: -off, y: off)
+                        }
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text("30 Days").font(.system(size: 10)).foregroundColor(.secondary)
+                            Text(formatUSD(entry.monthCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreenLight)
+                        }.offset(x: off, y: off)
+                    }
+
                 ActivityRing(progress: monthPct, thickness: 5, color: .marsGreenLight)
-                    .frame(width: 100, height: 100)
+                    .frame(width: outer, height: outer)
                 ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1),
                              thickness: 5, color: .marsGreen)
-                    .frame(width: 88, height: 88)
+                    .frame(width: outer - 16, height: outer - 16)
                 ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1),
                              thickness: 5, color: .deepRed)
-                    .frame(width: 76, height: 76)
-                Text(formatUSD(entry.todayCost))
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .frame(width: outer - 32, height: outer - 32)
+
+                VStack(spacing: 1) {
+                    Text(formatUSD(entry.todayCost))
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .minimumScaleFactor(0.5).lineLimit(1)
+                    Text(entry.updatedAt, format: .dateTime.hour().minute())
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
             }
 
+            // Text breakdown on the right
             VStack(alignment: .leading, spacing: 8) {
                 Text("AI Pulse")
                     .font(.caption).foregroundColor(.secondary)
@@ -101,33 +178,25 @@ struct AIPulseWidgetEntryView: View {
         .containerBackground(.fill.tertiary, for: .widget)
     }
 
-    // MARK: - accessoryCircular (Lock Screen circle)
+    // MARK: - accessoryCircular (Lock Screen)
 
     var accessoryCircularView: some View {
-        let todayPct = min(entry.todayCost / entry.dailyRate, 1.0)
-        let weekPct = min(entry.weekCost / entry.weeklyAvg, 1.0)
-        let monthPct = min(entry.monthSoFar / entry.monthProjected, 1.0)
-
-        return ZStack {
+        ZStack {
             ActivityRing(progress: monthPct, thickness: 3, color: .marsGreenLight)
-                .frame(width: 56, height: 56)
+                .frame(width: 52, height: 52)
             ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1),
                          thickness: 3, color: .marsGreen)
-                .frame(width: 48, height: 48)
+                .frame(width: 44, height: 44)
             ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1),
                          thickness: 3, color: .deepRed)
-                .frame(width: 40, height: 40)
+                .frame(width: 36, height: 36)
         }
     }
 
-    // MARK: - accessoryRectangular (Lock Screen bar)
+    // MARK: - accessoryRectangular (Lock Screen)
 
     var accessoryRectangularView: some View {
-        let todayPct = min(entry.todayCost / entry.dailyRate, 1.0)
-        let weekPct = min(entry.weekCost / entry.weeklyAvg, 1.0)
-        let monthPct = min(entry.monthSoFar / entry.monthProjected, 1.0)
-
-        return HStack(spacing: 8) {
+        HStack(spacing: 8) {
             ZStack {
                 ActivityRing(progress: monthPct, thickness: 3, color: .marsGreenLight)
                     .frame(width: 40, height: 40)
@@ -147,7 +216,7 @@ struct AIPulseWidgetEntryView: View {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Formatting
 
     private static let usdFormatter: NumberFormatter = {
         let f = NumberFormatter()

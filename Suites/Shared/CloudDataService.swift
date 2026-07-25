@@ -50,7 +50,17 @@ final class CloudDataService: ObservableObject {
 
     private func saveLocalCache() {
         guard let data = try? JSONEncoder().encode(self.snapshots) else { return }
+        // Primary cache
         try? data.write(to: localCacheURL, options: .atomic)
+        // Widget cache — write to App Group container so Widget Extension can read it
+        if let groupURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.wxy.aipulse"
+        ) {
+            let widgetCacheURL = groupURL.appendingPathComponent("dashboard_cache.json")
+            try? FileManager.default.createDirectory(at: groupURL,
+                withIntermediateDirectories: true)
+            try? data.write(to: widgetCacheURL, options: .atomic)
+        }
     }
 
     /// Switch the published snapshot to the given time range.

@@ -10,6 +10,7 @@ struct Provider: TimelineProvider {
             todayCost: 3.50,
             weekCost: 18.20,
             monthCost: 72.80,
+            yesterdaySpend: 2.80,
             dailyRate: 5.0,
             weeklyAvg: 35.0,
             monthProjected: 150.0,
@@ -49,6 +50,7 @@ struct Provider: TimelineProvider {
             todayCost: snap.todayCost,
             weekCost: snap.weekCost,
             monthCost: snap.monthCost,
+            yesterdaySpend: snap.yesterdaySpend,
             dailyRate: dailyRate,
             weeklyAvg: dailyRate * 7,
             monthProjected: snap.prediction?.monthProjected ?? 600,
@@ -60,6 +62,7 @@ struct Provider: TimelineProvider {
     private func fallbackEntry() -> WidgetEntry {
         WidgetEntry(
             todayCost: 0, weekCost: 0, monthCost: 0,
+            yesterdaySpend: 0,
             dailyRate: 20, weeklyAvg: 140,
             monthProjected: 600, monthSoFar: 0,
             updatedAt: Date()
@@ -74,6 +77,7 @@ struct WidgetEntry: TimelineEntry {
     let todayCost: Double
     let weekCost: Double
     let monthCost: Double
+    let yesterdaySpend: Double
     let dailyRate: Double
     let weeklyAvg: Double
     let monthProjected: Double
@@ -81,12 +85,14 @@ struct WidgetEntry: TimelineEntry {
     let updatedAt: Date
 
     init(todayCost: Double, weekCost: Double, monthCost: Double,
+         yesterdaySpend: Double,
          dailyRate: Double, weeklyAvg: Double, monthProjected: Double,
          monthSoFar: Double, updatedAt: Date) {
         self.date = updatedAt
         self.todayCost = todayCost
         self.weekCost = weekCost
         self.monthCost = monthCost
+        self.yesterdaySpend = yesterdaySpend
         self.dailyRate = dailyRate
         self.weeklyAvg = weeklyAvg
         self.monthProjected = monthProjected
