@@ -264,6 +264,14 @@ struct DashboardView: View {
                                         .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
                                 )
                                 .padding(.horizontal, 60).padding(.bottom, 60)
+                        } else if !remainingBalances.isEmpty {
+                            remainingBalanceSection
+                                .padding(20)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                        .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
+                                )
+                                .padding(.horizontal, 60).padding(.bottom, 60)
                         }
                     } else {
                         emptyStateCard
@@ -1107,22 +1115,6 @@ struct DashboardView: View {
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
             }
 
-            // ── Remaining balance row ──
-            if !remainingBalances.isEmpty {
-                HStack(spacing: 8) {
-                    Text(I18n.t("dashboard.remaining_balance"))
-                        .font(.caption).foregroundColor(.secondary)
-                    ForEach(remainingBalances, id: \.providerId) { item in
-                        Text("\(item.displayName) \(balanceString(item.balance, currency: item.currency))")
-                            .font(.caption2).monospacedDigit()
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.marsGreen.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
-                    }
-                }
-                .padding(12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-            }
-
             // ── Mouth line — short horizontal connector ──
             HStack(spacing: 0) {
                 Spacer()
@@ -1235,6 +1227,23 @@ struct DashboardView: View {
         while v <= max + step / 2 { vals.append(v); v += step }
         let scale = trendSpendAxis.max / max
         return (max, step, vals, scale)
+    }
+
+    var remainingBalanceSection: some View {
+        VStack(spacing: 12) {
+            Text(I18n.t("dashboard.remaining_balance")).font(.headline)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+            ForEach(remainingBalances, id: \.providerId) { item in
+                HStack {
+                    Text(item.displayName)
+                        .font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    Text(balanceString(item.balance, currency: item.currency))
+                        .font(.caption).fontWeight(.semibold).monospacedDigit()
+                }
+            }
+        }
     }
 
     var trendSection: some View {

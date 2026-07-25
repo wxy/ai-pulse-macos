@@ -154,6 +154,14 @@ struct DashboardView: View {
                 // ── Trend section (body) ──
                 if timeRange != .today {
                     trendChart
+                } else if !snap.remainingBalances.isEmpty {
+                    remainingBalanceRow
+                        .padding(12)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
+                        )
                 }
 
                 if let updated = cloudData.lastUpdated {
@@ -272,9 +280,6 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var outputSection: some View {
-        if !snap.remainingBalances.isEmpty {
-            remainingBalanceRow
-        }
         if !snap.toolBreakdown.isEmpty {
             toolBars
         }
@@ -289,19 +294,20 @@ struct DashboardView: View {
         if items.isEmpty {
             EmptyView()
         } else {
-            HStack(spacing: 6) {
-                Text(I18n.t("dashboard.remaining_balance"))
-                    .font(.caption).foregroundColor(.secondary)
+            VStack(spacing: 10) {
+                Text(I18n.t("dashboard.remaining_balance")).font(.headline)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
                 ForEach(items, id: \.providerId) { item in
-                    Text("\(item.displayName) \(balanceShort(item.balance, currency: item.currency))")
-                        .font(.caption2).monospacedDigit()
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.marsGreen.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                    HStack {
+                        Text(item.displayName)
+                            .font(.caption).foregroundColor(.secondary)
+                        Spacer()
+                        Text(balanceShort(item.balance, currency: item.currency))
+                            .font(.caption).fontWeight(.semibold).monospacedDigit()
+                    }
                 }
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
         }
     }
 
