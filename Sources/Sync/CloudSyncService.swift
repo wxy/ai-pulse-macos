@@ -12,21 +12,34 @@ final class CloudSyncService {
     private init() {}
 
     func syncFromCache() async {
-        for (key, recordName) in [("today", CKSchema.RecordName.today), ("week", CKSchema.RecordName.week), ("30d", CKSchema.RecordName.month)] {
-            guard let snap = await DashboardCache.read(timeRange: key, maxAge: 600),
-                  let data = try? JSONEncoder().encode(snap),
+        Logger.info("CloudSync: starting sync")
+        // Per-range config: days, cache maxAge
+        let ranges: [(key: String, recordName: String, days: Int, maxAge: TimeInterval)] = [
+            ("today", CKSchema.RecordName.today, 1, 600),
+            ("week", CKSchema.RecordName.week, 7, 3600),
+            ("30d", CKSchema.RecordName.month, 30, 43200),
+        ]
+        for r in ranges {
+            let snap: DashboardSnapshot
+            // Try cache first; if missing/stale, compute directly
+            if let cached = await DashboardCache.read(timeRange: r.key, maxAge: r.maxAge) {
+                snap = cached
+            } else {
+                snap = await StatsService.dashboardSnapshot(days: r.days)
+            }
+            guard let data = try? JSONEncoder().encode(snap),
                   let json = String(data: data, encoding: .utf8) else { continue }
 
-            let record = CKRecord(recordType: CKSchema.recordType, recordID: CKRecord.ID(recordName: recordName))
+            let record = CKRecord(recordType: CKSchema.recordType, recordID: CKRecord.ID(recordName: r.recordName))
             record[CKSchema.Field.json] = json
             record[CKSchema.Field.updatedAt] = snap.updatedAt
 
             do {
                 let (_, results) = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
                 let ok = results.compactMap({ _, r in if case .failure = r { return true }; return nil }).isEmpty
-                if ok { Logger.debug("CloudSync: synced \(key) len=\(json.count)") }
+                if ok { Logger.info("CloudSync: synced \(r.key) len=\(json.count)") }
             } catch {
-                Logger.warning("CloudSync: \(key) save failed: \(error)")
+                Logger.error("CloudSync: \(r.key) save failed: \(error)")
             }
         }
     }
