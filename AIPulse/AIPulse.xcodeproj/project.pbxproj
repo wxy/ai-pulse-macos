@@ -320,7 +320,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../Libraries/libgit2/include";
 				INFOPLIST_FILE = "AIPulse-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse";
+				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse [DEV]";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 Xingyu Wang. Licensed under Apache 2.0.";
