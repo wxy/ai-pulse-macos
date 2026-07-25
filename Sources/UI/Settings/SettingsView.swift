@@ -1,6 +1,7 @@
 import SwiftUI
 import GRDB
 import AppKit
+import ServiceManagement
 
 // MARK: - Main Settings
 
@@ -164,6 +165,7 @@ struct IntegrationsSettingsTab: View {
 struct GeneralTab: View {
     @Binding var lang: String
     @State private var coinSoundEnabled = UserDefaults.standard.bool(forKey: "coin_sound_enabled")
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var demoActive = DemoData.isActive
 
     var body: some View {
@@ -201,6 +203,28 @@ struct GeneralTab: View {
                     .toggleStyle(.switch)
                     .onChange(of: coinSoundEnabled) { _, v in
                         UserDefaults.standard.set(v, forKey: "coin_sound_enabled")
+                    }
+            }
+
+            Divider().padding(.vertical, 8)
+
+            // Launch at login
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(I18n.t("general.launch_at_login")).font(.body)
+                    Text(I18n.t("general.launch_at_login_desc"))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $launchAtLogin)
+                    .toggleStyle(.switch)
+                    .onChange(of: launchAtLogin) { _, v in
+                        do {
+                            if v { try SMAppService.mainApp.register() }
+                            else { try SMAppService.mainApp.unregister() }
+                        } catch {
+                            launchAtLogin = SMAppService.mainApp.status == .enabled
+                        }
                     }
             }
 
@@ -471,6 +495,19 @@ struct AboutTab: View {
                 Button(I18n.t("about.website")) {
                     NSWorkspace.shared.open(URL(string: "https://xingyu.wang/apps/ai-pulse/about")!)
                 }.buttonStyle(.link)
+                Button(I18n.t("about.source_code")) {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/wxy/ai-pulse-macos")!)
+                }.buttonStyle(.link)
+            }
+
+            Divider().frame(width: 200)
+
+            VStack(spacing: 4) {
+                Text(I18n.t("about.license_title")).font(.caption).fontWeight(.semibold)
+                Text(I18n.t("about.license_desc"))
+                    .font(.caption2).foregroundColor(.secondary).multilineTextAlignment(.center)
+                Text(I18n.t("about.audio_credit"))
+                    .font(.caption2).foregroundColor(.secondary).multilineTextAlignment(.center)
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -503,6 +503,67 @@
         }
       }
     },
+    "about.source_code" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Source Code" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "源代码" } },
+        "zh-Hant-TW" : { "stringUnit" : { "state" : "translated", "value" : "原始碼" } },
+        "zh-Hant-HK" : { "stringUnit" : { "state" : "translated", "value" : "原始碼" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ソースコード" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "소스 코드" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Quellcode" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Code source" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Código fuente" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Código fonte" } }
+      }
+    },
+    "about.license_title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Source" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "开源许可" } },
+        "zh-Hant-TW" : { "stringUnit" : { "state" : "translated", "value" : "開源許可" } },
+        "zh-Hant-HK" : { "stringUnit" : { "state" : "translated", "value" : "開源許可" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "オープンソース" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "오픈 소스" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Open Source" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Open Source" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Código abierto" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Código aberto" } }
+      }
+    },
+    "about.license_desc" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Apache 2.0 · Built with GRDB.swift and libgit2" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Apache 2.0 · 使用 GRDB.swift 和 libgit2 构建" } },
+        "zh-Hant-TW" : { "stringUnit" : { "state" : "translated", "value" : "Apache 2.0 · 使用 GRDB.swift 和 libgit2 構建" } },
+        "zh-Hant-HK" : { "stringUnit" : { "state" : "translated", "value" : "Apache 2.0 · 使用 GRDB.swift 和 libgit2 構建" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "Apache 2.0 · GRDB.swift と libgit2 を使用" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "Apache 2.0 · GRDB.swift 및 libgit2 사용" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Apache 2.0 · Erstellt mit GRDB.swift und libgit2" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Apache 2.0 · Construit avec GRDB.swift et libgit2" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Apache 2.0 · Construido con GRDB.swift y libgit2" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Apache 2.0 · Construído com GRDB.swift e libgit2" } }
+      }
+    },
+    "about.audio_credit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Coin sounds from pixabay.com" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "金币音效来自 pixabay.com" } },
+        "zh-Hant-TW" : { "stringUnit" : { "state" : "translated", "value" : "金幣音效來自 pixabay.com" } },
+        "zh-Hant-HK" : { "stringUnit" : { "state" : "translated", "value" : "金幣音效來自 pixabay.com" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "コイン音：pixabay.com" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "코인 사운드: pixabay.com" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Münzklang von pixabay.com" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Son de pièce : pixabay.com" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Sonido de moneda: pixabay.com" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Som de moeda: pixabay.com" } }
+      }
+    },
     "Added" : {
 
     },
@@ -7499,6 +7560,36 @@
             "value" : "顯示語言"
           }
         }
+      }
+    },
+    "general.launch_at_login" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Launch at Login" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "登录时启动" } },
+        "zh-Hant-TW" : { "stringUnit" : { "state" : "translated", "value" : "登入時啟動" } },
+        "zh-Hant-HK" : { "stringUnit" : { "state" : "translated", "value" : "登入時啟動" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ログイン時に起動" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "로그인 시 시작" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Beim Anmelden starten" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Lancer à l'ouverture de session" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Iniciar al iniciar sesión" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Iniciar ao fazer login" } }
+      }
+    },
+    "general.launch_at_login_desc" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Automatically open AI Pulse when you log in to your Mac" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "登录 Mac 时自动打开 AI Pulse" } },
+        "zh-Hant-TW" : { "stringUnit" : { "state" : "translated", "value" : "登入 Mac 時自動開啟 AI Pulse" } },
+        "zh-Hant-HK" : { "stringUnit" : { "state" : "translated", "value" : "登入 Mac 時自動開啟 AI Pulse" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "Macにログイン時にAI Pulseを自動起動" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "Mac 로그인 시 AI Pulse 자동 실행" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "AI Pulse beim Anmelden am Mac automatisch öffnen" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Ouvrir automatiquement AI Pulse à l'ouverture de session" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Abrir AI Pulse automáticamente al iniciar sesión" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Abrir AI Pulse automaticamente ao fazer login" } }
       }
     },
     "general.password_placeholder" : {
