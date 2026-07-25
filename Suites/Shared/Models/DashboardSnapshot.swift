@@ -22,6 +22,7 @@ struct DashboardSnapshot: Codable {
     var dailyStats: [TrendPoint] = []
     var codeChanges: [TrendPoint] = []
     var balanceDaily: [TrendPoint] = []
+    var remainingBalances: [RemainingBalanceItem] = []
 
     var updatedAt: Date = Date()
 }
@@ -60,4 +61,11 @@ struct TrendPoint: Codable {
     var netLines: Int
     var added: Int = 0
     var deleted: Int = 0
+}
+
+struct RemainingBalanceItem: Codable {
+    var providerId: String
+    var displayName: String
+    var balance: Double
+    var currency: String
 }

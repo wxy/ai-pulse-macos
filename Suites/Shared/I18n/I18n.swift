@@ -31,6 +31,7 @@ enum I18n {
             "cloud.error.title": "Cannot Connect to iCloud",
             "cloud.error.body": "Please check:\n• Network connection is available\n• You are signed in to iCloud in Settings\n• iCloud Drive is enabled",
             "cloud.error.retry": "Retry",
+            "dashboard.remaining_balance": "Remaining Balance",
         ],
         "zh-Hans": [
             "time.today": "今日", "time.week": "本周", "time.30d": "30 天",
@@ -60,6 +61,7 @@ enum I18n {
             "cloud.error.title": "无法连接到 iCloud",
             "cloud.error.body": "请检查：\n• 网络连接是否正常\n• 设置中已登录 iCloud\n• iCloud Drive 已开启",
             "cloud.error.retry": "重试",
+            "dashboard.remaining_balance": "剩余余额",
         ],
         "zh-Hant-TW": [
             "time.today": "今日", "time.week": "本週", "time.30d": "30 天",
@@ -88,6 +90,7 @@ enum I18n {
             "cloud.error.title": "無法連接到 iCloud",
             "cloud.error.body": "請檢查：\n• 網路連線是否正常\n• 設定中已登入 iCloud\n• iCloud Drive 已開啟",
             "cloud.error.retry": "重試",
+            "dashboard.remaining_balance": "剩餘餘額",
         ],
         "zh-Hant-HK": [
             "time.today": "今日", "time.week": "本週", "time.30d": "30 天",
@@ -116,6 +119,7 @@ enum I18n {
             "cloud.error.title": "無法連接到 iCloud",
             "cloud.error.body": "請檢查：\n• 網絡連線是否正常\n• 設定中已登入 iCloud\n• iCloud Drive 已開啟",
             "cloud.error.retry": "重試",
+            "dashboard.remaining_balance": "剩餘餘額",
         ],
         "ja": [
             "time.today": "今日", "time.week": "今週", "time.30d": "30日",
@@ -144,6 +148,7 @@ enum I18n {
             "cloud.error.title": "iCloudに接続できません",
             "cloud.error.body": "以下をご確認ください：\n• ネットワーク接続が有効であること\n• 設定でiCloudにサインインしていること\n• iCloud Driveが有効であること",
             "cloud.error.retry": "再試行",
+            "dashboard.remaining_balance": "残高",
         ],
         "ko": [
             "time.today": "오늘", "time.week": "이번 주", "time.30d": "30일",
@@ -172,6 +177,7 @@ enum I18n {
             "cloud.error.title": "iCloud에 연결할 수 없음",
             "cloud.error.body": "다음을 확인하세요:\n• 네트워크 연결이 가능한지\n• 설정에서 iCloud에 로그인했는지\n• iCloud Drive가 활성화되어 있는지",
             "cloud.error.retry": "재시도",
+            "dashboard.remaining_balance": "잔액",
         ],
         "de": [
             "time.today": "Heute", "time.week": "Woche", "time.30d": "30 Tage",
@@ -200,6 +206,7 @@ enum I18n {
             "cloud.error.title": "Keine Verbindung zu iCloud",
             "cloud.error.body": "Bitte prüfen:\n• Netzwerkverbindung verfügbar\n• In Einstellungen bei iCloud angemeldet\n• iCloud Drive aktiviert",
             "cloud.error.retry": "Wiederholen",
+            "dashboard.remaining_balance": "Guthaben",
         ],
         "fr": [
             "time.today": "Aujourd'hui", "time.week": "Semaine", "time.30d": "30 jours",
@@ -228,6 +235,7 @@ enum I18n {
             "cloud.error.title": "Impossible de se connecter à iCloud",
             "cloud.error.body": "Veuillez vérifier :\n• Connexion réseau disponible\n• Vous êtes connecté à iCloud dans Réglages\n• iCloud Drive est activé",
             "cloud.error.retry": "Réessayer",
+            "dashboard.remaining_balance": "Solde restant",
         ],
         "es": [
             "time.today": "Hoy", "time.week": "Semana", "time.30d": "30 días",
@@ -256,6 +264,7 @@ enum I18n {
             "cloud.error.title": "No se puede conectar a iCloud",
             "cloud.error.body": "Compruebe:\n• Conexión de red disponible\n• Ha iniciado sesión en iCloud en Ajustes\n• iCloud Drive está activado",
             "cloud.error.retry": "Reintentar",
+            "dashboard.remaining_balance": "Saldo restante",
         ],
         "pt-BR": [
             "time.today": "Hoje", "time.week": "Semana", "time.30d": "30 dias",
@@ -284,6 +293,7 @@ enum I18n {
             "cloud.error.title": "Não foi possível conectar ao iCloud",
             "cloud.error.body": "Verifique:\n• Conexão de rede disponível\n• Sessão iniciada no iCloud nos Ajustes\n• iCloud Drive ativado",
             "cloud.error.retry": "Tentar novamente",
+            "dashboard.remaining_balance": "Saldo restante",
         ],
     ]
 

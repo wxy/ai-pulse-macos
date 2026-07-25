@@ -107,20 +107,4 @@ struct SpendView: View {
     }
 }
 
-struct ActivityRing: View {
-    let progress: Double; let thickness: CGFloat; let color: Color
-    var body: some View {
-        ZStack {
-            Circle().stroke(color.opacity(0.20), style: StrokeStyle(lineWidth: thickness, lineCap: .round))
-            Circle().trim(from: 0, to: max(0, min(progress, 1)))
-                .stroke(color, style: StrokeStyle(lineWidth: thickness, lineCap: .round))
-                .rotationEffect(.degrees(-90)).animation(.easeInOut(duration: 0.6), value: progress)
-        }
-    }
-}
-
-extension Color {
-    static let marsGreen = Color(red: 44/255, green: 91/255, blue: 72/255)
-    static let marsGreenLight = Color(red: 140/255, green: 196/255, blue: 170/255)
-    static let deepRed = Color(red: 173/255, green: 46/255, blue: 35/255)
-}
+// ActivityRing + Color extensions now in Suites/Shared/Views/ActivityRing.swift

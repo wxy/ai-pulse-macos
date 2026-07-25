@@ -97,6 +97,7 @@ struct DashboardView: View {
     @State private var barProgress: CGFloat = 0  // 0→1 drives all entry animations
     @State private var loadedTimeRange: TimeRange? = nil  // set after data lands; gates bars against stale renders
     @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
+    @State private var remainingBalances: [RemainingBalanceItem] = []
     @State private var isDemoMode = false
     @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
     @State private var toolsExpanded = false
@@ -1106,6 +1107,22 @@ struct DashboardView: View {
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
             }
 
+            // ── Remaining balance row ──
+            if !remainingBalances.isEmpty {
+                HStack(spacing: 8) {
+                    Text(I18n.t("dashboard.remaining_balance"))
+                        .font(.caption).foregroundColor(.secondary)
+                    ForEach(remainingBalances, id: \.providerId) { item in
+                        Text("\(item.displayName) \(balanceString(item.balance, currency: item.currency))")
+                            .font(.caption2).monospacedDigit()
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Color.marsGreen.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+                .padding(12)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+
             // ── Mouth line — short horizontal connector ──
             HStack(spacing: 0) {
                 Spacer()
@@ -1485,6 +1502,14 @@ struct DashboardView: View {
         return "\(tokens)"
     }
 
+    func balanceString(_ v: Double, currency: String) -> String {
+        let symbol: String = {
+            switch currency { case "CNY": return "¥"; case "EUR": return "€"; default: return "$" }
+        }()
+        if v >= 1000 { return "\(symbol)\(String(format: "%.0f", v))" }
+        return "\(symbol)\(String(format: "%.2f", v))"
+    }
+
     /// Comparison badge — just the arrow + percentage, no label.
     @ViewBuilder
     func comparisonBadge(current: Double, previous: Double) -> some View {
@@ -1709,6 +1734,7 @@ struct DashboardView: View {
         prediction = snap.prediction.map { Prediction(monthProjected: $0.monthProjected, dailyRate: $0.dailyRate, daysRemaining: $0.daysRemaining, monthSoFar: $0.monthSoFar) }
         lastUpdated = snap.updatedAt
         lastSnapshotTS = snap.updatedAt
+        remainingBalances = snap.remainingBalances
         providerCosts = snap.providerBreakdown.map { ProviderDailyCost(date: Date(), providerId: $0.providerId, cost: $0.cost) }
         paddedChanges = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
         isDemoMode = false
