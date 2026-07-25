@@ -519,6 +519,21 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Código fonte" } }
       }
     },
+    "about.feedback" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Questions or suggestions? Open an issue on GitHub — we'd love to hear from you." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "有任何问题或建议？欢迎在 GitHub 上提交 Issue。" } },
+        "zh-Hant-TW" : { "stringUnit" : { "state" : "translated", "value" : "有任何問題或建議？歡迎在 GitHub 上提交 Issue。" } },
+        "zh-Hant-HK" : { "stringUnit" : { "state" : "translated", "value" : "有任何問題或建議？歡迎在 GitHub 上提交 Issue。" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "質問や提案がありましたら、GitHubでIssueを作成してください。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "질문이나 제안이 있으신가요? GitHub에서 Issue를 등록해 주세요." } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Fragen oder Vorschläge? Erstellen Sie ein Issue auf GitHub." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Des questions ou suggestions ? Ouvrez une issue sur GitHub." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "¿Preguntas o sugerencias? Abre un issue en GitHub." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Dúvidas ou sugestões? Abra uma issue no GitHub." } }
+      }
+    },
     "about.license_title" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -491,14 +491,18 @@ struct AboutTab: View {
             HStack(spacing: 16) {
                 Button(I18n.t("about.privacy_link")) {
                     NSWorkspace.shared.open(URL(string: "https://xingyu.wang/apps/ai-pulse/privacy")!)
-                }.buttonStyle(.link)
+                }
                 Button(I18n.t("about.website")) {
                     NSWorkspace.shared.open(URL(string: "https://xingyu.wang/apps/ai-pulse/about")!)
-                }.buttonStyle(.link)
+                }
                 Button(I18n.t("about.source_code")) {
                     NSWorkspace.shared.open(URL(string: "https://github.com/wxy/ai-pulse-macos")!)
-                }.buttonStyle(.link)
+                }
             }
+            .buttonStyle(.link)
+
+            Text(I18n.t("about.feedback"))
+                .font(.caption2).foregroundColor(.secondary).multilineTextAlignment(.center)
 
             Divider().frame(width: 200)
 
