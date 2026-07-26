@@ -458,12 +458,13 @@ enum StatsService {
                   balanceTrackedIds.contains(pid)
             else { return nil }
             let provider = ProviderRegistry.byId(pid)
-            let displayBalance = provider?.balanceType == .usage ? -storedBal : storedBal
+            let rawBalance = provider?.balanceType == .usage ? -storedBal : storedBal
+            let usdBalance = rawBalance * toUSD(currency: cur)
             return RemainingBalanceItem(
                 providerId: pid,
                 displayName: names[pid] ?? pid,
-                balance: displayBalance,
-                currency: cur
+                balance: usdBalance,
+                currency: "USD"
             )
         }
     }
