@@ -96,52 +96,23 @@ struct AIPulseWidgetEntryView: View {
     // MARK: - systemMedium
 
     var systemMediumView: some View {
-        // anchor = outerRing + 8, offset = 8 (exact watchOS formula: 160+8=168, offset±8)
-        let outer: CGFloat = 152
-        let off: CGFloat = 8
+        // Rings sized to fit widget bounds without overflow (no corner labels on medium)
+        let outer: CGFloat = 128
 
-        return HStack(spacing: 24) {
+        return HStack(spacing: 20) {
             ZStack {
-                Rectangle().fill(.clear).frame(width: outer + 8, height: outer + 8)
-                    .overlay(alignment: .topLeading) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("Today").font(.system(size: 10)).foregroundColor(.secondary)
-                            Text("\(todayLaps)×").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
-                        }.offset(x: -off, y: -off)
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        VStack(alignment: .trailing, spacing: 0) {
-                            Text("Week").font(.system(size: 10)).foregroundColor(.secondary)
-                            Text(formatUSD(entry.weekCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreen)
-                        }.offset(x: off, y: -off)
-                    }
-                    .overlay(alignment: .bottomLeading) {
-                        if entry.yesterdaySpend > 0.001 {
-                            Text(yesterdayDelta > 0 ? "↑\(Int(yesterdayDelta * 100))%" : "↓\(Int(-yesterdayDelta * 100))%")
-                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen)
-                                .offset(x: -off, y: off)
-                        }
-                    }
-                    .overlay(alignment: .bottomTrailing) {
-                        VStack(alignment: .trailing, spacing: 0) {
-                            Text("30 Days").font(.system(size: 10)).foregroundColor(.secondary)
-                            Text(formatUSD(entry.monthCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreenLight)
-                        }.offset(x: off, y: off)
-                    }
-
                 ActivityRing(progress: monthPct, thickness: 5, color: .marsGreenLight)
                     .frame(width: outer, height: outer)
                 ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1),
                              thickness: 5, color: .marsGreen)
-                    .frame(width: outer - 16, height: outer - 16)
+                    .frame(width: outer - 14, height: outer - 14)
                 ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1),
                              thickness: 5, color: .deepRed)
-                    .frame(width: outer - 32, height: outer - 32)
+                    .frame(width: outer - 28, height: outer - 28)
 
                 VStack(spacing: 1) {
                     Text(formatUSD(entry.todayCost))
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
                         .minimumScaleFactor(0.5).lineLimit(1)
                     Text(entry.updatedAt, format: .dateTime.hour().minute())
                         .font(.system(size: 9))

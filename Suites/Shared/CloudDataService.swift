@@ -2,6 +2,7 @@ import CloudKit
 import Combine
 import Foundation
 import os
+import WidgetKit
 
 enum CloudError: Error {
     case noData
@@ -61,6 +62,8 @@ final class CloudDataService: ObservableObject {
                 withIntermediateDirectories: true)
             try? data.write(to: widgetCacheURL, options: .atomic)
         }
+        // Notify widget to refresh
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Switch the published snapshot to the given time range.
