@@ -62,8 +62,21 @@ final class CloudDataService: ObservableObject {
                 withIntermediateDirectories: true)
             try? data.write(to: widgetCacheURL, options: .atomic)
         }
-        // Notify widget to refresh
-        WidgetCenter.shared.reloadAllTimelines()
+        // Notify widget to refresh — debounced so a burst of writes (today +
+        // week + 30d all landing within the same launch window) collapses
+        // into a single WidgetKit reload instead of one per write.
+        scheduleWidgetReload()
+    }
+
+    private var widgetReloadTask: Task<Void, Never>?
+
+    private func scheduleWidgetReload() {
+        widgetReloadTask?.cancel()
+        widgetReloadTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard self != nil, !Task.isCancelled else { return }
+            WidgetCenter.shared.reloadAllTimelines()
+        }
     }
 
     /// Switch the published snapshot to the given time range.
@@ -91,44 +104,54 @@ final class CloudDataService: ObservableObject {
     /// This preserves previously-cached week/30d breakdowns if they can't be
     /// refreshed right now.
     func hasData() async throws -> Bool {
-        let recordID = CKRecord.ID(recordName: recordName(for: "today"))
-        do {
-            let record = try await database.record(for: recordID)
-            log.info("hasData: record found, json present=\(record[CKSchema.Field.json] != nil)")
-            guard let json = record[CKSchema.Field.json] as? String,
-                  let data = json.data(using: .utf8) else {
-                log.warning("hasData: json field missing")
-                throw CloudError.noData
-            }
-            let snap: DashboardSnapshot
+        // Gated: this is the very first CloudKit call at launch, so it also
+        // enforces the minimum spacing after NotificationService's setup()
+        // (permission request + CK subscription registration) ran moments
+        // earlier. See CloudKitGate for why this matters.
+        try await CloudKitGate.shared.run("hasData(today)") {
+            let recordID = CKRecord.ID(recordName: self.recordName(for: "today"))
             do {
-                snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
+                let record = try await self.database.record(for: recordID)
+                self.log.info("hasData: record found, json present=\(record[CKSchema.Field.json] != nil)")
+                guard let json = record[CKSchema.Field.json] as? String,
+                      let data = json.data(using: .utf8) else {
+                    self.log.warning("hasData: json field missing")
+                    throw CloudError.noData
+                }
+                let snap: DashboardSnapshot
+                do {
+                    snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
+                } catch {
+                    self.log.error("hasData: decode failed — \(error.localizedDescription)")
+                    throw CloudError.noData
+                }
+                // Store today's snapshot independently (with CK updatedAt timestamp)
+                var stored = snap
+                if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
+                self.snapshots["today"] = stored
+                if self.snapshot == nil { self.loadSnapshot(for: "today") }
+                self.saveLocalCache()
+                // DashboardView.onAppear fires a fetchSnapshot("today") right
+                // after this returns — mark it fresh so that call is deduped
+                // instead of firing a second, near-simultaneous CK request.
+                CloudKitGate.shared.markRecentlyFetched("fetch-today")
+                return true
+            } catch let cloudError as CloudError {
+                throw cloudError
+            } catch let ckError as CKError {
+                self.log.error("hasData: CKError code=\(ckError.code.rawValue) userInfo=\(ckError.errorUserInfo)")
+                switch ckError.code {
+                case .unknownItem:
+                    throw CloudError.noData
+                case .networkUnavailable, .notAuthenticated, .permissionFailure:
+                    throw CloudError.unavailable
+                default:
+                    throw CloudError.unavailable
+                }
             } catch {
-                log.error("hasData: decode failed — \(error.localizedDescription)")
-                throw CloudError.noData
-            }
-            // Store today's snapshot independently (with CK updatedAt timestamp)
-            var stored = snap
-            if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
-            self.snapshots["today"] = stored
-            if self.snapshot == nil { self.loadSnapshot(for: "today") }
-            self.saveLocalCache()
-            return true
-        } catch let cloudError as CloudError {
-            throw cloudError
-        } catch let ckError as CKError {
-            log.error("hasData: CKError code=\(ckError.code.rawValue) userInfo=\(ckError.errorUserInfo)")
-            switch ckError.code {
-            case .unknownItem:
-                throw CloudError.noData
-            case .networkUnavailable, .notAuthenticated, .permissionFailure:
-                throw CloudError.unavailable
-            default:
+                self.log.error("hasData: \(error.localizedDescription)")
                 throw CloudError.unavailable
             }
-        } catch {
-            log.error("hasData: \(error.localizedDescription)")
-            throw CloudError.unavailable
         }
     }
 
@@ -138,7 +161,9 @@ final class CloudDataService: ObservableObject {
         log.info("refresh: container=\(container.containerIdentifier ?? "nil")")
 
         do {
-            let status = try await container.accountStatus()
+            let status = try await CloudKitGate.shared.run("accountStatus") {
+                try await container.accountStatus()
+            }
             log.info("refresh: account status=\(status.rawValue)")
             switch status {
             case .available: break
@@ -169,31 +194,37 @@ final class CloudDataService: ObservableObject {
     func fetchAndMergeMonth() async { await fetchAndStore(range: "30d") }
 
     private func fetchAndStore(range: String) async {
-        let rid = CKRecord.ID(recordName: recordName(for: range))
-        let record: CKRecord
-        do {
-            record = try await database.record(for: rid)
-        } catch {
-            log.error("fetchAndStore(\(range)): CK fetch failed — \(error.localizedDescription)")
-            return
+        // Gated + deduped: skips outright if this exact range was fetched in
+        // the last few seconds (e.g. hasData() already fetched "today" and
+        // DashboardView.onAppear asks for it again moments later), and
+        // otherwise serializes with every other CloudKit call in the app.
+        _ = try? await CloudKitGate.shared.runDeduped("fetchAndStore(\(range))", dedupeKey: "fetch-\(range)") {
+            let rid = CKRecord.ID(recordName: self.recordName(for: range))
+            let record: CKRecord
+            do {
+                record = try await self.database.record(for: rid)
+            } catch {
+                self.log.error("fetchAndStore(\(range)): CK fetch failed — \(error.localizedDescription)")
+                return
+            }
+            guard let json = record[CKSchema.Field.json] as? String,
+                  let data = json.data(using: .utf8) else {
+                self.log.error("fetchAndStore(\(range)): json field missing or not a string")
+                return
+            }
+            let snap: DashboardSnapshot
+            do {
+                snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
+            } catch {
+                self.log.error("fetchAndStore(\(range)): decode failed — \(error.localizedDescription)")
+                return
+            }
+            self.log.info("fetchAndStore(\(range)): today=\(snap.todayCost) week=\(snap.weekCost) month=\(snap.monthCost)")
+            var stored = snap
+            if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
+            self.snapshots[range] = stored
+            self.saveLocalCache()
         }
-        guard let json = record[CKSchema.Field.json] as? String,
-              let data = json.data(using: .utf8) else {
-            log.error("fetchAndStore(\(range)): json field missing or not a string")
-            return
-        }
-        let snap: DashboardSnapshot
-        do {
-            snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
-        } catch {
-            log.error("fetchAndStore(\(range)): decode failed — \(error.localizedDescription)")
-            return
-        }
-        log.info("fetchAndStore(\(range)): today=\(snap.todayCost) week=\(snap.weekCost) month=\(snap.monthCost)")
-        var stored = snap
-        if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
-        self.snapshots[range] = stored
-        self.saveLocalCache()
     }
 
     /// Fetch a single range AND switch the published snapshot to it.
