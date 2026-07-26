@@ -507,6 +507,111 @@ enum StatsService {
         }
     }
 
+    // MARK: - Claude Code detail
+
+    struct ClaudeCodeStats {
+        var sessionCount: Int = 0
+        var avgCostPerSession: Double = 0
+        var topSessionId: String = ""
+        var topSessionRepo: String = ""
+        var topSessionCost: Double = 0
+        var modelBreakdown: [ModelDetail] = []
+
+        struct ModelDetail {
+            var model: String = ""
+            var cost: Double = 0
+            var pct: Double = 0
+            var cacheRate: Double = 0
+            var cacheSavings: Double = 0
+        }
+    }
+
+    static func claudeCodeStats(sinceMs: Int64) async -> ClaudeCodeStats {
+        let todayMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+        var stats = ClaudeCodeStats()
+
+        do {
+            // Session count + avg cost
+            let sessionRows = try await AppDatabase.shared.read { db -> [Row] in
+                try Row.fetchAll(db, sql: """
+                    SELECT COUNT(DISTINCT session_id) AS cnt,
+                           COALESCE(SUM(cost_usd), 0) AS total
+                    FROM usage_event
+                    WHERE source = 'claude-code' AND (model IS NULL OR model != '<synthetic>') AND ts >= ? AND ts < ?
+                    """, arguments: [sinceMs, todayMs + 86_400_000])
+            }
+            if let row = sessionRows.first {
+                let cnt: Int = row["cnt"] ?? 0
+                let total: Double = row["total"] ?? 0
+                stats.sessionCount = cnt
+                stats.avgCostPerSession = cnt > 0 ? total / Double(cnt) : 0
+            }
+            guard stats.sessionCount > 0 else { return stats }
+
+            // Most expensive session
+            let topRows = try await AppDatabase.shared.read { db -> [Row] in
+                try Row.fetchAll(db, sql: """
+                    SELECT session_id, COALESCE(repo_path, '') AS repo,
+                           COALESCE(SUM(cost_usd), 0) AS cost
+                    FROM usage_event
+                    WHERE source = 'claude-code' AND session_id IS NOT NULL
+                      AND ts >= ? AND ts < ?
+                    GROUP BY session_id ORDER BY cost DESC LIMIT 1
+                    """, arguments: [sinceMs, todayMs + 86_400_000])
+            }
+            if let tr = topRows.first {
+                let sid: String = tr["session_id"] ?? ""
+                let repo: String = tr["repo"] ?? ""
+                let cost: Double = tr["cost"] ?? 0
+                stats.topSessionId = String(sid.prefix(8))
+                stats.topSessionRepo = URL(fileURLWithPath: repo).lastPathComponent
+                stats.topSessionCost = cost
+            }
+
+            // Per-model breakdown with cache stats
+            let modelRows = try await AppDatabase.shared.read { db -> [Row] in
+                try Row.fetchAll(db, sql: """
+                    SELECT COALESCE(model, 'unknown') AS m,
+                           COALESCE(SUM(cost_usd), 0) AS c,
+                           COALESCE(SUM(in_tokens), 0) AS ins,
+                           COALESCE(SUM(cache_tokens), 0) AS cache
+                    FROM usage_event
+                    WHERE source = 'claude-code' AND (model IS NULL OR model != '<synthetic>') AND ts >= ? AND ts < ?
+                    GROUP BY m ORDER BY c DESC
+                    """, arguments: [sinceMs, todayMs + 86_400_000])
+            }
+            let totalModelCost = modelRows.reduce(0.0) { $0 + (($1["c"] as? Double) ?? 0) }
+            let pricing = PricingManager.shared
+            stats.modelBreakdown = modelRows.compactMap { r in
+                let model: String = r["m"] ?? "unknown"
+                let cost: Double = r["c"] ?? 0
+                let ins: Int64 = r["ins"] ?? 0
+                let cache: Int64 = r["cache"] ?? 0
+                let pct = totalModelCost > 0 ? cost / totalModelCost : 0
+                let totalInput = Double(ins + cache)
+                let cacheRate = totalInput > 0 ? Double(cache) / totalInput : 0
+                let pricing2 = pricing.pricing(for: model)
+                let inPrice = pricing2?.inPricePerMtok ?? 3.0
+                let cachePrice = pricing2?.cachePricePerMtok ?? 0.3
+                let savings = Double(cache) / 1_000_000 * (inPrice - cachePrice)
+                return ClaudeCodeStats.ModelDetail(
+                    model: modelDisplayName(model), cost: cost, pct: pct,
+                    cacheRate: cacheRate, cacheSavings: savings
+                )
+            }
+        } catch {
+            Logger.error("StatsService.claudeCodeStats: query failed — \(error)")
+        }
+        return stats
+    }
+
+    private static func modelDisplayName(_ model: String) -> String {
+        if model.contains("opus") { return "Opus" }
+        if model.contains("sonnet") { return "Sonnet" }
+        if model.contains("haiku") { return "Haiku" }
+        return model
+    }
+
     // MARK: - Daily code changes
 
     /// Daily added/deleted lines (separate, not net) for the code-change chart.
