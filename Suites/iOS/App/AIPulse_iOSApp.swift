@@ -12,7 +12,6 @@ struct AIPulse_iOSApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(cloudData)
-                .task { await NotificationService.shared.setup() }
         }
     }
 }
@@ -76,9 +75,17 @@ struct ContentView: View {
         }
         .task {
             try? await UNUserNotificationCenter.current().setBadgeCount(0)
-            async let cloud = checkCloud()
-            async let minimum = try? await Task.sleep(nanoseconds: 1_000_000_000)
-            _ = await (cloud, minimum)
+            // Single, strictly serial launch sequence: notification setup
+            // (permission + CK subscription) runs to completion, *then*
+            // checkCloud()'s CloudKit fetch starts. Previously these ran as
+            // two independent, concurrent `.task`s (one on WindowGroup, one
+            // here), which could both hit the network at the same moment.
+            // CloudKitGate additionally enforces spacing + de-dupe between
+            // every individual CK/APNs-adjacent call inside this sequence.
+            async let minimum: Void = { try? await Task.sleep(nanoseconds: 1_000_000_000) }()
+            await NotificationService.shared.setup()
+            await checkCloud()
+            _ = await minimum
             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { splashVisible = false }
         }
     }
@@ -87,12 +94,13 @@ struct ContentView: View {
         let hasCache = cloudData.snapshot != nil
         if !isRetry { state = .loading }
         do {
+            // Fetch only today's snapshot at launch. Week and 30d data are
+            // loaded lazily when the user switches tabs (DashboardView's
+            // .onChange(of: timeRange) → fetchSnapshot). This keeps launch
+            // fast and avoids unnecessary CloudKit operations.
             _ = try await cloudData.hasData()
             state = .ready
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            // Fetch week + 30d snapshots for accurate rings (today already set by hasData)
-            await cloudData.fetchAndMergeWeek()
-            await cloudData.fetchAndMergeMonth()
         } catch CloudError.noData {
             state = .noData
         } catch {

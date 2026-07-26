@@ -70,6 +70,9 @@ final class NotificationService: NSObject {
     // MARK: - Setup
 
     /// Request notification permission and register CloudKit subscription.
+    /// Called once, serially, before any other CloudKit call at launch —
+    /// see `CloudKitGate` for why bursts of concurrent CK/APNs traffic at
+    /// launch must be avoided on some devices (e.g. iPhone SE 2nd gen).
     func setup() async {
         do {
             let granted = try await UNUserNotificationCenter.current()
@@ -117,24 +120,37 @@ final class NotificationService: NSObject {
 
     // MARK: - Private
 
+    /// Cached locally once confirmed registered so subsequent launches skip
+    /// the CloudKit round trip entirely — previously this ran on *every*
+    /// launch (an `allSubscriptions()` fetch, plus occasionally a save),
+    /// adding an extra network op to the launch burst forever.
+    private static let subscriptionRegisteredKey = "ck_subscription_registered_v1"
+
     private func registerSubscription() async {
-        let subs = try? await database.allSubscriptions()
-        if subs?.contains(where: { $0.subscriptionID == CKSchema.Subscription.dashboardChanges }) == true { return }
-
-        let predicate = NSPredicate(value: true)
-        let subscription = CKQuerySubscription(
-            recordType: CKSchema.recordType,
-            predicate: predicate,
-            subscriptionID: CKSchema.Subscription.dashboardChanges,
-            options: [.firesOnRecordCreation, .firesOnRecordUpdate]
-        )
-        let notification = CKSubscription.NotificationInfo()
-        notification.shouldSendContentAvailable = true  // silent push — triggers background refresh
-        subscription.notificationInfo = notification
-
+        if UserDefaults.standard.bool(forKey: Self.subscriptionRegisteredKey) { return }
         do {
-            _ = try await database.save(subscription)
-            print("[Notify] subscription registered")
+            try await CloudKitGate.shared.run("ck-subscription-register") {
+                let subs = try await self.database.allSubscriptions()
+                if subs.contains(where: { $0.subscriptionID == CKSchema.Subscription.dashboardChanges }) {
+                    UserDefaults.standard.set(true, forKey: Self.subscriptionRegisteredKey)
+                    return
+                }
+
+                let predicate = NSPredicate(value: true)
+                let subscription = CKQuerySubscription(
+                    recordType: CKSchema.recordType,
+                    predicate: predicate,
+                    subscriptionID: CKSchema.Subscription.dashboardChanges,
+                    options: [.firesOnRecordCreation, .firesOnRecordUpdate]
+                )
+                let notification = CKSubscription.NotificationInfo()
+                notification.shouldSendContentAvailable = true  // silent push — triggers background refresh
+                subscription.notificationInfo = notification
+
+                _ = try await self.database.save(subscription)
+                UserDefaults.standard.set(true, forKey: Self.subscriptionRegisteredKey)
+                print("[Notify] subscription registered")
+            }
         } catch {
             print("[Notify] subscription failed: \(error)")
         }
