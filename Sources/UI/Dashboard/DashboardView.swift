@@ -101,6 +101,9 @@ struct DashboardView: View {
     @State private var isDemoMode = false
     @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
     @State private var toolsExpanded = false
+    @State private var claudeDetailExpanded = false
+    @State private var claudeStats: StatsService.ClaudeCodeStats?
+    @State private var claudeStatsTS: Int64 = 0
     @State private var reposExpanded = false
 
     var hasActiveCostSources: Bool {
@@ -290,8 +293,9 @@ struct DashboardView: View {
             triggerCloudSync()
         }
         .onChange(of: timeRange) { _, _ in
-            barProgress = 0  // collapse bars immediately, avoid stale-data render
+            barProgress = 0
             Task { await load() }
+            if claudeDetailExpanded { Task { await loadClaudeStats() } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             // Manual refresh / forceRefresh — immediate, no throttle
@@ -1101,7 +1105,25 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
                     ForEach(Array(shown.enumerated()), id: \.element.name) { idx, tc in
-                        toolBarRow(name: tc.name, cost: tc.cost, total: totalCost, index: idx)
+                        let displayName = tc.name == "Claude Code"
+                            ? (claudeDetailExpanded ? "⌄ Claude Code" : "› Claude Code")
+                            : tc.name
+                        toolBarRow(name: displayName, cost: tc.cost, total: totalCost, index: idx)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if tc.name == "Claude Code" {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        claudeDetailExpanded.toggle()
+                                    }
+                                    if claudeDetailExpanded {
+                                        Task { await loadClaudeStats() }
+                                    }
+                                }
+                            }
+                        if tc.name == "Claude Code" && claudeDetailExpanded {
+                            claudeDetailCard
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
                     }
                     if toolCosts.count > 4 {
                         Button(toolsExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
@@ -1509,6 +1531,77 @@ struct DashboardView: View {
             return String(format: "%.1fK", Double(tokens) / 1_000)
         }
         return "\(tokens)"
+    }
+
+    func loadClaudeStats() async {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        let since: Date
+        let days: Int
+        switch timeRange {
+        case .today:   since = todayStart; days = 1
+        case .thisWeek:
+            var mc = cal; mc.firstWeekday = 2
+            since = mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            days = cal.dateComponents([.day], from: since, to: todayStart).day! + 1
+        case .days30:  since = cal.date(byAdding: .day, value: -29, to: todayStart)!; days = 30
+        }
+        let sinceMs = Int64(since.timeIntervalSince1970 * 1000)
+        let stats = await StatsService.claudeCodeStats(sinceMs: sinceMs)
+        await MainActor.run {
+            claudeStats = stats
+            claudeStatsTS = sinceMs
+        }
+    }
+
+    @ViewBuilder
+    var claudeDetailCard: some View {
+        if let stats = claudeStats, stats.sessionCount > 0 {
+            // Scale raw token-pricing costs to match dashboard tool bar total
+            let rawTotal = stats.modelBreakdown.reduce(0.0) { $0 + $1.cost }
+            let toolBarCost = computeToolCosts().first(where: { $0.name == "Claude Code" })?.cost ?? rawTotal
+            let scale = rawTotal > 0 ? toolBarCost / rawTotal : 1.0
+            VStack(alignment: .leading, spacing: 6) {
+                Text("\(stats.sessionCount) sessions · avg \(String(format: "$%.2f", stats.avgCostPerSession * scale)) · top \(String(format: "$%.2f", stats.topSessionCost * scale))")
+                    .font(.caption).foregroundColor(.secondary)
+
+                if !stats.modelBreakdown.isEmpty {
+                    let maxPct = stats.modelBreakdown.map(\.pct).max() ?? 1
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(stats.modelBreakdown, id: \.model) { mb in
+                            let scaledCost = mb.cost * scale
+                            HStack(spacing: 6) {
+                                Text(mb.model)
+                                    .font(.caption2).frame(width: 144, alignment: .leading)
+                                GeometryReader { geo in
+                                    let fullW = max(geo.size.width * CGFloat(mb.pct / maxPct), 4)
+                                    let rawCacheW = fullW * CGFloat(mb.cacheRate)
+                                    let minW: CGFloat = 3
+                                    let cacheW = rawCacheW < minW ? 0
+                                        : (rawCacheW > fullW - minW ? fullW - minW : rawCacheW)
+                                    ZStack(alignment: .leading) {
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .fill(Color.deepRed.opacity(0.4))
+                                            .frame(width: fullW, height: 8)
+                                        if cacheW > 0 {
+                                            RoundedRectangle(cornerRadius: 2)
+                                                .fill(Color.marsGreen.opacity(0.8))
+                                                .frame(width: cacheW, height: 8)
+                                        }
+                                    }
+                                }.frame(height: 8)
+                                Text(String(format: "$%.2f", scaledCost))
+                                    .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                                    .frame(width: 50, alignment: .trailing)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.leading, 28)
+        }
     }
 
     func balanceString(_ v: Double, currency: String) -> String {
