@@ -48,7 +48,7 @@ struct AIPulseWidgetEntryView: View {
                 .overlay(alignment: .topLeading) {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(I18n.t("time.today")).font(.system(size: 8)).foregroundColor(.secondary)
-                        Text("\(todayLaps)×").font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
+                        Text(formatUSD(entry.todayCost)).font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
                     }.offset(x: -off, y: -off)
                 }
                 .overlay(alignment: .topTrailing) {
@@ -82,6 +82,11 @@ struct AIPulseWidgetEntryView: View {
                 .frame(width: outer - 24, height: outer - 24)
 
             VStack(spacing: 1) {
+                if todayLaps > 0 {
+                    Text("\(todayLaps)×")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
                 Text(formatUSD(entry.todayCost))
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .minimumScaleFactor(0.5).lineLimit(1)
@@ -110,6 +115,11 @@ struct AIPulseWidgetEntryView: View {
                     .frame(width: outer - 28, height: outer - 28)
 
                 VStack(spacing: 1) {
+                    if todayLaps > 0 {
+                        Text("\(todayLaps)×")
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
                     Text(formatUSD(entry.todayCost))
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .minimumScaleFactor(0.5).lineLimit(1)
