@@ -44,7 +44,7 @@ struct SpendView: View {
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 0) {
                             Text(I18n.t("time.today")).font(.system(size: 10)).foregroundColor(.secondary)
-                            Text("\(todayLaps)×").font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
+                            Text(formatUSD(snap.todayCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
                         }.offset(x: -8, y: -8)
                     }
                     .overlay(alignment: .topTrailing) {
@@ -74,6 +74,9 @@ struct SpendView: View {
                     ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .marsGreen).frame(width: 144, height: 144)
                     ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .deepRed).frame(width: 128, height: 128)
                     VStack(spacing: 1) {
+                        Text("\(todayLaps)×")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
                         Text(formatUSD(snap.todayCost)).font(.system(size: 32, weight: .bold, design: .rounded)).minimumScaleFactor(0.5).lineLimit(1)
                         if let updated = cloudData.lastUpdated { Text(updated, format: .dateTime.hour().minute()).font(.system(size: 10)).foregroundColor(.secondary) }
                     }
