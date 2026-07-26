@@ -47,13 +47,13 @@ struct AIPulseWidgetEntryView: View {
             Rectangle().fill(.clear).frame(width: outer + 8, height: outer + 8)
                 .overlay(alignment: .topLeading) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Today").font(.system(size: 8)).foregroundColor(.secondary)
+                        Text(I18n.t("time.today")).font(.system(size: 8)).foregroundColor(.secondary)
                         Text("\(todayLaps)×").font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
                     }.offset(x: -off, y: -off)
                 }
                 .overlay(alignment: .topTrailing) {
                     VStack(alignment: .trailing, spacing: 0) {
-                        Text("Week").font(.system(size: 8)).foregroundColor(.secondary)
+                        Text(I18n.t("time.week")).font(.system(size: 8)).foregroundColor(.secondary)
                         Text(formatUSD(entry.weekCost)).font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.marsGreen)
                     }.offset(x: off, y: -off)
                 }
@@ -67,7 +67,7 @@ struct AIPulseWidgetEntryView: View {
                 }
                 .overlay(alignment: .bottomTrailing) {
                     VStack(alignment: .trailing, spacing: 0) {
-                        Text("30 Days").font(.system(size: 8)).foregroundColor(.secondary)
+                        Text(I18n.t("time.30d")).font(.system(size: 8)).foregroundColor(.secondary)
                         Text(formatUSD(entry.monthCost)).font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.marsGreenLight)
                     }.offset(x: off, y: off)
                 }
@@ -96,8 +96,7 @@ struct AIPulseWidgetEntryView: View {
     // MARK: - systemMedium
 
     var systemMediumView: some View {
-        // Rings sized to fit widget bounds without overflow (no corner labels on medium)
-        let outer: CGFloat = 128
+        let outer: CGFloat = 120
 
         return HStack(spacing: 20) {
             ZStack {
@@ -112,36 +111,45 @@ struct AIPulseWidgetEntryView: View {
 
                 VStack(spacing: 1) {
                     Text(formatUSD(entry.todayCost))
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
                         .minimumScaleFactor(0.5).lineLimit(1)
                     Text(entry.updatedAt, format: .dateTime.hour().minute())
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
             }
+            .frame(width: outer, height: outer)
 
             // Text breakdown on the right
             VStack(alignment: .leading, spacing: 8) {
-                Text("AI Pulse")
+                Text(I18n.t("welcome.title"))
                     .font(.caption).foregroundColor(.secondary)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Circle().fill(Color.deepRed).frame(width: 6, height: 6)
-                        Text("Today:").font(.caption2)
+                        Text("\(I18n.t("time.today")):").font(.caption2)
                         Text(formatUSD(entry.todayCost))
                             .font(.caption2).fontWeight(.semibold)
                     }
                     HStack {
                         Circle().fill(Color.marsGreen).frame(width: 6, height: 6)
-                        Text("Week:").font(.caption2)
+                        Text("\(I18n.t("time.week")):").font(.caption2)
                         Text(formatUSD(entry.weekCost))
                             .font(.caption2).fontWeight(.semibold)
                     }
                     HStack {
                         Circle().fill(Color.marsGreenLight).frame(width: 6, height: 6)
-                        Text("30d:").font(.caption2)
+                        Text("\(I18n.t("time.30d")):").font(.caption2)
                         Text(formatUSD(entry.monthCost))
                             .font(.caption2).fontWeight(.semibold)
+                    }
+                    if entry.yesterdaySpend > 0.001 {
+                        HStack {
+                            Circle().fill(yesterdayDelta > 0 ? Color.deepRed : Color.marsGreen).frame(width: 6, height: 6)
+                            Text(I18n.t("dashboard.vs_yesterday")).font(.caption2)
+                            Text(yesterdayDelta > 0 ? "↑\(Int(yesterdayDelta * 100))%" : "↓\(Int(-yesterdayDelta * 100))%")
+                                .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                        }
                     }
                 }
             }
@@ -181,7 +189,7 @@ struct AIPulseWidgetEntryView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(formatUSD(entry.todayCost))
                     .font(.headline).bold()
-                Text("AI Pulse")
+                Text(I18n.t("welcome.title"))
                     .font(.caption2).foregroundColor(.secondary)
             }
         }
