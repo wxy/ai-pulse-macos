@@ -1537,14 +1537,12 @@ struct DashboardView: View {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
         let since: Date
-        let days: Int
         switch timeRange {
-        case .today:   since = todayStart; days = 1
+        case .today:   since = todayStart
         case .thisWeek:
             var mc = cal; mc.firstWeekday = 2
             since = mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-            days = cal.dateComponents([.day], from: since, to: todayStart).day! + 1
-        case .days30:  since = cal.date(byAdding: .day, value: -29, to: todayStart)!; days = 30
+        case .days30:  since = cal.date(byAdding: .day, value: -29, to: todayStart)!
         }
         let sinceMs = Int64(since.timeIntervalSince1970 * 1000)
         let stats = await StatsService.claudeCodeStats(sinceMs: sinceMs)
