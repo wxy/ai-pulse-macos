@@ -11,10 +11,12 @@ struct IntegrationRow: View {
     @State private var keyInput: String
     @State private var tierInput: String
     @State private var saved: Bool
-    @State private var showKey: Bool = false
     @State private var detecting: Bool = false
     @State private var preferredKeyId: String
     @State private var balanceText: String? = nil
+    @State private var keyStatus: KeyStatus = .none
+
+    enum KeyStatus { case none, checking, valid, invalid }
 
     init(integration: any Detectable, detected: DetectionResult, onGrant: (() -> Void)? = nil) {
         self.integration = integration
@@ -23,11 +25,16 @@ struct IntegrationRow: View {
         let cfg = IntegrationRegistry.config(for: integration.id)
         let hasKey = !(ApiKeyManager.shared.get(integration.id) ?? "").isEmpty
         _enabled = State(initialValue: cfg.enabled)
-        _keyInput = State(initialValue: "")
+        _keyInput = State(initialValue: ApiKeyManager.shared.get(integration.id) ?? "")
         _tierInput = State(initialValue: cfg.subscriptionTier)
         _saved = State(initialValue: cfg.enabled || hasKey)
-        _showKey = State(initialValue: !hasKey)
         _preferredKeyId = State(initialValue: cfg.preferredAPIKeyCostSourceId ?? "")
+        if hasKey {
+            let cached = ApiPoller.shared.cachedBalance(for: integration.id)
+            if let cb = cached {
+                _keyStatus = State(initialValue: (cb.error != nil) ? .invalid : .valid)
+            }
+        }
     }
 
     /// Returns the available API Key CostSource ids for the "preferred key" dropdown.
@@ -65,46 +72,71 @@ struct IntegrationRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 12) {
-                if detecting {
-                    ProgressView().scaleEffect(0.6).frame(width: 20)
-                } else {
-                    Image(systemName: iconName)
-                        .foregroundColor(iconColor)
-                        .font(.title3).frame(width: 20)
+            if isAPIKeyType {
+                // ---- API Key layout (two rows) ----
+                // Row 1: icon + name ……… balance
+                HStack(spacing: 12) {
+                    if detecting {
+                        ProgressView().scaleEffect(0.6).frame(width: 20)
+                    } else {
+                        Image(systemName: iconName)
+                            .foregroundColor(iconColor)
+                            .font(.title3).frame(width: 20)
+                    }
+                    Text(integration.displayName).font(.body).fontWeight(.medium)
+                    Spacer()
+                    if let bal = balanceText {
+                        Text(bal)
+                            .font(.caption).foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                // Row 2: key input + save + status (indented under name)
+                HStack(spacing: 6) {
+                    Spacer().frame(width: 32)  // indent to align with name
+                    apiKeyControls
+                }
+            } else {
+                // ---- Non-API layout (original single row) ----
+                HStack(spacing: 12) {
+                    if detecting {
+                        ProgressView().scaleEffect(0.6).frame(width: 20)
+                    } else {
+                        Image(systemName: iconName)
+                            .foregroundColor(iconColor)
+                            .font(.title3).frame(width: 20)
+                    }
+
+                    Text(integration.displayName).font(.body).fontWeight(.medium)
+
+                    if !detected.found {
+                        Text(summaryText)
+                            .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    if needsGrant {
+                        Button(I18n.t("bookmark.grant")) { grantClaude() }
+                            .buttonStyle(.bordered).controlSize(.small)
+                    } else if detected.found {
+                        Text(summaryText)
+                            .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                    }
                 }
 
-                Text(integration.displayName).font(.body).fontWeight(.medium)
-
-                if !(detected.found || isAPIKeyType) {
-                    Text(summaryText)
-                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                if detected.found {
+                    devToolControls
+                        .padding(.leading, 32)
                 }
-
-                Spacer()
-
-                if needsGrant {
-                    Button(I18n.t("bookmark.grant")) { grantClaude() }
-                        .buttonStyle(.bordered).controlSize(.small)
-                } else if isAPIKeyType {
-                    controls
-                } else if detected.found {
-                    Text(summaryText)
-                        .font(.caption).foregroundColor(.secondary).lineLimit(1)
-                }
-            }
-
-            if !isAPIKeyType && detected.found {
-                devToolControls
-                    .padding(.leading, 32)
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .opacity(detected.found ? 1 : 0.5)
+        .opacity((detected.found || isAPIKeyType) ? 1 : 0.5)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(detected.found ? Color(nsColor: .controlBackgroundColor) : Color(nsColor: .controlBackgroundColor).opacity(0.4))
-                .shadow(color: .black.opacity(detected.found ? 0.04 : 0), radius: 2, y: 1)
+                .fill((detected.found || isAPIKeyType) ? Color(nsColor: .controlBackgroundColor) : Color(nsColor: .controlBackgroundColor).opacity(0.4))
+                .shadow(color: .black.opacity((detected.found || isAPIKeyType) ? 0.04 : 0), radius: 2, y: 1)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -125,9 +157,17 @@ struct IntegrationRow: View {
 
     func refreshBalance() {
         guard isAPIKeyType else { return }
+        // If no key is saved, ignore any stale cached balance
+        // (e.g. from a previous session before the key was deleted).
+        guard ApiKeyManager.shared.get(integration.id) != nil else {
+            keyStatus = .none
+            balanceText = nil
+            return
+        }
         if let cb = ApiPoller.shared.cachedBalance(for: integration.id) {
             if let err = cb.error {
                 balanceText = I18n.t("apikeys.error") + ": \(err)"
+                keyStatus = .invalid
             } else if let b = cb.balances.first {
                 let usd = b.totalBalance * StatsService.toUSD(currency: b.currency)
                 if b.currency == "USD" {
@@ -135,18 +175,62 @@ struct IntegrationRow: View {
                 } else {
                     balanceText = "$\(String(format: "%.2f", usd)) (\(b.currency) \(String(format: "%.2f", b.totalBalance)))"
                 }
+                keyStatus = .valid
             }
         }
+    }
+
+    /// Poll the balance cache a few times after saving a key, until the
+    /// API fetch completes (success or error). Gives up after ~7.5 s.
+    func waitForBalanceResult(attempts: Int = 5) {
+        guard attempts > 0, keyStatus == .checking else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            guard keyStatus == .checking else { return }
+            if let cb = ApiPoller.shared.cachedBalance(for: integration.id) {
+                if cb.error != nil { keyStatus = .invalid }
+                else if !cb.balances.isEmpty { keyStatus = .valid }
+                else { waitForBalanceResult(attempts: attempts - 1); return }
+                refreshBalance()
+            } else {
+                waitForBalanceResult(attempts: attempts - 1)
+            }
+        }
+    }
+
+    /// Whether the integration is effectively "active" — either detected at scan
+    /// time or the user has manually saved a key / enabled it in this session.
+    /// For API key types the key's validated status takes precedence.
+    var isActive: Bool {
+        if isAPIKeyType { return keyStatus == .valid }
+        return detected.found || saved
     }
 
     var iconName: String {
         if detecting { return "arrow.triangle.2circlepath" }
         if needsGrant { return "lock.circle" }
-        return detected.found ? "checkmark.circle.fill" : "questionmark.circle"
+        if isAPIKeyType {
+            switch keyStatus {
+            case .none:     return "questionmark.circle"
+            case .checking: return "arrow.triangle.2circlepath"
+            case .valid:    return "checkmark.circle.fill"
+            case .invalid:  return "xmark.circle.fill"
+            }
+        }
+        return isActive ? "checkmark.circle.fill" : "questionmark.circle"
     }
 
     var iconColor: Color {
-        detecting ? .blue : (detected.found ? .green : .orange)
+        if detecting { return .blue }
+        if needsGrant { return .orange }
+        if isAPIKeyType {
+            switch keyStatus {
+            case .none:     return .orange
+            case .checking: return .blue
+            case .valid:    return .green
+            case .invalid:  return .red
+            }
+        }
+        return isActive ? .green : .orange
     }
 
     @ViewBuilder
@@ -175,13 +259,6 @@ struct IntegrationRow: View {
         }
     }
 
-    @ViewBuilder
-    var controls: some View {
-        if isAPIKeyType {
-            apiKeyControls
-        }
-    }
-
     func labeledPicker<C: View, V: Hashable>(label: String, selection: Binding<V>,
                                                @ViewBuilder content: () -> C) -> some View {
         HStack(spacing: 4) {
@@ -194,27 +271,61 @@ struct IntegrationRow: View {
     }
 
     @ViewBuilder
+    var statusIcon: some View {
+        switch keyStatus {
+        case .none:
+            Image(systemName: "questionmark.circle")
+                .foregroundColor(.orange).font(.caption)
+        case .checking:
+            ProgressView().scaleEffect(0.5).frame(width: 14, height: 14)
+        case .valid:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green).font(.caption)
+        case .invalid:
+            Image(systemName: "xmark.circle.fill")
+                .foregroundColor(.red).font(.caption)
+        }
+    }
+
+    @ViewBuilder
     var apiKeyControls: some View {
-        if showKey {
-            HStack(spacing: 6) {
-                TextField(I18n.t("integrations.key_placeholder"), text: $keyInput)
-                    .textFieldStyle(.roundedBorder).frame(width: 180)
-                Button(I18n.t("integrations.key_save")) {
-                    let k = keyInput.trimmingCharacters(in: .whitespaces)
-                    guard !k.isEmpty else { return }
-                    ApiKeyManager.shared.set(integration.id, key: k)
-                    ApiPoller.shared.fetchNow(providerId: integration.id)
-                    enabled = true; saved = true; showKey = false; saveConfig()
-                }
-                .buttonStyle(.bordered).controlSize(.small).frame(minWidth: 40)
-                .disabled(keyInput.trimmingCharacters(in: .whitespaces).isEmpty)
+        HStack(spacing: 6) {
+            PasteableTextField(text: $keyInput,
+                               placeholder: I18n.t("integrations.key_placeholder"))
+                .frame(width: 200, height: 22)
+            Button(I18n.t("integrations.key_save")) {
+                commitKey()
             }
+            .buttonStyle(.bordered).controlSize(.small).frame(minWidth: 40)
+            statusIcon.frame(width: 16)
+        }
+    }
+
+    private func commitKey() {
+        let k = keyInput.trimmingCharacters(in: .whitespaces)
+        if k.isEmpty {
+            saved = false; enabled = false
+            keyInput = ""
+            balanceText = nil
+            keyStatus = .none
+            ApiKeyManager.shared.delete(integration.id)
+            ApiPoller.shared.clearCache(for: integration.id)
+            saveConfig()
+            // No onGrant — this row manages its own state.
+            // The parent does NOT need to re-detect all integrations
+            // just because one key was deleted.
         } else {
-            HStack(spacing: 6) {
-                Text("••••••••").foregroundColor(.secondary)
-                Button(I18n.t("integrations.key_change")) { keyInput = ""; showKey = true }
-                    .font(.caption).buttonStyle(.borderless).frame(minWidth: 32)
-                if saved { Image(systemName: "checkmark.circle.fill").foregroundColor(.green) }
+            ApiPoller.shared.clearCache(for: integration.id)
+            ApiKeyManager.shared.set(integration.id, key: k)
+            saved = true; enabled = true
+            saveConfig()
+            if let provider = ProviderRegistry.byId(integration.id),
+               provider.canFetchBalance {
+                keyStatus = .checking
+                ApiPoller.shared.fetchNow(providerId: integration.id)
+                waitForBalanceResult()
+            } else {
+                keyStatus = .valid
             }
         }
     }
@@ -226,6 +337,7 @@ struct IntegrationRow: View {
     private func saveConfig() {
         var cfg = IntegrationRegistry.config(for: integration.id)
         cfg.enabled = enabled
+        if !enabled { cfg.apiKey = "" }
         IntegrationRegistry.setConfig(for: integration.id, cfg)
         if enabled, let c = integration as? Collectable { c.start() }
         else if !enabled, let c = integration as? Collectable { c.stop() }

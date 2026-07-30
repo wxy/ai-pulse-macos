@@ -81,6 +81,47 @@ final class ApiPoller: @unchecked Sendable {
                     guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                         self?.cacheError(pid: provider.id, msg: "Invalid JSON"); return
                     }
+                    // Detect error responses that come back as HTTP 200
+                    // (common in Chinese APIs — they embed error codes in the body).
+                    //
+                    // Pattern 1: {"error": {"message": "..."}}
+                    if let errorObj = json["error"] as? [String: Any] {
+                        let msg = errorObj["message"] as? String
+                            ?? errorObj["code"] as? String
+                            ?? "API error"
+                        self?.cacheError(pid: provider.id, msg: msg); return
+                    }
+                    // Pattern 2: {"success": false, "msg"/"message": "..."}
+                    //   Zhipu: {"code":401,"msg":"...","success":false}
+                    //   Some APIs return code:0 for success — only treat
+                    //   as error when `success` is explicitly false.
+                    if json["success"] as? Bool == false {
+                        let msg = json["msg"] as? String
+                            ?? json["message"] as? String
+                            ?? "API error"
+                        self?.cacheError(pid: provider.id, msg: msg); return
+                    }
+                    // Pattern 3: provider-specific overrides
+                    if let code = json["code"] as? Int {
+                        switch provider.id {
+                        case "zhipu":
+                            // Zhipu uses code 200 for success, 401/403/etc for errors.
+                            if code != 200 {
+                                let msg = json["msg"] as? String ?? "API error \(code)"
+                                self?.cacheError(pid: provider.id, msg: msg); return
+                            }
+                        case "moonshot":
+                            // Kimi uses code 0 for success.
+                            if code != 0 {
+                                let msg = json["msg"] as? String
+                                    ?? json["message"] as? String
+                                    ?? "API error \(code)"
+                                self?.cacheError(pid: provider.id, msg: msg); return
+                            }
+                        default:
+                            break
+                        }
+                    }
                     let entries = parser(json)
                     self?.cacheBalance(pid: provider.id, entries: entries)
                 }
@@ -241,6 +282,12 @@ final class ApiPoller: @unchecked Sendable {
 
     func cachedBalance(for providerId: String) -> CachedBalance? {
         balanceCache()[providerId]
+    }
+
+    func clearCache(for providerId: String) {
+        var cache = balanceCache()
+        cache.removeValue(forKey: providerId)
+        saveBalanceCache(cache)
     }
 }
 
