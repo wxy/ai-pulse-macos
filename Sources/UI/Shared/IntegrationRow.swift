@@ -15,6 +15,9 @@ struct IntegrationRow: View {
     @State private var preferredKeyId: String
     @State private var balanceText: String? = nil
     @State private var keyStatus: KeyStatus = .none
+    /// Bumped every time a new "checking" cycle starts, so a stale timeout
+    /// from an earlier cycle can't clobber a newer one's result.
+    @State private var checkGeneration: Int = 0
 
     enum KeyStatus { case none, checking, valid, invalid }
 
@@ -143,6 +146,10 @@ struct IntegrationRow: View {
                 .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
         )
         .onAppear { refreshBalance() }
+        .onReceive(NotificationCenter.default.publisher(for: .apiBalanceDidUpdate)) { note in
+            guard isAPIKeyType, (note.userInfo?["providerId"] as? String) == integration.id else { return }
+            refreshBalance()
+        }
     }
 
     var summaryText: String {
@@ -180,20 +187,14 @@ struct IntegrationRow: View {
         }
     }
 
-    /// Poll the balance cache a few times after saving a key, until the
-    /// API fetch completes (success or error). Gives up after ~7.5 s.
-    func waitForBalanceResult(attempts: Int = 5) {
-        guard attempts > 0, keyStatus == .checking else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            guard keyStatus == .checking else { return }
-            if let cb = ApiPoller.shared.cachedBalance(for: integration.id) {
-                if cb.error != nil { keyStatus = .invalid }
-                else if !cb.balances.isEmpty { keyStatus = .valid }
-                else { waitForBalanceResult(attempts: attempts - 1); return }
-                refreshBalance()
-            } else {
-                waitForBalanceResult(attempts: attempts - 1)
-            }
+    /// Safety net for a "checking" cycle that never resolves (e.g. the network
+    /// request never completes). Normally `keyStatus` is updated as soon as
+    /// ApiPoller posts `.apiBalanceDidUpdate`, well before this fires.
+    func scheduleCheckTimeout(generation: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 35) {
+            guard generation == checkGeneration, keyStatus == .checking else { return }
+            keyStatus = .invalid
+            balanceText = I18n.t("apikeys.error") + ": timeout"
         }
     }
 
@@ -308,6 +309,7 @@ struct IntegrationRow: View {
             keyInput = ""
             balanceText = nil
             keyStatus = .none
+            checkGeneration += 1
             ApiKeyManager.shared.delete(integration.id)
             ApiPoller.shared.clearCache(for: integration.id)
             saveConfig()
@@ -322,8 +324,9 @@ struct IntegrationRow: View {
             if let provider = ProviderRegistry.byId(integration.id),
                provider.canFetchBalance {
                 keyStatus = .checking
+                checkGeneration += 1
                 ApiPoller.shared.fetchNow(providerId: integration.id)
-                waitForBalanceResult()
+                scheduleCheckTimeout(generation: checkGeneration)
             } else {
                 keyStatus = .valid
             }

@@ -25,36 +25,8 @@ final class MaskedTextField: NSTextField {
         return true
     }
 
-    /// Intercept Ctrl+A / Ctrl+C / Ctrl+V before the field editor translates
-    /// them into non-paste actions (Ctrl+V → pageDown in standard bindings).
-    /// If the field is masked (not focused), make it first responder first.
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard let chars = event.charactersIgnoringModifiers, chars.count == 1 else {
-            return super.performKeyEquivalent(with: event)
-        }
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags == .control else {
-            return super.performKeyEquivalent(with: event)
-        }
-        switch chars {
-        case "a", "A":
-            guard currentEditor() != nil else { break }
-            currentEditor()?.selectAll(nil)
-            return true
-        case "c", "C":
-            guard currentEditor() != nil else { break }
-            currentEditor()?.copy(nil)
-            return true
-        case "v", "V":
-            guard currentEditor() != nil else { break }
-            currentEditor()?.paste(nil)
-            return true
-        default:
-            break
-        }
-        return super.performKeyEquivalent(with: event)
-    }
-
+    // Ctrl+A/C/V are handled by Coordinator's local NSEvent monitor (installMonitor),
+    // which fires before performKeyEquivalent would — no override needed here.
 }
 
 // MARK: - SwiftUI wrapper
@@ -153,6 +125,12 @@ struct PasteableTextField: NSViewRepresentable {
 
                 let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
+                // Not this field's turn — let the event pass through so the
+                // monitor for the actually-focused field (or default handling)
+                // gets a chance. Each row installs its own monitor, and a
+                // `nil` return here would stop the whole chain for everyone.
+                guard tf.currentEditor() != nil else { return event }
+
                 // ---- Ctrl+A → Select All ----
                 if flags.contains(.control), !flags.contains(.command),
                    chars == "a" || chars == "A" {
@@ -169,12 +147,7 @@ struct PasteableTextField: NSViewRepresentable {
                 let isPaste = (chars == "v" || chars == "V")
                 guard isCopy || isPaste else { return event }
 
-                // Only act if THIS field currently has focus.
-                // (The event monitor fires for every field on screen —
-                //  we must not steal focus from the field the user is actually in.)
-                if let editor = tf.currentEditor() {
-                    if isCopy { editor.copy(nil) } else { editor.paste(nil) }
-                }
+                if isCopy { tf.currentEditor()?.copy(nil) } else { tf.currentEditor()?.paste(nil) }
                 return nil
             }
         }

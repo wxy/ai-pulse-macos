@@ -258,6 +258,7 @@ final class ApiPoller: @unchecked Sendable {
         }
         Logger.info("ApiPoller[\(pid)]: ok — \(entries.map { "\($0.currency) \($0.totalBalance)" }.joined(separator: ", "))")
         AppHealthMonitor.shared.clearAPIError(providerId: pid)
+        notifyBalanceUpdated(pid: pid)
     }
 
     private func cacheError(pid: String, msg: String) {
@@ -266,6 +267,14 @@ final class ApiPoller: @unchecked Sendable {
         saveBalanceCache(cache)
         Logger.warning("ApiPoller[\(pid)]: \(msg)")
         AppHealthMonitor.shared.reportAPIError(providerId: pid, message: "\(pid): \(msg)")
+        notifyBalanceUpdated(pid: pid)
+    }
+
+    /// Lets UI (e.g. IntegrationRow) react immediately instead of only on next `.onAppear`.
+    private func notifyBalanceUpdated(pid: String) {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .apiBalanceDidUpdate, object: nil, userInfo: ["providerId": pid])
+        }
     }
 
     private func balanceCache() -> [String: CachedBalance] {
