@@ -55,7 +55,8 @@ struct SpendView: View {
                     }
                     .overlay(alignment: .bottomLeading) {
                         if snap.yesterdaySpend > 0.001 {
-                            Text(yesterdayDelta > 0 ? "↑\(Int(yesterdayDelta * 100))%" : "↓\(Int(-yesterdayDelta * 100))%")
+                            let badge = yesterdayDelta > 0 ? "↑" + Int(yesterdayDelta * 100).formatted(.percent) : "↓" + Int(-yesterdayDelta * 100).formatted(.percent)
+                            Text(verbatim: badge)
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
                                 .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen).offset(x: -8, y: 8)
                         }

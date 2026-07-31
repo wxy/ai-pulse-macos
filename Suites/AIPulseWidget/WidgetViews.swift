@@ -59,7 +59,8 @@ struct AIPulseWidgetEntryView: View {
                 }
                 .overlay(alignment: .bottomLeading) {
                     if entry.yesterdaySpend > 0.001 {
-                        Text(yesterdayDelta > 0 ? "↑\(Int(yesterdayDelta * 100))%" : "↓\(Int(-yesterdayDelta * 100))%")
+                        let badge = yesterdayDelta > 0 ? "↑" + Int(yesterdayDelta * 100).formatted(.percent) : "↓" + Int(-yesterdayDelta * 100).formatted(.percent)
+Text(verbatim: badge)
                             .font(.system(size: 8, weight: .medium, design: .rounded))
                             .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen)
                             .offset(x: -off, y: off)
@@ -157,7 +158,8 @@ struct AIPulseWidgetEntryView: View {
                         HStack {
                             Circle().fill(yesterdayDelta > 0 ? Color.deepRed : Color.marsGreen).frame(width: 6, height: 6)
                             Text(I18n.t("dashboard.vs_yesterday")).font(.caption2)
-                            Text(yesterdayDelta > 0 ? "↑\(Int(yesterdayDelta * 100))%" : "↓\(Int(-yesterdayDelta * 100))%")
+                            let badge = yesterdayDelta > 0 ? "↑" + Int(yesterdayDelta * 100).formatted(.percent) : "↓" + Int(-yesterdayDelta * 100).formatted(.percent)
+Text(verbatim: badge)
                                 .font(.caption2).fontWeight(.semibold).monospacedDigit()
                         }
                     }

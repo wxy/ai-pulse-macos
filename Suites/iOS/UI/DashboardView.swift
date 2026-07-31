@@ -225,8 +225,8 @@ struct DashboardView: View {
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
             VStack(spacing: 2) {
-                if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(Color.deepRed).frame(width: 6, height: 6); Text("\(I18n.t("stat.api")) \(Int(apiSpend / max(t, 0.01) * 100))%").font(.caption2) } }
-                if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(Color.marsGreen).frame(width: 6, height: 6); Text("\(I18n.t("stat.sub")) \(Int(subTotal / max(t, 0.01) * 100))%").font(.caption2) } }
+                if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(Color.deepRed).frame(width: 6, height: 6); (Text(I18n.t("stat.api")) + Text(verbatim: " " + Int(apiSpend / max(t, 0.01) * 100).formatted(.percent))).font(.caption2) } }
+                if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(Color.marsGreen).frame(width: 6, height: 6); (Text(I18n.t("stat.sub")) + Text(verbatim: " " + Int(subTotal / max(t, 0.01) * 100).formatted(.percent))).font(.caption2) } }
             }
         }
         .frame(width: 90)
@@ -255,7 +255,8 @@ struct DashboardView: View {
             ForEach(snap.providerBreakdown.prefix(3), id: \.providerId) { p in
                 HStack(spacing: 2) {
                     Circle().fill(Color.deepRed).frame(width: 6, height: 6)
-                    Text("\(p.name) \(Int(p.cost / max(apiSpend, 0.01) * 100))%")
+                    let pctStr = Int(p.cost / max(apiSpend, 0.01) * 100).formatted(.percent)
+                    Text(verbatim: "\(p.name) \(pctStr)")
                         .font(.caption2).foregroundColor(.secondary)
                 }
             }
@@ -513,12 +514,14 @@ struct DashboardView: View {
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
         } else if pct > 0 {
-            Text("↑\(Int(round(pct)))%")
+            let badge = "↑" + Int(round(pct)).formatted(.percent)
+            Text(verbatim: badge)
                 .font(.caption2).foregroundColor(.deepRed)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.deepRed.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
         } else {
-            Text("↓\(Int(round(-pct)))%")
+            let badge = "↓" + Int(round(-pct)).formatted(.percent)
+            Text(verbatim: badge)
                 .font(.caption2).foregroundColor(.marsGreen)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.marsGreen.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))

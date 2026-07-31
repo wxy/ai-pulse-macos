@@ -297,7 +297,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
                 var result = "\(label) · \(cS) · \(linesStr)"
                 if let avg = vsAvg, avg > 0.001, cost > 0.001 {
                     let pct = Int(round(cost / avg * 100))
-                    result += " (\(pct))" + "%"
+                    result += " (" + pct.formatted(.percent) + ")"
                 }
                 return result
             }
