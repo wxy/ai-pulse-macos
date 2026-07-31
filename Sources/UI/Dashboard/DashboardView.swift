@@ -530,7 +530,7 @@ struct DashboardView: View {
         case 75..<90: .marsGreen2
         default:      .deepRed
         }
-        let label = clamped > 100 ? I18n.t("dashboard.over_limit") : "\(Int(clamped))%"
+        let label = clamped > 100 ? I18n.t("dashboard.over_limit") : "\(Int(clamped))" + "%"
         return HStack(spacing: 2) {
             Text(label)
                 .font(.system(size: 8)).monospacedDigit().foregroundColor(barColor)
@@ -1621,13 +1621,13 @@ struct DashboardView: View {
                 .background(Color(nsColor: .quaternarySystemFill))
                 .cornerRadius(4)
         } else if pct > 0 {
-            Text("↑\(Int(round(pct)))%")
+            Text(verbatim: "↑\(Int(round(pct)))%")
                 .font(.caption2).foregroundColor(.deepRed)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.deepRed.opacity(0.1))
                 .cornerRadius(4)
         } else {
-            Text("↓\(Int(round(-pct)))%")
+            Text(verbatim: "↓\(Int(round(-pct)))%")
                 .font(.caption2).foregroundColor(.marsGreen)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.marsGreen.opacity(0.1))
@@ -1695,7 +1695,7 @@ struct DashboardView: View {
                         Circle().fill(item.color).frame(width: 6, height: 6)
                         Text(item.label).font(.caption2).foregroundColor(.secondary)
                         Spacer()
-                        Text("\(Int(item.pct))%").font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                        Text(verbatim: "\(Int(item.pct))%").font(.caption2).monospacedDigit().foregroundColor(.secondary)
                     }
                 }
             }
@@ -1729,7 +1729,7 @@ struct DashboardView: View {
                         Circle().fill(item.color).frame(width: 6, height: 6)
                         Text(item.label).font(.caption2).foregroundColor(.secondary)
                         Spacer()
-                        Text("\(Int(item.pct))%").font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                        Text(verbatim: "\(Int(item.pct))%").font(.caption2).monospacedDigit().foregroundColor(.secondary)
                     }
                 }
             }

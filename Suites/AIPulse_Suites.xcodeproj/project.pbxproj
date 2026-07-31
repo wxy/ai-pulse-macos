@@ -11,6 +11,9 @@
 		C096EA863014F1C5004D0062 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C096EA853014F1C5004D0062 /* WidgetKit.framework */; };
 		C096EA883014F1C5004D0062 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C096EA873014F1C5004D0062 /* SwiftUI.framework */; };
 		C096EA993014F1C7004D0062 /* AIPulseWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C096EA843014F1C5004D0062 /* AIPulseWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C096F525301CAC1D004D0062 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C096F524301CAC1D004D0062 /* Localizable.xcstrings */; };
+		C096F526301CAC1D004D0062 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C096F524301CAC1D004D0062 /* Localizable.xcstrings */; };
+		C096F527301CAC1D004D0062 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C096F524301CAC1D004D0062 /* Localizable.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,6 +65,7 @@
 		C096EA853014F1C5004D0062 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		C096EA873014F1C5004D0062 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		C096EAA53014F331004D0062 /* AIPulseWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPulseWidgetExtension.entitlements; sourceTree = "<group>"; };
+		C096F524301CAC1D004D0062 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; name = Localizable.xcstrings; path = ../Sources/Localizable.xcstrings; sourceTree = SOURCE_ROOT; };
 		C0D7701B30090D2E00BC1E54 /* AIPulse_iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIPulse_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0D7703030090F0600BC1E54 /* AIPulse_watchOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIPulse_watchOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -161,6 +165,7 @@
 		C0D7701230090D2E00BC1E54 = {
 			isa = PBXGroup;
 			children = (
+				C096F524301CAC1D004D0062 /* Localizable.xcstrings */,
 				C096EAA53014F331004D0062 /* AIPulseWidgetExtension.entitlements */,
 				C05A703C300A545F00B99D6F /* Assets.xcassets */,
 				C05A702C3009E28800B99D6F /* iOS */,
@@ -304,6 +309,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C096F525301CAC1D004D0062 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -311,6 +317,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C096F527301CAC1D004D0062 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -318,6 +325,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C096F526301CAC1D004D0062 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -555,7 +563,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AIPulse_iOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -572,7 +580,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = NO;
@@ -597,7 +605,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AIPulse_iOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -614,7 +622,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = NO;
