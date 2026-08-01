@@ -93,11 +93,10 @@ enum Logger {
         }
         #endif
 
-        // File
+        // File — serial background queue, no MainActor hop needed.
+        // All mutable state (file handle, size) is guarded by the queue.
         queue.async {
-            Task { @MainActor in
-                writeToFile(line)
-            }
+            writeToFile(line)
         }
     }
 

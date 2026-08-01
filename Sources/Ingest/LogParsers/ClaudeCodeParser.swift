@@ -65,14 +65,23 @@ struct ClaudeCodeParser {
     }
 
     /// Parse ISO 8601 timestamp string (e.g. "2026-06-18T09:29:32.485Z") or numeric epoch
+    private static nonisolated(unsafe) let iso8601WithFraction = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static nonisolated(unsafe) let iso8601 = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
     private static func parseTimestamp(_ value: Any?) -> TimeInterval? {
         if let num = value as? TimeInterval { return num }
         if let str = value as? String {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: str) { return date.timeIntervalSince1970 }
-            formatter.formatOptions = [.withInternetDateTime]
-            if let date = formatter.date(from: str) { return date.timeIntervalSince1970 }
+            if let date = iso8601WithFraction.date(from: str) ?? iso8601.date(from: str) {
+                return date.timeIntervalSince1970
+            }
         }
         return nil
     }
