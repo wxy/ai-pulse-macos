@@ -19,7 +19,7 @@ enum Logger {
     // MARK: - Public API
 
     /// Absolute URL of the active log file so users can locate and share it.
-    static var logFileURL: URL {
+    static nonisolated var logFileURL: URL {
         let logDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/AIPulse")
         return logDir.appendingPathComponent(logFileName)
@@ -64,17 +64,17 @@ enum Logger {
         case error   = "E"
     }
 
-    private static let queue = DispatchQueue(
+    private static nonisolated let queue = DispatchQueue(
         label: "com.wxy.aipulse.logger", qos: .utility)
-    private static let maxFileSize = 1_048_576  // 1 MiB
+    private static nonisolated let maxFileSize = 1_048_576  // 1 MiB
 
     #if DEBUG
-    private static let logFileName = "aipulse-debug.log"
+    private static nonisolated let logFileName = "aipulse-debug.log"
     #else
-    private static let logFileName = "aipulse.log"
+    private static nonisolated let logFileName = "aipulse.log"
     #endif
 
-    private static let oslog = OSLog(
+    private static nonisolated let oslog = OSLog(
         subsystem: "com.wxy.aipulse", category: "general")
 
     private static func emit(level: Level,
@@ -118,7 +118,7 @@ enum Logger {
     private static nonisolated(unsafe) var fileHandle: FileHandle?
     private static nonisolated(unsafe) var currentFileSize: Int = 0
 
-    private static func writeToFile(_ line: String) {
+    private static nonisolated func writeToFile(_ line: String) {
         guard let data = (line + "\n").data(using: .utf8) else { return }
 
         if fileHandle == nil {
@@ -143,7 +143,7 @@ enum Logger {
         }
     }
 
-    private static func openLogFile() {
+    private static nonisolated func openLogFile() {
         let logDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/AIPulse")
         try? FileManager.default.createDirectory(
@@ -157,7 +157,7 @@ enum Logger {
         currentFileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
     }
 
-    private static func rollLogFile() {
+    private static nonisolated func rollLogFile() {
         fileHandle?.closeFile()
         fileHandle = nil
         currentFileSize = 0

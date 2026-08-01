@@ -50,9 +50,9 @@ struct AiderParser {
 
     /// Extract model name from aider markdown line.
     /// Format: `Model: deepseek/deepseek-chat with diff edit format, prompt cache, infinite output`
-    private static nonisolated(unsafe) let modelLineRegex = try! NSRegularExpression(
+    private static let modelLineRegex = try! NSRegularExpression(
         pattern: #"^Model:\s*([^\s]+)"#, options: [])
-    private static nonisolated(unsafe) let tokenLineRegex = try! NSRegularExpression(
+    private static let tokenLineRegex = try! NSRegularExpression(
         pattern: #"([\d.]+k?)\s*sent\w*\s*,\s*([\d.]+k?)\s*received"#,
         options: [])
     private static nonisolated(unsafe) let iso8601Frac = {
