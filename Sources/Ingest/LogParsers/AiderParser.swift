@@ -30,7 +30,7 @@ struct AiderParser {
         if let t = json["timestamp"] as? String {
             dedupeKey = "aider|\(t)|\(model ?? "unknown")"
         } else {
-            dedupeKey = "aider|\(line.hash)"
+            dedupeKey = "aider|\(stableHash(line))"
         }
 
         // Aider files live in the repo root, cwd is the repo path
@@ -110,7 +110,7 @@ struct AiderParser {
             cacheTokens: 0,
             repoPath: cwd,
             sessionId: nil,
-            dedupeKey: "aider|md|\(line.hash)"
+            dedupeKey: "aider|md|\(stableHash(line))"
         )
     }
 

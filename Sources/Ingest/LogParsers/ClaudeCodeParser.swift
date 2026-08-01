@@ -48,7 +48,7 @@ struct ClaudeCodeParser {
         if let sid = sessionId, let mid = messageId {
             dedupeKey = "claude-code|\(sid)|\(mid)"
         } else {
-            dedupeKey = "claude-code|\(line.hash)"
+            dedupeKey = "claude-code|\(stableHash(line))"
         }
 
         return UsageEvent(
