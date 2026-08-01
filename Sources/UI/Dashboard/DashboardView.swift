@@ -19,10 +19,7 @@ enum TimeRange: Hashable {
         switch self {
         case .today: return 1
         case .thisWeek:
-            let cal = Calendar.current
-            var monCal = cal; monCal.firstWeekday = 2
-            let monday = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-            return cal.dateComponents([.day], from: monday, to: cal.startOfDay(for: Date())).day! + 1
+            return Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: Calendar.current.startOfDay(for: Date())).day! + 1
         case .days30: return 30
         }
     }
@@ -1483,8 +1480,7 @@ struct DashboardView: View {
     var chartStart: Date {
         let cal = Calendar.current
         if case .thisWeek = timeRange {
-            var monCal = cal; monCal.firstWeekday = 2
-            return monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            return Calendar.mondayOfWeek()
         }
         return cal.date(byAdding: .day, value: -(timeRange.days - 1), to: cal.startOfDay(for: Date()))!
     }
@@ -1544,8 +1540,7 @@ struct DashboardView: View {
         switch timeRange {
         case .today:   since = todayStart
         case .thisWeek:
-            var mc = cal; mc.firstWeekday = 2
-            since = mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            since = Calendar.mondayOfWeek()
         case .days30:  since = cal.date(byAdding: .day, value: -29, to: todayStart)!
         }
         let sinceMs = Int64(since.timeIntervalSince1970 * 1000)
@@ -1802,9 +1797,8 @@ struct DashboardView: View {
         // Recompute and cache all three time ranges.
         // Then post a dashboardRefresh notification — the onReceive handler
         // calls load(), which reads the fresh cache. Single code path, no races.
-        let sCal = Calendar.current; var sMonCal = sCal; sMonCal.firstWeekday = 2
-        let sTodayStart = sCal.startOfDay(for: Date())
-        let weekDays = sCal.dateComponents([.day], from: sMonCal.date(from: sMonCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: sTodayStart).day! + 1
+                let sTodayStart = Calendar.current.startOfDay(for: Date())
+        let weekDays = Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: sTodayStart).day! + 1
         let dayMap: [String: Int] = ["today": 1, "week": weekDays, "30d": 30]
         for (key, days) in dayMap {
             let snap = await StatsService.dashboardSnapshot(days: days)

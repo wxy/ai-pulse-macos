@@ -668,9 +668,7 @@ enum StatsService {
         let lookbackStartMs = Int64(lookbackStart.timeIntervalSince1970 * 1000)
 
         // Monday of this week (for unified week cost)
-        var monCal = cal; monCal.firstWeekday = 2
-        let mondayStart = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-        let mondayStartMs = Int64(mondayStart.timeIntervalSince1970 * 1000)
+        let mondayStartMs = Int64(Calendar.mondayOfWeek().timeIntervalSince1970 * 1000)
         let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart)!
         let yesterdayStartMs = Int64(yesterdayStart.timeIntervalSince1970 * 1000)
         // Previous 30-day window for period-over-period comparison
