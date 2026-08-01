@@ -48,8 +48,9 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if splashVisible || state == .loading {
-                // Splash screen — shown for at least 1.5s while checking iCloud
+            if splashVisible || (state == .loading && cloudData.snapshot == nil) {
+                // Splash — shown for a brief branded moment even when cache
+                // exists. The CloudKit check runs in parallel without blocking.
                 VStack(spacing: 16) {
                     Spacer()
                     Image("Logo").resizable().frame(width: 80, height: 80).cornerRadius(18)
@@ -75,24 +76,27 @@ struct ContentView: View {
         }
         .task {
             try? await UNUserNotificationCenter.current().setBadgeCount(0)
-            // Single, strictly serial launch sequence: notification setup
-            // (permission + CK subscription) runs to completion, *then*
-            // checkCloud()'s CloudKit fetch starts. Previously these ran as
-            // two independent, concurrent `.task`s (one on WindowGroup, one
-            // here), which could both hit the network at the same moment.
-            // CloudKitGate additionally enforces spacing + de-dupe between
-            // every individual CK/APNs-adjacent call inside this sequence.
-            async let minimum: Void = { try? await Task.sleep(nanoseconds: 1_000_000_000) }()
             await NotificationService.shared.setup()
-            await checkCloud()
-            _ = await minimum
+            let hasCache = cloudData.snapshot != nil
+            // Always show splash for at least 0.8s. CloudKit runs in parallel
+            // — it never blocks the splash timeout when cache exists.
+            async let ck: Void = checkCloud()
+            async let minimum = try? Task.sleep(nanoseconds: 800_000_000)
+            if hasCache {
+                state = .ready
+                _ = await minimum
+            } else {
+                _ = await ck
+                _ = await minimum
+            }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { splashVisible = false }
         }
     }
 
     private func checkCloud(isRetry: Bool = false) async {
         let hasCache = cloudData.snapshot != nil
-        if !isRetry { state = .loading }
+        // Only show loading if there's genuinely nothing to display.
+        if !isRetry && !hasCache { state = .loading }
         do {
             // Fetch only today's snapshot at launch. Week and 30d data are
             // loaded lazily when the user switches tabs (DashboardView's

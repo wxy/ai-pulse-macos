@@ -62,7 +62,11 @@ struct AiderParser {
 
     /// Parse Markdown format from `.aider.chat.history.md`
     /// Token format: `> Tokens: 12k sent, 47 received. Cost: $0.0034 message, $0.0034 session.`
-    static func parseMarkdown(line: String, cwd: String?, model: String?) -> UsageEvent? {
+    /// - Parameter fallbackDate: used as the event timestamp when the Markdown
+    ///   line contains no timestamp of its own (unlike JSONL, Markdown has no
+    ///   per-line time). Typically the file's modification date.
+    static func parseMarkdown(line: String, cwd: String?, model: String?,
+                              fallbackDate: Int? = nil) -> UsageEvent? {
         // Only parse token usage lines (they contain cost data)
         guard line.hasPrefix("> Tokens:") || line.hasPrefix("> Tokens: ") else { return nil }
 
@@ -87,7 +91,7 @@ struct AiderParser {
         let outTokens = parseK(outStr)
 
         return UsageEvent(
-            ts: Int(Date().timeIntervalSince1970 * 1000),
+            ts: fallbackDate ?? Int(Date().timeIntervalSince1970 * 1000),
             source: "aider",
             model: model,
             inTokens: inTokens,

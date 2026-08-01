@@ -185,7 +185,9 @@ final class LogWatcher: @unchecked Sendable {
                         // Track model across lines & scans
                         if let m = AiderParser.parseModelLine(line) { aiderModels[filePath] = m; return nil }
                         let model = aiderModels[filePath]
-                        if let event = AiderParser.parseMarkdown(line: line, cwd: repoURL.path, model: model) {
+                        let fileModDate = (try? chatMD.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                        let fileTS = Int((fileModDate?.timeIntervalSince1970 ?? 0) * 1000)
+                        if let event = AiderParser.parseMarkdown(line: line, cwd: repoURL.path, model: model, fallbackDate: fileTS) {
                             parsedCount += 1
                             return event
                         }

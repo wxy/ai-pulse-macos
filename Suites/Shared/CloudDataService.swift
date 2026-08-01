@@ -19,7 +19,7 @@ final class CloudDataService: ObservableObject {
     /// The snapshot for the currently selected time range.
     @Published var snapshot: DashboardSnapshot?
     @Published var lastUpdated: Date?
-    private var currentRange: String = "today"
+    private(set) var currentRange: String = "today"
 
     /// All three per-range snapshots. Keyed by "today" / "week" / "30d".
     private var snapshots: [String: DashboardSnapshot] = [:]
@@ -191,7 +191,7 @@ final class CloudDataService: ObservableObject {
     func fetchAndMergeWeek() async { await fetchAndStore(range: "week") }
     func fetchAndMergeMonth() async { await fetchAndStore(range: "30d") }
 
-    private func fetchAndStore(range: String) async {
+    func fetchAndStore(range: String) async {
         // Gated + deduped: skips outright if this exact range was fetched in
         // the last few seconds (e.g. hasData() already fetched "today" and
         // DashboardView.onAppear asks for it again moments later), and
