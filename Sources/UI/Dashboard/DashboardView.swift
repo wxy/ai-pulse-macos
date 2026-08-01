@@ -19,10 +19,7 @@ enum TimeRange: Hashable {
         switch self {
         case .today: return 1
         case .thisWeek:
-            let cal = Calendar.current
-            var monCal = cal; monCal.firstWeekday = 2
-            let monday = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-            return cal.dateComponents([.day], from: monday, to: cal.startOfDay(for: Date())).day! + 1
+            return Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: Calendar.current.startOfDay(for: Date())).day! + 1
         case .days30: return 30
         }
     }
@@ -70,11 +67,8 @@ struct DashboardView: View {
     @State private var codeHoverDate: Date? = nil
     @State private var costHoverX: CGFloat = 0
     @State private var codeHoverX: CGFloat = 0
-    @State private var subDaily: [ChartDataPoint] = []
-    @State private var apiDaily: [ChartDataPoint] = []
     @State private var editorMappings: [EditorDetector.Mapping] = []
     @State private var balanceSpend: [(providerId: String, name: String, spend: Double)] = []
-    @State private var balanceDaily: [ChartDataPoint] = []
     @State private var loadError: String? = nil
     @State private var healthSeverity = AppHealthMonitor.Severity.nominal
     @State private var healthMessages: [String] = []
@@ -110,9 +104,6 @@ struct DashboardView: View {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
     }
 
-    var hasCertainEditorMapping: Bool {
-        editorMappings.contains { $0.confidence == .certain && $0.dailySubscriptionCost > 0 }
-    }
 
     /// Rounded-rect "ear" for the robot-head frame.
     /// Adaptive font size for donut chart center numbers — smaller for longer values.
@@ -389,16 +380,6 @@ struct DashboardView: View {
         )
     }
 
-    func estimatedDailySub(_ id: String) -> Double {
-        let cfg = IntegrationRegistry.config(for: id)
-        guard !cfg.subscriptionTier.isEmpty else { return 0 }
-        let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        if let tool = SubscriptionRegistry.tool(forName: toolName(for: id)),
-           let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }) {
-            return tier.fee / days
-        }
-        return 0
-    }
 
     // MARK: - Cost Source summary
 
@@ -429,65 +410,6 @@ struct DashboardView: View {
         return result.sorted { $0.cost > $1.cost }
     }
 
-    var costSourceSummary: some View {
-        let breakdown = costSourceBreakdown
-        let totalCost = breakdown.reduce(0) { $0 + $1.cost }
-        let added = codeChanges.reduce(0) { $0 + $1.added }
-        let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
-
-        return VStack(spacing: 10) {
-            // Total
-            HStack {
-                Text("\(timeRange.label)\(I18n.t("dashboard.api_spent"))")
-                    .font(.caption).foregroundColor(.secondary)
-                Spacer()
-                Text("$\(String(format: "%.2f", totalCost))")
-                    .font(.title3).fontWeight(.bold).monospacedDigit()
-            }
-            .padding(12)
-            .background(Color(nsColor: .quaternarySystemFill).opacity(0.6))
-            .cornerRadius(8)
-
-            if !breakdown.isEmpty {
-                VStack(spacing: 4) {
-                    ForEach(breakdown, id: \.source.id) { item in
-                        costSourceRow(item)
-                    }
-                }
-                .padding(10)
-                .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
-                .cornerRadius(8)
-            }
-
-            // Code changes at a glance
-            HStack(spacing: 8) {
-                smallCard(title: "\(timeRange.label)\(I18n.t("dashboard.code_added"))",
-                          value: "+\(added)", color: Color.marsGreen)
-                smallCard(title: "\(timeRange.label)\(I18n.t("dashboard.code_deleted"))",
-                          value: "-\(deleted)", color: .deepRed)
-            }
-
-            // Tool summary (compact spending by dev tool)
-            let toolCosts = computeToolCosts()
-            if !toolCosts.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
-                    HStack(spacing: 8) {
-                        ForEach(toolCosts.prefix(5), id: \.name) { tc in
-                            VStack(spacing: 2) {
-                                Text(tc.name).font(.caption2).foregroundColor(.secondary).lineLimit(1)
-                                Text("$\(String(format: "%.2f", tc.cost))")
-                                    .font(.caption).monospacedDigit()
-                            }
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(Color(nsColor: .quaternarySystemFill))
-                            .cornerRadius(6)
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     func computeToolCosts() -> [(name: String, cost: Double)] { toolCostBreakdown }
 
@@ -587,11 +509,6 @@ struct DashboardView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
-    func apiDailyAvg() -> Double {
-        let total = dailyStats.reduce(0.0) { $0 + $1.cost }
-        let days = max(dailyStats.filter { $0.cost > 0.001 }.count, 1)
-        return total / Double(days)
-    }
 
     var subSources: [CostSource] {
         IntegrationRegistry.activeCostSources(editorMappings: editorMappings).filter {
@@ -599,20 +516,7 @@ struct DashboardView: View {
         }
     }
 
-    func totalSubMonthly() -> Double {
-        subSources.reduce(0.0) { sum, cs in
-            if case .subscription(_, _, let fee) = cs.kind { return sum + fee }
-            return sum
-        }
-    }
 
-    func totalSubDaily() -> Double {
-        let days = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        return subSources.reduce(0.0) { sum, cs in
-            if case .subscription(_, _, let fee) = cs.kind { return sum + fee / days }
-            return sum
-        }
-    }
 
     func toolName(for id: String) -> String {
         IntegrationRegistry.toolDisplayName(for: id)
@@ -620,86 +524,6 @@ struct DashboardView: View {
 
     // MARK: - Cost chart (API balance + subscription amortization, stacked)
 
-    var costChart: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(I18n.t("dashboard.cost_chart")).font(.headline)
-
-            if subSources.isEmpty {
-                Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 30)
-            } else {
-                ZStack(alignment: .topLeading) {
-                    Chart {
-                        ForEach(subDaily + balanceDaily, id: \.id) { item in
-                            BarMark(
-                                x: .value("Date", item.date, unit: .day),
-                                y: .value("Cost", item.cost)
-                            )
-                            .foregroundStyle(by: .value("Source", item.label))
-                        }
-                        if let hd = costHoverDate {
-                            RuleMark(x: .value("Date", hd, unit: .day))
-                                .foregroundStyle(.gray.opacity(0.3))
-                        }
-                    }
-                    .chartXAxis {
-                        AxisMarks(values: dateStride) { _ in
-                            AxisValueLabel(format: dateLabelFormat, orientation: .horizontal)
-                        }
-                    }
-                    .chartYAxis {
-                        AxisMarks(position: .leading) { _ in
-                            AxisGridLine()
-                            AxisValueLabel()
-                        }
-                    }
-                    .chartYAxisLabel(I18n.t("dashboard.cost_usd"))
-                    .chartOverlay { proxy in
-                        GeometryReader { geo in
-                            Rectangle().fill(.clear).contentShape(Rectangle())
-                                .onContinuousHover { phase in
-                                    switch phase {
-                                    case .active(let loc):
-                                        guard let frame = proxy.plotFrame else { return }
-                                        let x = loc.x - geo[frame].origin.x
-                                        guard x >= 0, x <= geo[frame].width else { return }
-                                        if let date = proxy.value(atX: x) as Date?,
-                                           !Calendar.current.isDate(date, inSameDayAs: costHoverDate ?? Date.distantPast) {
-                                            costHoverX = x
-                                            costHoverDate = date
-                                        }
-                                    case .ended:
-                                        costHoverDate = nil
-                                    }
-                                }
-                        }
-                    }
-                    .frame(height: 200)
-
-                    if let hd = costHoverDate {
-                        let cal = Calendar.current
-                        let daySubs = subDaily.filter { cal.isDate($0.date, inSameDayAs: hd) }
-                        let dayBal = balanceDaily.filter { cal.isDate($0.date, inSameDayAs: hd) }
-                        let total = daySubs.reduce(0) { $0 + $1.cost } + dayBal.reduce(0) { $0 + $1.cost }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(hd, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
-                            Text("$\(String(format: "%.2f", total))").font(.caption2).monospacedDigit()
-                            ForEach(dayBal) { item in
-                                Text("  \(item.label): $\(String(format: "%.2f", item.cost))").font(.caption2).monospacedDigit()
-                            }
-                            ForEach(daySubs) { item in
-                                Text("  \(item.label): $\(String(format: "%.2f", item.cost))").font(.caption2).monospacedDigit()
-                            }
-                        }
-                        .padding(6).background(.regularMaterial).cornerRadius(6)
-                        .offset(x: min(max(costHoverX - 40, 0), 560), y: 0)
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
-        .cornerRadius(10)
-    }
 
     // MARK: Cost chart data helpers
 
@@ -710,125 +534,11 @@ struct DashboardView: View {
         let cost: Double
     }
 
-    func subDailyData() -> [ChartDataPoint] {
-        guard !subSources.isEmpty else { return [] }
-        let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let start = chartStart
 
-        var result = [ChartDataPoint]()
-        for offset in 0..<chartDays {
-            guard let date = cal.date(byAdding: .day, value: offset, to: start) else { continue }
-            if date <= today {
-                for cs in subSources {
-                    if case .subscription(_, _, let fee) = cs.kind, fee > 0 {
-                        result.append(ChartDataPoint(date: date, label: cs.label, cost: fee / daysInMonth))
-                    }
-                }
-            } else {
-                result.append(ChartDataPoint(date: date, label: subSources.first!.label, cost: 0))
-            }
-        }
-        return result
-    }
 
-    func apiDailyData() -> [ChartDataPoint] {
-        providerCosts.map { pc in
-            let name = IntegrationRegistry.all.first(where: { $0.id == pc.providerId })?.displayName ?? pc.providerId
-            return ChartDataPoint(date: pc.date, label: name, cost: pc.cost)
-        }
-    }
-
-    func costTooltip(for date: Date) -> some View {
-        let cal = Calendar.current
-        let subs = subDaily.filter { cal.isDate($0.date, inSameDayAs: date) }
-        let bal = balanceDaily.filter { cal.isDate($0.date, inSameDayAs: date) }
-        let totalCost = subs.reduce(0) { $0 + $1.cost } + bal.reduce(0) { $0 + $1.cost }
-
-        return VStack(alignment: .leading, spacing: 2) {
-            Text(date, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
-            Text("$\(String(format: "%.2f", totalCost))").font(.caption2).monospacedDigit()
-            ForEach(bal) { item in
-                Text("  \(item.label): $\(String(format: "%.2f", item.cost))").font(.caption2).monospacedDigit()
-            }
-            ForEach(subs) { item in
-                Text("  \(item.label): $\(String(format: "%.2f", item.cost))").font(.caption2).monospacedDigit()
-            }
-        }
-        .padding(6).background(.regularMaterial).cornerRadius(6)
-    }
 
     // MARK: - Code change chart (added + deleted stacked positive bars)
 
-    var codeChangeChart: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(I18n.t("dashboard.code_chart")).font(.headline)
-
-            if codeChanges.allSatisfy({ $0.added == 0 && $0.deleted == 0 }) {
-                Text(I18n.t("menu.no_usage")).foregroundColor(.secondary).padding(.vertical, 30)
-            } else {
-                ZStack(alignment: .topLeading) {
-                    Chart {
-                        ForEach(codeChangeSegments, id: \.id) { seg in
-                            BarMark(
-                                x: .value("Date", seg.date, unit: .day),
-                                y: .value("Lines", seg.lines)
-                            )
-                            .foregroundStyle(by: .value("Type", seg.type))
-                        }
-                        if let hd = codeHoverDate {
-                            RuleMark(x: .value("Date", hd, unit: .day))
-                                .foregroundStyle(.gray.opacity(0.3))
-                        }
-                    }
-                    .chartXAxis {
-                        AxisMarks(values: dateStride) { _ in
-                            AxisValueLabel(format: dateLabelFormat, orientation: .horizontal)
-                        }
-                    }
-                    .chartYAxis {
-                        AxisMarks(position: .leading) { _ in
-                            AxisGridLine()
-                            AxisValueLabel()
-                        }
-                    }
-                    .chartYAxisLabel(I18n.t("menu.lines"))
-                    .chartForegroundStyleScale([
-                        I18n.t("dashboard.added"): Color.green.opacity(0.7),
-                        I18n.t("dashboard.deleted"): Color.orange.opacity(0.7)
-                    ])
-                    .chartOverlay { proxy in
-                        GeometryReader { geo in
-                            Color.clear
-                                .onContinuousHover { phase in
-                                    if case .active(let loc) = phase,
-                                       let frame = proxy.plotFrame {
-                                        let originX = geo[frame].origin.x
-                                        let plotW = geo[frame].width
-                                        let x = loc.x - originX
-                                        guard x >= 0, x <= plotW else { codeHoverDate = nil; return }
-                                        codeHoverX = x
-                                        codeHoverDate = proxy.value(atX: x)
-                                    } else { codeHoverDate = nil }
-                                }
-                        }
-                    }
-                    .frame(height: 200)
-
-                    if let hd = codeHoverDate,
-                       let pt = paddedChanges.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
-                       pt.added > 0 || pt.deleted > 0 {
-                        codeTooltip(date: hd, added: pt.added, deleted: pt.deleted)
-                            .offset(x: min(max(codeHoverX - 40, 0), 560), y: 0)
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
-        .cornerRadius(10)
-    }
 
     /// Flatten paddedChanges into segments ordered for stacked bars (added bottom, deleted top).
     var codeChangeSegments: [CodeChangeSegment] {
@@ -943,16 +653,6 @@ struct DashboardView: View {
 
     // MARK: - Bottom cards row
 
-    var bottomCards: some View {
-        HStack(alignment: .top, spacing: 16) {
-            apiBreakdownCard
-            if hasActiveCostSources {
-                cplInfoCard
-            } else {
-                cplGuidanceCard
-            }
-        }
-    }
 
     // MARK: - Spend overview
 
@@ -1483,8 +1183,7 @@ struct DashboardView: View {
     var chartStart: Date {
         let cal = Calendar.current
         if case .thisWeek = timeRange {
-            var monCal = cal; monCal.firstWeekday = 2
-            return monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            return Calendar.mondayOfWeek()
         }
         return cal.date(byAdding: .day, value: -(timeRange.days - 1), to: cal.startOfDay(for: Date()))!
     }
@@ -1509,16 +1208,7 @@ struct DashboardView: View {
 
     // MARK: - Helpers
 
-    func avgCPL() -> String {
-        let tc = dailyStats.reduce(0) { $0 + $1.cost }
-        let tl = dailyStats.reduce(0) { $0 + $1.netLines }
-        guard tl > 0, tc > 0 else { return "--" }
-        return "$\(String(format: "%.2f", tc * 1000 / Double(tl)))"
-    }
 
-    func totalLines() -> String {
-        "\(dailyStats.reduce(0) { $0 + $1.netLines })"
-    }
 
     /// Format integer to short form (e.g. "1K", "15K", "1M", "980").
     func shortNum(_ n: Int) -> String {
@@ -1544,8 +1234,7 @@ struct DashboardView: View {
         switch timeRange {
         case .today:   since = todayStart
         case .thisWeek:
-            var mc = cal; mc.firstWeekday = 2
-            since = mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            since = Calendar.mondayOfWeek()
         case .days30:  since = cal.date(byAdding: .day, value: -29, to: todayStart)!
         }
         let sinceMs = Int64(since.timeIntervalSince1970 * 1000)
@@ -1802,9 +1491,8 @@ struct DashboardView: View {
         // Recompute and cache all three time ranges.
         // Then post a dashboardRefresh notification — the onReceive handler
         // calls load(), which reads the fresh cache. Single code path, no races.
-        let sCal = Calendar.current; var sMonCal = sCal; sMonCal.firstWeekday = 2
-        let sTodayStart = sCal.startOfDay(for: Date())
-        let weekDays = sCal.dateComponents([.day], from: sMonCal.date(from: sMonCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: sTodayStart).day! + 1
+                let sTodayStart = Calendar.current.startOfDay(for: Date())
+        let weekDays = Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: sTodayStart).day! + 1
         let dayMap: [String: Int] = ["today": 1, "week": weekDays, "30d": 30]
         for (key, days) in dayMap {
             let snap = await StatsService.dashboardSnapshot(days: days)

@@ -181,15 +181,18 @@ enum StatsService {
             for cs in subSources {
                 guard case .subscription(let toolId, _, let monthlyFee) = cs.kind, monthlyFee > 0 else { continue }
                 let daily = monthlyFee / Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-                // Find repos associated with this subscription tool via usage_event
+                // Subscription tools (Cursor/Copilot/Windsurf) don't have
+                // their own usage_event.source entries — only log-parsers
+                // (Claude Code, aider) write those. Attribute subscription
+                // cost across all repos that had any usage in the period.
                 let repos: [String]
                 do {
                     repos = try await AppDatabase.shared.read { db in
                         try String.fetchAll(db, sql: """
                             SELECT DISTINCT repo_path FROM usage_event
-                            WHERE source = ? AND repo_path IS NOT NULL
+                            WHERE repo_path IS NOT NULL
                             AND ts >= ? AND ts < ?
-                            """, arguments: [toolId, startMs, todayMs + 86_400_000])
+                            """, arguments: [startMs, todayMs + 86_400_000])
                     }
                 } catch {
                     Logger.error("StatsService.repoBreakdown: subscription repo query failed for \(toolId): \(error)")
@@ -665,9 +668,7 @@ enum StatsService {
         let lookbackStartMs = Int64(lookbackStart.timeIntervalSince1970 * 1000)
 
         // Monday of this week (for unified week cost)
-        var monCal = cal; monCal.firstWeekday = 2
-        let mondayStart = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-        let mondayStartMs = Int64(mondayStart.timeIntervalSince1970 * 1000)
+        let mondayStartMs = Int64(Calendar.mondayOfWeek().timeIntervalSince1970 * 1000)
         let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart)!
         let yesterdayStartMs = Int64(yesterdayStart.timeIntervalSince1970 * 1000)
         // Previous 30-day window for period-over-period comparison

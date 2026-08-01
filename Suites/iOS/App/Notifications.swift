@@ -90,12 +90,20 @@ final class NotificationService: NSObject {
 
     private var lastKnownCost: Double = 0
 
-    /// Handle remote push: fetch → compare cost delta → play sound if changed → notify.
+    /// Handle remote push: fetch updated data without changing the user's
+    /// currently-displayed time-range tab. Previously fetchSnapshot() defaulted
+    /// to "today", which would overwrite whatever tab the user was viewing.
     func didReceiveRemoteNotification() {
         Self.log.info("didReceiveRemoteNotification: push arrived")
         let oldCost = CloudDataService.shared.snapshot?.todayCost ?? lastKnownCost
+        let currentRange = CloudDataService.shared.currentRange
         Task {
-            try? await CloudDataService.shared.fetchSnapshot()
+            // Fetch today only (fast) for cost comparison + sound.
+            // Do NOT switch the displayed tab — just update the cache.
+            await CloudDataService.shared.fetchAndStore(range: "today")
+            // Reload the current range so the UI reflects any changes
+            // without switching to a different tab.
+            CloudDataService.shared.loadSnapshot(for: currentRange)
             let newCost = CloudDataService.shared.snapshot?.todayCost ?? 0
             let delta = abs(newCost - oldCost)
 

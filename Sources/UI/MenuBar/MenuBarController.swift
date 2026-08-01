@@ -188,8 +188,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
     private func fetchStats() async -> Stats {
         do {
             let cal = Calendar.current
-            var monCal = cal; monCal.firstWeekday = 2
-            let weekStart = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!.timeIntervalSince1970 * 1000
+            let weekStart = Calendar.mondayOfWeek().timeIntervalSince1970 * 1000
             let todayStart = cal.startOfDay(for: Date()).timeIntervalSince1970 * 1000
 
             // --- Today ---
@@ -230,8 +229,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             }
 
             // Per-provider spend this week from balance snapshots
-            var cal2 = Calendar.current; cal2.firstWeekday = 2
-            let weekDays = cal2.dateComponents([.day], from: cal2.date(from: cal2.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: cal2.startOfDay(for: Date())).day! + 1
+            let weekDays = Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: Calendar.current.startOfDay(for: Date())).day! + 1
             let rawSpend = (try? await StatsService.balanceDailySpend(days: weekDays, sinceMs: Int64(weekStart))) ?? []
             // --- Unified cost computation ---
             // API total: from balance deltas, filtered to active providers

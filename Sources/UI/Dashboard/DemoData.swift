@@ -227,8 +227,7 @@ enum DemoData {
         case .today:
             cutoffDate = cal.startOfDay(for: Date())
         case .thisWeek:
-            var monCal = cal; monCal.firstWeekday = 2
-            cutoffDate = monCal.date(from: monCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+            cutoffDate = Calendar.mondayOfWeek()
         case .days30:
             cutoffDate = cal.date(byAdding: .day, value: -29, to: cal.startOfDay(for: Date()))!
         }

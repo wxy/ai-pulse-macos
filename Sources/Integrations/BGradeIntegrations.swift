@@ -1,128 +1,39 @@
 import Foundation
 
-// MARK: - DeepSeek (apiKey)
+// MARK: - Parameterized apiKey integration
 
-struct DeepSeekIntegration: Detectable, Collectable {
-    let id = "deepseek"
-    let displayName = "DeepSeek"
+/// A provider that exposes an API key for balance/usage polling.
+/// All five apiKey-only integrations (DeepSeek, OpenAI, Kimi, Zhipu,
+/// Anthropic) are instances of this single struct — they differ only in
+/// identity, model catalog, and limitations.
+struct ApiKeyIntegration: Detectable, Collectable {
+    let id: String
+    let displayName: String
 
-    var costSources: [CostSource] {
-        guard ApiKeyManager.shared.get(id) != nil else { return [] }
-        return [CostSource(
-            id: "api-key:deepseek",
-            label: "DeepSeek API",
-            kind: .apiKey(providerId: "deepseek"),
-            coveredModels: PricingManager.shared.modelsForProvider("deepseek"),
-            confidence: .exact,
-            limitations: [I18n.t("limitation.assume_programming")]
-        )]
-    }
+    /// Provider registry id used for balance polling / model lookup.
+    /// For apiKey-only integrations this equals `id`.
+    let providerId: String
 
-    func detect() -> DetectionResult {
-        let hasKey = ApiKeyManager.shared.get(id) != nil
-        return DetectionResult(found: hasKey, summary: I18n.t(hasKey ? "detect.key_configured" : "detect.key_missing"))
-    }
+    /// Whether to use the Claude model catalog instead of provider-specific.
+    let usesClaudeModels: Bool
 
-    func start() {}
-    func stop()  {}
-}
+    /// I18n key for the limitation note shown on this integration's cost source.
+    let limitationKey: String
 
-// MARK: - OpenAI (apiKey)
-
-struct OpenAI_Integration: Detectable, Collectable {
-    let id = "openai"
-    let displayName = "OpenAI"
+    let confidence: CostConfidence
 
     var costSources: [CostSource] {
         guard ApiKeyManager.shared.get(id) != nil else { return [] }
+        let models = usesClaudeModels
+            ? PricingManager.shared.claudeModels()
+            : PricingManager.shared.modelsForProvider(providerId)
         return [CostSource(
-            id: "api-key:openai",
-            label: "OpenAI API",
-            kind: .apiKey(providerId: "openai"),
-            coveredModels: PricingManager.shared.modelsForProvider("openai"),
-            confidence: .exact,
-            limitations: [I18n.t("limitation.assume_programming")]
-        )]
-    }
-
-    func detect() -> DetectionResult {
-        let hasKey = ApiKeyManager.shared.get(id) != nil
-        return DetectionResult(found: hasKey, summary: I18n.t(hasKey ? "detect.key_configured" : "detect.key_missing"))
-    }
-
-    func start() {}
-    func stop()  {}
-}
-
-// MARK: - Kimi / Moonshot (apiKey)
-
-struct KimiIntegration: Detectable, Collectable {
-    let id = "moonshot"
-    let displayName = "Kimi"
-
-    var costSources: [CostSource] {
-        guard ApiKeyManager.shared.get(id) != nil else { return [] }
-        return [CostSource(
-            id: "api-key:moonshot",
-            label: "Kimi API",
-            kind: .apiKey(providerId: "moonshot"),
-            coveredModels: PricingManager.shared.modelsForProvider("moonshot"),
-            confidence: .exact,
-            limitations: [I18n.t("limitation.assume_programming")]
-        )]
-    }
-
-    func detect() -> DetectionResult {
-        let hasKey = ApiKeyManager.shared.get(id) != nil
-        return DetectionResult(found: hasKey, summary: I18n.t(hasKey ? "detect.key_configured" : "detect.key_missing"))
-    }
-
-    func start() {}
-    func stop()  {}
-}
-
-// MARK: - Zhipu / ChatGLM (apiKey)
-
-struct ZhipuIntegration: Detectable, Collectable {
-    let id = "zhipu"
-    let displayName = "ChatGLM"
-
-    var costSources: [CostSource] {
-        guard ApiKeyManager.shared.get(id) != nil else { return [] }
-        return [CostSource(
-            id: "api-key:zhipu",
-            label: "ChatGLM API",
-            kind: .apiKey(providerId: "zhipu"),
-            coveredModels: PricingManager.shared.modelsForProvider("zhipu"),
-            confidence: .exact,
-            limitations: [I18n.t("limitation.assume_programming")]
-        )]
-    }
-
-    func detect() -> DetectionResult {
-        let hasKey = ApiKeyManager.shared.get(id) != nil
-        return DetectionResult(found: hasKey, summary: I18n.t(hasKey ? "detect.key_configured" : "detect.key_missing"))
-    }
-
-    func start() {}
-    func stop()  {}
-}
-
-// MARK: - Anthropic (apiKey, no balance API)
-
-struct AnthropicIntegration: Detectable, Collectable {
-    let id = "anthropic"
-    let displayName = "Anthropic"
-
-    var costSources: [CostSource] {
-        guard ApiKeyManager.shared.get(id) != nil else { return [] }
-        return [CostSource(
-            id: "api-key:anthropic",
-            label: "Anthropic API",
-            kind: .apiKey(providerId: "anthropic"),
-            coveredModels: PricingManager.shared.claudeModels(),
-            confidence: .estimated,
-            limitations: [I18n.t("limitation.no_balance_api")]
+            id: "api-key:\(id)",
+            label: "\(displayName) API",
+            kind: .apiKey(providerId: providerId),
+            coveredModels: models,
+            confidence: confidence,
+            limitations: [I18n.t(limitationKey)]
         )]
     }
 

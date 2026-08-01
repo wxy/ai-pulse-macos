@@ -108,18 +108,20 @@ struct GitRepo {
         // Get commit tree
         var treePtr: OpaquePointer?
         guard git_commit_tree(&treePtr, commit) == 0, let tree = treePtr else { return nil }
+        defer { git_tree_free(tree) }
 
         // Get parent tree (first parent, not merge parents)
         var parentTree: OpaquePointer? = nil
         if git_commit_parentcount(commit) > 0 {
             var parentPtr: OpaquePointer?
             if git_commit_parent(&parentPtr, commit, 0) == 0, let parent = parentPtr {
+                defer { git_commit_free(parent) }
                 var ptPtr: OpaquePointer?
                 git_commit_tree(&ptPtr, parent)
                 parentTree = ptPtr
-                git_commit_free(parent)
             }
         }
+        defer { if let pt = parentTree { git_tree_free(pt) } }
 
         // Diff commit tree against parent tree
         var diffPtr: OpaquePointer?

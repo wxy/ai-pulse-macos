@@ -30,7 +30,7 @@ struct AiderParser {
         if let t = json["timestamp"] as? String {
             dedupeKey = "aider|\(t)|\(model ?? "unknown")"
         } else {
-            dedupeKey = "aider|\(line.hash)"
+            dedupeKey = "aider|\(stableHash(line))"
         }
 
         // Aider files live in the repo root, cwd is the repo path
@@ -50,27 +50,42 @@ struct AiderParser {
 
     /// Extract model name from aider markdown line.
     /// Format: `Model: deepseek/deepseek-chat with diff edit format, prompt cache, infinite output`
+    private static let modelLineRegex = try! NSRegularExpression(
+        pattern: #"^Model:\s*([^\s]+)"#, options: [])
+    private static let tokenLineRegex = try! NSRegularExpression(
+        pattern: #"([\d.]+k?)\s*sent\w*\s*,\s*([\d.]+k?)\s*received"#,
+        options: [])
+    private static nonisolated(unsafe) let iso8601Frac = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static nonisolated(unsafe) let iso8601 = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
     static func parseModelLine(_ line: String) -> String? {
         guard line.hasPrefix("Model: ") else { return nil }
-        // Extract model id: "deepseek/deepseek-chat"
-        guard let match = try? NSRegularExpression(
-            pattern: #"^Model:\s*([^\s]+)"#,
-            options: []
-        ).firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
+        guard let match = modelLineRegex.firstMatch(
+            in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
         return (line as NSString).substring(with: match.range(at: 1))
     }
 
     /// Parse Markdown format from `.aider.chat.history.md`
     /// Token format: `> Tokens: 12k sent, 47 received. Cost: $0.0034 message, $0.0034 session.`
-    static func parseMarkdown(line: String, cwd: String?, model: String?) -> UsageEvent? {
+    /// - Parameter fallbackDate: used as the event timestamp when the Markdown
+    ///   line contains no timestamp of its own (unlike JSONL, Markdown has no
+    ///   per-line time). Typically the file's modification date.
+    static func parseMarkdown(line: String, cwd: String?, model: String?,
+                              fallbackDate: Int? = nil) -> UsageEvent? {
         // Only parse token usage lines (they contain cost data)
         guard line.hasPrefix("> Tokens:") || line.hasPrefix("> Tokens: ") else { return nil }
 
         // Extract numbers using regex: e.g. "12k sent, 47 received"
-        guard let match = try? NSRegularExpression(
-            pattern: #"([\d.]+k?)\s*sent\w*\s*,\s*([\d.]+k?)\s*received"#,
-            options: .caseInsensitive
-        ).firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
+        guard let match = tokenLineRegex.firstMatch(
+            in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
 
         let inStr = (line as NSString).substring(with: match.range(at: 1))
         let outStr = (line as NSString).substring(with: match.range(at: 2))
@@ -87,7 +102,7 @@ struct AiderParser {
         let outTokens = parseK(outStr)
 
         return UsageEvent(
-            ts: Int(Date().timeIntervalSince1970 * 1000),
+            ts: fallbackDate ?? Int(Date().timeIntervalSince1970 * 1000),
             source: "aider",
             model: model,
             inTokens: inTokens,
@@ -95,16 +110,14 @@ struct AiderParser {
             cacheTokens: 0,
             repoPath: cwd,
             sessionId: nil,
-            dedupeKey: "aider|md|\(line.hash)"
+            dedupeKey: "aider|md|\(stableHash(line))"
         )
     }
 
     private static func parseISO8601(_ str: String) -> Int? {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fmt.date(from: str) { return Int(date.timeIntervalSince1970 * 1000) }
-        fmt.formatOptions = [.withInternetDateTime]
-        if let date = fmt.date(from: str) { return Int(date.timeIntervalSince1970 * 1000) }
+        if let date = iso8601Frac.date(from: str) ?? iso8601.date(from: str) {
+            return Int(date.timeIntervalSince1970 * 1000)
+        }
         return nil
     }
 }

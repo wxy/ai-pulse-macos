@@ -134,34 +134,26 @@ final class ApiPoller: @unchecked Sendable {
     private func fetchOpenAIUsage(provider: ProviderDef, baseURL: String, apiKey: String) {
         let cal = Calendar.current
         let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"
-        let group = DispatchGroup()
 
-        final class CostAccumulator: @unchecked Sendable {
-            nonisolated(unsafe) var value: Double = 0.0
-        }
-        let totalCost = CostAccumulator()
-
-        for dayOffset in 0..<3 {
-            guard let date = cal.date(byAdding: .day, value: -dayOffset, to: Date()) else { continue }
-            let dateStr = fmt.string(from: date)
-            guard let url = URL(string: "\(baseURL)?date=\(dateStr)") else { continue }
-            var req = URLRequest(url: url)
-            req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            group.enter()
-            session.dataTask(with: req) { data, resp, _ in
-                defer { group.leave() }
-                guard let data,
-                      let httpResp = resp as? HTTPURLResponse, httpResp.statusCode == 200,
+        Task {
+            var total = 0.0
+            for dayOffset in 0..<3 {
+                guard let date = cal.date(byAdding: .day, value: -dayOffset, to: Date()) else { continue }
+                let dateStr = fmt.string(from: date)
+                guard let url = URL(string: "\(baseURL)?date=\(dateStr)") else { continue }
+                var req = URLRequest(url: url)
+                req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                guard let (data, resp) = try? await session.data(for: req),
+                      let httpResp = resp as? HTTPURLResponse,
+                      httpResp.statusCode == 200,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let usage = json["total_usage"] as? Double
-                else { return }
-                totalCost.value += usage / 100.0
-            }.resume()
-        }
-
-        group.notify(queue: .global(qos: .utility)) { [weak self] in
-            let entry = BalanceEntry(currency: "USD", totalBalance: totalCost.value, grantedBalance: 0, toppedUpBalance: 0)
-            self?.cacheBalance(pid: provider.id, entries: [entry])
+                else { continue }
+                total += usage / 100.0
+            }
+            guard total > 0 else { return }
+            let entry = BalanceEntry(currency: "USD", totalBalance: total, grantedBalance: 0, toppedUpBalance: 0)
+            cacheBalance(pid: provider.id, entries: [entry])
         }
     }
 

@@ -7,11 +7,32 @@ enum IntegrationRegistry {
     static nonisolated(unsafe) let all: [any Detectable] = [
         ClaudeCodeIntegration(),
         AiderIntegration(),
-        DeepSeekIntegration(),
-        OpenAI_Integration(),
-        KimiIntegration(),
-        ZhipuIntegration(),
-        AnthropicIntegration(),
+        ApiKeyIntegration(
+            id: "deepseek", displayName: "DeepSeek", providerId: "deepseek",
+            usesClaudeModels: false, limitationKey: "limitation.assume_programming",
+            confidence: .exact
+        ),
+        ApiKeyIntegration(
+            id: "openai", displayName: "OpenAI", providerId: "openai",
+            usesClaudeModels: false, limitationKey: "limitation.assume_programming",
+            confidence: .exact
+        ),
+        ApiKeyIntegration(
+            id: "moonshot", displayName: "Kimi", providerId: "moonshot",
+            usesClaudeModels: false, limitationKey: "limitation.assume_programming",
+            confidence: .exact
+        ),
+        ApiKeyIntegration(
+            id: "zhipu", displayName: "ChatGLM", providerId: "zhipu",
+            usesClaudeModels: false, limitationKey: "limitation.assume_programming",
+            confidence: .exact
+        ),
+        // Anthropic has no balance API — cost estimated from token pricing.
+        ApiKeyIntegration(
+            id: "anthropic", displayName: "Anthropic", providerId: "anthropic",
+            usesClaudeModels: true, limitationKey: "limitation.no_balance_api",
+            confidence: .estimated
+        ),
         CursorIntegration(),
         CopilotIntegration(),
         WindsurfIntegration(),

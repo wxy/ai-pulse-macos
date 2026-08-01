@@ -19,7 +19,7 @@ final class CloudDataService: ObservableObject {
     /// The snapshot for the currently selected time range.
     @Published var snapshot: DashboardSnapshot?
     @Published var lastUpdated: Date?
-    private var currentRange: String = "today"
+    private(set) var currentRange: String = "today"
 
     /// All three per-range snapshots. Keyed by "today" / "week" / "30d".
     private var snapshots: [String: DashboardSnapshot] = [:]
@@ -80,14 +80,12 @@ final class CloudDataService: ObservableObject {
     }
 
     /// Switch the published snapshot to the given time range.
-    /// Each tab calls this on appear / tab switch — guaranteed to show
-    /// only that range's data (cost + breakdown), never another range's.
+    /// If the range hasn't been fetched yet, clear the snapshot so the UI
+    /// shows empty/loading state instead of stale data from another tab.
     func loadSnapshot(for range: String) {
         self.currentRange = range
-        if let s = self.snapshots[range] {
-            self.snapshot = s
-            self.lastUpdated = s.updatedAt
-        }
+        self.snapshot = self.snapshots[range]
+        self.lastUpdated = self.snapshot?.updatedAt
     }
 
     private func recordName(for range: String) -> String {
@@ -193,7 +191,7 @@ final class CloudDataService: ObservableObject {
     func fetchAndMergeWeek() async { await fetchAndStore(range: "week") }
     func fetchAndMergeMonth() async { await fetchAndStore(range: "30d") }
 
-    private func fetchAndStore(range: String) async {
+    func fetchAndStore(range: String) async {
         // Gated + deduped: skips outright if this exact range was fetched in
         // the last few seconds (e.g. hasData() already fetched "today" and
         // DashboardView.onAppear asks for it again moments later), and

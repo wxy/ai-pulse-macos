@@ -185,7 +185,9 @@ final class LogWatcher: @unchecked Sendable {
                         // Track model across lines & scans
                         if let m = AiderParser.parseModelLine(line) { aiderModels[filePath] = m; return nil }
                         let model = aiderModels[filePath]
-                        if let event = AiderParser.parseMarkdown(line: line, cwd: repoURL.path, model: model) {
+                        let fileModDate = (try? chatMD.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                        let fileTS = Int((fileModDate?.timeIntervalSince1970 ?? 0) * 1000)
+                        if let event = AiderParser.parseMarkdown(line: line, cwd: repoURL.path, model: model, fallbackDate: fileTS) {
                             parsedCount += 1
                             return event
                         }
@@ -270,18 +272,7 @@ final class LogWatcher: @unchecked Sendable {
     }
 
     private func enumerateGitRepos(in dir: URL, handler: (URL) -> Void) {
-        guard let enumerator = FileManager.default.enumerator(
-            at: dir, includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else { return }
-        for case let url as URL in enumerator {
-            let gitDir = url.appendingPathComponent(".git")
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: gitDir.path, isDirectory: &isDir), isDir.boolValue
-            else { continue }
-            handler(url)
-            enumerator.skipDescendants()
-        }
+        GitRepoScanner.enumerate(in: dir, handler)
     }
 
     private func insertEvent(_ event: UsageEvent) {

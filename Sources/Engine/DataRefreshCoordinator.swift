@@ -173,9 +173,8 @@ final class DataRefreshCoordinator: @unchecked Sendable {
                 ("today", 1, 300), ("week", 7, 3600), ("30d", 30, 43200)
             ]
             // Compute actual weekDays
-            let sCal = Calendar.current; var sMonCal = sCal; sMonCal.firstWeekday = 2
-            let sTodayStart = sCal.startOfDay(for: Date())
-            let weekDays = sCal.dateComponents([.day], from: sMonCal.date(from: sMonCal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!, to: sTodayStart).day! + 1
+                        let sTodayStart = Calendar.current.startOfDay(for: Date())
+            let weekDays = Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: sTodayStart).day! + 1
             let dayMap: [String: Int] = ["today": 1, "week": weekDays, "30d": 30]
 
             for (key, _, interval) in intervals {
