@@ -15,23 +15,13 @@ struct AiderIntegration: Detectable {
         for d in dirs {
             let expanded = NSString(string: d).expandingTildeInPath
             guard FileManager.default.fileExists(atPath: expanded) else { continue }
-            guard let e = FileManager.default.enumerator(
-                at: URL(fileURLWithPath: expanded),
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else { continue }
-            for case let url as URL in e {
-                let git = url.appendingPathComponent(".git")
-                var isDir: ObjCBool = false
-                if FileManager.default.fileExists(atPath: git.path, isDirectory: &isDir), isDir.boolValue {
-                    // aider v0.75+: Markdown format
-                    let chatMD = url.appendingPathComponent(".aider.chat.history.md")
-                    // aider pre-0.75: JSONL format
-                    let llmJSONL = url.appendingPathComponent(".aider.llm.history")
-                    if FileManager.default.fileExists(atPath: chatMD.path) ||
-                       FileManager.default.fileExists(atPath: llmJSONL.path) { count += 1 }
-                    e.skipDescendants()
-                }
+            GitRepoScanner.enumerate(in: URL(fileURLWithPath: expanded)) { url in
+                // aider v0.75+: Markdown format
+                let chatMD = url.appendingPathComponent(".aider.chat.history.md")
+                // aider pre-0.75: JSONL format
+                let llmJSONL = url.appendingPathComponent(".aider.llm.history")
+                if FileManager.default.fileExists(atPath: chatMD.path) ||
+                   FileManager.default.fileExists(atPath: llmJSONL.path) { count += 1 }
             }
         }
         return DetectionResult(

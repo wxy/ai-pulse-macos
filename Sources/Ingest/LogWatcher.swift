@@ -272,18 +272,7 @@ final class LogWatcher: @unchecked Sendable {
     }
 
     private func enumerateGitRepos(in dir: URL, handler: (URL) -> Void) {
-        guard let enumerator = FileManager.default.enumerator(
-            at: dir, includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else { return }
-        for case let url as URL in enumerator {
-            let gitDir = url.appendingPathComponent(".git")
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: gitDir.path, isDirectory: &isDir), isDir.boolValue
-            else { continue }
-            handler(url)
-            enumerator.skipDescendants()
-        }
+        GitRepoScanner.enumerate(in: dir, handler)
     }
 
     private func insertEvent(_ event: UsageEvent) {
