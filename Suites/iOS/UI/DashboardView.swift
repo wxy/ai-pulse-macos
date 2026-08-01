@@ -29,6 +29,7 @@ struct DashboardView: View {
     @State private var barProgress: CGFloat = 0
     @State private var toolsExpanded = false
     @State private var reposExpanded = false
+    @State private var fetchTask: Task<Void, Never>?
 
     private var snap: DashboardSnapshot { cloudData.snapshot ?? DashboardSnapshot() }
 
@@ -63,8 +64,9 @@ struct DashboardView: View {
                 .onChange(of: timeRange) { _, newRange in
                     barProgress = 0
                     withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 }
+                    fetchTask?.cancel()
                     let key = newRange.cacheKey
-                    Task { try? await cloudData.fetchSnapshot(for: key) }
+                    fetchTask = Task { try? await cloudData.fetchSnapshot(for: key) }
                 }
 
                 // ── Robot head frame (face) — spending + output ──
@@ -191,11 +193,12 @@ struct DashboardView: View {
         .onAppear {
             barProgress = 1
             let key = timeRange.cacheKey
-            Task { try? await cloudData.fetchSnapshot(for: key) }
+            fetchTask = Task { try? await cloudData.fetchSnapshot(for: key) }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            fetchTask?.cancel()
             let key = timeRange.cacheKey
-            Task { try? await cloudData.fetchSnapshot(for: key) }
+            fetchTask = Task { try? await cloudData.fetchSnapshot(for: key) }
         }
     }
 
