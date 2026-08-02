@@ -8645,6 +8645,136 @@
         }
       }
     },
+    "detect.opencode_found": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode-Sitzungen gefunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode sessions found"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesiones de OpenCode encontradas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sessions OpenCode trouvées"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode セッションを検出"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode 세션 감지됨"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sessões do OpenCode encontradas"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检测到 OpenCode 会话"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "偵測到 OpenCode 工作階段"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "偵測到 OpenCode 工作階段"
+          }
+        }
+      }
+    },
+    "detect.opencode_not_found": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "keine OpenCode-Sitzungen gefunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no OpenCode sessions found"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no se encontraron sesiones de OpenCode"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aucune session OpenCode trouvée"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode セッションが見つかりません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode 세션을 찾지 못함"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nenhuma sessão do OpenCode encontrada"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未检测到 OpenCode 会话"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未偵測到 OpenCode 工作階段"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未偵測到 OpenCode 工作階段"
+          }
+        }
+      }
+    },
     "detect.qwen_code_found": {
       "extractionState": "manual",
       "localizations": {
@@ -13036,6 +13166,71 @@
         }
       }
     },
+    "onboarding.grant_opencode_hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Verfolgen der Nutzung muss OpenCode gelesen werden. Bestätigen Sie den Zugriff im Dialog — Daten bleiben auf Ihrem Gerät."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading OpenCode data is required to track usage. Grant access in the dialog — data stays on your machine."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se requiere leer los datos de OpenCode para rastrear el uso. Confirme el acceso en el diálogo — los datos permanecen en su máquina."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La lecture des données OpenCode est requise pour suivre l'utilisation. Confirmez l'accès dans la boîte de dialogue — les données restent sur votre machine."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用量を追跡するには OpenCode データの読み取りが必要です。ダイアログでアクセスを確認してください——データは端末に残ります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용량을 추적하려면 OpenCode 데이터 읽기가 필요합니다. 대화상자에서 액세스를 확인하세요 — 데이터는 기기에 유지됩니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "É necessário ler os dados do OpenCode para rastrear o uso. Confirme o acesso na caixa de diálogo — os dados permanecem na sua máquina."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要读取 OpenCode 数据才能追踪用量。请在对话框中确认授权——数据保留在本机。"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要讀取 OpenCode 資料才能追蹤用量。請在對話框中確認授權——資料保留在本機。"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要讀取 OpenCode 資料才能追蹤用量。請在對話框中確認授權——資料保留在本機。"
+          }
+        }
+      }
+    },
     "onboarding.next": {
       "comment": "Keep translation short — UI label, avoid layout overflow",
       "extractionState": "manual",
@@ -16551,197 +16746,67 @@
       },
       "shouldTranslate": false
     },
-    "detect.opencode_found": {
+    "dashboard.quota_stale": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "OpenCode sessions found"
+            "value": "pending refresh"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "检测到 OpenCode 会话"
+            "value": "待更新"
           }
         },
         "zh-Hant-TW": {
           "stringUnit": {
             "state": "translated",
-            "value": "偵測到 OpenCode 工作階段"
+            "value": "待更新"
           }
         },
         "zh-Hant-HK": {
           "stringUnit": {
             "state": "translated",
-            "value": "偵測到 OpenCode 工作階段"
+            "value": "待更新"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "OpenCode セッションを検出"
+            "value": "更新待ち"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "OpenCode 세션 감지됨"
+            "value": "갱신 대기"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "OpenCode-Sitzungen gefunden"
+            "value": "Aktualisierung ausstehend"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sessions OpenCode trouvées"
+            "value": "actualisation en attente"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sesiones de OpenCode encontradas"
+            "value": "pendiente de actualizar"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sessões do OpenCode encontradas"
-          }
-        }
-      }
-    },
-    "detect.opencode_not_found": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "no OpenCode sessions found"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未检测到 OpenCode 会话"
-          }
-        },
-        "zh-Hant-TW": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未偵測到 OpenCode 工作階段"
-          }
-        },
-        "zh-Hant-HK": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未偵測到 OpenCode 工作階段"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenCode セッションが見つかりません"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenCode 세션을 찾지 못함"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "keine OpenCode-Sitzungen gefunden"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "aucune session OpenCode trouvée"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "no se encontraron sesiones de OpenCode"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "nenhuma sessão do OpenCode encontrada"
-          }
-        }
-      }
-    },
-    "onboarding.grant_opencode_hint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reading OpenCode data is required to track usage. Grant access in the dialog — data stays on your machine."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "需要读取 OpenCode 数据才能追踪用量。请在对话框中确认授权——数据保留在本机。"
-          }
-        },
-        "zh-Hant-TW": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "需要讀取 OpenCode 資料才能追蹤用量。請在對話框中確認授權——資料保留在本機。"
-          }
-        },
-        "zh-Hant-HK": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "需要讀取 OpenCode 資料才能追蹤用量。請在對話框中確認授權——資料保留在本機。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用量を追跡するには OpenCode データの読み取りが必要です。ダイアログでアクセスを確認してください——データは端末に残ります。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "사용량을 추적하려면 OpenCode 데이터 읽기가 필요합니다. 대화상자에서 액세스를 확인하세요 — 데이터는 기기에 유지됩니다."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zum Verfolgen der Nutzung muss OpenCode gelesen werden. Bestätigen Sie den Zugriff im Dialog — Daten bleiben auf Ihrem Gerät."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La lecture des données OpenCode est requise pour suivre l'utilisation. Confirmez l'accès dans la boîte de dialogue — les données restent sur votre machine."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Se requiere leer los datos de OpenCode para rastrear el uso. Confirme el acceso en el diálogo — los datos permanecen en su máquina."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "É necessário ler os dados do OpenCode para rastrear o uso. Confirme o acesso na caixa de diálogo — os dados permanecem na sua máquina."
+            "value": "aguardando atualização"
           }
         }
       }

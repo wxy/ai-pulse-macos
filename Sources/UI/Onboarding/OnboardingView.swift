@@ -31,9 +31,10 @@ struct OnboardingView: View {
             Group {
                 switch step {
                 case 0: welcomeStep
-                case 1: detectionStep
-                case 2: reposStep     // NEW
-                default: doneStep      // was step 2, now step 3
+                case 1: apiProvidersStep
+                case 2: devToolsStep
+                case 3: reposStep
+                default: doneStep
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -49,14 +50,14 @@ struct OnboardingView: View {
                     Button(I18n.t("onboarding.back")) { step -= 1 }
                 }
                 Spacer()
-                if step < 3 {
-                    if step == 2 {
+                if step < 4 {
+                    if step == 3 {
                         // Repos step: allow skip
                         Button(I18n.t("onboarding.skip")) { step += 1 }
                             .padding(.trailing, 8)
                     }
                     Button(I18n.t("onboarding.next")) {
-                        if step == 2 { saveRepos() }
+                        if step == 3 { saveRepos() }
                         step += 1
                     }
                 } else {
@@ -87,18 +88,28 @@ struct OnboardingView: View {
 
     // MARK: - Step 1: Detection results
 
-    var detectionStep: some View {
-        let detected = detectionResults.filter(\.1.found)
-        let configurable = detectionResults.filter { r in
-            !r.1.found && r.0.costSources.contains { if case .apiKey = $0.kind { return true }; return false }
+    /// Step 1: AI providers — every supported apiKey integration, whether or
+    /// not a key is set yet (so the user can configure them here).
+    var apiProvidersStep: some View {
+        let items = detectionResults.filter {
+            IntegrationCategory.category(for: $0.0) == .apiKeys
+        }
+        return detectionList(title: I18n.t("settings.integrations_api"),
+                             hint: I18n.t("integrations.group_api_key_desc"),
+                             items: items)
+    }
+
+    /// Step 2: Dev tools — every supported tool (log/subscription). Includes
+    /// the sandbox home-directory grant since it gates log-based detection.
+    var devToolsStep: some View {
+        let items = detectionResults.filter {
+            IntegrationCategory.category(for: $0.0) == .devTools
         }
         return VStack(alignment: .leading, spacing: 12) {
-            Text(I18n.t("onboarding.detected")).font(.title3).fontWeight(.semibold)
-            Text(I18n.t("onboarding.detected_hint"))
+            Text(I18n.t("settings.integrations_devtools")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("integrations.group_editors_desc"))
                 .font(.caption).foregroundColor(.secondary)
 
-            // Sandbox: grant home-folder access once so log-based tools
-            // (~/.claude, ~/.codex, ~/.qwen) can be detected.
             if BookmarkManager.isSandboxed && !BookmarkManager.hasHomeAccess {
                 HStack(spacing: 8) {
                     Image(systemName: "lock.open")
@@ -113,17 +124,31 @@ struct OnboardingView: View {
             }
 
             ScrollView {
-                VStack(spacing: 4) {
-                    ForEach(detected, id: \.0.id) { (integration, result) in
+                VStack(spacing: 12) {
+                    ForEach(items, id: \.0.id) { (integration, result) in
                         IntegrationRow(integration: integration, detected: result)
                     }
-                    if !configurable.isEmpty {
-                        Text(I18n.t("integrations.needs_config")).font(.caption).foregroundColor(.secondary).padding(.top, 8)
-                        ForEach(configurable, id: \.0.id) { (integration, result) in
-                            IntegrationRow(integration: integration, detected: result)
-                        }
+                    if items.isEmpty {
+                        Text(I18n.t("onboarding.no_tools"))
+                            .foregroundColor(.secondary).padding()
                     }
-                    if detected.isEmpty && configurable.isEmpty {
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private func detectionList(title: String, hint: String,
+                               items: [(any Detectable, DetectionResult)]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.title3).fontWeight(.semibold)
+            Text(hint).font(.caption).foregroundColor(.secondary)
+            ScrollView {
+                VStack(spacing: 12) {
+                    ForEach(items, id: \.0.id) { (integration, result) in
+                        IntegrationRow(integration: integration, detected: result)
+                    }
+                    if items.isEmpty {
                         Text(I18n.t("onboarding.no_tools"))
                             .foregroundColor(.secondary).padding()
                     }

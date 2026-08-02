@@ -692,7 +692,10 @@ struct DashboardView: View {
     /// Locale-aware countdown to the next quota reset, e.g. "1h 20m" / "3d 4h".
     private func resetCountdownText(_ resetAt: Double) -> String {
         let remaining = resetAt - Date().timeIntervalSince1970
-        guard remaining > 0 else { return I18n.t("dashboard.over_limit") }
+        // A past reset means the quota window already refreshed — the
+        // utilization is stale, awaiting the next poll. This is NOT an
+        // over-limit condition (that's utilization > 100%, shown by usageBar).
+        guard remaining > 0 else { return I18n.t("dashboard.quota_stale") }
         let fmt = DateComponentsFormatter()
         fmt.allowedUnits = [.day, .hour, .minute]
         fmt.unitsStyle = .abbreviated
