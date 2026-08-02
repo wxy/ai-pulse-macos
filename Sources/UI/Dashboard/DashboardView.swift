@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import GRDB
 
 // MARK: - Color palette (#2C5B48 green / #AD2E23 red)
 extension Color {
@@ -73,7 +74,7 @@ struct DashboardView: View {
     @State private var healthSeverity = AppHealthMonitor.Severity.nominal
     @State private var healthMessages: [String] = []
     @State private var showHealthDetails = false
-    @State private var usageData: [String: (percent: Double, limitStatus: String)] = [:]  // costSourceId → (usage%, status)
+    @State private var usageData: [String: (percent: Double, limitStatus: String, resetAt: Double, windowSeconds: Double)] = [:]  // toolId → quota state
     @State private var trendHoverDate: Date? = nil
     @State private var trendHoverX: CGFloat = 0
     @State private var trendHoverY: CGFloat = 0
@@ -381,69 +382,13 @@ struct DashboardView: View {
     }
 
 
-    // MARK: - Cost Source summary
-
-    /// Active CostSources with their computed spend for the current period.
-    var costSourceBreakdown: [(source: CostSource, cost: Double, usagePercent: Double?)] {
-        let sources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
-        let subTotal = StatsService.subscriptionDailyAmortization() * Double(timeRange.days)
-        // sum of monthly fees of all subscription sources (for proportional split)
-        let totalSubFee = sources.reduce(0.0) { total, cs in
-            if case .subscription(_, _, let fee) = cs.kind { return total + fee }; return total
-        }
-        var result: [(source: CostSource, cost: Double, usagePercent: Double?)] = []
-        for cs in sources {
-            let cost: Double
-            switch cs.kind {
-            case .apiKey(let pid):
-                cost = balanceSpend
-                    .filter { $0.providerId == pid }
-                    .reduce(0) { $0 + $1.spend }
-            case .subscription(_, _, let fee):
-                cost = totalSubFee > 0 ? subTotal * fee / totalSubFee : 0
-            case .unknown:
-                cost = 0
-            }
-            let usage = usageData[cs.id]
-            result.append((cs, cost, usage?.percent))
-        }
-        return result.sorted { $0.cost > $1.cost }
-    }
-
-
     func computeToolCosts() -> [(name: String, cost: Double)] { toolCostBreakdown }
 
     func providerDisplayName(_ pid: String) -> String {
         IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
     }
 
-    func costSourceRow(_ item: (source: CostSource, cost: Double, usagePercent: Double?)) -> some View {
-        let cs = item.source
-        let cost = item.cost
-        let usage = item.usagePercent
-        return VStack(spacing: 2) {
-            HStack(spacing: 6) {
-                confidenceBadge(cs.confidence)
-                Text(cs.label).font(.caption).lineLimit(1)
-                Spacer()
-                Text(cost > 0.001 ? "$\(String(format: "%.2f", cost))" : "--")
-                    .font(.caption).monospacedDigit()
-                    .foregroundColor(confidenceColor(cs.confidence))
-
-                if !cs.limitations.isEmpty {
-                    Image(systemName: "info.circle")
-                        .font(.caption2).foregroundColor(.secondary)
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                        .help(cs.limitations.joined(separator: "\n"))
-                }
-                if let usage, usage > 0 {
-                    usageBarView(percent: usage)
-                }
-            }
-            .padding(.horizontal, 6).padding(.vertical, 3)
-        }
-    }
+    // MARK: - Quota HUD
 
     func usageBarView(percent: Double) -> some View {
         let clamped = min(max(percent, 0), 100)
@@ -742,6 +687,76 @@ struct DashboardView: View {
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
+    // MARK: - Quota (subscription remaining)
+
+    /// Locale-aware countdown to the next quota reset, e.g. "1h 20m" / "3d 4h".
+    private func resetCountdownText(_ resetAt: Double) -> String {
+        let remaining = resetAt - Date().timeIntervalSince1970
+        guard remaining > 0 else { return I18n.t("dashboard.over_limit") }
+        let fmt = DateComponentsFormatter()
+        fmt.allowedUnits = [.day, .hour, .minute]
+        fmt.unitsStyle = .abbreviated
+        fmt.maximumUnitCount = 2
+        return fmt.string(from: remaining) ?? ""
+    }
+
+    private func quotaColor(for percent: Double) -> Color {
+        switch percent {
+        case 0..<75:  return .marsGreen
+        case 75..<90: return .marsGreen2
+        default:      return .deepRed
+        }
+    }
+
+    /// A subscription quota row shown in the Today "remaining" block.
+    /// e.g. "Claude ████░░ 45%  1h 20m" — utilization bar + countdown to next reset.
+    func quotaRow(toolId: String, data: (percent: Double, limitStatus: String, resetAt: Double, windowSeconds: Double)) -> some View {
+        let icon = toolId.contains("claude") ? "sparkles" : "bubble.left.and.bubble.right"
+        return HStack(spacing: 6) {
+            Image(systemName: icon).font(.caption2).foregroundColor(quotaColor(for: data.percent))
+            Text(toolDisplayName(toolId)).font(.caption).foregroundColor(.secondary).lineLimit(1)
+            Spacer()
+            usageBarView(percent: data.percent)
+            if data.resetAt > 0 {
+                Text(resetCountdownText(data.resetAt))
+                    .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+            }
+        }
+        .help(String(format: I18n.t("dashboard.quota_help"),
+                     "\(Int(data.percent))", data.limitStatus))
+    }
+
+    private func toolDisplayName(_ toolId: String) -> String {
+        IntegrationRegistry.toolDisplayName(for: toolId)
+    }
+
+    /// Load subscription quota state (utilization + next reset) from quota_status.
+    /// Independent of whether the user configured a subscription tier.
+    private func loadUsageData() async {
+        guard !isDemoMode else { return }
+        do {
+            let rows = try await AppDatabase.shared.read { db -> [(String, Double, String, Double, Double)] in
+                try Row.fetchAll(db, sql: """
+                    SELECT tool_id, utilization, limit_status, reset_at, window_seconds
+                    FROM quota_status
+                    """).map { r in
+                    (r["tool_id"] as String? ?? "",
+                     r["utilization"] as Double? ?? 0,
+                     r["limit_status"] as String? ?? "",
+                     r["reset_at"] as Double? ?? 0,
+                     r["window_seconds"] as Double? ?? 0)
+                }
+            }
+            var map: [String: (percent: Double, limitStatus: String, resetAt: Double, windowSeconds: Double)] = [:]
+            for (id, pct, status, resetAt, window) in rows where !id.isEmpty {
+                map[id] = (pct, status, resetAt, window)
+            }
+            usageData = map
+        } catch {
+            Logger.debug("Dashboard: loadUsageData failed: \(error)")
+        }
+    }
+
     func toolBarRow(name: String, cost: Double, total: Double, index: Int = 0) -> some View {
         let w = total > 0 ? cost / total : 0
         let dataReady = loadedTimeRange == timeRange
@@ -960,6 +975,7 @@ struct DashboardView: View {
             Text(I18n.t("dashboard.remaining_balance")).font(.headline)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
+            // API balances
             ForEach(remainingBalances, id: \.providerId) { item in
                 HStack {
                     Text(item.displayName)
@@ -967,6 +983,12 @@ struct DashboardView: View {
                     Spacer()
                     Text(balanceString(item.balance, currency: item.currency))
                         .font(.caption).fontWeight(.semibold).monospacedDigit()
+                }
+            }
+            // Subscription quotas (Claude / Copilot window utilization + reset)
+            ForEach(Array(usageData.keys.sorted()), id: \.self) { toolId in
+                if let d = usageData[toolId] {
+                    quotaRow(toolId: toolId, data: d)
                 }
             }
         }
@@ -1544,6 +1566,8 @@ struct DashboardView: View {
         guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
+
+        await loadUsageData()
 
         // Bump generation so only the latest load() applies its results.
         loadGeneration += 1

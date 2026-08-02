@@ -92,6 +92,19 @@ final class AppDatabase: @unchecked Sendable {
                     t.column("usage_limit_status", .text)
                 }
             }),
+            ("quota_status", { db in
+                // Subscription quota/limit state, independent of whether the
+                // user configured a subscription tier. Written by UsageMonitor
+                // from Claude status cache + Copilot API; read by Dashboard HUD.
+                try db.create(table: "quota_status", ifNotExists: true) { t in
+                    t.column("tool_id", .text).primaryKey()   // "claude-code" / "copilot"
+                    t.column("utilization", .double).notNull() // 0-100
+                    t.column("limit_status", .text)
+                    t.column("reset_at", .double)             // Unix timestamp of next reset
+                    t.column("window_seconds", .double)       // quota window length (for last-reset)
+                    t.column("updated_at", .double)
+                }
+            }),
             ("dashboard_cache", { db in
                 try db.create(table: "dashboard_cache", ifNotExists: true) { t in
                     t.column("time_range", .text).notNull()
@@ -110,7 +123,26 @@ final class AppDatabase: @unchecked Sendable {
                 Logger.error("  ✗ \(name): \(error)")
             }
         }
+
+        // Additive column migrations for existing installs
+        // (create-ifNotExists won't add columns to tables that already exist).
+        addColumnIfMissing("quota_status", "window_seconds", "REAL")
         Logger.info("DB migration complete")
+    }
+
+    /// Add a column to an existing table if it doesn't already have it.
+    private func addColumnIfMissing(_ table: String, _ column: String, _ type: String) {
+        do {
+            try dbQueue?.write { db in
+                let exists = (try? db.columns(in: table).contains { $0.name == column }) ?? false
+                if !exists {
+                    try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
+                    Logger.info("  + \(table).\(column) added")
+                }
+            }
+        } catch {
+            Logger.error("  ✗ addColumn \(table).\(column): \(error)")
+        }
     }
 
     var writer: DatabaseWriter? { dbQueue }

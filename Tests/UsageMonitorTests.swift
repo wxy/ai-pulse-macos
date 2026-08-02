@@ -21,6 +21,8 @@ final class UsageMonitorTests: XCTestCase {
         XCTAssertEqual(result?.utilization5h, 0.23)
         XCTAssertEqual(result?.utilization7d, 0.45)
         XCTAssertEqual(result?.limitStatus, "allowed")
+        XCTAssertEqual(result?.reset5hAt, 1718740800)
+        XCTAssertEqual(result?.reset7dAt, 1719086400)
     }
 
     func testParseClaudeStatusCacheMissingUsageData() {
@@ -58,6 +60,7 @@ final class UsageMonitorTests: XCTestCase {
 
     func testParseCopilotResponseValid() {
         let json: [String: Any] = [
+            "quota_reset_date": "2026-08-01T00:00:00Z",
             "quota_snapshots": [
                 "premium_interactions": [
                     "percent_remaining": 31.16,
@@ -71,6 +74,7 @@ final class UsageMonitorTests: XCTestCase {
         XCTAssertNotNil(result)
         XCTAssertEqual(result!.usedPercent, 68.84)
         XCTAssertEqual(result?.overageCount, 0)
+        XCTAssertEqual(result?.quotaResetAt, 1785542400)
     }
 
     func testParseCopilotResponseOverage() {
