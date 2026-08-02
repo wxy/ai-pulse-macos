@@ -8,6 +8,7 @@ enum IntegrationRegistry {
         ClaudeCodeIntegration(),
         AiderIntegration(),
         CodexIntegration(),
+        QwenCodeIntegration(),
         ApiKeyIntegration(
             id: "deepseek", displayName: "DeepSeek", providerId: "deepseek",
             usesClaudeModels: false, limitationKey: "limitation.assume_programming",
@@ -176,6 +177,7 @@ enum IntegrationRegistry {
         case "claude-code": return "Claude Code"
         case "aider":       return "aider"
         case "codex":       return "Codex CLI"
+        case "qwen-code":   return "Qwen Code"
         case "cursor":      return "Cursor"
         case "copilot":     return "GitHub Copilot"
         case "windsurf":    return "Windsurf"

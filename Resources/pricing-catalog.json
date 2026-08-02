@@ -125,6 +125,22 @@
       "out_price_per_mtok": 10.0,
       "cache_price_per_mtok": 0.125,
       "currency": "USD"
+    },
+    "qwen3-coder": {
+      "provider": "qwen",
+      "name": "Qwen3 Coder",
+      "in_price_per_mtok": 0.28,
+      "out_price_per_mtok": 0.56,
+      "cache_price_per_mtok": 0.028,
+      "currency": "USD"
+    },
+    "qwen3-coder-plus": {
+      "provider": "qwen",
+      "name": "Qwen3 Coder Plus",
+      "in_price_per_mtok": 0.55,
+      "out_price_per_mtok": 1.1,
+      "cache_price_per_mtok": 0.055,
+      "currency": "USD"
     }
   }
 }

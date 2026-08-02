@@ -92,26 +92,30 @@ struct OnboardingView: View {
         let configurable = detectionResults.filter { r in
             !r.1.found && r.0.costSources.contains { if case .apiKey = $0.kind { return true }; return false }
         }
-        // Claude Code that needs a ~/.claude grant (sandbox) is shown as a grantable
-        // row so the authorization prompt lives under the Claude item itself.
-        let grantable = detectionResults.filter {
-            !$0.1.found && $0.0.id == "claude-code"
-                && BookmarkManager.isSandboxed
-                && !BookmarkManager.hasBookmark(covering: BookmarkManager.claudeDirPath)
-        }
         return VStack(alignment: .leading, spacing: 12) {
             Text(I18n.t("onboarding.detected")).font(.title3).fontWeight(.semibold)
             Text(I18n.t("onboarding.detected_hint"))
                 .font(.caption).foregroundColor(.secondary)
 
+            // Sandbox: grant home-folder access once so log-based tools
+            // (~/.claude, ~/.codex, ~/.qwen) can be detected.
+            if BookmarkManager.isSandboxed && !BookmarkManager.hasHomeAccess {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.open")
+                    Text(I18n.t("onboarding.grant_home_hint"))
+                        .font(.caption)
+                    Spacer()
+                    Button(I18n.t("bookmark.grant_to_detect")) { grantHomeAndRedetect() }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+                .padding(10)
+                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            }
+
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(detected, id: \.0.id) { (integration, result) in
                         IntegrationRow(integration: integration, detected: result)
-                    }
-                    ForEach(grantable, id: \.0.id) { (integration, result) in
-                        IntegrationRow(integration: integration, detected: result,
-                                       onGrant: { runDetection() })
                     }
                     if !configurable.isEmpty {
                         Text(I18n.t("integrations.needs_config")).font(.caption).foregroundColor(.secondary).padding(.top, 8)
@@ -119,7 +123,7 @@ struct OnboardingView: View {
                             IntegrationRow(integration: integration, detected: result)
                         }
                     }
-                    if detected.isEmpty && configurable.isEmpty && grantable.isEmpty {
+                    if detected.isEmpty && configurable.isEmpty {
                         Text(I18n.t("onboarding.no_tools"))
                             .foregroundColor(.secondary).padding()
                     }
@@ -289,6 +293,13 @@ struct OnboardingView: View {
         for (i, r) in detectionResults where r.found && i.costSources.isEmpty && i is any Collectable {
             enabledIds.insert(i.id)
         }
+    }
+
+    /// Grant home-folder access (sandbox) then re-detect all tools.
+    private func grantHomeAndRedetect() {
+        guard BookmarkManager.requestHomeAccess(message: I18n.t("bookmark.home_message")) != nil
+        else { return }
+        runDetection()
     }
 
     func finish() {

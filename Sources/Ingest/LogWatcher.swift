@@ -69,6 +69,7 @@ final class LogWatcher: @unchecked Sendable {
                 self.watchClaudeCode()
                 self.discoverAndWatchRepos()
                 self.scanCodexSessions()
+                self.scanQwenSessions()
             }
         }
     }
@@ -86,6 +87,7 @@ final class LogWatcher: @unchecked Sendable {
                 self.scanClaudeProjectsOnly()
                 self.discoverAndWatchRepos()
                 self.scanCodexSessions()
+                self.scanQwenSessions()
             }
         }
     }
@@ -205,6 +207,43 @@ final class LogWatcher: @unchecked Sendable {
         }
         if parsedCount > 0 {
             Logger.info("LogWatcher: parsed \(parsedCount) codex events from \(filePath)")
+        }
+    }
+
+    // MARK: - Qwen Code
+
+    /// Scan `~/.qwen/projects/*/chats/*.jsonl` incrementally.
+    /// Idempotent via `parseLinesIncremental` byte-offset resume.
+    private func scanQwenSessions() {
+        let home = FileManager.default.realHomeDirectory
+        let projectsDir = home.appendingPathComponent(".qwen/projects")
+        guard FileManager.default.fileExists(atPath: projectsDir.path),
+              let enumerator = FileManager.default.enumerator(
+                  at: projectsDir,
+                  includingPropertiesForKeys: nil,
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else { return }
+
+        for case let url as URL in enumerator
+        where url.lastPathComponent.hasPrefix("chats")
+        || (url.pathExtension == "jsonl" && url.deletingLastPathComponent().lastPathComponent == "chats") {
+            // cwd is not in the Qwen log; use nil (token tracking only).
+            parseQwenFile(url, cwd: nil)
+        }
+    }
+
+    private func parseQwenFile(_ file: URL, cwd: String?) {
+        var parsedCount = 0
+        let filePath = file.path
+        parseLinesIncremental(from: file) { line in
+            if let event = QwenCodeParser.parse(line: line, cwd: cwd) {
+                parsedCount += 1
+                return event
+            }
+            return nil
+        }
+        if parsedCount > 0 {
+            Logger.info("LogWatcher: parsed \(parsedCount) qwen-code events from \(filePath)")
         }
     }
 

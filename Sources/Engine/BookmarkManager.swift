@@ -49,6 +49,24 @@ enum BookmarkManager {
             .appendingPathComponent(".codex").path
     }
 
+    /// Path to `~/.qwen` (Qwen Code CLI session logs).
+    static var qwenDirPath: String {
+        FileManager.default.realHomeDirectory
+            .appendingPathComponent(".qwen").path
+    }
+
+    /// Path to the user's home directory. Granting access to `~` covers all
+    /// dot-dirs below it (~/.claude, ~/.codex, ~/.qwen) via `hasBookmark`.
+    static var homeDirPath: String {
+        FileManager.default.realHomeDirectory.path
+    }
+
+    /// True if the user has granted home-directory access (or a sub-path that
+    /// covers home). A home grant lets every log-based tool be detected.
+    static var hasHomeAccess: Bool {
+        hasBookmark(covering: homeDirPath)
+    }
+
     // MARK: - Public API
 
     /// Present an Open Panel for the user to grant access to a directory.
@@ -108,6 +126,51 @@ enum BookmarkManager {
         panel.allowsMultipleSelection = false
         panel.showsHiddenFiles = true
         panel.directoryURL = home.appendingPathComponent(".codex")
+
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+
+        createAndSave(for: url)
+        return url
+    }
+
+    /// Present an Open Panel pre-pointed at `~/.qwen` so the user can grant
+    /// read access to Qwen Code CLI session logs (sandbox requirement).
+    @discardableResult
+    @MainActor
+    static func requestQwenAccess(message: String) -> URL? {
+        let home = FileManager.default.realHomeDirectory
+        let panel = NSOpenPanel()
+        panel.message = message
+        panel.prompt = I18n.t("bookmark.authorize_access")
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = home.appendingPathComponent(".qwen")
+
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+
+        createAndSave(for: url)
+        return url
+    }
+
+    /// Present an Open Panel pre-pointed at the home directory so the user can
+    /// grant access to `~` once, covering all log-based tools below it
+    /// (~/.claude, ~/.codex, ~/.qwen). Legal user-selected file access — not a
+    /// temporary exception — so it passes App Store review.
+    @discardableResult
+    @MainActor
+    static func requestHomeAccess(message: String) -> URL? {
+        let home = FileManager.default.realHomeDirectory
+        let panel = NSOpenPanel()
+        panel.message = message
+        panel.prompt = I18n.t("bookmark.grant_to_detect")
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = home
+        panel.canCreateDirectories = false
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 
