@@ -70,6 +70,7 @@ final class LogWatcher: @unchecked Sendable {
                 self.discoverAndWatchRepos()
                 self.scanCodexSessions()
                 self.scanQwenSessions()
+                self.scanOpenCodeSessions()
             }
         }
     }
@@ -88,6 +89,7 @@ final class LogWatcher: @unchecked Sendable {
                 self.discoverAndWatchRepos()
                 self.scanCodexSessions()
                 self.scanQwenSessions()
+                self.scanOpenCodeSessions()
             }
         }
     }
@@ -245,6 +247,32 @@ final class LogWatcher: @unchecked Sendable {
         if parsedCount > 0 {
             Logger.info("LogWatcher: parsed \(parsedCount) qwen-code events from \(filePath)")
         }
+    }
+
+    // MARK: - OpenCode
+
+    /// Scan `~/.local/share/opencode/storage/message/**/msg_*.json`.
+    /// Each file is one message JSON; dedupe is via the stable message id.
+    private func scanOpenCodeSessions() {
+        let home = FileManager.default.realHomeDirectory
+        let msgDir = home.appendingPathComponent(".local/share/opencode/storage/message")
+        guard FileManager.default.fileExists(atPath: msgDir.path),
+              let enumerator = FileManager.default.enumerator(
+                  at: msgDir,
+                  includingPropertiesForKeys: nil,
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else { return }
+
+        for case let url as URL in enumerator
+        where url.lastPathComponent.hasPrefix("msg_") && url.pathExtension == "json" {
+            insertOpenCodeFile(url)
+        }
+    }
+
+    private func insertOpenCodeFile(_ file: URL) {
+        guard let event = OpenCodeParser.parseFile(file, cwd: nil) else { return }
+        insertEvent(event)
+        Logger.debug("LogWatcher: parsed opencode event from \(file.path)")
     }
 
     // MARK: - aider

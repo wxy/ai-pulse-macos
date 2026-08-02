@@ -54,7 +54,7 @@ struct IntegrationRow: View {
     private static let subscriptionIds: Set<String> = ["claude-code", "cursor", "copilot", "windsurf"]
 
     /// Log-based dev tools: no subscription, no apiKey, but can use configured API keys.
-    private static let logToolIds: Set<String> = ["aider", "codex", "qwen-code"]
+    private static let logToolIds: Set<String> = ["aider", "codex", "qwen-code", "opencode"]
 
     /// Is this integration primarily an apiKey type?
     var isAPIKeyType: Bool { Self.apiKeyIds.contains(integration.id) }
@@ -145,7 +145,8 @@ struct IntegrationRow: View {
     /// Log-based tools that read a ~/.xxx directory (need the home grant to
     /// be detected at all under sandbox).
     private var needsHomeGrant: Bool {
-        integration.id == "claude-code" || integration.id == "codex" || integration.id == "qwen-code"
+        integration.id == "claude-code" || integration.id == "codex"
+            || integration.id == "qwen-code" || integration.id == "opencode"
     }
 
     var summaryText: String {
