@@ -23,6 +23,7 @@ struct DashboardSnapshot: Codable {
     var codeChanges: [TrendPoint] = []
     var balanceDaily: [TrendPoint] = []
     var remainingBalances: [RemainingBalanceItem] = []
+    var quotaStatus: [QuotaStatusItem] = []
 
     var updatedAt: Date = Date()
 }
@@ -68,4 +69,14 @@ struct RemainingBalanceItem: Codable {
     var displayName: String
     var balance: Double
     var currency: String
+}
+
+/// Subscription quota state (Claude / Copilot window utilization + reset).
+/// Mirrors the macOS model so iCloud-synced snapshots decode identically.
+struct QuotaStatusItem: Codable {
+    var toolId: String
+    var utilization: Double
+    var limitStatus: String
+    var resetAt: Double
+    var windowSeconds: Double
 }

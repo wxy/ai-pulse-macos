@@ -7,6 +7,9 @@ enum IntegrationRegistry {
     static nonisolated(unsafe) let all: [any Detectable] = [
         ClaudeCodeIntegration(),
         AiderIntegration(),
+        CodexIntegration(),
+        QwenCodeIntegration(),
+        OpenCodeIntegration(),
         ApiKeyIntegration(
             id: "deepseek", displayName: "DeepSeek", providerId: "deepseek",
             usesClaudeModels: false, limitationKey: "limitation.assume_programming",
@@ -174,6 +177,9 @@ enum IntegrationRegistry {
         switch integrationId {
         case "claude-code": return "Claude Code"
         case "aider":       return "aider"
+        case "codex":       return "Codex CLI"
+        case "qwen-code":   return "Qwen Code"
+        case "opencode":    return "OpenCode"
         case "cursor":      return "Cursor"
         case "copilot":     return "GitHub Copilot"
         case "windsurf":    return "Windsurf"

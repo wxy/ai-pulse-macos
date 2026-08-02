@@ -67,11 +67,18 @@ extension CostSource {
         Task {
             do {
                 try await AppDatabase.shared.write { db in
-                    try db.execute(sql: "DELETE FROM cost_source")
+                    // Upsert instead of DELETE + re-INSERT: preserves
+                    // usage_percent / usage_limit_status / usage_reset_at
+                    // written by UsageMonitor (previously wiped on every launch).
                     for row in rows {
                         try db.execute(sql: """
                             INSERT INTO cost_source (id, label, kind, confidence, monthly_fee)
                             VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(id) DO UPDATE SET
+                                label = excluded.label,
+                                kind = excluded.kind,
+                                confidence = excluded.confidence,
+                                monthly_fee = excluded.monthly_fee
                             """, arguments: [
                                 row.id, row.label, row.kind, row.confidence, row.monthlyFee,
                             ])

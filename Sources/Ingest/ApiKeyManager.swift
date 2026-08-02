@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 /// Stores API keys in UserDefaults (not Keychain).
 ///
@@ -22,6 +23,14 @@ final class ApiKeyManager: @unchecked Sendable {
 
     func delete(_ providerId: String) {
         defaults.removeObject(forKey: prefix + providerId)
+        // Clear historical balance snapshots so no stale balance shows
+        // after the key is removed (e.g. a previously valid key).
+        Task {
+            try? await AppDatabase.shared.write { db in
+                try db.execute(sql: "DELETE FROM balance_snapshot WHERE provider_id = ?",
+                               arguments: [providerId])
+            }
+        }
     }
 
     func configuredProviderIds() -> [String] {

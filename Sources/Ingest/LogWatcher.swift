@@ -68,6 +68,9 @@ final class LogWatcher: @unchecked Sendable {
                 }
                 self.watchClaudeCode()
                 self.discoverAndWatchRepos()
+                self.scanCodexSessions()
+                self.scanQwenSessions()
+                self.scanOpenCodeSessions()
             }
         }
     }
@@ -84,6 +87,9 @@ final class LogWatcher: @unchecked Sendable {
                 }
                 self.scanClaudeProjectsOnly()
                 self.discoverAndWatchRepos()
+                self.scanCodexSessions()
+                self.scanQwenSessions()
+                self.scanOpenCodeSessions()
             }
         }
     }
@@ -163,6 +169,110 @@ final class LogWatcher: @unchecked Sendable {
                     repoPath: repoPath, sessionId: event.sessionId, dedupeKey: event.dedupeKey)
             }
         }
+    }
+
+    // MARK: - Codex CLI
+
+    /// Scan `~/.codex/sessions/**/rollout-*.jsonl` incrementally.
+    /// Idempotent — `parseLinesIncremental` resumes from the persisted byte
+    /// offset of each file. Runs on every phase-1 tick.
+    private func scanCodexSessions() {
+        let home = FileManager.default.realHomeDirectory
+        let sessionsDir = home.appendingPathComponent(".codex/sessions")
+        guard FileManager.default.fileExists(atPath: sessionsDir.path),
+              let enumerator = FileManager.default.enumerator(
+                  at: sessionsDir,
+                  includingPropertiesForKeys: nil,
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else { return }
+
+        for case let url as URL in enumerator
+        where url.lastPathComponent.hasPrefix("rollout-") && url.pathExtension == "jsonl" {
+            parseCodexFile(url)
+        }
+    }
+
+    private func parseCodexFile(_ file: URL) {
+        var currentCwd: String? = nil
+        var currentModel: String? = nil
+        var parsedCount = 0
+        let filePath = file.path
+        parseLinesIncremental(from: file) { line in
+            // Track cwd (session_meta) and model (turn_context) across lines.
+            if let cwd = CodexParser.cwd(fromLine: line) { currentCwd = cwd }
+            if let m = CodexParser.model(fromLine: line) { currentModel = m }
+            if let event = CodexParser.parse(line: line, cwd: currentCwd, model: currentModel) {
+                parsedCount += 1
+                return event
+            }
+            return nil
+        }
+        if parsedCount > 0 {
+            Logger.info("LogWatcher: parsed \(parsedCount) codex events from \(filePath)")
+        }
+    }
+
+    // MARK: - Qwen Code
+
+    /// Scan `~/.qwen/projects/*/chats/*.jsonl` incrementally.
+    /// Idempotent via `parseLinesIncremental` byte-offset resume.
+    private func scanQwenSessions() {
+        let home = FileManager.default.realHomeDirectory
+        let projectsDir = home.appendingPathComponent(".qwen/projects")
+        guard FileManager.default.fileExists(atPath: projectsDir.path),
+              let enumerator = FileManager.default.enumerator(
+                  at: projectsDir,
+                  includingPropertiesForKeys: nil,
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else { return }
+
+        for case let url as URL in enumerator
+        where url.lastPathComponent.hasPrefix("chats")
+        || (url.pathExtension == "jsonl" && url.deletingLastPathComponent().lastPathComponent == "chats") {
+            // cwd is not in the Qwen log; use nil (token tracking only).
+            parseQwenFile(url, cwd: nil)
+        }
+    }
+
+    private func parseQwenFile(_ file: URL, cwd: String?) {
+        var parsedCount = 0
+        let filePath = file.path
+        parseLinesIncremental(from: file) { line in
+            if let event = QwenCodeParser.parse(line: line, cwd: cwd) {
+                parsedCount += 1
+                return event
+            }
+            return nil
+        }
+        if parsedCount > 0 {
+            Logger.info("LogWatcher: parsed \(parsedCount) qwen-code events from \(filePath)")
+        }
+    }
+
+    // MARK: - OpenCode
+
+    /// Scan `~/.local/share/opencode/storage/message/**/msg_*.json`.
+    /// Each file is one message JSON; dedupe is via the stable message id.
+    private func scanOpenCodeSessions() {
+        let home = FileManager.default.realHomeDirectory
+        let msgDir = home.appendingPathComponent(".local/share/opencode/storage/message")
+        guard FileManager.default.fileExists(atPath: msgDir.path),
+              let enumerator = FileManager.default.enumerator(
+                  at: msgDir,
+                  includingPropertiesForKeys: nil,
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else { return }
+
+        for case let url as URL in enumerator
+        where url.lastPathComponent.hasPrefix("msg_") && url.pathExtension == "json" {
+            insertOpenCodeFile(url)
+        }
+    }
+
+    private func insertOpenCodeFile(_ file: URL) {
+        guard let event = OpenCodeParser.parseFile(file, cwd: nil) else { return }
+        insertEvent(event)
+        Logger.debug("LogWatcher: parsed opencode event from \(file.path)")
     }
 
     // MARK: - aider

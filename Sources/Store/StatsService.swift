@@ -458,7 +458,10 @@ enum StatsService {
             guard let pid: String = row["provider_id"],
                   let storedBal: Double = row["balance"],
                   let cur: String = row["currency"],
-                  balanceTrackedIds.contains(pid)
+                  balanceTrackedIds.contains(pid),
+                  // Only show providers with a key configured — a provider
+                  // whose key was deleted/cleared must not show stale balance.
+                  ApiKeyManager.shared.get(pid) != nil
             else { return nil }
             let provider = ProviderRegistry.byId(pid)
             let rawBalance = provider?.balanceType == .usage ? -storedBal : storedBal
@@ -469,6 +472,30 @@ enum StatsService {
                 balance: usdBalance,
                 currency: "USD"
             )
+        }
+    }
+
+    /// Read subscription quota state (Claude / Copilot) from quota_status.
+    static func latestQuotaStatus() async -> [QuotaStatusItem] {
+        do {
+            let rows = try await AppDatabase.shared.read { db -> [QuotaStatusItem] in
+                try Row.fetchAll(db, sql: """
+                    SELECT tool_id, utilization, limit_status, reset_at, window_seconds
+                    FROM quota_status
+                    """).map { r in
+                    QuotaStatusItem(
+                        toolId: r["tool_id"] as String? ?? "",
+                        utilization: r["utilization"] as Double? ?? 0,
+                        limitStatus: r["limit_status"] as String? ?? "",
+                        resetAt: r["reset_at"] as Double? ?? 0,
+                        windowSeconds: r["window_seconds"] as Double? ?? 0
+                    )
+                }
+            }
+            return rows.filter { !$0.toolId.isEmpty }
+        } catch {
+            Logger.debug("StatsService.latestQuotaStatus: \(error)")
+            return []
         }
     }
 
@@ -689,14 +716,15 @@ enum StatsService {
         async let repos = StatsService.repoBreakdown(days: days)
         async let pred = StatsService.prediction()
         async let latestBals = StatsService.latestRemainingBalances(sinceMs: lookbackStartMs)
+        async let quotas = StatsService.latestQuotaStatus()
 
-        let (tc, wc, mc, yc, st, bl, bm, cd, rp, pr, lb) = await (
+        let (tc, wc, mc, yc, st, bl, bm, cd, rp, pr, lb, qs) = await (
             todayCombined, weekCombined, monthCombined, yesterdayCombined,
             (try? stats) ?? [], (try? bal) ?? [],
             (try? balMonth) ?? [],
             (try? code) ?? [],
             (try? repos) ?? [], pred,
-            (try? latestBals) ?? []
+            (try? latestBals) ?? [], quotas
         )
 
         let subAmort = subscriptionDailyAmortization()
@@ -770,7 +798,7 @@ enum StatsService {
             providerBreakdown: providers, toolBreakdown: toolCosts, topRepos: repoItems,
             prediction: PredictionItem(monthProjected: pr.monthProjected, dailyRate: pr.dailyRate, daysRemaining: pr.daysRemaining, monthSoFar: pr.monthSoFar),
             dailyStats: dailyPts, codeChanges: codePts, balanceDaily: balPts,
-            remainingBalances: lb,
+            remainingBalances: lb, quotaStatus: qs,
             updatedAt: Date()
         )
     }

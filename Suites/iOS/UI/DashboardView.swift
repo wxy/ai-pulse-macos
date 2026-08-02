@@ -156,7 +156,7 @@ struct DashboardView: View {
                 // ── Trend section (body) ──
                 if timeRange != .today {
                     trendChart
-                } else if !snap.remainingBalances.isEmpty {
+                } else if !snap.remainingBalances.isEmpty || !snap.quotaStatus.isEmpty {
                     remainingBalanceRow
                         .padding(12)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -295,7 +295,8 @@ struct DashboardView: View {
     @ViewBuilder
     private var remainingBalanceRow: some View {
         let items = snap.remainingBalances.filter { $0.balance > 0.001 }
-        if items.isEmpty {
+        let quotas = snap.quotaStatus.filter { $0.utilization > 0 }
+        if items.isEmpty && quotas.isEmpty {
             EmptyView()
         } else {
             VStack(spacing: 10) {
@@ -311,6 +312,20 @@ struct DashboardView: View {
                             .font(.caption).fontWeight(.semibold).monospacedDigit()
                     }
                 }
+                // Subscription quotas (Claude / Copilot utilization + reset countdown)
+                ForEach(quotas, id: \.toolId) { q in
+                    HStack {
+                        Text(toolDisplayName(q.toolId))
+                            .font(.caption).foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(Int(q.utilization))%")
+                            .font(.caption).monospacedDigit().foregroundColor(quotaColor(q.utilization))
+                        if q.resetAt > 0 {
+                            Text(quotaCountdownText(q.resetAt))
+                                .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                        }
+                    }
+                }
             }
         }
     }
@@ -321,6 +336,32 @@ struct DashboardView: View {
         }()
         if v >= 1000 { return "\(symbol)\(String(format: "%.0f", v))" }
         return "\(symbol)\(String(format: "%.2f", v))"
+    }
+
+    private func toolDisplayName(_ toolId: String) -> String {
+        switch toolId {
+        case "claude-code": return "Claude Code"
+        case "copilot":     return "GitHub Copilot"
+        default:            return toolId
+        }
+    }
+
+    private func quotaColor(_ percent: Double) -> Color {
+        switch percent {
+        case 0..<75:  return .marsGreen
+        case 75..<90: return .marsGreenLight
+        default:      return .deepRed
+        }
+    }
+
+    private func quotaCountdownText(_ resetAt: Double) -> String {
+        let remaining = resetAt - Date().timeIntervalSince1970
+        guard remaining > 0 else { return I18n.t("dashboard.quota_stale") }
+        let fmt = DateComponentsFormatter()
+        fmt.allowedUnits = [.day, .hour, .minute]
+        fmt.unitsStyle = .abbreviated
+        fmt.maximumUnitCount = 2
+        return fmt.string(from: remaining) ?? ""
     }
 
     @ViewBuilder

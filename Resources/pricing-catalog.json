@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "updated": "2026-06-26",
+  "updated": "2026-08-02",
   "models": {
     "claude-sonnet-4": {
       "provider": "anthropic",
@@ -92,6 +92,54 @@
       "in_price_per_mtok": 0.15,
       "out_price_per_mtok": 0.6,
       "cache_price_per_mtok": 0.025,
+      "currency": "USD"
+    },
+    "gpt-5-codex": {
+      "provider": "openai",
+      "name": "GPT-5 Codex",
+      "in_price_per_mtok": 1.25,
+      "out_price_per_mtok": 10.0,
+      "cache_price_per_mtok": 0.125,
+      "currency": "USD"
+    },
+    "gpt-5.1-codex": {
+      "provider": "openai",
+      "name": "GPT-5.1 Codex",
+      "in_price_per_mtok": 1.25,
+      "out_price_per_mtok": 10.0,
+      "cache_price_per_mtok": 0.125,
+      "currency": "USD"
+    },
+    "gpt-5.1-codex-mini": {
+      "provider": "openai",
+      "name": "GPT-5.1 Codex Mini",
+      "in_price_per_mtok": 0.25,
+      "out_price_per_mtok": 2.0,
+      "cache_price_per_mtok": 0.025,
+      "currency": "USD"
+    },
+    "gpt-5.1-codex-max": {
+      "provider": "openai",
+      "name": "GPT-5.1 Codex Max",
+      "in_price_per_mtok": 1.25,
+      "out_price_per_mtok": 10.0,
+      "cache_price_per_mtok": 0.125,
+      "currency": "USD"
+    },
+    "qwen3-coder": {
+      "provider": "qwen",
+      "name": "Qwen3 Coder",
+      "in_price_per_mtok": 0.28,
+      "out_price_per_mtok": 0.56,
+      "cache_price_per_mtok": 0.028,
+      "currency": "USD"
+    },
+    "qwen3-coder-plus": {
+      "provider": "qwen",
+      "name": "Qwen3 Coder Plus",
+      "in_price_per_mtok": 0.55,
+      "out_price_per_mtok": 1.1,
+      "cache_price_per_mtok": 0.055,
       "currency": "USD"
     }
   }

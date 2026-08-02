@@ -8,6 +8,7 @@ import ServiceManagement
 struct SettingsView: View {
     @State private var selectedTab: String
     @State private var lang = I18n.getLang()
+    @State private var integrationsExpanded = true   // default expand sub-tabs
 
     init(initialTab: String = "General") {
         _selectedTab = State(initialValue: initialTab)
@@ -20,6 +21,9 @@ struct SettingsView: View {
         switch key {
         case "General": return I18n.t("settings.general")
         case "Integrations": return I18n.t("settings.integrations")
+        case "integrations": return I18n.t("settings.integrations")
+        case "integrations.api": return I18n.t("settings.integrations_api")
+        case "integrations.dev": return I18n.t("settings.integrations_devtools")
         case "Repos": return I18n.t("settings.repos")
         case "About": return I18n.t("settings.about")
         default: return key
@@ -31,20 +35,31 @@ struct SettingsView: View {
             List(selection: $selectedTab) {
                 Label(labelFor("General"), systemImage: "gear")
                     .tag("General")
-                Label(labelFor("Integrations"), systemImage: "square.grid.2x2")
-                    .tag("Integrations")
+                // Parent "Integrations" is clickable (shows an overview in the
+                // detail pane) and expands into its two sub-tabs.
+                DisclosureGroup(isExpanded: $integrationsExpanded) {
+                    Label(labelFor("integrations.api"), systemImage: "server.rack")
+                        .tag("integrations.api")
+                    Label(labelFor("integrations.dev"), systemImage: "hammer")
+                        .tag("integrations.dev")
+                } label: {
+                    Label(labelFor("Integrations"), systemImage: "square.grid.2x2")
+                        .tag("integrations")
+                }
                 Label(labelFor("Repos"), systemImage: "folder")
                     .tag("Repos")
                 Label(labelFor("About"), systemImage: "info.circle")
                     .tag("About")
             }
             .listStyle(.sidebar)
-            .frame(minWidth: 160)
+            .frame(minWidth: 170)
         } detail: {
             Group {
                 switch selectedTab {
                 case "General":         GeneralTab(lang: langBinding).id("general.\(lang)")
-                case "Integrations":    IntegrationsSettingsTab().id("integrations.\(lang)")
+                case "integrations":    IntegrationsOverviewTab().id("integrations.\(lang)")
+                case "integrations.api": ApiProvidersTab().id("integrations.api.\(lang)")
+                case "integrations.dev": DevToolsTab().id("integrations.dev.\(lang)")
                 case "Repos":          ReposTab().id("repos.\(lang)")
                 case "About":          AboutTab().id("about.\(lang)")
                 default: EmptyView()
@@ -55,53 +70,90 @@ struct SettingsView: View {
             .padding(24)
             .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: 680, height: 460)
+        .frame(width: 700, height: 480)
         .onReceive(NotificationCenter.default.publisher(for: .showIntegrationsTab)) { _ in
-            selectedTab = "Integrations"
+            selectedTab = "integrations.api"
         }
     }
 }
 
 // MARK: - Integrations
 
-struct IntegrationsSettingsTab: View {
+/// Overview page for the "Integrations" parent item — explains how AI Pulse
+/// tracks AI coding tools across the two sub-categories.
+struct IntegrationsOverviewTab: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(I18n.t("integrations.title")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("integrations.desc"))
+                .font(.caption).foregroundColor(.secondary)
+
+            infoRow(systemImage: "server.rack",
+                    title: I18n.t("settings.integrations_api"),
+                    body: I18n.t("integrations.group_api_key_desc"))
+            infoRow(systemImage: "hammer",
+                    title: I18n.t("settings.integrations_devtools"),
+                    body: I18n.t("integrations.group_editors_desc"))
+            infoRow(systemImage: "lock.shield",
+                    title: I18n.t("settings.integrations_privacy_title"),
+                    body: I18n.t("settings.integrations_privacy_body"))
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func infoRow(systemImage: String, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage).font(.title3).foregroundColor(.accentColor)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.body).fontWeight(.medium)
+                Text(body).font(.caption).foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+/// Integration category shown in the sidebar sub-tabs.
+enum IntegrationCategory {
+    case apiKeys       // AI providers (balance polling)
+    case devTools      // log/subscription dev tools
+
+    static func category(for integration: any Detectable) -> IntegrationCategory {
+        let apiKeyOnlyIds = Set(["deepseek", "openai", "moonshot", "zhipu", "anthropic"])
+        return apiKeyOnlyIds.contains(integration.id) ? .apiKeys : .devTools
+    }
+}
+
+/// AI 服务商 — API-key providers with balance polling.
+struct ApiProvidersTab: View {
+    var body: some View {
+        IntegrationGroupedTab(category: .apiKeys)
+    }
+}
+
+/// 开发工具 — log-based (Claude/Codex/Qwen) + subscription (Cursor/Copilot/Windsurf).
+/// Includes the home-directory grant (sandbox) since it gates log-based detection.
+struct DevToolsTab: View {
+    var body: some View {
+        IntegrationGroupedTab(category: .devTools)
+    }
+}
+
+/// Shared grouped-integrations list, filtered to one category.
+struct IntegrationGroupedTab: View {
+    let category: IntegrationCategory
     @State private var results: [(any Detectable, DetectionResult)] = []
     @State private var isDetecting = false
-
-    /// Group integrations by their nature: API Keys (balance polling) vs Editors & Tools.
-    /// Editors/Tools may produce logs, subscriptions, or both — they belong together.
-    /// Groups shown in order: API first (configure keys), then Dev Tools (can reference those keys)
-    enum Group: String, CaseIterable {
-        case apiKeys = "API"
-        case editors = "Dev Tools"
-        static func label(_ g: Group) -> String {
-            switch g {
-            case .apiKeys: return I18n.t("integrations.group_api_key")
-            case .editors: return I18n.t("integrations.group_editors")
-            }
-        }
-        var desc: String? {
-            switch self {
-            case .apiKeys: return I18n.t("integrations.group_api_key_desc")
-            case .editors: return I18n.t("integrations.group_editors_desc")
-            }
-        }
-    }
-
-    func groupFor(_ integration: any Detectable) -> Group {
-        // API-key-only integrations: pure balance polling, no editor/tool association
-        let apiKeyOnlyIds = Set(["deepseek", "openai", "moonshot", "zhipu", "anthropic"])
-        if apiKeyOnlyIds.contains(integration.id) {
-            return .apiKeys
-        }
-        // Everything else is an editor or tool
-        return .editors
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(I18n.t("integrations.title")).font(.title3).fontWeight(.semibold)
+                Text(category == .apiKeys
+                     ? I18n.t("settings.integrations_api")
+                     : I18n.t("settings.integrations_devtools"))
+                    .font(.title3).fontWeight(.semibold)
                 Spacer()
                 if isDetecting {
                     ProgressView().scaleEffect(0.6)
@@ -109,25 +161,22 @@ struct IntegrationsSettingsTab: View {
                     Button(I18n.t("integrations.redetect")) { reDetect() }.font(.caption)
                 }
             }
-            Text(I18n.t("integrations.desc"))
+            // Category-specific description (substantive, not a repetition of
+            // the sidebar label).
+            Text(category == .apiKeys
+                 ? I18n.t("integrations.group_api_key_desc")
+                 : I18n.t("integrations.group_editors_desc"))
                 .font(.caption).foregroundColor(.secondary)
 
             ScrollView {
-                VStack(spacing: 8) {
-                    ForEach(Group.allCases, id: \.self) { group in
-                        let items = results.filter { groupFor($0.0) == group }
-                        if !items.isEmpty {
-                            sectionHeader(Group.label(group), count: items.count)
-                            if let desc = group.desc {
-                                Text(desc)
-                                    .font(.caption2).foregroundColor(.secondary)
-                                    .padding(.bottom, 2)
-                            }
-                            ForEach(items, id: \.0.id) { (i, r) in
-                                IntegrationRow(integration: i, detected: r,
-                                               onGrant: { runDetection() })
-                            }
-                        }
+                VStack(spacing: 12) {
+                    if category == .devTools {
+                        devToolsAccessBanner
+                    }
+                    ForEach(results.filter { IntegrationCategory.category(for: $0.0) == category },
+                            id: \.0.id) { (i, r) in
+                        IntegrationRow(integration: i, detected: r,
+                                       onGrant: { runDetection() })
                     }
                 }
             }
@@ -138,13 +187,29 @@ struct IntegrationsSettingsTab: View {
         }
     }
 
-    func sectionHeader(_ title: String, count: Int) -> some View {
-        HStack {
-            Text(title).font(.caption).fontWeight(.semibold).foregroundColor(.secondary)
-            Text("(\(count))").font(.caption2).foregroundColor(.secondary)
-            Spacer()
+    /// Sandbox: home-directory grant state for log-based tool detection.
+    @ViewBuilder
+    private var devToolsAccessBanner: some View {
+        if BookmarkManager.isSandboxed {
+            HStack(spacing: 8) {
+                Image(systemName: BookmarkManager.hasHomeAccess ? "checkmark.shield" : "lock.open")
+                    .foregroundColor(BookmarkManager.hasHomeAccess ? .green : .secondary)
+                if BookmarkManager.hasHomeAccess {
+                    Text("\(I18n.t("settings.granted_path")) \(BookmarkManager.homeDirPath)")
+                        .font(.caption).foregroundColor(.secondary)
+                } else {
+                    Text(I18n.t("onboarding.grant_home_hint"))
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+                if !BookmarkManager.hasHomeAccess {
+                    Button(I18n.t("bookmark.grant_to_detect")) { grantHomeAccess() }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+            }
+            .padding(10)
+            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         }
-        .padding(.top, 4)
     }
 
     func runDetection() {
@@ -157,6 +222,13 @@ struct IntegrationsSettingsTab: View {
             results = IntegrationRegistry.visible.map { ($0, $0.detect()) }
             isDetecting = false
         }
+    }
+
+    /// Grant home-folder access (sandbox) then re-detect all integrations.
+    private func grantHomeAccess() {
+        guard BookmarkManager.requestHomeAccess(message: I18n.t("bookmark.home_message")) != nil
+        else { return }
+        reDetect()
     }
 }
 

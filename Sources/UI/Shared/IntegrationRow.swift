@@ -54,7 +54,7 @@ struct IntegrationRow: View {
     private static let subscriptionIds: Set<String> = ["claude-code", "cursor", "copilot", "windsurf"]
 
     /// Log-based dev tools: no subscription, no apiKey, but can use configured API keys.
-    private static let logToolIds: Set<String> = ["aider"]
+    private static let logToolIds: Set<String> = ["aider", "codex", "qwen-code", "opencode"]
 
     /// Is this integration primarily an apiKey type?
     var isAPIKeyType: Bool { Self.apiKeyIds.contains(integration.id) }
@@ -65,13 +65,6 @@ struct IntegrationRow: View {
     /// Log-based dev tool: can use API keys but has no subscription tiers.
     var isLogTool: Bool { Self.logToolIds.contains(integration.id) }
 
-
-    /// Claude Code under sandbox needs an explicit ~/.claude directory grant
-    var needsGrant: Bool {
-        integration.id == "claude-code"
-            && BookmarkManager.isSandboxed
-            && !BookmarkManager.hasBookmark(covering: BookmarkManager.claudeDirPath)
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -119,10 +112,7 @@ struct IntegrationRow: View {
 
                     Spacer()
 
-                    if needsGrant {
-                        Button(I18n.t("bookmark.grant")) { grantClaude() }
-                            .buttonStyle(.bordered).controlSize(.small)
-                    } else if detected.found {
+                    if detected.found {
                         Text(summaryText)
                             .font(.caption).foregroundColor(.secondary).lineLimit(1)
                     }
@@ -134,16 +124,16 @@ struct IntegrationRow: View {
                 }
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
+        .padding(.horizontal, 12).padding(.vertical, 10)
         .opacity((detected.found || isAPIKeyType) ? 1 : 0.5)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 10)
                 .fill((detected.found || isAPIKeyType) ? Color(nsColor: .controlBackgroundColor) : Color(nsColor: .controlBackgroundColor).opacity(0.4))
-                .shadow(color: .black.opacity((detected.found || isAPIKeyType) ? 0.04 : 0), radius: 2, y: 1)
+                .shadow(color: .black.opacity((detected.found || isAPIKeyType) ? 0.06 : 0), radius: 3, y: 1.5)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 1)
         )
         .onAppear { refreshBalance() }
         .onReceive(NotificationCenter.default.publisher(for: .apiBalanceDidUpdate)) { note in
@@ -152,12 +142,24 @@ struct IntegrationRow: View {
         }
     }
 
+    /// Log-based tools that read a ~/.xxx directory (need the home grant to
+    /// be detected at all under sandbox).
+    private var needsHomeGrant: Bool {
+        integration.id == "claude-code" || integration.id == "codex"
+            || integration.id == "qwen-code" || integration.id == "opencode"
+    }
+
     var summaryText: String {
         if detected.found {
             if isAPIKeyType, let bal = balanceText { return bal }
             return detected.summary
         }
-        if needsGrant { return I18n.t("onboarding.grant_claude_hint") }
+        // Under sandbox without the home grant, we cannot yet tell whether a
+        // log-based tool is installed — report "needs grant" rather than
+        // a definitive "not installed".
+        if needsHomeGrant && BookmarkManager.isSandboxed && !BookmarkManager.hasHomeAccess {
+            return I18n.t("onboarding.grant_home_hint")
+        }
         if isAPIKeyType { return I18n.t("integrations.needs_config_note") }
         return I18n.t("integrations.not_installed_note")
     }
@@ -208,7 +210,6 @@ struct IntegrationRow: View {
 
     var iconName: String {
         if detecting { return "arrow.triangle.2circlepath" }
-        if needsGrant { return "lock.circle" }
         if isAPIKeyType {
             switch keyStatus {
             case .none:     return "questionmark.circle"
@@ -222,7 +223,6 @@ struct IntegrationRow: View {
 
     var iconColor: Color {
         if detecting { return .blue }
-        if needsGrant { return .orange }
         if isAPIKeyType {
             switch keyStatus {
             case .none:     return .orange
@@ -344,16 +344,6 @@ struct IntegrationRow: View {
         IntegrationRegistry.setConfig(for: integration.id, cfg)
         if enabled, let c = integration as? Collectable { c.start() }
         else if !enabled, let c = integration as? Collectable { c.stop() }
-    }
-
-    private func grantClaude() {
-        guard BookmarkManager.requestClaudeAccess(message: I18n.t("bookmark.claude_message")) != nil
-        else { return }
-        var cfg = IntegrationRegistry.config(for: integration.id)
-        cfg.enabled = true
-        IntegrationRegistry.setConfig(for: integration.id, cfg)
-        (integration as? Collectable)?.start()
-        onGrant?()
     }
 
     private func saveSub(_ tier: String) {
