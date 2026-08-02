@@ -259,7 +259,7 @@ struct DashboardView: View {
                                         .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
                                 )
                                 .padding(.horizontal, 60).padding(.bottom, 60)
-                        } else if !remainingBalances.isEmpty {
+                        } else if !remainingBalances.filter({ $0.balance > 0.001 }).isEmpty || !usageData.isEmpty {
                             remainingBalanceSection
                                 .padding(20)
                                 .background(
@@ -974,12 +974,18 @@ struct DashboardView: View {
     }
 
     var remainingBalanceSection: some View {
-        VStack(spacing: 12) {
-            Text(I18n.t("dashboard.remaining_balance")).font(.headline)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
+        // Hide providers with no usable balance (missing/invalid key) — same
+        // filter iOS applies, so 0.00 rows never render.
+        let balances = remainingBalances.filter { $0.balance > 0.001 }
+        let hasAny = !balances.isEmpty || !usageData.isEmpty
+        return VStack(spacing: 12) {
+            if hasAny {
+                Text(I18n.t("dashboard.remaining_balance")).font(.headline)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
             // API balances
-            ForEach(remainingBalances, id: \.providerId) { item in
+            ForEach(balances, id: \.providerId) { item in
                 HStack {
                     Text(item.displayName)
                         .font(.caption).foregroundColor(.secondary)

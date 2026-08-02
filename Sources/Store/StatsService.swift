@@ -458,7 +458,10 @@ enum StatsService {
             guard let pid: String = row["provider_id"],
                   let storedBal: Double = row["balance"],
                   let cur: String = row["currency"],
-                  balanceTrackedIds.contains(pid)
+                  balanceTrackedIds.contains(pid),
+                  // Only show providers with a key configured — a provider
+                  // whose key was deleted/cleared must not show stale balance.
+                  ApiKeyManager.shared.get(pid) != nil
             else { return nil }
             let provider = ProviderRegistry.byId(pid)
             let rawBalance = provider?.balanceType == .usage ? -storedBal : storedBal
