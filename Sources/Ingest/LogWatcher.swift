@@ -68,6 +68,7 @@ final class LogWatcher: @unchecked Sendable {
                 }
                 self.watchClaudeCode()
                 self.discoverAndWatchRepos()
+                self.scanCodexSessions()
             }
         }
     }
@@ -84,6 +85,7 @@ final class LogWatcher: @unchecked Sendable {
                 }
                 self.scanClaudeProjectsOnly()
                 self.discoverAndWatchRepos()
+                self.scanCodexSessions()
             }
         }
     }
@@ -162,6 +164,47 @@ final class LogWatcher: @unchecked Sendable {
                     inTokens: event.inTokens, outTokens: event.outTokens, cacheTokens: event.cacheTokens,
                     repoPath: repoPath, sessionId: event.sessionId, dedupeKey: event.dedupeKey)
             }
+        }
+    }
+
+    // MARK: - Codex CLI
+
+    /// Scan `~/.codex/sessions/**/rollout-*.jsonl` incrementally.
+    /// Idempotent — `parseLinesIncremental` resumes from the persisted byte
+    /// offset of each file. Runs on every phase-1 tick.
+    private func scanCodexSessions() {
+        let home = FileManager.default.realHomeDirectory
+        let sessionsDir = home.appendingPathComponent(".codex/sessions")
+        guard FileManager.default.fileExists(atPath: sessionsDir.path),
+              let enumerator = FileManager.default.enumerator(
+                  at: sessionsDir,
+                  includingPropertiesForKeys: nil,
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else { return }
+
+        for case let url as URL in enumerator
+        where url.lastPathComponent.hasPrefix("rollout-") && url.pathExtension == "jsonl" {
+            parseCodexFile(url)
+        }
+    }
+
+    private func parseCodexFile(_ file: URL) {
+        var currentCwd: String? = nil
+        var currentModel: String? = nil
+        var parsedCount = 0
+        let filePath = file.path
+        parseLinesIncremental(from: file) { line in
+            // Track cwd (session_meta) and model (turn_context) across lines.
+            if let cwd = CodexParser.cwd(fromLine: line) { currentCwd = cwd }
+            if let m = CodexParser.model(fromLine: line) { currentModel = m }
+            if let event = CodexParser.parse(line: line, cwd: currentCwd, model: currentModel) {
+                parsedCount += 1
+                return event
+            }
+            return nil
+        }
+        if parsedCount > 0 {
+            Logger.info("LogWatcher: parsed \(parsedCount) codex events from \(filePath)")
         }
     }
 

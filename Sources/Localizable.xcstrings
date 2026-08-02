@@ -72,16 +72,6 @@
       },
       "shouldTranslate": false
     },
-    "%@ %@ · %@ %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "new",
-            "value": "%1$@ %2$@ · %3$@ %4$@"
-          }
-        }
-      }
-    },
     "%@:": {
       "localizations": {
         "en": {
@@ -8262,6 +8252,136 @@
         }
       }
     },
+    "detect.codex_found": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI-Sitzungen gefunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI sessions found"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesiones de Codex CLI encontradas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sessions Codex CLI trouvées"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI セッションを検出"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI 세션 감지됨"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sessões do Codex CLI encontradas"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检测到 Codex CLI 会话"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "偵測到 Codex CLI 工作階段"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "偵測到 Codex CLI 工作階段"
+          }
+        }
+      }
+    },
+    "detect.codex_not_found": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "keine Codex CLI-Sitzungen gefunden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no Codex CLI sessions found"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no se encontraron sesiones de Codex CLI"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aucune session Codex CLI trouvée"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI セッションが見つかりません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI 세션을 찾지 못함"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nenhuma sessão do Codex CLI encontrada"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未检测到 Codex CLI 会话"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未偵測到 Codex CLI 工作階段"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未偵測到 Codex CLI 工作階段"
+          }
+        }
+      }
+    },
     "detect.key_configured": {
       "comment": "Keep translation short — UI label, avoid layout overflow",
       "extractionState": "manual",
@@ -15779,6 +15899,136 @@
         }
       },
       "shouldTranslate": false
+    },
+    "bookmark.codex_message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grant access to your ~/.codex folder so AI Pulse can read Codex CLI usage."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授予 ~/.codex 文件夹的访问权限，以便 AI Pulse 读取 Codex CLI 用量。"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授予 ~/.codex 資料夾的存取權限，以便 AI Pulse 讀取 Codex CLI 用量。"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授予 ~/.codex 資料夾的存取權限，以便 AI Pulse 讀取 Codex CLI 用量。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~/.codex フォルダへのアクセスを許可し、AI Pulse が Codex CLI の使用量を読み取れるようにします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~/.codex 폴더에 대한 접근을 허용하여 AI Pulse가 Codex CLI 사용량을 읽을 수 있게 합니다."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gewähren Sie Zugriff auf ~/.codex, damit AI Pulse die Codex-CLI-Nutzung lesen kann."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisez l'accès à ~/.codex pour que AI Pulse puisse lire l'utilisation de Codex CLI."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conceda acceso a ~/.codex para que AI Pulse pueda leer el uso de Codex CLI."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conceda acesso a ~/.codex para que o AI Pulse possa ler o uso do Codex CLI."
+          }
+        }
+      }
+    },
+    "onboarding.grant_codex_hint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading ~/.codex is required to track Codex CLI usage. Confirm access in the dialog — data stays on your machine."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要读取 ~/.codex 才能追踪 Codex CLI 用量。请在对话框中确认授权——数据保留在本机。"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要讀取 ~/.codex 才能追蹤 Codex CLI 用量。請在對話框中確認授權——資料保留在本機。"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要讀取 ~/.codex 才能追蹤 Codex CLI 用量。請在對話框中確認授權——資料保留在本機。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI の使用量を追跡するには ~/.codex の読み取りが必要です。ダイアログでアクセスを確認してください——データは端末に残ります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex CLI 사용량을 추적하려면 ~/.codex 읽기가 필요합니다. 대화상자에서 액세스를 확인하세요 — 데이터는 기기에 유지됩니다."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Verfolgen der Codex-CLI-Nutzung muss ~/.codex gelesen werden. Bestätigen Sie den Zugriff im Dialog — Daten bleiben auf Ihrem Gerät."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La lecture de ~/.codex est requise pour suivre l'utilisation de Codex CLI. Confirmez l'accès dans la boîte de dialogue — les données restent sur votre machine."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se requiere leer ~/.codex para rastrear el uso de Codex CLI. Confirme el acceso en el diálogo — los datos permanecen en su máquina."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "É necessário ler ~/.codex para rastrear o uso do Codex CLI. Confirme o acesso na caixa de diálogo — os dados permanecem na sua máquina."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

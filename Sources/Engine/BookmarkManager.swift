@@ -43,6 +43,12 @@ enum BookmarkManager {
             .appendingPathComponent(".claude").path
     }
 
+    /// Path to `~/.codex` (OpenAI Codex CLI session logs).
+    static var codexDirPath: String {
+        FileManager.default.realHomeDirectory
+            .appendingPathComponent(".codex").path
+    }
+
     // MARK: - Public API
 
     /// Present an Open Panel for the user to grant access to a directory.
@@ -81,6 +87,27 @@ enum BookmarkManager {
         panel.allowsMultipleSelection = false
         panel.showsHiddenFiles = true
         panel.directoryURL = home.appendingPathComponent(".claude")
+
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+
+        createAndSave(for: url)
+        return url
+    }
+
+    /// Present an Open Panel pre-pointed at `~/.codex` so the user can grant
+    /// read access to OpenAI Codex CLI session logs (sandbox requirement).
+    @discardableResult
+    @MainActor
+    static func requestCodexAccess(message: String) -> URL? {
+        let home = FileManager.default.realHomeDirectory
+        let panel = NSOpenPanel()
+        panel.message = message
+        panel.prompt = I18n.t("bookmark.authorize_access")
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = home.appendingPathComponent(".codex")
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 

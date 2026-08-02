@@ -54,7 +54,7 @@ struct IntegrationRow: View {
     private static let subscriptionIds: Set<String> = ["claude-code", "cursor", "copilot", "windsurf"]
 
     /// Log-based dev tools: no subscription, no apiKey, but can use configured API keys.
-    private static let logToolIds: Set<String> = ["aider"]
+    private static let logToolIds: Set<String> = ["aider", "codex"]
 
     /// Is this integration primarily an apiKey type?
     var isAPIKeyType: Bool { Self.apiKeyIds.contains(integration.id) }
@@ -66,11 +66,18 @@ struct IntegrationRow: View {
     var isLogTool: Bool { Self.logToolIds.contains(integration.id) }
 
 
-    /// Claude Code under sandbox needs an explicit ~/.claude directory grant
+    /// Sandboxed apps need an explicit directory grant to read logs outside
+    /// the container: ~/.claude for Claude Code, ~/.codex for Codex CLI.
     var needsGrant: Bool {
-        integration.id == "claude-code"
-            && BookmarkManager.isSandboxed
-            && !BookmarkManager.hasBookmark(covering: BookmarkManager.claudeDirPath)
+        guard BookmarkManager.isSandboxed else { return false }
+        switch integration.id {
+        case "claude-code":
+            return !BookmarkManager.hasBookmark(covering: BookmarkManager.claudeDirPath)
+        case "codex":
+            return !BookmarkManager.hasBookmark(covering: BookmarkManager.codexDirPath)
+        default:
+            return false
+        }
     }
 
     var body: some View {
@@ -120,7 +127,7 @@ struct IntegrationRow: View {
                     Spacer()
 
                     if needsGrant {
-                        Button(I18n.t("bookmark.grant")) { grantClaude() }
+                        Button(I18n.t("bookmark.grant")) { grantAccess() }
                             .buttonStyle(.bordered).controlSize(.small)
                     } else if detected.found {
                         Text(summaryText)
@@ -157,7 +164,11 @@ struct IntegrationRow: View {
             if isAPIKeyType, let bal = balanceText { return bal }
             return detected.summary
         }
-        if needsGrant { return I18n.t("onboarding.grant_claude_hint") }
+        if needsGrant {
+            return integration.id == "codex"
+                ? I18n.t("onboarding.grant_codex_hint")
+                : I18n.t("onboarding.grant_claude_hint")
+        }
         if isAPIKeyType { return I18n.t("integrations.needs_config_note") }
         return I18n.t("integrations.not_installed_note")
     }
@@ -346,9 +357,17 @@ struct IntegrationRow: View {
         else if !enabled, let c = integration as? Collectable { c.stop() }
     }
 
-    private func grantClaude() {
-        guard BookmarkManager.requestClaudeAccess(message: I18n.t("bookmark.claude_message")) != nil
-        else { return }
+    private func grantAccess() {
+        let granted: URL?
+        switch integration.id {
+        case "claude-code":
+            granted = BookmarkManager.requestClaudeAccess(message: I18n.t("bookmark.claude_message"))
+        case "codex":
+            granted = BookmarkManager.requestCodexAccess(message: I18n.t("bookmark.codex_message"))
+        default:
+            granted = nil
+        }
+        guard granted != nil else { return }
         var cfg = IntegrationRegistry.config(for: integration.id)
         cfg.enabled = true
         IntegrationRegistry.setConfig(for: integration.id, cfg)
