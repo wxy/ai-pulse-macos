@@ -73,6 +73,7 @@ struct DashboardSnapshot: Codable {
     var codeChanges: [TrendPoint] = []
     var balanceDaily: [TrendPoint] = []  // API-only spend per day
     var remainingBalances: [RemainingBalanceItem] = []
+    var quotaStatus: [QuotaStatusItem] = []  // subscription quota (Claude/Copilot)
 
     var updatedAt: Date = Date()
 
@@ -123,4 +124,13 @@ struct RemainingBalanceItem: Codable {
     var displayName: String
     var balance: Double
     var currency: String
+}
+
+/// Subscription quota state (Claude / Copilot window utilization + reset).
+struct QuotaStatusItem: Codable {
+    var toolId: String        // "claude-code" / "copilot"
+    var utilization: Double   // 0-100
+    var limitStatus: String
+    var resetAt: Double       // Unix timestamp of next reset (0 if unknown)
+    var windowSeconds: Double // quota window length (for last-reset math)
 }
