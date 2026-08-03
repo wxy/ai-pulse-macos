@@ -1,7 +1,7 @@
 # AI Pulse for macOS
 
 [![CI](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml)
-[![Mac App Store](https://img.shields.io/badge/Mac%20App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+[![Mac App Store](https://img.shields.io/badge/Mac%20App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/cn/app/ai-pulse-%E7%BC%96%E7%A8%8B%E8%8A%B1%E8%B4%B9%E8%BF%BD%E8%B8%AA%E4%BB%AA/id6786290416?mt=12)
 [![iOS App Store](https://img.shields.io/badge/iOS%20App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/cn/app/ai-pulse-%E7%BC%96%E7%A8%8B%E8%8A%B1%E8%B4%B9%E8%BF%BD%E8%B8%AA%E4%BB%AA/id6786290416)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%2F%20iOS%2016%2B-lightgrey)]()
@@ -15,7 +15,7 @@
 
 ## 下载
 
-[![Download on the Mac App Store](https://tools.applemediaservices.com/api/badges/download-on-the-mac-app-store/black/en-us?size=250x83)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+[![Download on the Mac App Store](https://tools.applemediaservices.com/api/badges/download-on-the-mac-app-store/black/en-us?size=250x83)](https://apps.apple.com/cn/app/ai-pulse-%E7%BC%96%E7%A8%8B%E8%8A%B1%E8%B4%B9%E8%BF%BD%E8%B8%AA%E4%BB%AA/id6786290416?mt=12)
 [![Download on the App Store](https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83)](https://apps.apple.com/cn/app/ai-pulse-%E7%BC%96%E7%A8%8B%E8%8A%B1%E8%B4%B9%E8%BF%BD%E8%B8%AA%E4%BB%AA/id6786290416)
 
 - **macOS 版** — 需要 macOS 14 Sonoma 或更高版本
