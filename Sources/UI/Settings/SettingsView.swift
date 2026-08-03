@@ -553,6 +553,8 @@ struct ReposTab: View {
 // MARK: - About
 
 struct AboutTab: View {
+    @State private var showAcknowledgments = false
+
     var body: some View {
         VStack(spacing: 16) {
             Image(nsImage: AppIconLoader.uiImage(size: 64))
@@ -570,6 +572,9 @@ struct AboutTab: View {
                 Button(I18n.t("about.source_code")) {
                     NSWorkspace.shared.open(URL(string: "https://github.com/wxy/ai-pulse-macos")!)
                 }
+                Button(I18n.t("about.acknowledgments")) {
+                    showAcknowledgments = true
+                }
             }
             .buttonStyle(.link)
 
@@ -585,6 +590,10 @@ struct AboutTab: View {
                 Text(I18n.t("about.audio_credit"))
                     .font(.caption2).foregroundColor(.secondary).multilineTextAlignment(.center)
             }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $showAcknowledgments) {
+            AcknowledgmentsView()
+        }
     }
 }

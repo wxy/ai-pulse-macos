@@ -4,6 +4,22 @@ Thanks for considering a contribution! This document is for developers and
 covers the technical side of the project. For features and user guidance, see
 the [README](README.md).
 
+## Contributor License Agreement
+
+By submitting a pull request — or any other contribution — you agree to the
+[Individual Contributor License Agreement](CLA.md). In short: you grant the
+project a perpetual, irrevocable, sublicensable license to your contribution,
+including the right to use it in the **paid** App Store product, while you keep
+the copyright to your own code.
+
+AI Pulse is **open source (Apache-2.0), but the App Store product is paid
+software** — contributions are made without expectation of payment.
+
+Pull requests are not merged until the CLA has been accepted; the maintainers
+may ask you to confirm acceptance in the pull request thread. Contributors
+whose pull requests are merged are listed in the app's **Acknowledgments**
+page (Settings → About → Acknowledgments).
+
 ## Quick Start
 
 Requirements: macOS 14+, Xcode 16.6+ (and an [Apple Developer Program](https://developer.apple.com)
