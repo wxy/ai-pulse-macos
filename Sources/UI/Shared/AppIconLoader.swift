@@ -9,6 +9,12 @@ enum AppIconLoader {
     private static let cornerRadius: CGFloat = 185.4  // continuous corner radius of the 824px body
     private static let coverage: CGFloat = 0.72       // artwork span as a fraction of the body
 
+    // Debug-build marker: an orange diagonal cut across the top-left corner,
+    // mirroring scripts/generate-icons.py --debug so the live Dock icon (which
+    // this code redraws on every update) stays visually distinguishable from
+    // the release build, matching the static AppIcon / .icns.
+    private static let debugNotchFraction: CGFloat = 0.32
+
     private static var canvasRect: CGRect { CGRect(x: 0, y: 0, width: size, height: size) }
     private static var bodyRect: CGRect { canvasRect.insetBy(dx: margin, dy: margin) }
 
@@ -61,6 +67,10 @@ enum AppIconLoader {
             let target = CGRect(x: body.midX - w / 2, y: body.midY - h / 2, width: w, height: h)
             art.image.draw(in: target)
         }
+
+        #if DEBUG
+        drawDebugNotch(in: body)
+        #endif
 
         // Gold overlay on top (tintAmount controls opacity)
         if tintAmount > 0.01 {
@@ -118,11 +128,29 @@ enum AppIconLoader {
             art.image.draw(in: target)
         }
 
+        #if DEBUG
+        drawDebugNotch(in: body)
+        #endif
+
         NSGraphicsContext.restoreGraphicsState()
 
         let img = NSImage(size: NSSize(width: size, height: size))
         img.addRepresentation(rep)
         return img
+    }
+
+    /// Debug-build marker: fill an orange diagonal triangle across the body's
+    /// top-left corner. Drawn after the artwork but within the rounded-rect
+    /// clip, matching scripts/generate-icons.py --debug geometry.
+    private static func drawDebugNotch(in body: CGRect) {
+        let cut = debugNotchFraction * body.width
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: body.minX, y: body.maxY))        // top-left corner
+        path.line(to: NSPoint(x: body.minX + cut, y: body.maxY))  // along the top edge
+        path.line(to: NSPoint(x: body.minX, y: body.maxY - cut))  // along the left edge
+        path.close()
+        NSColor(calibratedRed: 1.0, green: 149.0 / 255.0, blue: 0.0, alpha: 1.0).setFill()
+        path.fill()
     }
 
     /// Draw a single-colour linear progress ring (100% = full circle = 1× daily
