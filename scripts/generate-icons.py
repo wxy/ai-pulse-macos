@@ -16,7 +16,8 @@ background). This script derives every platform icon from it:
     corner so a dev build is visually distinguishable from the release build
     (which is how we tell them apart on the Home screen / Dock, since all
     builds share the same bundle identifier and display name).
-    macOS   AIPulse-Debug.iconset/.icns/.png  +  AIPulse/Assets.xcassets/AppIcon-Debug.appiconset
+    macOS   AIPulse/Assets.xcassets/AppIcon-Debug.appiconset
+            (the .iconset/.icns path is release-only, for scripts/build-app.sh)
     iOS     Suites/iOS/Assets.xcassets/AppIcon-Debug.appiconset/AIPulse.png
     Watch   Suites/watchOS/Assets.xcassets/AppIcon-Debug.appiconset/AIPulse.png
     Widget  Suites/AIPulseWidget/Assets.xcassets/AppIcon-Debug.appiconset/AIPulse.png
@@ -189,21 +190,24 @@ def make_rounded_icon(source: Image.Image, debug: bool = False) -> Image.Image:
 
 
 def generate_macos(source: Image.Image, debug: bool = False):
-    """macOS: Resources iconset + .icns (SPM build) and the asset-catalog icon (Xcode)."""
+    """macOS icon. Release also writes the Resources iconset + .icns used by
+    scripts/build-app.sh; debug writes only the asset-catalog AppIcon-Debug set
+    (the Xcode build's icon comes entirely from the asset catalog)."""
     suffix = "-Debug" if debug else ""
     rounded = make_rounded_icon(source, debug)
 
-    # Resources/.iconset + .icns (used by scripts/build-app.sh and as fallback)
-    iconset = os.path.join(RESOURCES, f"AIPulse{suffix}.iconset")
-    os.makedirs(iconset, exist_ok=True)
-    for logical, scale, filename in SIZES:
-        px = logical * scale
-        img = rounded.resize((px, px), Image.LANCZOS)
-        img.save(os.path.join(iconset, filename), "PNG")
-        print(f"  {filename:24s}  {px}x{px}")
-    icns = os.path.join(RESOURCES, f"AIPulse{suffix}.icns")
-    subprocess.run(["iconutil", "-c", "icns", iconset], check=True)
-    print(f"  → {icns}")
+    if not debug:
+        # Resources/.iconset + .icns (used by scripts/build-app.sh)
+        iconset = os.path.join(RESOURCES, "AIPulse.iconset")
+        os.makedirs(iconset, exist_ok=True)
+        for logical, scale, filename in SIZES:
+            px = logical * scale
+            img = rounded.resize((px, px), Image.LANCZOS)
+            img.save(os.path.join(iconset, filename), "PNG")
+            print(f"  {filename:24s}  {px}x{px}")
+        icns = os.path.join(RESOURCES, "AIPulse.icns")
+        subprocess.run(["iconutil", "-c", "icns", iconset], check=True)
+        print(f"  → {icns}")
 
     # Asset-catalog AppIcon set (drives the Xcode scheme dropdown + Xcode build icon)
     appiconset = os.path.join(MAC_ASSETS, f"AppIcon{suffix}.appiconset")
@@ -214,11 +218,6 @@ def generate_macos(source: Image.Image, debug: bool = False):
         img.save(os.path.join(appiconset, filename), "PNG")
     write_json(os.path.join(appiconset, "Contents.json"), mac_appicon_contents())
     print(f"  → {appiconset}")
-
-    if debug:
-        png = os.path.join(RESOURCES, "AIPulse-Debug.png")
-        notched_copy(source, debug=True).save(png, "PNG")
-        print(f"  → {png}")
 
 
 def generate_ios(source: Image.Image, debug: bool = False):
