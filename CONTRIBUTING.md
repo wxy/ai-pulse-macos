@@ -15,6 +15,9 @@ the copyright to your own code.
 AI Pulse is **open source (Apache-2.0), but the App Store product is paid
 software** — contributions are made without expectation of payment.
 
+This agreement applies to **third-party contributors**; the project owner's and
+maintainers' own contributions are not subject to it.
+
 Pull requests are not merged until the CLA has been accepted; the maintainers
 may ask you to confirm acceptance in the pull request thread. Contributors
 whose pull requests are merged are listed in the app's **Acknowledgments**

@@ -10,6 +10,10 @@ contribution, you agree to the terms below.
 > permanent, royalty-free license — including for use in the **paid** App Store
 > product. You keep the copyright to your own code. No money changes hands.
 
+> **Who this applies to:** this agreement covers **third-party contributors**.
+> The project owner's and maintainers' own contributions are not subject to it —
+> they already hold full rights to the project.
+
 ## 1. Definitions
 
 - **"Contribution"** means any original work of authorship — source code,
