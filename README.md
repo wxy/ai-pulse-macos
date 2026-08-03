@@ -13,13 +13,20 @@
 
 ## 截图 Screenshots
 
+### macOS
+
 |  | English | 中文 |
 |:---:|:---:|:---:|
-| **仪表盘 · 今日 / Dashboard · Today** | ![Dashboard Today](docs/screenshots/macos-dashboard-today-en.jpg) | ![仪表盘今日](docs/screenshots/macos-dashboard-today-zh.jpg) |
-| **仪表盘 · 本周 / Dashboard · This Week** | ![Dashboard This Week](docs/screenshots/macos-dashboard-week-en.jpg) | ![仪表盘本周](docs/screenshots/macos-dashboard-week-zh.jpg) |
-| **设置 / Settings** | ![Settings](docs/screenshots/macos-settings-en.jpg) | ![设置](docs/screenshots/macos-settings-zh.jpg) |
-| **iOS 仪表盘 · 今日 / iOS Dashboard · Today** | ![iOS Dashboard Today](docs/screenshots/ios-dashboard-today-en.jpg) | ![iOS 仪表盘今日](docs/screenshots/ios-dashboard-today-zh.jpg) |
-| **iOS 仪表盘 · 30 天 / iOS Dashboard · 30 Days** | ![iOS Dashboard 30 Days](docs/screenshots/ios-dashboard-30d-en.jpg) | ![iOS 仪表盘30天](docs/screenshots/ios-dashboard-30d-zh.jpg) |
+| **仪表盘 · 今日 / Dashboard · Today** | <img src="docs/screenshots/macos-dashboard-today-en.jpg" alt="Dashboard Today (EN)" width="420"> | <img src="docs/screenshots/macos-dashboard-today-zh.jpg" alt="仪表盘今日 (ZH)" width="420"> |
+| **仪表盘 · 本周 / Dashboard · This Week** | <img src="docs/screenshots/macos-dashboard-week-en.jpg" alt="Dashboard This Week (EN)" width="420"> | <img src="docs/screenshots/macos-dashboard-week-zh.jpg" alt="仪表盘本周 (ZH)" width="420"> |
+| **设置 / Settings** | <img src="docs/screenshots/macos-settings-en.jpg" alt="Settings (EN)" width="420"> | <img src="docs/screenshots/macos-settings-zh.jpg" alt="设置 (ZH)" width="420"> |
+
+### iOS
+
+|  | English | 中文 |
+|:---:|:---:|:---:|
+| **仪表盘 · 今日 / Dashboard · Today** | <img src="docs/screenshots/ios-dashboard-today-en.jpg" alt="iOS Dashboard Today (EN)" width="220"> | <img src="docs/screenshots/ios-dashboard-today-zh.jpg" alt="iOS 仪表盘今日 (ZH)" width="220"> |
+| **仪表盘 · 30 天 / Dashboard · 30 Days** | <img src="docs/screenshots/ios-dashboard-30d-en.jpg" alt="iOS Dashboard 30 Days (EN)" width="220"> | <img src="docs/screenshots/ios-dashboard-30d-zh.jpg" alt="iOS 仪表盘30天 (ZH)" width="220"> |
 
 ## 下载 Download
 
