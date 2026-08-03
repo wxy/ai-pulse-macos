@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIconFile</key>
-	<string>AIPulse</string>
+	<string>$(ICON_NAME)</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>
