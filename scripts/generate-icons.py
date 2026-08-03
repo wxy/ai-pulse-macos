@@ -1,25 +1,50 @@
 #!/usr/bin/env python3
 """
-Generate macOS 26 app icon: place the square AIPulse.png into an 824×824 rounded
-body centered on a 1024 canvas (100px transparent margin, corner radius 185.4px),
-produce all 10 iconset sizes, and package into AIPulse.icns.
+Generate AI Pulse app icons from a single source artwork.
 
-Usage:  python3 scripts/generate-icons.py [--chrome]
-  --chrome   Generate Chrome extension icons (robot-only, no white body)
-             at 16/32/48/128px → ../../public/icons/
-  (default)  Generate macOS .iconset + .icns → Resources/
+The source of truth is Resources/AIPulse.png (the square robot on a white
+background). This script derives every platform icon from it:
+
+  release (default)   python3 scripts/generate-icons.py
+    macOS   Resources/AIPulse.iconset + AIPulse.icns  and  AIPulse/Assets.xcassets/AppIcon.appiconset
+    iOS     Suites/iOS/Assets.xcassets/AppIcon.appiconset/AIPulse.png
+    Widget  Suites/AIPulseWidget/Assets.xcassets/AppIcon.appiconset/AIPulse.png
+            (watchOS icon is committed separately and left untouched)
+
+  debug               python3 scripts/generate-icons.py --debug
+    Same outputs, but an orange diagonal notch is drawn across the top-left
+    corner so a dev build is visually distinguishable from the release build
+    (which is how we tell them apart on the Home screen / Dock, since all
+    builds share the same bundle identifier and display name).
+    macOS   AIPulse/Assets.xcassets/AppIcon-Debug.appiconset
+            (the .iconset/.icns path is release-only, for scripts/build-app.sh)
+    iOS     Suites/iOS/Assets.xcassets/AppIcon-Debug.appiconset/AIPulse.png
+    Watch   Suites/watchOS/Assets.xcassets/AppIcon-Debug.appiconset/AIPulse.png
+    Widget  Suites/AIPulseWidget/Assets.xcassets/AppIcon-Debug.appiconset/AIPulse.png
+
+  chrome              python3 scripts/generate-icons.py --chrome
+    Chrome extension icons (robot-only, no white body)
+    at 16/32/48/128px → ../../public/icons/
+
+The Xcode projects pick the debug vs release set per build configuration
+(ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon / AppIcon-Debug on iOS, watch,
+widget and macOS; macOS also has CFBundleIconFile = $(ICON_NAME) for the
+scripted SPM build).
 """
 
 import os
 import sys
 import subprocess
-from PIL import Image, ImageDraw
+import shutil
+from PIL import Image, ImageChops, ImageDraw
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESOURCES = os.path.join(PROJECT_ROOT, "Resources")
 SOURCE_PNG = os.path.join(RESOURCES, "AIPulse.png")
-ICONSET = os.path.join(RESOURCES, "AIPulse.iconset")
-ICNS = os.path.join(RESOURCES, "AIPulse.icns")
+IOS_ASSETS = os.path.join(PROJECT_ROOT, "Suites", "iOS", "Assets.xcassets")
+WATCH_ASSETS = os.path.join(PROJECT_ROOT, "Suites", "watchOS", "Assets.xcassets")
+WIDGET_ASSETS = os.path.join(PROJECT_ROOT, "Suites", "AIPulseWidget", "Assets.xcassets")
+MAC_ASSETS = os.path.join(PROJECT_ROOT, "AIPulse", "Assets.xcassets")
 
 CANVAS = 1024
 # macOS 26 icon grid: an 824×824 rounded body centered in a 1024 canvas,
@@ -29,6 +54,11 @@ BODY = 824
 MARGIN = (CANVAS - BODY) // 2  # 100
 CORNER_RADIUS = 185.4  # continuous corner radius of the 824px body (≈22.5%)
 COVERAGE = 0.72  # artwork span as a fraction of the body
+
+# Debug-build marker: an orange diagonal cut across the top-left corner.
+# Fraction is of the rounded BODY on macOS and of the full canvas on iOS.
+NOTCH_FRACTION = 0.32
+NOTCH_COLOR = (255, 149, 0, 255)  # system orange
 
 # Standard macOS iconset sizes: (logical, scale, filename)
 SIZES = [
@@ -44,10 +74,38 @@ SIZES = [
     (512, 2, "icon_512x512@2x.png"),
 ]
 
-
 # Chrome extension icon sizes (robot-only, no white body, transparent bg)
 CHROME_SIZES = [16, 32, 48, 128]
 CHROME_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "..", "public", "icons")
+
+
+def mac_appicon_contents():
+    """Contents.json for a macOS AppIcon.appiconset (10 raster slots)."""
+    return {
+        "images": [
+            {"filename": f, "idiom": "mac", "scale": scale, "size": size}
+            for _, _, f, size, scale in [
+                (16, 1, "icon_16x16.png", "16x16", "1x"),
+                (16, 2, "icon_16x16@2x.png", "16x16", "2x"),
+                (32, 1, "icon_32x32.png", "32x32", "1x"),
+                (32, 2, "icon_32x32@2x.png", "32x32", "2x"),
+                (128, 1, "icon_128x128.png", "128x128", "1x"),
+                (128, 2, "icon_128x128@2x.png", "128x128", "2x"),
+                (256, 1, "icon_256x256.png", "256x256", "1x"),
+                (256, 2, "icon_256x256@2x.png", "256x256", "2x"),
+                (512, 1, "icon_512x512.png", "512x512", "1x"),
+                (512, 2, "icon_512x512@2x.png", "512x512", "2x"),
+            ]
+        ],
+        "info": {"author": "xcode", "version": 1},
+    }
+
+
+def write_json(path, data):
+    import json
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
 
 
 def rounded_rect_mask(size, radius):
@@ -76,7 +134,38 @@ def content_bbox(im: Image.Image):
     return (minx, miny, maxx + 1, maxy + 1)
 
 
-def make_rounded_icon(source: Image.Image) -> Image.Image:
+def draw_debug_notch(im: Image.Image, cut: int):
+    """Fill an orange triangle in the top-left corner as the dev-build marker."""
+    draw = ImageDraw.Draw(im)
+    draw.polygon([(0, 0), (cut, 0), (0, cut)], fill=NOTCH_COLOR)
+
+
+def notched_copy(im: Image.Image, debug: bool = False) -> Image.Image:
+    """Full-bleed 1024×1024 icon (iOS/watch/widget mask the corners themselves)."""
+    icon = im.copy()
+    if debug:
+        draw_debug_notch(icon, round(NOTCH_FRACTION * CANVAS))
+    return icon
+
+
+def draw_rounded_debug_notch(canvas: Image.Image):
+    """Cut a diagonal orange marker into the body's top-left corner.
+
+    The triangle is clipped to the body's alpha so the marker follows the
+    rounded corner instead of bleeding into the transparent margin. The result
+    is a bold diagonal slice from the body's top edge to its left edge.
+    """
+    alpha = canvas.getchannel("A")
+    tri = Image.new("L", (CANVAS, CANVAS), 0)
+    cut = MARGIN + round(NOTCH_FRACTION * BODY)
+    ImageDraw.Draw(tri).polygon(
+        [(MARGIN, MARGIN), (cut, MARGIN), (MARGIN, cut)], fill=255)
+    mask = ImageChops.multiply(tri, alpha)
+    orange = Image.new("RGBA", (CANVAS, CANVAS), NOTCH_COLOR)
+    return Image.composite(orange, canvas, mask)
+
+
+def make_rounded_icon(source: Image.Image, debug: bool = False) -> Image.Image:
     """Center the cropped artwork in an 824px white rounded body on a 1024 canvas."""
     canvas = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
 
@@ -94,7 +183,92 @@ def make_rounded_icon(source: Image.Image) -> Image.Image:
     # Round the corners and drop the body onto the transparent canvas.
     body.putalpha(rounded_rect_mask(BODY, CORNER_RADIUS))
     canvas.paste(body, (MARGIN, MARGIN), body)
+
+    if debug:
+        canvas = draw_rounded_debug_notch(canvas)
     return canvas
+
+
+def generate_macos(source: Image.Image, debug: bool = False):
+    """macOS icon. Release also writes the Resources iconset + .icns used by
+    scripts/build-app.sh; debug writes only the asset-catalog AppIcon-Debug set
+    (the Xcode build's icon comes entirely from the asset catalog)."""
+    suffix = "-Debug" if debug else ""
+    rounded = make_rounded_icon(source, debug)
+
+    if not debug:
+        # Resources/.iconset + .icns (used by scripts/build-app.sh)
+        iconset = os.path.join(RESOURCES, "AIPulse.iconset")
+        os.makedirs(iconset, exist_ok=True)
+        for logical, scale, filename in SIZES:
+            px = logical * scale
+            img = rounded.resize((px, px), Image.LANCZOS)
+            img.save(os.path.join(iconset, filename), "PNG")
+            print(f"  {filename:24s}  {px}x{px}")
+        icns = os.path.join(RESOURCES, "AIPulse.icns")
+        subprocess.run(["iconutil", "-c", "icns", iconset], check=True)
+        print(f"  → {icns}")
+
+    # Asset-catalog AppIcon set (drives the Xcode scheme dropdown + Xcode build icon)
+    appiconset = os.path.join(MAC_ASSETS, f"AppIcon{suffix}.appiconset")
+    os.makedirs(appiconset, exist_ok=True)
+    for logical, scale, filename in SIZES:
+        px = logical * scale
+        img = rounded.resize((px, px), Image.LANCZOS)
+        img.save(os.path.join(appiconset, filename), "PNG")
+    write_json(os.path.join(appiconset, "Contents.json"), mac_appicon_contents())
+    print(f"  → {appiconset}")
+
+
+def generate_ios(source: Image.Image, debug: bool = False):
+    """iOS main app: the 1024px icon in the asset catalog's appicon set."""
+    suffix = "-Debug" if debug else ""
+    appiconset = os.path.join(IOS_ASSETS, f"AppIcon{suffix}.appiconset")
+    os.makedirs(appiconset, exist_ok=True)
+    dest = os.path.join(appiconset, "AIPulse.png")
+    if debug:
+        notched_copy(source, debug=True).save(dest, "PNG")
+    else:
+        # Release icon is byte-identical to the source artwork — copy, don't
+        # re-encode, to keep the committed file unchanged.
+        shutil.copy(SOURCE_PNG, dest)
+    print(f"  → {dest}")
+
+
+def generate_watch(source: Image.Image, debug: bool = False):
+    """watchOS app icon. Release is committed separately; debug derives from it."""
+    if not debug:
+        print("  (release watch icon is committed separately — skipped)")
+        return
+    release = Image.open(
+        os.path.join(WATCH_ASSETS, "AppIcon.appiconset", "AIPulse.png")
+    ).convert("RGBA")
+    appiconset = os.path.join(WATCH_ASSETS, "AppIcon-Debug.appiconset")
+    os.makedirs(appiconset, exist_ok=True)
+    notched_copy(release, debug=True).save(
+        os.path.join(appiconset, "AIPulse.png"), "PNG")
+    # Template Contents.json (same structure as the release watch set)
+    shutil.copy(
+        os.path.join(WATCH_ASSETS, "AppIcon.appiconset", "Contents.json"),
+        os.path.join(appiconset, "Contents.json"))
+    print(f"  → {appiconset}")
+
+
+def generate_widget(source: Image.Image, debug: bool = False):
+    """Widget extension icon (so the debug build's widget is notched too)."""
+    suffix = "-Debug" if debug else ""
+    appiconset = os.path.join(WIDGET_ASSETS, f"AppIcon{suffix}.appiconset")
+    os.makedirs(appiconset, exist_ok=True)
+    dest = os.path.join(appiconset, "AIPulse.png")
+    if debug:
+        notched_copy(source, debug=True).save(dest, "PNG")
+    else:
+        shutil.copy(SOURCE_PNG, dest)
+    # Template Contents.json (same structure as the iOS main app icon)
+    shutil.copy(
+        os.path.join(IOS_ASSETS, "AppIcon.appiconset", "Contents.json"),
+        os.path.join(appiconset, "Contents.json"))
+    print(f"  → {appiconset}")
 
 
 def make_chrome_icon(source: Image.Image, size: int) -> Image.Image:
@@ -127,6 +301,7 @@ def generate_chrome_icons(source: Image.Image):
 
 def main():
     chrome_mode = "--chrome" in sys.argv
+    debug = "--debug" in sys.argv
 
     print(f"Loading source: {SOURCE_PNG}")
     source = Image.open(SOURCE_PNG).convert("RGBA")
@@ -139,23 +314,16 @@ def main():
         print("Done.")
         return
 
-    # Compose the 824px rounded body on the 1024 canvas.
-    print(f"Composing {BODY}px rounded body (r={CORNER_RADIUS}px, margin={MARGIN}px)...")
-    rounded = make_rounded_icon(source)
-
-    # Write iconset
-    os.makedirs(ICONSET, exist_ok=True)
-    for logical, scale, filename in SIZES:
-        px = logical * scale
-        img = rounded.resize((px, px), Image.LANCZOS)
-        path = os.path.join(ICONSET, filename)
-        img.save(path, "PNG")
-        print(f"  {filename:24s}  {px}x{px}")
-
-    # Generate .icns via iconutil
-    print(f"\nGenerating .icns via iconutil...")
-    subprocess.run(["iconutil", "-c", "icns", ICONSET], check=True)
-    print(f"  → {ICNS}")
+    flavor = "debug" if debug else "release"
+    print(f"Generating {flavor} app icons...")
+    print("macOS:")
+    generate_macos(source, debug)
+    print("iOS:")
+    generate_ios(source, debug)
+    print("watchOS:")
+    generate_watch(source, debug)
+    print("Widget:")
+    generate_widget(source, debug)
     print("Done.")
 
 
