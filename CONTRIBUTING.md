@@ -157,8 +157,6 @@ CI runs the same suite on macOS 15 / Xcode 26.3 (`.github/workflows/ci.yml`).
 |---|---|
 | `python3 scripts/generate-icons.py` | Regenerate macOS + iOS + watch + widget icons from `Resources/AIPulse.png` |
 | `python3 scripts/generate-icons.py --debug` | Same, with the orange corner notch that marks debug builds |
-| `make app` (`scripts/build-app.sh`) | Build the `.app` bundle from the SPM binary (icon + icns) |
-| `make run-app` | Rebuild + relaunch the `.app` (use to see icon changes) |
 | `make release VERSION=x BUILD_NUM=y` (`scripts/release.sh`) | Archive + sign + DMG |
 | `make release-notarize` | Same, plus notarization (needs `APPLE_ID` / `APPLE_APP_PASSWORD`) |
 | `make restart` / `make hup` | Graceful SIGHUP restart (keeps DB connections clean) |
