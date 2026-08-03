@@ -1,205 +1,118 @@
 # AI Pulse for macOS
 
 [![CI](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml)
-[![App Store](https://img.shields.io/badge/App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+[![Mac App Store](https://img.shields.io/badge/Mac%20App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+[![iOS App Store](https://img.shields.io/badge/iOS%20App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/us/app/ai-pulse-coding-cost-tracker/id6786290416?mt=8)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)]()
+[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%2F%20iOS%2016%2B-lightgrey)]()
 [![Swift](https://img.shields.io/badge/swift-6.0-orange)]()
 
-Your AI coding fuel gauge — track exactly who's charging you, how much,
-and whether your code output is worth it. **100% local, zero data leaves
-your machine.**
+**Your AI coding cost tracker.** See exactly what you spend on AI coding tools —
+Claude Code, Cursor, Copilot, DeepSeek, and more — and whether the output is worth it.
+**100% local — zero data leaves your machine.**
+
+## Screenshots
+
+| Dashboard · Today | Dashboard · This Week | Settings |
+|:---:|:---:|:---:|
+| ![Dashboard Today](docs/screenshots/macos-dashboard-today-en.jpg) | ![Dashboard This Week](docs/screenshots/macos-dashboard-week-en.jpg) | ![Settings](docs/screenshots/macos-settings-en.jpg) |
 
 ## Download
 
 [![Download on the Mac App Store](https://tools.applemediaservices.com/api/badges/download-on-the-mac-app-store/black/en-us?size=250x83)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+[![Download on the App Store](https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83)](https://apps.apple.com/us/app/ai-pulse-coding-cost-tracker/id6786290416?mt=8)
 
-Requires macOS 14 Sonoma or later.
+- **macOS** — requires macOS 14 Sonoma or later
+- **iOS** — requires iOS 16 or later, and the macOS version as its data source
 
-To build from source, see [Quick Start](#quick-start).
-
-Also check out [AI Pulse for Chrome](https://github.com/wxy/ai-pulse) —
-the browser extension that covers web-based AI tools like ChatGPT, Claude.ai,
-DeepSeek Chat, and more.
-
-## How It Works
-
-AI Pulse discovers your AI spending through three layers, then attributes
-every dollar to the right tool, provider, and repo:
-
-```
-┌─────────────────────────────────────────────────┐
-│  Layer 1: Log Parsing (token-level accuracy)    │
-│  Claude Code, aider — raw request/response logs │
-├─────────────────────────────────────────────────┤
-│  Layer 2: Balance API (exact dollar deltas)     │
-│  DeepSeek, OpenAI, Kimi, Zhipu, Anthropic       │
-├─────────────────────────────────────────────────┤
-│  Layer 3: Subscription Detection (amortized)    │
-│  Cursor, Copilot, Windsurf, Claude Code Pro     │
-└─────────────────────────────────────────────────┘
-                    ↓
-           Arbitrator resolves
-          each event to one CostSource
-                    ↓
-          CostSource (who's charging me?)
-          • apiKey(providerId: "deepseek")
-          • subscription(toolId: "cursor", tier: "Pro")
-                    ↓
-         ┌──────────┼──────────┐
-      Dashboard    MenuBar     Dock
-```
-
-### CostSource Model
-
-The 2-layer attribution system replaces the old A/B/C grade model:
-
-- **Integration layer**: each integration declares what CostSources it
-  provides — API keys with balance polling, subscriptions with monthly
-  fee amortization
-- **Arbitrator layer**: resolves every usage event to the most likely
-  CostSource, priority: user-preferred API key → apiKey → subscription
-
-Each CostSource carries a confidence level (`exact` > `estimated` >
-`amortized` > `uncertain` > `incomplete`) so you always know how
-reliable a number is.
+💡 **Universal Purchase — buy once, use on both platforms.** A single purchase
+covers iOS and macOS. If you already own the Mac version and still see a price
+button on your iPhone or iPad, don't worry — as long as you're signed in with
+the same Apple ID, the App Store will recognize your existing purchase and let
+you download for free. You will never be charged twice.
 
 ## Features
 
 ### Dashboard
-The 3-section home window gives you the full picture:
-- **Donut chart** — spending breakdown by provider/tool with Mars Green and Deep Red palette
-- **30-day trend chart** — daily spend stacked by API + subscription amortization
-- **Repo & tool breakdown** — which projects and AI tools cost the most
 
-### Menu Bar
-- Quick-glance today/total spend in the menu bar
-- Drill-down views by **provider**, **tool**, **repo**, and **week**
-- All four views match the Dashboard totals perfectly (unified formula)
+Your home screen — styled as a robot head — shows the full picture at a glance:
+
+- **Today / This Week / 30 Days** — switch time ranges with one click
+- **Donut chart** — subscription vs. API spending split, plus a per-provider breakdown
+- **Trend chart** — daily costs stacked by API + subscription (Week and 30 Days tabs)
+- **Tool & repo ranking** — which AI tools and projects cost the most, with **Cost Per Line (CPL)**
+- **Live stats** — net lines of code, added/deleted lines, request count, and token usage
+- **Balances & quotas** — remaining API balance and subscription utilization (e.g. Claude, Copilot) on the Today tab
 
 ### Dock
-- Fuel-gauge spending ring with log-scale progress
-- Badge showing today's spending total
-- Gold pulse animation on new data
-- Right-click menu with quick cost breakdown
 
-### Data Collection
-| Tier | Sources | Method |
-|------|---------|--------|
-| Log parsing | Claude Code, aider | Token-level pricing from request logs |
-| Balance API | DeepSeek, OpenAI, Kimi, Zhipu, Anthropic | Daily balance deltas |
-| Subscription | Cursor, Copilot, Windsurf, Claude Code Pro | Monthly fee amortized to daily |
+The Dock icon is a living gauge for your spending:
 
-### Other Features
-- **Anomaly detection** — spending spike alerts via macOS notification
-- **Coin sounds** — satisfying audio feedback on data refresh (MP3)
-- **Commit tracking** — libgit2-powered repo scanning, correlates code
-  output with AI spending
-- **Multi-language** — 中文 / English
-- **Sandboxed** — Mac App Store compliant
+- **Spending ring** — a progress ring around the icon fills with today's spend vs. your daily rate
+- **Badge** — today's total, right on the icon
+- **Right-click stats menu** — today/week summaries and drill-downs by tool, provider, and repo
+- **Gold pulse** — a brief glow whenever new data arrives
+
+### iOS Companion
+
+A read-only companion that mirrors your spending to your iPhone or iPad via iCloud —
+today, this week, and 30-day trends, donut charts, and per-repo breakdowns. It never
+collects or uploads anything on its own; it only reads what your Mac has synced.
+
+| iOS Dashboard · Today | iOS Dashboard · 30 Days |
+|:---:|:---:|
+| ![iOS Dashboard Today](docs/screenshots/ios-dashboard-today-en.jpg) | ![iOS Dashboard 30 Days](docs/screenshots/ios-dashboard-30d-en.jpg) |
+
+### Supported Tools
+
+AI Pulse tracks 13 AI tools today across three collection methods:
+
+| Collection method | Tools |
+|---|---|
+| **Log parsing** (token-level pricing) | Claude Code, aider, Codex CLI, OpenCode, Qwen Code |
+| **Balance API** (exact balance deltas) | DeepSeek, OpenAI, Kimi, Zhipu (ChatGLM), Anthropic\* |
+| **Subscription detection** (monthly fee, amortized) | Cursor, GitHub Copilot, Windsurf (+ Trae, Augment Code) |
+
+\* Anthropic has no balance API, so its usage is estimated from token pricing.
+
+## Getting Started
+
+1. **Install** — download from the Mac App Store (requires macOS 14 or later).
+2. **Onboarding** — on first launch, a short walkthrough detects your installed AI tools
+   across four steps: AI providers, dev tools, repos, and a summary. Detected tools are
+   enabled automatically.
+3. **Grant Home access** — to read logs from Claude Code, Codex, OpenCode, Qwen, and aider
+   inside the sandbox, allow Home-folder access when prompted.
+4. **Add API keys** — Settings → Integrations → **AI Providers**. Keys are stored locally
+   and validated with a live balance check.
+5. **Choose plans** — Settings → Integrations → **Dev Tools** lets you pick your subscription
+   plan (e.g. Cursor Pro) and preferred API key.
+6. **Explore the Dashboard** — switch between Today, This Week, and 30 Days.
+7. **Right-click the Dock icon** anytime for a quick stats menu.
+8. **On the go?** Install the iOS companion with the same Apple ID — your spending
+   syncs automatically via iCloud.
+
+## Data & Privacy
+
+- **100% local** — everything is processed on your Mac; no data leaves your machine.
+- **API keys** are stored locally and used only to query your own balances.
+- **iOS companion is read-only** — it never collects anything itself, and iCloud sync
+  happens only between your own devices signed in with the same Apple ID.
 
 ## Requirements
 
 - macOS 14 Sonoma or later
-- Xcode 16.6+
-- [Apple Developer Program](https://developer.apple.com) membership (for distribution)
-
-## Quick Start
-
-```bash
-git clone https://github.com/wxy/ai-pulse-macos.git
-cd ai-pulse-macos
-
-# Command line
-make build   # compile
-make test    # run tests (56 tests)
-make run     # launch in dev mode
-
-# Or open in Xcode
-open AIPulse/AIPulse.xcodeproj
-```
-
-## Distribution
-
-AI Pulse is distributed through the [Mac App Store](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12).
-We recommend the App Store for automatic updates and sandbox security.
-
-To build a DMG for direct distribution (requires Apple Developer membership):
-
-```bash
-cp .env.example .env
-# Edit .env with your Apple ID and app-specific password
-NOTARIZE=1 ./scripts/make-dmg.sh
-```
-
-## Architecture
-
-```
-Sources/
-├── App/                AppDelegate, startup sequence
-├── Engine/             Core logic
-│   ├── CostSource      "Who's charging me?" — cost attribution model
-│   ├── Arbitrator      Resolves events → CostSources via model name
-│   ├── Integration*    Protocol (Detectable/Collectable) + Registry
-│   ├── DataRefreshCoordinator  3-phase scheduler (30s/5min/1h)
-│   ├── RepoDiscovery   Scans filesystem for git repos
-│   ├── AnomalyDetector Spending spike detection
-│   ├── CoinSound       MP3 coin effects on data refresh
-│   ├── UsageMonitor    Tracks active AI tools (Claude cache, etc.)
-│   └── EditorDetector  Infers editor-repo associations
-├── GitMonitor/         libgit2-powered commit tracking
-├── Ingest/
-│   ├── LogWatcher      tail-style log scanner
-│   ├── ApiPoller       Balance API polling
-│   ├── PricingCatalog  Token pricing database
-│   └── LogParsers/     Claude Code + aider log parsers
-├── Integrations/       10 AI tool integrations
-├── Store/              GRDB/SQLite persistence + StatsService
-├── UI/
-│   ├── Dashboard       3-section home window
-│   ├── MenuBar         Cost breakdown in menu bar
-│   ├── Dock            Fuel gauge + badge
-│   ├── Settings        Per-integration configuration
-│   ├── Onboarding      First-launch integration picker
-│   └── Shared/         AppIconLoader, IntegrationRow
-└── Utils/              I18n (zh/en), Logger
-```
-
-### Data Flow
-
-```
-LogWatcher        ──┐
-ApiPoller         ──┤
-GitMonitor        ──┤
-RepoDiscovery     ──┤
-                     ↓
-        DataRefreshCoordinator
-        (staggered 30s / 5min / 1h)
-                     ↓
-              .dataDidChange
-                     ↓
-    ┌────────┬────────┬────────┬──────────┐
- Dashboard  MenuBar   Dock   CoinSound  Anomaly
-```
-
-## Scripts
-
-| Script | Purpose |
-|---|---|
-| `scripts/build-app.sh` | Build `.app` bundle from SPM |
-| `scripts/release.sh` | Archive + sign + DMG + optional notarize |
-| `scripts/make-dmg.sh` | DMG from `.app` with icon, layout, notarization |
-
-## CI
-
-| Workflow | Trigger | Does |
-|----------|---------|------|
-| `ci.yml` | Push / PR to `main` | Build + test |
-| `release.yml` | `git tag v*` | Publish GitHub Release (App Store is primary distribution) |
+- The iOS companion requires iOS 16 or later (plus the macOS version as its data source)
 
 ## Related Projects
 
-- [AI Pulse for Chrome](https://github.com/wxy/ai-pulse) — browser extension for web-based AI tools (ChatGPT, Claude.ai, DeepSeek Chat, etc.)
+- [AI Pulse for Chrome](https://github.com/wxy/ai-pulse) — browser extension for
+  web-based AI tools (ChatGPT, Claude.ai, DeepSeek Chat, and more)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, architecture, and how to
+add new integrations.
 
 ## License
 
