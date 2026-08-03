@@ -155,7 +155,7 @@ CI runs the same suite on macOS 15 / Xcode 26.3 (`.github/workflows/ci.yml`).
 
 | Script / target | Purpose |
 |---|---|
-| `python3 scripts/generate-icons.py` | Regenerate macOS + iOS icons from `Resources/AIPulse.png` |
+| `python3 scripts/generate-icons.py` | Regenerate macOS + iOS + watch + widget icons from `Resources/AIPulse.png` |
 | `python3 scripts/generate-icons.py --debug` | Same, with the orange corner notch that marks debug builds |
 | `make app` (`scripts/build-app.sh`) | Build the `.app` bundle from the SPM binary (icon + icns) |
 | `make run-app` | Rebuild + relaunch the `.app` (use to see icon changes) |
