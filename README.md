@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%2F%20iOS%2016%2B-lightgrey)]()
 [![Swift](https://img.shields.io/badge/swift-6.0-orange)]()
 
-Your AI coding fuel gauge — track exactly who's charging you, how much,
+Your AI coding cost tracker — track exactly who's charging you, how much,
 and whether your code output is worth it. **100% local, zero data leaves
 your machine.**
 
@@ -103,7 +103,7 @@ The 3-section home window gives you the full picture:
 - All four views match the Dashboard totals perfectly (unified formula)
 
 ### Dock
-- Fuel-gauge spending ring with log-scale progress
+- Spending gauge ring with log-scale progress
 - Badge showing today's spending total
 - Gold pulse animation on new data
 - Right-click menu with quick cost breakdown
@@ -183,7 +183,7 @@ Sources/
 ├── UI/
 │   ├── Dashboard       3-section home window
 │   ├── MenuBar         Cost breakdown in menu bar
-│   ├── Dock            Fuel gauge + badge
+│   ├── Dock            Spending gauge + badge
 │   ├── Settings        Per-integration configuration
 │   ├── Onboarding      First-launch integration picker
 │   └── Shared/         AppIconLoader, IntegrationRow

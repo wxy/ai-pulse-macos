@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%2F%20iOS%2016%2B-lightgrey)]()
 [![Swift](https://img.shields.io/badge/swift-6.0-orange)]()
 
-你的 AI 编程油量表 —— 精确追踪每笔 AI 费用花在了哪里、花了多少、
+你的 AI 编程花费追踪仪 —— 精确追踪每笔 AI 费用花在了哪里、花了多少、
 产出是否值得。**100% 本地运行，数据绝不出设备。**
 
 同时关注 [AI Pulse Chrome 扩展](https://github.com/wxy/ai-pulse) ——
@@ -95,7 +95,7 @@ AI Pulse 通过三层数据采集发现你的 AI 支出，然后通过 CostSourc
 - 四个视图与仪表盘总额完全一致（统一计费公式）
 
 ### Dock 图标
-- 油量表环形进度，对数刻度显示
+- 花费仪表环形进度，对数刻度显示
 - 角标显示今日花费总额
 - 数据更新时金色脉冲动画
 - 右键菜单快速查看费用分布
@@ -177,7 +177,7 @@ Sources/
 ├── UI/
 │   ├── Dashboard       三区块主窗口
 │   ├── MenuBar         菜单栏费用明细
-│   ├── Dock            油量表 + 角标
+│   ├── Dock            花费仪表 + 角标
 │   ├── Settings        按集成配置
 │   ├── Onboarding      首次启动集成选择器
 │   └── Shared/         AppIconLoader、IntegrationRow

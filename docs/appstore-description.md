@@ -4,7 +4,7 @@
 
 ### Description
 
-AI Pulse is your AI coding fuel gauge — track exactly how much you're spending on AI tools, who's charging you, and whether the output is worth it. **100% local — zero data leaves your machine.**
+AI Pulse is your AI coding cost tracker — track exactly how much you're spending on AI tools, who's charging you, and whether the output is worth it. **100% local — zero data leaves your machine.**
 
 💡 **Universal Purchase — buy once, use on macOS and iOS.**
 A single purchase covers both platforms. Already own the iOS version but still see a price button on your Mac? Don't worry — as long as you're signed in with the same Apple ID, the App Store will recognize your existing purchase and let you download for free. You will never be charged twice.
@@ -21,7 +21,7 @@ Every dollar is then attributed to the right tool, provider, and repo through th
 **Dashboard**
 The 3-section home window gives you the full picture at a glance: subscription vs. API donut chart, 30-day spending trend with daily API + subscription stacks, and per-tool/per-repo breakdown bars so you know exactly which projects and AI tools cost the most.
 
-**Dock Fuel Gauge**
+**Dock Spending Gauge**
 A log-scale progress ring shows your monthly burn rate right on the Dock icon. The badge displays today's spending total. Right-click for a quick cost breakdown by tool, provider, and repo.
 
 **Onboarding**
@@ -51,7 +51,7 @@ ai,cost,tracker,spending,claude,code,openai,deepseek,cursor,copilot,gpt,api,subs
 
 ### 应用描述
 
-AI Pulse 是你的 AI 编程油量表 —— 精确追踪每笔 AI 费用花在了哪里、花了多少、产出是否值得。**100% 本地运行，数据绝不出设备。**
+AI Pulse 是你的 AI 编程花费追踪仪 —— 精确追踪每笔 AI 费用花在了哪里、花了多少、产出是否值得。**100% 本地运行，数据绝不出设备。**
 
 💡 **多平台通用购买（Universal Purchase）—— 一次购买，macOS 与 iOS 通用。**
 本软件支持一次购买，macOS 与 iOS 跨平台通用。如果您已经购买了 iOS 版，在 Mac 上下载时若仍看到价格按钮，请不要担心：只要使用同一个 Apple ID，系统会自动识别您的购买记录，绝不会向您重复扣费。
@@ -68,7 +68,7 @@ AI Pulse 通过三层数据采集发现你的 AI 支出：
 **仪表盘**
 三区块主窗口，一目了然：订阅 vs. API 环形图、30 天 API + 订阅堆叠趋势图、按工具和仓库的费用排行条，让你清楚知道哪个项目和哪个 AI 工具烧钱最多。
 
-**Dock 油量表**
+**Dock 花费仪表**
 对数刻度环形进度条直观展示月度消费节奏。角标显示今日花费总额。右键菜单快速查看按工具、供应商、仓库分类的费用明细。
 
 **首次引导**
