@@ -6,6 +6,11 @@
 
 AI Pulse is your AI coding fuel gauge — track exactly how much you're spending on AI tools, who's charging you, and whether the output is worth it. **100% local — zero data leaves your machine.**
 
+💡 **Universal Purchase — buy once, use on macOS and iOS.**
+A single purchase covers both platforms. Already own the iOS version but still see a price button on your Mac? Don't worry — as long as you're signed in with the same Apple ID, the App Store will recognize your existing purchase and let you download for free. You will never be charged twice.
+
+The iOS companion app mirrors your AI usage and spending to your iPhone and iPad through iCloud — read-only, and your data never leaves your Apple ID ecosystem.
+
 AI Pulse discovers your AI spending through three layers of data collection:
 - **Log Parsing** — Token-level accuracy from Claude Code and aider request logs
 - **Balance API** — Exact dollar deltas from DeepSeek, OpenAI, Kimi, Zhipu, and Anthropic APIs
@@ -47,6 +52,11 @@ ai,cost,tracker,spending,claude,code,openai,deepseek,cursor,copilot,gpt,api,subs
 ### 应用描述
 
 AI Pulse 是你的 AI 编程油量表 —— 精确追踪每笔 AI 费用花在了哪里、花了多少、产出是否值得。**100% 本地运行，数据绝不出设备。**
+
+💡 **多平台通用购买（Universal Purchase）—— 一次购买，macOS 与 iOS 通用。**
+本软件支持一次购买，macOS 与 iOS 跨平台通用。如果您已经购买了 iOS 版，在 Mac 上下载时若仍看到价格按钮，请不要担心：只要使用同一个 Apple ID，系统会自动识别您的购买记录，绝不会向您重复扣费。
+
+iOS 伴侣应用会通过 iCloud 将您的 AI 用量与花费以只读方式同步到 iPhone / iPad，数据不会离开您的 Apple ID 生态。
 
 AI Pulse 通过三层数据采集发现你的 AI 支出：
 - **日志解析** — 从 Claude Code 和 aider 请求日志中提取 Token 级精确计价

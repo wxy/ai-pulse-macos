@@ -1,9 +1,10 @@
 # AI Pulse for macOS
 
 [![CI](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml)
-[![App Store](https://img.shields.io/badge/App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+[![Mac App Store](https://img.shields.io/badge/Mac%20App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+[![iOS App Store](https://img.shields.io/badge/iOS%20App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/us/app/ai-pulse-coding-cost-tracker/id6786290416?mt=8)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)]()
+[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%2F%20iOS%2016%2B-lightgrey)]()
 [![Swift](https://img.shields.io/badge/swift-6.0-orange)]()
 
 Your AI coding fuel gauge — track exactly who's charging you, how much,
@@ -13,14 +14,38 @@ your machine.**
 ## Download
 
 [![Download on the Mac App Store](https://tools.applemediaservices.com/api/badges/download-on-the-mac-app-store/black/en-us?size=250x83)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+[![Download on the App Store](https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83)](https://apps.apple.com/us/app/ai-pulse-coding-cost-tracker/id6786290416?mt=8)
 
-Requires macOS 14 Sonoma or later.
+- **macOS** — requires macOS 14 Sonoma or later
+- **iOS** — requires iOS 16 or later, and the macOS version (data source)
+
+💡 **Universal Purchase — buy once, use on both platforms.** A single purchase
+covers iOS and macOS. If you already own the Mac version and still see a price
+button on your iPhone or iPad, don't worry — as long as you're signed in with
+the same Apple ID, the App Store will recognize your existing purchase and let
+you download for free. You will never be charged twice.
 
 To build from source, see [Quick Start](#quick-start).
 
 Also check out [AI Pulse for Chrome](https://github.com/wxy/ai-pulse) —
 the browser extension that covers web-based AI tools like ChatGPT, Claude.ai,
 DeepSeek Chat, and more.
+
+## iOS Companion
+
+The iOS app is the read-only companion to the macOS version. It shows, on your
+iPhone or iPad, the AI usage and spending your Mac collects — today, this week,
+and 30-day trends, a donut chart by tool and provider, and per-repo breakdowns.
+Everything syncs through iCloud, so your data stays only on your own devices and
+never leaves your Apple ID ecosystem.
+
+- **Read-only** — the iOS app never collects or uploads anything on its own
+- **iCloud sync** — automatic, zero configuration
+- **Push notifications** — spending alerts with coin sound effects
+- **Same dashboard** — donut chart, trend graphs, and tool/repo ranking
+
+See [docs/appstore-description-ios.md](docs/appstore-description-ios.md) for the
+iOS App Store listing text.
 
 ## How It Works
 

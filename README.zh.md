@@ -1,8 +1,10 @@
 # AI Pulse for macOS
 
 [![CI](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml)
+[![Mac App Store](https://img.shields.io/badge/Mac%20App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+[![iOS App Store](https://img.shields.io/badge/iOS%20App%20Store-AI%20Pulse-0D96F6?logo=apple)](https://apps.apple.com/cn/app/ai-pulse-%E7%BC%96%E7%A8%8B%E8%8A%B1%E8%B4%B9%E8%BF%BD%E8%B8%AA%E4%BB%AA/id6786290416)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)]()
+[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%2F%20iOS%2016%2B-lightgrey)]()
 [![Swift](https://img.shields.io/badge/swift-6.0-orange)]()
 
 你的 AI 编程油量表 —— 精确追踪每笔 AI 费用花在了哪里、花了多少、
@@ -10,6 +12,34 @@
 
 同时关注 [AI Pulse Chrome 扩展](https://github.com/wxy/ai-pulse) ——
 覆盖 ChatGPT、Claude.ai、DeepSeek Chat 等网页端 AI 工具。
+
+## 下载
+
+[![Download on the Mac App Store](https://tools.applemediaservices.com/api/badges/download-on-the-mac-app-store/black/en-us?size=250x83)](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12)
+[![Download on the App Store](https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83)](https://apps.apple.com/cn/app/ai-pulse-%E7%BC%96%E7%A8%8B%E8%8A%B1%E8%B4%B9%E8%BF%BD%E8%B8%AA%E4%BB%AA/id6786290416)
+
+- **macOS 版** — 需要 macOS 14 Sonoma 或更高版本
+- **iOS 版** — 需要 iOS 16 或更高版本，以及 macOS 版（数据来源）
+
+💡 **多平台通用购买（Universal Purchase）—— 一次购买，iOS 与 macOS 通用。**
+如果您已经购买了 Mac 版，在 iPhone / iPad 上下载时仍看到价格按钮，请不要担心：
+只要使用同一个 Apple ID，直接点击购买即可，系统会自动识别您的购买记录并提示「免费下载」，
+绝不会向您重复扣费。
+
+## iOS 伴侣应用
+
+iOS 版是 macOS 版的**只读伴侣应用**。它会在您的 iPhone / iPad 上展示 macOS 采集到的
+AI 用量与花费信息——今日、本周、30 天趋势图，按工具和供应商统计的环形图，以及按仓库的明细排行。
+所有数据通过 iCloud 同步，仅保存在您自己的设备上，不会离开您的 Apple ID 生态。
+
+- **只读** — iOS 应用本身不采集、不上传任何数据
+- **iCloud 同步** — 自动完成，零配置
+- **推送通知** — 花费提醒，搭配金币音效
+- **与 macOS 一致的仪表盘** — 环形图、趋势图、工具 & 仓库排行
+
+请先下载并配置 **macOS 版**，AI 用量信息由 macOS 采集后通过 iCloud 同步到 iOS。
+
+iOS 上架描述见 [docs/appstore-description-ios.md](docs/appstore-description-ios.md)。
 
 ## 工作原理
 
