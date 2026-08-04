@@ -99,13 +99,14 @@ final class RepoScanCache: @unchecked Sendable {
 
     /// Publish a partial scan result in-memory (no persist) so the UI can show
     /// a live repo count while the walk is still running. Marked `truncated`
-    /// since it is incomplete; the final `storeResult` replaces it.
+    /// since it is incomplete; the final `storeResult` replaces it. Runs on the
+    /// walker's background thread, so the notification hops to main.
     private nonisolated func publishPartial(repos: [CachedRepo], for key: String) {
         lock.lock()
         _scans[key] = CachedDirScan(dirPath: key, repos: repos,
                                     scannedAt: Date(), truncated: true)
         lock.unlock()
-        NotificationCenter.default.post(name: Self.didChange, object: nil)
+        postDidChange()
     }
 
     nonisolated func invalidate(dir: String) {
@@ -114,7 +115,7 @@ final class RepoScanCache: @unchecked Sendable {
         _scans.removeValue(forKey: key)
         lock.unlock()
         persist()
-        NotificationCenter.default.post(name: Self.didChange, object: nil)
+        postDidChange()
     }
 
     /// Total repos across `dirs`, using only fresh cache entries.
@@ -129,7 +130,16 @@ final class RepoScanCache: @unchecked Sendable {
         _scans[key] = scan
         lock.unlock()
         persist()
-        NotificationCenter.default.post(name: Self.didChange, object: nil)
+        postDidChange()
+    }
+
+    /// Post `didChange` on the main thread. SwiftUI's `onReceive` asserts when a
+    /// notification it observes is delivered on a background thread, and the
+    /// scan walk runs inside `Task.detached` — so every post hops to main.
+    private nonisolated func postDidChange() {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.didChange, object: nil)
+        }
     }
 
     private nonisolated func persist() {
