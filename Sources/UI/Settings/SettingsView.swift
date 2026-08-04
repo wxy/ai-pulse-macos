@@ -156,7 +156,7 @@ struct IntegrationGroupedTab: View {
                     .font(.title3).fontWeight(.semibold)
                 Spacer()
                 if isDetecting {
-                    ProgressView().scaleEffect(0.6)
+                    ProgressView().controlSize(.small)
                 } else {
                     Button(I18n.t("integrations.redetect")) { reDetect() }.font(.caption)
                 }
@@ -390,7 +390,11 @@ struct ReposTab: View {
                                     .padding(.horizontal, 5)
                                     .background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
                             } else {
-                                ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
+                                // Static placeholder — an indeterminate
+                                // ProgressView with scaleEffect can trigger the
+                                // AppKit "layoutSubtreeIfNeeded during layout"
+                                // recursion warning.
+                                Text("…").font(.caption2).foregroundColor(.secondary)
                             }
                             Button { deleteTarget = entry.path; showDelete = true } label: {
                                 Image(systemName: "xmark.circle").font(.caption).foregroundColor(.secondary)

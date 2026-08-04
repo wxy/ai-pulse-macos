@@ -57,11 +57,7 @@ final class RepoScanCache: @unchecked Sendable {
         let key = Self.expand(dir)
         lock.lock(); defer { lock.unlock() }
         guard let s = _scans[key],
-              Date().timeIntervalSince(s.scannedAt) < Self.ttl else {
-            Logger.debug("RepoScanCache: cachedScan(\(dir)) → nil (key='\(key)', hasEntry=\(_scans[key] != nil), keys=\(Array(_scans.keys)))")
-            return nil
-        }
-        Logger.debug("RepoScanCache: cachedScan(\(dir)) → \(s.repos.count) repos")
+              Date().timeIntervalSince(s.scannedAt) < Self.ttl else { return nil }
         return s
     }
 

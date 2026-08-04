@@ -57,7 +57,7 @@ struct IntegrationRow: View {
                 // Row 1: icon + name ……… balance
                 HStack(spacing: 12) {
                     if detecting {
-                        ProgressView().scaleEffect(0.6).frame(width: 20)
+                        ProgressView().controlSize(.small).frame(width: 20)
                     } else {
                         Image(systemName: iconName)
                             .foregroundColor(iconColor)
@@ -83,7 +83,7 @@ struct IntegrationRow: View {
                 // no plan, so their right side stays empty.
                 HStack(spacing: 12) {
                     if detecting {
-                        ProgressView().scaleEffect(0.6).frame(width: 20)
+                        ProgressView().controlSize(.small).frame(width: 20)
                     } else {
                         Image(systemName: iconName)
                             .foregroundColor(iconColor)
@@ -248,7 +248,7 @@ struct IntegrationRow: View {
             Image(systemName: "questionmark.circle")
                 .foregroundColor(.orange).font(.caption)
         case .checking:
-            ProgressView().scaleEffect(0.5).frame(width: 14, height: 14)
+            ProgressView().controlSize(.mini).frame(width: 14, height: 14)
         case .valid:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundColor(.green).font(.caption)
