@@ -185,6 +185,14 @@ struct IntegrationGroupedTab: View {
             runDetection()
             ApiPoller.shared.pollAll()
         }
+        // Re-run detection when the shared repo-scan cache warms up, so aider
+        // (cache-backed since AiderIntegration.detect() reads RepoScanCache)
+        // updates from "not detected" to "detected" after a cold/stale cache
+        // without requiring a manual Redetect. Converges: once the cache is
+        // fresh, detect() stops firing background scans, so no notification loop.
+        .onReceive(NotificationCenter.default.publisher(for: RepoScanCache.didChange)) { _ in
+            runDetection()
+        }
     }
 
     /// Sandbox: home-directory grant state for log-based tool detection.

@@ -194,25 +194,27 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var repoCountView: some View {
-        let total = RepoScanCache.shared.totalRepos(
-            in: UserDefaults.standard.stringArray(forKey: repoDirsKey) ?? [])
-        if total > 0 {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
-                Text(String(format: I18n.t("onboarding.repos_found"), total))
-                    .font(.caption)
-                Spacer()
+        if let dev = selectedDevDir {
+            if let scan = RepoScanCache.shared.cachedScan(for: dev) {
+                // Fresh cache entry (even 0 repos) → terminal count state.
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                    Text(String(format: I18n.t("onboarding.repos_found"), scan.repos.count))
+                        .font(.caption)
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                // No fresh cache entry yet → scan still in flight.
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(I18n.t("onboarding.repos_scanning")).font(.caption)
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             }
-            .padding(10)
-            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-        } else if selectedDevDir != nil {
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text(I18n.t("onboarding.repos_scanning")).font(.caption)
-                Spacer()
-            }
-            .padding(10)
-            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
