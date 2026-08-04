@@ -12,7 +12,6 @@ struct IntegrationRow: View {
     @State private var tierInput: String
     @State private var saved: Bool
     @State private var detecting: Bool = false
-    @State private var preferredKeyId: String
     @State private var balanceText: String? = nil
     @State private var keyStatus: KeyStatus = .none
     /// Bumped every time a new "checking" cycle starts, so a stale timeout
@@ -31,20 +30,12 @@ struct IntegrationRow: View {
         _keyInput = State(initialValue: ApiKeyManager.shared.get(integration.id) ?? "")
         _tierInput = State(initialValue: cfg.subscriptionTier)
         _saved = State(initialValue: cfg.enabled || hasKey)
-        _preferredKeyId = State(initialValue: cfg.preferredAPIKeyCostSourceId ?? "")
         if hasKey {
             let cached = ApiPoller.shared.cachedBalance(for: integration.id)
             if let cb = cached {
                 _keyStatus = State(initialValue: (cb.error != nil) ? .invalid : .valid)
             }
         }
-    }
-
-    /// Returns the available API Key CostSource ids for the "preferred key" dropdown.
-    var availableAPIKeySources: [(id: String, label: String)] {
-        IntegrationRegistry.activeCostSources()
-            .filter { if case .apiKey = $0.kind { return true }; return false }
-            .map { ($0.id, $0.label) }
     }
 
     /// Known apiKey-only integration IDs (always show key input).
@@ -248,15 +239,6 @@ struct IntegrationRow: View {
                     if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
                 }
             }
-            labeledPicker(label: I18n.t("integrations.preferred_api_key"), selection: $preferredKeyId) {
-                Text(I18n.t("integrations.not_used")).tag("")
-                ForEach(availableAPIKeySources, id: \.id) { src in
-                    Text(src.label).tag(src.id)
-                }
-            }
-            .onChange(of: preferredKeyId) { _, v in
-                savePreferredKey(v)
-            }
         }
     }
 
@@ -349,12 +331,6 @@ struct IntegrationRow: View {
     private func saveSub(_ tier: String) {
         var cfg = IntegrationRegistry.config(for: integration.id)
         cfg.subscriptionTier = tier
-        IntegrationRegistry.setConfig(for: integration.id, cfg)
-    }
-
-    private func savePreferredKey(_ keyId: String) {
-        var cfg = IntegrationRegistry.config(for: integration.id)
-        cfg.preferredAPIKeyCostSourceId = keyId.isEmpty ? nil : keyId
         IntegrationRegistry.setConfig(for: integration.id, cfg)
     }
 }

@@ -390,10 +390,9 @@ final class LogWatcher: @unchecked Sendable {
 
         // CostSource arbitration
         let sources = IntegrationRegistry.activeCostSources()
-        let preferred = IntegrationRegistry.config(for: event.source).preferredAPIKeyCostSourceId
         let (csId, confidence) = Arbitrator.resolve(
             model: event.model, source: event.source,
-            costSources: sources, preferredAPIKeyId: preferred
+            costSources: sources
         )
 
         // Always compute token-pricing cost for per-repo CPL attribution.
