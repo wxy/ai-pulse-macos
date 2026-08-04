@@ -8260,61 +8260,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d Repos mit aider"
+            "value" : "%d Repos"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d repos with aider"
+            "value" : "%d repos"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d repos con aider"
+            "value" : "%d repositorios"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d dépôts avec aider"
+            "value" : "%d dépôts"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d 件のリポジトリで aider を検出"
+            "value" : "%d リポジトリ"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "aider 사용 저장소 %d개 발견"
+            "value" : "저장소 %d개"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d repositórios com aider"
+            "value" : "%d repositórios"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%d 个仓库检测到 aider"
+            "value" : "%d 个仓库"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搵到 %d 個使用 aider 嘅儲存庫"
+            "value" : "%d 個儲存庫"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "找到 %d 個使用 aider 的儲存庫"
+            "value" : "%d 個儲存庫"
           }
         }
       }
@@ -8524,61 +8524,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "~/.claude/projects gefunden, %d Sitzungen"
+            "value" : "%d Sitzungen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "~/.claude/projects found, %d sessions"
+            "value" : "%d sessions"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "~/.claude/projects encontrado, %d sesiones"
+            "value" : "%d sesiones"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "~/.claude/projects trouvé, %d sessions"
+            "value" : "%d sessions"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "~/.claude/projects 検出、%d セッション"
+            "value" : "%d セッション"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "~/.claude/projects 발견, %d개 세션"
+            "value" : "세션 %d개"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "~/.claude/projects encontrado, %d sessões"
+            "value" : "%d sessões"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "~/.claude/projects 存在，%d 个会话"
+            "value" : "%d 个会话"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "~/.claude/projects 已搵到，%d 個工作階段"
+            "value" : "%d 個工作階段"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "~/.claude/projects 已找到，%d 個工作階段"
+            "value" : "%d 個工作階段"
           }
         }
       }
@@ -8655,61 +8655,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex CLI-Sitzungen gefunden"
+            "value" : "erkannt"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex CLI sessions found"
+            "value" : "detected"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sesiones de Codex CLI encontradas"
+            "value" : "detectado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sessions Codex CLI trouvées"
+            "value" : "détecté"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex CLI セッションを検出"
+            "value" : "検出済み"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex CLI 세션 감지됨"
+            "value" : "감지됨"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sessões do Codex CLI encontradas"
+            "value" : "detectado"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "检测到 Codex CLI 会话"
+            "value" : "已检测"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "偵測到 Codex CLI 工作階段"
+            "value" : "已偵測"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "偵測到 Codex CLI 工作階段"
+            "value" : "已偵測"
           }
         }
       }
@@ -8917,61 +8917,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OpenCode-Sitzungen gefunden"
+            "value" : "erkannt"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OpenCode sessions found"
+            "value" : "detected"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sesiones de OpenCode encontradas"
+            "value" : "detectado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sessions OpenCode trouvées"
+            "value" : "détecté"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OpenCode セッションを検出"
+            "value" : "検出済み"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OpenCode 세션 감지됨"
+            "value" : "감지됨"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sessões do OpenCode encontradas"
+            "value" : "detectado"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "检测到 OpenCode 会话"
+            "value" : "已检测"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "偵測到 OpenCode 工作階段"
+            "value" : "已偵測"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "偵測到 OpenCode 工作階段"
+            "value" : "已偵測"
           }
         }
       }
@@ -9047,61 +9047,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Qwen Code-Sitzungen gefunden"
+            "value" : "erkannt"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Qwen Code sessions found"
+            "value" : "detected"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sesiones de Qwen Code encontradas"
+            "value" : "detectado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sessions Qwen Code trouvées"
+            "value" : "détecté"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Qwen Code セッションを検出"
+            "value" : "検出済み"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Qwen Code 세션 감지됨"
+            "value" : "감지됨"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sessões do Qwen Code encontradas"
+            "value" : "detectado"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "检测到 Qwen Code 会话"
+            "value" : "已检测"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "偵測到 Qwen Code 工作階段"
+            "value" : "已偵測"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "偵測到 Qwen Code 工作階段"
+            "value" : "已偵測"
           }
         }
       }
