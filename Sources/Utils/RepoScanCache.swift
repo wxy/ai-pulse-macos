@@ -67,7 +67,12 @@ final class RepoScanCache: @unchecked Sendable {
     /// indefinite spinner. No-op if the dir isn't readable.
     nonisolated func scan(dir: String) async {
         let expanded = Self.expand(dir)
-        guard FileManager.default.fileExists(atPath: expanded) else { return }
+        let scanStart = Date()
+        guard FileManager.default.fileExists(atPath: expanded) else {
+            Logger.warning("RepoScanCache: scan skipped (not readable): \(expanded)")
+            return
+        }
+        Logger.info("RepoScanCache: scan start: \(expanded)")
         let deadline = Date().addingTimeInterval(Self.scanBudget)
         let result = await Task.detached(priority: .userInitiated) { () -> (repos: [CachedRepo], truncated: Bool) in
             let fm = FileManager.default
@@ -87,6 +92,9 @@ final class RepoScanCache: @unchecked Sendable {
         let scan = CachedDirScan(dirPath: expanded, repos: sorted,
                                  scannedAt: Date(), truncated: result.truncated)
         storeResult(scan, for: expanded)
+        Logger.info("RepoScanCache: scanned \(expanded): \(result.repos.count) repos, "
+                    + "truncated=\(result.truncated), "
+                    + String(format: "%.2f", Date().timeIntervalSince(scanStart)) + "s")
     }
 
     /// Publish a partial scan result in-memory (no persist) so the UI can show
