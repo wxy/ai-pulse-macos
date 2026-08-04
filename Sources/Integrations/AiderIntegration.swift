@@ -8,10 +8,17 @@ struct AiderIntegration: Detectable {
     let displayName = "aider"
     var costSources: [CostSource] { [] }
 
-    private let cache: RepoScanCache
+    private nonisolated let cache: RepoScanCache
 
-    init(cache: RepoScanCache = .shared) {
-        self.cache = cache
+    /// `nil` (the default) resolves to `RepoScanCache.shared`. The `.shared`
+    /// lookup happens in the init body rather than as a default argument so it
+    /// evaluates under the init's own isolation. The init is `nonisolated` to
+    /// match the other integrations' memberwise inits: `IntegrationRegistry.all`
+    /// builds `AiderIntegration()` inside a `nonisolated(unsafe)` global, and
+    /// the Xcode target compiles with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+    /// (which would make a bare custom init MainActor-isolated).
+    nonisolated init(cache: RepoScanCache? = nil) {
+        self.cache = cache ?? RepoScanCache.shared
     }
 
     func detect() -> DetectionResult {

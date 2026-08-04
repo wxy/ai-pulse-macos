@@ -22,30 +22,38 @@ struct CachedDirScan: Codable, Equatable {
 /// threads and `cachedScan` may be called from tests off-main). UI observes via
 /// `NotificationCenter` on `didChange`, matching the existing `.dataDidChange`
 /// pattern in this codebase.
+///
+/// Every member is explicitly `nonisolated` so the cache is callable from any
+/// isolation in both build configurations: the Xcode target compiles with
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` (unannotated types become
+/// MainActor), while the SwiftPM build defaults to nonisolated. Marking members
+/// `nonisolated` keeps the semantics identical in both.
 final class RepoScanCache: @unchecked Sendable {
-    static let shared = RepoScanCache()
-    static let ttl: TimeInterval = 300            // 5 min; older scans are "missing"
-    static let scanBudget: TimeInterval = 2.0      // soft budget per directory
-    static let storeKey = "repo_scan_cache"
-    static let didChange = Notification.Name("RepoScanCacheDidChange")
+    nonisolated static let shared = RepoScanCache()
+    nonisolated static let ttl: TimeInterval = 300            // 5 min; older scans are "missing"
+    nonisolated static let scanBudget: TimeInterval = 2.0      // soft budget per directory
+    nonisolated static let storeKey = "repo_scan_cache"
+    nonisolated static let didChange = Notification.Name("RepoScanCacheDidChange")
 
-    private let lock = NSLock()
-    private var _scans: [String: CachedDirScan] = [:]
-    private let store: UserDefaults
+    private nonisolated let lock = NSLock()
+    private nonisolated(unsafe) var _scans: [String: CachedDirScan] = [:]
+    /// `nonisolated(unsafe)`: `UserDefaults` is not Sendable in the SDK, but is
+    /// thread-safe in practice (all reads/writes are synchronized internally).
+    private nonisolated(unsafe) let store: UserDefaults
 
-    init(store: UserDefaults = .standard) {
+    nonisolated init(store: UserDefaults = .standard) {
         self.store = store
         _scans = Self.load(from: store)
     }
 
     /// Thread-safe snapshot of all cached scans.
-    var scans: [String: CachedDirScan] {
+    nonisolated var scans: [String: CachedDirScan] {
         lock.lock(); defer { lock.unlock() }
         return _scans
     }
 
     /// Fresh scan for `dir`, or nil if missing/stale.
-    func cachedScan(for dir: String) -> CachedDirScan? {
+    nonisolated func cachedScan(for dir: String) -> CachedDirScan? {
         let key = Self.expand(dir)
         lock.lock(); defer { lock.unlock() }
         guard let s = _scans[key],
@@ -55,7 +63,7 @@ final class RepoScanCache: @unchecked Sendable {
 
     /// Run a fast background scan of `dir`, collecting repos + aider markers in
     /// one pass, then store + persist + notify. No-op if the dir isn't readable.
-    func scan(dir: String) async {
+    nonisolated func scan(dir: String) async {
         let expanded = Self.expand(dir)
         guard FileManager.default.fileExists(atPath: expanded) else { return }
         let deadline = Date().addingTimeInterval(Self.scanBudget)
@@ -76,7 +84,7 @@ final class RepoScanCache: @unchecked Sendable {
         storeResult(scan, for: expanded)
     }
 
-    func invalidate(dir: String) {
+    nonisolated func invalidate(dir: String) {
         let key = Self.expand(dir)
         lock.lock()
         _scans.removeValue(forKey: key)
@@ -86,13 +94,13 @@ final class RepoScanCache: @unchecked Sendable {
     }
 
     /// Total repos across `dirs`, using only fresh cache entries.
-    func totalRepos(in dirs: [String]) -> Int {
+    nonisolated func totalRepos(in dirs: [String]) -> Int {
         dirs.reduce(0) { $0 + (cachedScan(for: $1)?.repos.count ?? 0) }
     }
 
     // MARK: - Internal
 
-    private func storeResult(_ scan: CachedDirScan, for key: String) {
+    private nonisolated func storeResult(_ scan: CachedDirScan, for key: String) {
         lock.lock()
         _scans[key] = scan
         lock.unlock()
@@ -100,7 +108,7 @@ final class RepoScanCache: @unchecked Sendable {
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
-    private func persist() {
+    private nonisolated func persist() {
         lock.lock()
         let snapshot = _scans
         lock.unlock()
@@ -109,11 +117,11 @@ final class RepoScanCache: @unchecked Sendable {
         }
     }
 
-    private static func expand(_ p: String) -> String {
+    private nonisolated static func expand(_ p: String) -> String {
         NSString(string: p).expandingTildeInPath
     }
 
-    private static func load(from store: UserDefaults) -> [String: CachedDirScan] {
+    private nonisolated static func load(from store: UserDefaults) -> [String: CachedDirScan] {
         guard let data = store.data(forKey: storeKey),
               let dict = try? JSONDecoder().decode([String: CachedDirScan].self, from: data)
         else { return [:] }
