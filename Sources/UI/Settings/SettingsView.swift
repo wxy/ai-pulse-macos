@@ -360,6 +360,10 @@ private let repoDirsKey = "repo_search_dirs"
 
 struct ReposTab: View {
     @State private var dirEntries: [DirEntry] = []
+    /// path → repo count; a missing key means the dir is still scanning.
+    /// @State-driven so the row re-renders deterministically when a scan lands
+    /// (we do not rely on onReceive re-reading the singleton).
+    @State private var repoCounts: [String: Int] = [:]
     @State private var deleteTarget: String? = nil
     @State private var showDelete = false
 
@@ -380,8 +384,8 @@ struct ReposTab: View {
                             Image(systemName: "folder").foregroundColor(.accentColor)
                             Text(entry.path).font(.body).lineLimit(1).truncationMode(.middle)
                             Spacer()
-                            if let scan = RepoScanCache.shared.cachedScan(for: entry.path) {
-                                Text("\(scan.repos.count)")
+                            if let count = repoCounts[entry.path] {
+                                Text("\(count)")
                                     .font(.caption2).foregroundColor(.secondary)
                                     .padding(.horizontal, 5)
                                     .background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
@@ -404,20 +408,21 @@ struct ReposTab: View {
                 Spacer()
             }
 
-            let totalRepos = dirEntries.reduce(0) {
-                $0 + (RepoScanCache.shared.cachedScan(for: $1.path)?.repos.count ?? 0)
-            }
+            let totalRepos = repoCounts.values.reduce(0, +)
             Text(String(format: I18n.t("repos.summary"), dirEntries.count, totalRepos))
                 .font(.caption2).foregroundColor(.secondary)
         }
         .onAppear { loadAndScan() }
-        .onReceive(NotificationCenter.default.publisher(for: RepoScanCache.didChange)) { _ in }
+        .onReceive(NotificationCenter.default.publisher(for: RepoScanCache.didChange)) { _ in
+            refreshCounts()   // live-update as the walk finds repos
+        }
         .alert(I18n.t("repos.delete_title"), isPresented: $showDelete) {
             Button(I18n.t("repos.cancel"), role: .cancel) {}
             Button(I18n.t("repos.remove"), role: .destructive) {
                 if let d = deleteTarget {
                     dirEntries.removeAll { $0.path == d }
                     RepoScanCache.shared.invalidate(dir: d)
+                    refreshCounts()
                     save()
                 }
             }
@@ -441,11 +446,27 @@ struct ReposTab: View {
         } else {
             dirEntries = dirs.map { DirEntry(path: $0) }
         }
-        // Background-scan any dir without a fresh cache entry; results post
-        // RepoScanCache.didChange and the rows update live.
+        // Background-scan any dir without a fresh cache entry. Refreshing the
+        // visible counts directly after each scan completes (not only via the
+        // didChange notification) guarantees the row stops spinning.
         for entry in dirEntries where RepoScanCache.shared.cachedScan(for: entry.path) == nil {
-            Task { await RepoScanCache.shared.scan(dir: entry.path) }
+            Task {
+                await RepoScanCache.shared.scan(dir: entry.path)
+                refreshCounts()
+            }
         }
+        refreshCounts()
+    }
+
+    /// Copy fresh cache counts into @State so the rows re-render.
+    private func refreshCounts() {
+        var counts: [String: Int] = [:]
+        for entry in dirEntries {
+            if let scan = RepoScanCache.shared.cachedScan(for: entry.path) {
+                counts[entry.path] = scan.repos.count
+            }
+        }
+        repoCounts = counts
     }
 
     private func pickDir() {
