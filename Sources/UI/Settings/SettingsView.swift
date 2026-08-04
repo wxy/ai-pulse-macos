@@ -394,7 +394,7 @@ struct ReposTab: View {
                                 // ProgressView with scaleEffect can trigger the
                                 // AppKit "layoutSubtreeIfNeeded during layout"
                                 // recursion warning.
-                                Text("…").font(.caption2).foregroundColor(.secondary)
+                                Text(verbatim: "…").font(.caption2).foregroundColor(.secondary)
                             }
                             Button { deleteTarget = entry.path; showDelete = true } label: {
                                 Image(systemName: "xmark.circle").font(.caption).foregroundColor(.secondary)
