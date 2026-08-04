@@ -62,7 +62,9 @@ final class RepoScanCache: @unchecked Sendable {
     }
 
     /// Run a fast background scan of `dir`, collecting repos + aider markers in
-    /// one pass, then store + persist + notify. No-op if the dir isn't readable.
+    /// one pass, then store + persist + notify. Progress is published live as
+    /// each repo is found so the UI can show a running count instead of an
+    /// indefinite spinner. No-op if the dir isn't readable.
     nonisolated func scan(dir: String) async {
         let expanded = Self.expand(dir)
         guard FileManager.default.fileExists(atPath: expanded) else { return }
@@ -74,7 +76,10 @@ final class RepoScanCache: @unchecked Sendable {
             let truncated = GitRepoScanner.enumerate(in: root, deadline: deadline) { url in
                 let hasAider = fm.fileExists(atPath: url.appendingPathComponent(".aider.chat.history.md").path)
                     || fm.fileExists(atPath: url.appendingPathComponent(".aider.llm.history").path)
-                repos.append(CachedRepo(path: url.path, name: url.lastPathComponent, hasAiderMarkers: hasAider))
+                let repo = CachedRepo(path: url.path, name: url.lastPathComponent, hasAiderMarkers: hasAider)
+                repos.append(repo)
+                // Live progress: publish the running count so the UI updates.
+                self.publishPartial(repos: repos, for: expanded)
             }
             return (repos, truncated)
         }.value
@@ -82,6 +87,17 @@ final class RepoScanCache: @unchecked Sendable {
         let scan = CachedDirScan(dirPath: expanded, repos: sorted,
                                  scannedAt: Date(), truncated: result.truncated)
         storeResult(scan, for: expanded)
+    }
+
+    /// Publish a partial scan result in-memory (no persist) so the UI can show
+    /// a live repo count while the walk is still running. Marked `truncated`
+    /// since it is incomplete; the final `storeResult` replaces it.
+    private nonisolated func publishPartial(repos: [CachedRepo], for key: String) {
+        lock.lock()
+        _scans[key] = CachedDirScan(dirPath: key, repos: repos,
+                                    scannedAt: Date(), truncated: true)
+        lock.unlock()
+        NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
     nonisolated func invalidate(dir: String) {

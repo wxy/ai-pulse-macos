@@ -87,4 +87,20 @@ final class GitRepoScannerTests: XCTestCase {
         XCTAssertTrue(truncated)
         XCTAssertTrue(found.isEmpty)
     }
+
+    func testDeadlineTruncatesSparseTree() {
+        // A repo-sparse tree: 200 plain dirs, no .git anywhere. The deadline is
+        // checked periodically (every 128 entries), not just at repo boundaries
+        // — otherwise this walk would never truncate. `.distantPast` fires at
+        // the first periodic check.
+        for i in 0..<200 {
+            makePlainDir("dir-\(i)")
+        }
+        var found: [String] = []
+        let truncated = GitRepoScanner.enumerate(in: tempDir, deadline: .distantPast) {
+            found.append($0.lastPathComponent)
+        }
+        XCTAssertTrue(truncated)
+        XCTAssertTrue(found.isEmpty)
+    }
 }

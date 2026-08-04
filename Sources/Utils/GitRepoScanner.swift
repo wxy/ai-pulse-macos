@@ -39,7 +39,16 @@ enum GitRepoScanner {
         ) else { return false }
 
         var truncated = false
+        var entryCount = 0
         for case let url as URL in enumerator {
+            // Soft deadline — check periodically, not just at repo boundaries:
+            // a repo-sparse tree (many non-repo dirs) would otherwise walk far
+            // past the budget without ever reaching a `.git` boundary.
+            entryCount += 1
+            if let deadline, entryCount % 128 == 0, Date() >= deadline {
+                truncated = true
+                break
+            }
             let name = url.lastPathComponent
             if skippedDirNames.contains(name) || heavyDirNames.contains(name) {
                 enumerator.skipDescendants()
