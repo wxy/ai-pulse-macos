@@ -63,4 +63,28 @@ final class GitRepoScannerTests: XCTestCase {
     func testEmptyDirectory() {
         XCTAssertEqual(scan(), [])
     }
+
+    func testSkipsHeavyDirectories() {
+        makeGitRepo("node_modules/fake-repo")
+        makeGitRepo("Pods/lib/foo")
+        makeGitRepo("normal-repo")
+        XCTAssertEqual(scan(), ["normal-repo"])
+    }
+
+    func testDepthBoundExcludesDeepRepos() {
+        // 5 层深（nested=1 … too-deep-repo=5）超出 maxDepth=4，不应被枚举。
+        makeGitRepo("shallow-repo")
+        makeGitRepo("nested/deep/deeper/deepest/too-deep-repo")
+        XCTAssertEqual(scan(), ["shallow-repo"])
+    }
+
+    func testDeadlineTruncates() {
+        makeGitRepo("repo-a")
+        var found: [String] = []
+        let truncated = GitRepoScanner.enumerate(in: tempDir, deadline: .distantPast) {
+            found.append($0.lastPathComponent)
+        }
+        XCTAssertTrue(truncated)
+        XCTAssertTrue(found.isEmpty)
+    }
 }
