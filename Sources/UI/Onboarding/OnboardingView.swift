@@ -14,7 +14,7 @@ struct OnboardingView: View {
     @State private var step = 0
     @State private var detectionResults: [(any Detectable, DetectionResult)] = []
     @State private var enabledIds: Set<String> = []
-    @State private var dirEntries: [DirEntry] = []
+    @State private var selectedDevDir: String? = nil
     private let repoDirsKey = "repo_search_dirs"
 
     var body: some View {
@@ -31,9 +31,9 @@ struct OnboardingView: View {
             Group {
                 switch step {
                 case 0: welcomeStep
-                case 1: apiProvidersStep
+                case 1: authorizeStep
                 case 2: devToolsStep
-                case 3: reposStep
+                case 3: apiProvidersStep
                 default: doneStep
                 }
             }
@@ -51,15 +51,7 @@ struct OnboardingView: View {
                 }
                 Spacer()
                 if step < 4 {
-                    if step == 3 {
-                        // Repos step: allow skip
-                        Button(I18n.t("onboarding.skip")) { step += 1 }
-                            .padding(.trailing, 8)
-                    }
-                    Button(I18n.t("onboarding.next")) {
-                        if step == 3 { saveRepos() }
-                        step += 1
-                    }
+                    Button(I18n.t("onboarding.next")) { step += 1 }
                 } else {
                     Button(I18n.t("onboarding.close")) { close() }
                 }
@@ -86,6 +78,75 @@ struct OnboardingView: View {
         }
     }
 
+    // MARK: - Step 1: Authorize (home + dev dir)
+
+    var authorizeStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(I18n.t("onboarding.authorize_title")).font(.title3).fontWeight(.semibold)
+            Text(I18n.t("onboarding.authorize_desc"))
+                .font(.caption).foregroundColor(.secondary)
+
+            // Home folder access (gates ~/.claude, ~/.codex, ~/.qwen detection)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: homeGranted ? "checkmark.circle.fill" : "folder.badge.person.crop")
+                        .foregroundColor(homeGranted ? .green : .accentColor)
+                    Text(I18n.t("onboarding.authorize_home_title")).font(.body).fontWeight(.medium)
+                    Spacer()
+                    if !homeGranted {
+                        Button(I18n.t("bookmark.grant_to_detect")) { grantHomeAndRedetect() }
+                            .buttonStyle(.bordered).controlSize(.small)
+                    }
+                }
+                Text(I18n.t("onboarding.grant_home_hint"))
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            .padding(12)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+
+            // Development folder (repo scanning + aider detection)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "folder").foregroundColor(.accentColor)
+                    Text(I18n.t("onboarding.authorize_dev_title")).font(.body).fontWeight(.medium)
+                    Spacer()
+                    Button(I18n.t("bookmark.grant")) { selectDevDir() }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+                Text(I18n.t("onboarding.authorize_dev_desc"))
+                    .font(.caption2).foregroundColor(.secondary)
+                if let dev = selectedDevDir {
+                    Text(dev).font(.caption).foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+            .padding(12)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .padding(.horizontal, 24)
+    }
+
+    private var homeGranted: Bool {
+        !BookmarkManager.isSandboxed || BookmarkManager.hasHomeAccess
+    }
+
+    /// Pick one dev directory, persist it to repo_search_dirs, kick a background
+    /// fast scan, and re-detect so aider (dev-dir based) updates on the next page.
+    private func selectDevDir() {
+        guard let url = BookmarkManager.requestAccess(
+            message: I18n.t("bookmark.repos_message"),
+            defaultDirectory: BookmarkManager.homeDirPath
+        ) else { return }
+        let p = url.path
+        selectedDevDir = p
+        var dirs = UserDefaults.standard.stringArray(forKey: repoDirsKey) ?? []
+        let expanded = NSString(string: p).expandingTildeInPath
+        if !dirs.contains(expanded) { dirs.append(expanded) }
+        UserDefaults.standard.set(dirs, forKey: repoDirsKey)
+        Task { await RepoScanCache.shared.scan(dir: p) }
+        runDetection()
+    }
+
     // MARK: - Step 1: Detection results
 
     /// Step 1: AI providers — every supported apiKey integration, whether or
@@ -99,8 +160,9 @@ struct OnboardingView: View {
                              items: items)
     }
 
-    /// Step 2: Dev tools — every supported tool (log/subscription). Includes
-    /// the sandbox home-directory grant since it gates log-based detection.
+    /// Step 2: Dev tools — every supported tool (log/subscription). Home-based
+    /// tools report immediately; aider reads the shared scan cache. The live repo
+    /// count reflects the background fast scan of the dev directory.
     var devToolsStep: some View {
         let items = detectionResults.filter {
             IntegrationCategory.category(for: $0.0) == .devTools
@@ -110,18 +172,7 @@ struct OnboardingView: View {
             Text(I18n.t("integrations.group_editors_desc"))
                 .font(.caption).foregroundColor(.secondary)
 
-            if BookmarkManager.isSandboxed && !BookmarkManager.hasHomeAccess {
-                HStack(spacing: 8) {
-                    Image(systemName: "lock.open")
-                    Text(I18n.t("onboarding.grant_home_hint"))
-                        .font(.caption)
-                    Spacer()
-                    Button(I18n.t("bookmark.grant_to_detect")) { grantHomeAndRedetect() }
-                        .buttonStyle(.bordered).controlSize(.small)
-                }
-                .padding(10)
-                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            }
+            repoCountView
 
             ScrollView {
                 VStack(spacing: 12) {
@@ -136,6 +187,35 @@ struct OnboardingView: View {
             }
         }
         .padding(.horizontal, 24)
+        .onReceive(NotificationCenter.default.publisher(for: RepoScanCache.didChange)) { _ in
+            runDetection()   // re-evaluate aider once the fast scan lands
+        }
+    }
+
+    @ViewBuilder
+    private var repoCountView: some View {
+        if let dev = selectedDevDir {
+            if let scan = RepoScanCache.shared.cachedScan(for: dev) {
+                // Fresh cache entry (even 0 repos) → terminal count state.
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                    Text(String(format: I18n.t("onboarding.repos_found"), scan.repos.count))
+                        .font(.caption)
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                // No fresh cache entry yet → scan still in flight.
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(I18n.t("onboarding.repos_scanning")).font(.caption)
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            }
+        }
     }
 
     private func detectionList(title: String, hint: String,
@@ -158,108 +238,19 @@ struct OnboardingView: View {
         .padding(.horizontal, 24)
     }
 
-    // MARK: - Step 2: Repo directories
-
-    var reposStep: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(I18n.t("onboarding.repos_title")).font(.title3).fontWeight(.semibold)
-            Text(I18n.t("onboarding.repos_hint"))
-                .font(.caption).foregroundColor(.secondary)
-
-            ScrollView {
-                VStack(spacing: 4) {
-                    if dirEntries.isEmpty {
-                        Text(I18n.t("repos.grant_empty"))
-                            .font(.caption).foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 8)
-                    }
-                    ForEach($dirEntries) { $entry in
-                        VStack(spacing: 0) {
-                            // Directory row
-                            HStack(spacing: 6) {
-                                Toggle(isOn: $entry.isChecked) {}.toggleStyle(.checkbox)
-                                Image(systemName: "folder").foregroundColor(.accentColor)
-                                Text(entry.path).font(.body).lineLimit(1).truncationMode(.middle)
-                                Spacer()
-                                if entry.isScanning {
-                                    ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
-                                } else {
-                                    Text("\(entry.repoCount)")
-                                        .font(.caption2).foregroundColor(.secondary)
-                                        .padding(.horizontal, 5)
-                                        .background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
-                                }
-                                Image(systemName: entry.isExpanded ? "chevron.down" : "chevron.right")
-                                    .font(.caption2).foregroundColor(.secondary)
-                                    .frame(width: 12)
-                            }
-                            .padding(.vertical, 4).padding(.horizontal, 8)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.15)) { entry.isExpanded.toggle() }
-                            }
-
-                            // Expanded repos — no checkboxes, confirmation only
-                            if entry.isExpanded {
-                                VStack(spacing: 2) {
-                                    if entry.isScanning && entry.repos.isEmpty {
-                                        HStack {
-                                            ProgressView().scaleEffect(0.5)
-                                            Text(I18n.t("onboarding.repos_scanning")).font(.caption2).foregroundColor(.secondary)
-                                            Spacer()
-                                        }.padding(.leading, 44)
-                                    } else if entry.repos.isEmpty {
-                                        Text(I18n.t("repos.no_repos"))
-                                            .font(.caption2).foregroundColor(.secondary)
-                                            .padding(.leading, 44)
-                                    } else {
-                                        ForEach(entry.repos, id: \.self) { name in
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "chevron.left.forwardslash.chevron.right")
-                                                    .font(.caption2).foregroundColor(.secondary)
-                                                Text(name).font(.caption).lineLimit(1)
-                                                Spacer()
-                                            }
-                                            .padding(.vertical, 2).padding(.leading, 44)
-                                        }
-                                    }
-                                }
-                                .padding(.bottom, 4)
-                            }
-                        }
-                        .background(Color(nsColor: .quaternarySystemFill).opacity(0.4))
-                        .cornerRadius(6)
-                    }
-                }
-            }
-
-            HStack {
-                Button(action: pickDir) {
-                    Label(I18n.t("repos.add"), systemImage: "plus.circle")
-                        .font(.body).padding(.vertical, 4).padding(.horizontal, 12)
-                }
-                .buttonStyle(.bordered)
-                Spacer()
-            }
-            .padding(.bottom, 8)
-        }
-        .padding(.horizontal, 24)
-        .onAppear { startScan() }
-    }
-
     // MARK: - Step 3: Done
 
     var doneStep: some View {
-        let totalCheckedRepos = dirEntries.filter(\.isChecked).reduce(0) { $0 + $1.repoCount }
-        let hasAnyConfig = !enabledIds.isEmpty || totalCheckedRepos > 0
+        let totalRepos = RepoScanCache.shared.totalRepos(
+            in: UserDefaults.standard.stringArray(forKey: repoDirsKey) ?? [])
+        let hasAnyConfig = !enabledIds.isEmpty || totalRepos > 0
         return VStack(spacing: 16) {
             Text("🎉").font(.system(size: 48))
             Text(I18n.t("onboarding.done_title")).font(.title2).fontWeight(.bold)
             Text(I18n.t("onboarding.done_msg"))
                 .multilineTextAlignment(.center).foregroundColor(.secondary)
-            if totalCheckedRepos > 0 {
-                Text(String(format: I18n.t("onboarding.done_repos_count"), totalCheckedRepos))
+            if totalRepos > 0 {
+                Text(String(format: I18n.t("onboarding.done_repos_count"), totalRepos))
                     .font(.caption).foregroundColor(.secondary)
             }
             // Show CPL hint if any log-parsing integration is detected
@@ -289,29 +280,6 @@ struct OnboardingView: View {
 
     // MARK: - Helpers
 
-    private func pickDir() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.prompt = I18n.t("bookmark.grant")
-        panel.message = I18n.t("bookmark.repos_message")
-        panel.directoryURL = FileManager.default.realHomeDirectory
-        if panel.runModal() == .OK, let url = panel.url {
-            // Persist a security-scoped bookmark so access survives relaunch (sandbox).
-            BookmarkManager.createAndSave(for: url)
-            // Store the absolute path: NSString.expandingTildeInPath resolves "~" against
-            // the sandbox container, so a tilde path would break scanning under sandbox.
-            let p = url.path
-            guard !dirEntries.contains(where: { $0.path == p }) else { return }
-            let entry = DirEntry(path: p)
-            dirEntries.append(entry)
-            // Save immediately
-            saveRepos()
-            // Kick off scan for just this dir
-            let idx = dirEntries.count - 1
-            Task { await scanOne(at: idx) }
-        }
-    }
-
     func runDetection() {
         detectionResults = IntegrationRegistry.visible.map { ($0, $0.detect()) }
         // Auto-enable log-based integrations that are detected
@@ -335,72 +303,6 @@ struct OnboardingView: View {
         }
         IntegrationRegistry.startAllEnabled()
         UserDefaults.standard.set(true, forKey: "onboarding_completed")
-    }
-
-    // MARK: - Repo scanning
-
-    func startScan() {
-        // Load dirs from settings, fall back to defaults
-        var dirs = UserDefaults.standard.stringArray(forKey: repoDirsKey) ?? []
-        // Under sandbox, unauthorized guessed defaults (~/dev …) can't be read and would
-        // only show "0 repos", confusing the user. Show an empty state + Add button instead.
-        if dirs.isEmpty && !BookmarkManager.isSandboxed { dirs = ["~/dev", "~/projects", "~/code"] }
-        dirEntries = dirs.map { DirEntry(path: $0) }
-        Task {
-            for i in dirEntries.indices {
-                await scanOne(at: i)
-            }
-        }
-    }
-
-    /// Scan a single directory entry asynchronously.
-    func scanOne(at idx: Int) async {
-        guard idx < dirEntries.count else { return }
-        let path = dirEntries[idx].path
-        await MainActor.run { dirEntries[idx].isScanning = true }
-        let foundRepos = await Task.detached { () -> [String] in
-            let expanded = NSString(string: path).expandingTildeInPath
-            let fm = FileManager.default
-            var result: [String] = []
-            let skippedDirs: Set<String> = ["Music", "Pictures", "Movies", "Library", ".Trash"]
-            if fm.fileExists(atPath: expanded),
-               let enumerator = fm.enumerator(
-                    at: URL(fileURLWithPath: expanded),
-                    includingPropertiesForKeys: [.isDirectoryKey],
-                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
-               ) {
-                while let url = enumerator.nextObject() as? URL {
-                    if skippedDirs.contains(url.lastPathComponent) {
-                        enumerator.skipDescendants()
-                        continue
-                    }
-                    let git = url.appendingPathComponent(".git")
-                    var d: ObjCBool = false
-                    if fm.fileExists(atPath: git.path, isDirectory: &d), d.boolValue {
-                        result.append(url.lastPathComponent)
-                    }
-                }
-            }
-            result.sort()
-            return result
-        }.value
-        await MainActor.run {
-            guard idx < dirEntries.count else { return }
-            dirEntries[idx].repoCount = foundRepos.count
-            dirEntries[idx].repos = foundRepos
-            if !foundRepos.isEmpty { dirEntries[idx].isChecked = true }
-            dirEntries[idx].isScanning = false
-        }
-    }
-
-    func saveRepos() {
-        let checked = dirEntries.filter(\.isChecked).map(\.path)
-        var existing = UserDefaults.standard.stringArray(forKey: repoDirsKey) ?? []
-        // Merge: add new checked, remove unchecked
-        for d in checked where !existing.contains(d) { existing.append(d) }
-        let unchecked = Set(dirEntries.filter { !$0.isChecked }.map(\.path))
-        existing.removeAll { unchecked.contains($0) }
-        UserDefaults.standard.set(existing, forKey: repoDirsKey)
     }
 
     func close() {

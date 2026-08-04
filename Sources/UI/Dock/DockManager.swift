@@ -143,6 +143,9 @@ final class DockManager: @unchecked Sendable {
     /// Re-render the progress icon after a pulse animation completes.
     @MainActor
     private func setProgressIcon() async {
+        // Test environment: NSApp may be nil; the delayed start() task can reach
+        // this without an NSApplication. Sibling refresh()/pulseIcon() guard too.
+        guard NSApp != nil else { return }
         if _cachedProgressFraction > 0.001 {
             NSApp.applicationIconImage = AppIconLoader.load(
                 progress: _cachedProgressFraction, lap: _cachedLap, healthDot: healthSeverity)

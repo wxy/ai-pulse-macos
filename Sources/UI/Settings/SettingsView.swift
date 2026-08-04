@@ -185,6 +185,14 @@ struct IntegrationGroupedTab: View {
             runDetection()
             ApiPoller.shared.pollAll()
         }
+        // Re-run detection when the shared repo-scan cache warms up, so aider
+        // (cache-backed since AiderIntegration.detect() reads RepoScanCache)
+        // updates from "not detected" to "detected" after a cold/stale cache
+        // without requiring a manual Redetect. Converges: once the cache is
+        // fresh, detect() stops firing background scans, so no notification loop.
+        .onReceive(NotificationCenter.default.publisher(for: RepoScanCache.didChange)) { _ in
+            runDetection()
+        }
     }
 
     /// Sandbox: home-directory grant state for log-based tool detection.
@@ -350,11 +358,6 @@ struct GeneralTab: View {
 
 private let repoDirsKey = "repo_search_dirs"
 
-// In-memory cache for repo scans (avoids full filesystem enumeration
-// every time the Repos tab is opened). Invalidated on directory add/remove.
-private nonisolated(unsafe) var repoScanCache: [String: (timestamp: Date, repos: [String])] = [:]
-private let repoScanCacheTTL: TimeInterval = 300 // 5 minutes
-
 struct ReposTab: View {
     @State private var dirEntries: [DirEntry] = []
     @State private var deleteTarget: String? = nil
@@ -373,63 +376,23 @@ struct ReposTab: View {
                             .padding(.vertical, 8)
                     }
                     ForEach($dirEntries) { $entry in
-                        VStack(spacing: 0) {
-                            // Directory row
-                            HStack(spacing: 6) {
-                                Image(systemName: "folder").foregroundColor(.accentColor)
-                                Text(entry.path).font(.body).lineLimit(1).truncationMode(.middle)
-                                Spacer()
-                                if entry.isScanning {
-                                    ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
-                                } else {
-                                    Text("\(entry.repoCount)")
-                                        .font(.caption2).foregroundColor(.secondary)
-                                        .padding(.horizontal, 5)
-                                        .background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
-                                }
-                                Image(systemName: entry.isExpanded ? "chevron.down" : "chevron.right")
+                        HStack(spacing: 6) {
+                            Image(systemName: "folder").foregroundColor(.accentColor)
+                            Text(entry.path).font(.body).lineLimit(1).truncationMode(.middle)
+                            Spacer()
+                            if let scan = RepoScanCache.shared.cachedScan(for: entry.path) {
+                                Text("\(scan.repos.count)")
                                     .font(.caption2).foregroundColor(.secondary)
-                                    .frame(width: 12)
-                                Button { deleteTarget = entry.path; showDelete = true } label: {
-                                    Image(systemName: "xmark.circle").font(.caption).foregroundColor(.secondary)
-                                }.buttonStyle(.plain)
+                                    .padding(.horizontal, 5)
+                                    .background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
+                            } else {
+                                ProgressView().scaleEffect(0.6).frame(width: 14, height: 14)
                             }
-                            .padding(.vertical, 4).padding(.horizontal, 8)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.15)) { entry.isExpanded.toggle() }
-                            }
-
-                            // Expanded repos — no checkboxes, confirmation only
-                            if entry.isExpanded {
-                                VStack(spacing: 2) {
-                                    if entry.isScanning && entry.repos.isEmpty {
-                                        HStack {
-                                            ProgressView().scaleEffect(0.5)
-                                            Text(I18n.t("onboarding.repos_scanning")).font(.caption2).foregroundColor(.secondary)
-                                            Spacer()
-                                        }.padding(.leading, 30)
-                                    } else if entry.repos.isEmpty {
-                                        Text(I18n.t("repos.no_repos"))
-                                            .font(.caption2).foregroundColor(.secondary)
-                                            .padding(.leading, 30)
-                                    } else {
-                                        ForEach(entry.repos, id: \.self) { name in
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "chevron.left.forwardslash.chevron.right")
-                                                    .font(.caption2).foregroundColor(.secondary)
-                                                Text(name).font(.caption).lineLimit(1)
-                                                Spacer()
-                                            }
-                                            .padding(.vertical, 2).padding(.leading, 30)
-                                        }
-                                    }
-                                }
-                                .padding(.bottom, 4)
-                            }
+                            Button { deleteTarget = entry.path; showDelete = true } label: {
+                                Image(systemName: "xmark.circle").font(.caption).foregroundColor(.secondary)
+                            }.buttonStyle(.plain)
                         }
-                        .background(Color(nsColor: .quaternarySystemFill).opacity(0.4))
-                        .cornerRadius(6)
+                        .padding(.vertical, 4).padding(.horizontal, 8)
                     }
                 }
             }
@@ -441,16 +404,20 @@ struct ReposTab: View {
                 Spacer()
             }
 
-            let totalRepos = dirEntries.reduce(0) { $0 + $1.repoCount }
-            Text(String(format: I18n.t("repos.summary"), dirEntries.count, totalRepos)).font(.caption2).foregroundColor(.secondary)
+            let totalRepos = dirEntries.reduce(0) {
+                $0 + (RepoScanCache.shared.cachedScan(for: $1.path)?.repos.count ?? 0)
+            }
+            Text(String(format: I18n.t("repos.summary"), dirEntries.count, totalRepos))
+                .font(.caption2).foregroundColor(.secondary)
         }
-        .onAppear { startScan() }
+        .onAppear { loadAndScan() }
+        .onReceive(NotificationCenter.default.publisher(for: RepoScanCache.didChange)) { _ in }
         .alert(I18n.t("repos.delete_title"), isPresented: $showDelete) {
             Button(I18n.t("repos.cancel"), role: .cancel) {}
             Button(I18n.t("repos.remove"), role: .destructive) {
                 if let d = deleteTarget {
                     dirEntries.removeAll { $0.path == d }
-                    repoScanCache.removeValue(forKey: d)
+                    RepoScanCache.shared.invalidate(dir: d)
                     save()
                 }
             }
@@ -459,11 +426,11 @@ struct ReposTab: View {
 
     // MARK: - Scanning
 
-    private func startScan() {
+    private func loadAndScan() {
         let dirs = UserDefaults.standard.stringArray(forKey: repoDirsKey) ?? []
         if dirs.isEmpty {
-            // Under sandbox, unauthorized guessed defaults can't be read; show an empty
-            // state + Add button instead of persisting/scanning unreadable directories.
+            // Under sandbox, unauthorized guessed defaults can't be read; show an
+            // empty state + Add button instead of persisting/scanning unreadable dirs.
             if BookmarkManager.isSandboxed {
                 dirEntries = []
             } else {
@@ -474,79 +441,36 @@ struct ReposTab: View {
         } else {
             dirEntries = dirs.map { DirEntry(path: $0) }
         }
-        Task {
-            for i in dirEntries.indices {
-                let path = dirEntries[i].path
-                if let cached = repoScanCache[path],
-                   Date().timeIntervalSince(cached.timestamp) < repoScanCacheTTL {
-                    // Cache hit — populate without filesystem scan
-                    await MainActor.run {
-                        guard i < dirEntries.count else { return }
-                        dirEntries[i].repoCount = cached.repos.count
-                        dirEntries[i].repos = cached.repos
-                        dirEntries[i].isScanning = false
-                    }
-                } else {
-                    await scanOne(at: i)
-                }
-            }
+        // Background-scan any dir without a fresh cache entry; results post
+        // RepoScanCache.didChange and the rows update live.
+        for entry in dirEntries where RepoScanCache.shared.cachedScan(for: entry.path) == nil {
+            Task { await RepoScanCache.shared.scan(dir: entry.path) }
         }
     }
 
     private func pickDir() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.prompt = I18n.t("bookmark.grant")
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.prompt = I18n.t("bookmark.grant")
         panel.message = I18n.t("bookmark.repos_message")
         panel.directoryURL = FileManager.default.realHomeDirectory
         if panel.runModal() == .OK, let url = panel.url {
-            // Persist a security-scoped bookmark so access survives relaunch (sandbox).
             BookmarkManager.createAndSave(for: url)
-            // Store the absolute path (see OnboardingView.pickDir for the tilde/sandbox note).
+            // Store the absolute path. `NSOpenPanel` returns an absolute path;
+            // persisting it as-is keeps scans working under sandbox, where a
+            // tilde-relative path could resolve against the wrong home directory.
             let p = url.path
             guard !dirEntries.contains(where: { $0.path == p }) else { return }
-            let entry = DirEntry(path: p)
-            dirEntries.append(entry)
+            dirEntries.append(DirEntry(path: p))
             save()
-            let idx = dirEntries.count - 1
-            Task { await scanOne(at: idx) }
-            // Start monitoring the newly authorized directory without a relaunch.
+            Task { await RepoScanCache.shared.scan(dir: p) }
             LogWatcher.shared.start()
             DataRefreshCoordinator.shared.triggerIngest()
         }
     }
 
-    private func save() { UserDefaults.standard.set(dirEntries.map(\.path), forKey: repoDirsKey) }
-
-    private func scanOne(at idx: Int) async {
-        guard idx < dirEntries.count else { return }
-        let path = dirEntries[idx].path
-        await MainActor.run { dirEntries[idx].isScanning = true }
-        let foundRepos = await Task.detached { () -> [String] in
-            let expanded = NSString(string: path).expandingTildeInPath
-            let fm = FileManager.default
-            var result: [String] = []
-            if fm.fileExists(atPath: expanded),
-               let items = (fm.enumerator(at: URL(fileURLWithPath: expanded),
-                                    includingPropertiesForKeys: [.isDirectoryKey],
-                                    options: [.skipsHiddenFiles, .skipsPackageDescendants])?.allObjects as? [URL]) {
-                for url in items {
-                    let git = url.appendingPathComponent(".git")
-                    var d: ObjCBool = false
-                    if fm.fileExists(atPath: git.path, isDirectory: &d), d.boolValue {
-                        result.append(url.lastPathComponent)
-                    }
-                }
-            }
-            result.sort()
-            return result
-        }.value
-        await MainActor.run {
-            guard idx < dirEntries.count else { return }
-            dirEntries[idx].repoCount = foundRepos.count
-            dirEntries[idx].repos = foundRepos
-            dirEntries[idx].isScanning = false
-            // Update cache
-            repoScanCache[path] = (Date(), foundRepos)
-        }
+    private func save() {
+        UserDefaults.standard.set(dirEntries.map(\.path), forKey: repoDirsKey)
     }
 }
 

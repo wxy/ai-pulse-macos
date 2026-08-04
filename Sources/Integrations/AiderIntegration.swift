@@ -8,20 +8,30 @@ struct AiderIntegration: Detectable {
     let displayName = "aider"
     var costSources: [CostSource] { [] }
 
+    private nonisolated let cache: RepoScanCache
+
+    /// `nil` (the default) resolves to `RepoScanCache.shared`. The `.shared`
+    /// lookup happens in the init body rather than as a default argument so it
+    /// evaluates under the init's own isolation. The init is `nonisolated` to
+    /// match the other integrations' memberwise inits: `IntegrationRegistry.all`
+    /// builds `AiderIntegration()` inside a `nonisolated(unsafe)` global, and
+    /// the Xcode target compiles with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+    /// (which would make a bare custom init MainActor-isolated).
+    nonisolated init(cache: RepoScanCache? = nil) {
+        self.cache = cache ?? RepoScanCache.shared
+    }
+
     func detect() -> DetectionResult {
         let dirs = UserDefaults.standard.stringArray(forKey: "repo_search_dirs")
             ?? ["~/dev", "~/projects", "~/code"]
         var count = 0
         for d in dirs {
-            let expanded = NSString(string: d).expandingTildeInPath
-            guard FileManager.default.fileExists(atPath: expanded) else { continue }
-            GitRepoScanner.enumerate(in: URL(fileURLWithPath: expanded)) { url in
-                // aider v0.75+: Markdown format
-                let chatMD = url.appendingPathComponent(".aider.chat.history.md")
-                // aider pre-0.75: JSONL format
-                let llmJSONL = url.appendingPathComponent(".aider.llm.history")
-                if FileManager.default.fileExists(atPath: chatMD.path) ||
-                   FileManager.default.fileExists(atPath: llmJSONL.path) { count += 1 }
+            if let scan = cache.cachedScan(for: d) {
+                count += scan.repos.filter(\.hasAiderMarkers).count
+            } else {
+                // No fresh scan yet — warm the cache in the background so a
+                // later detect() (or the live-updating onboarding page) is right.
+                Task { await cache.scan(dir: d) }
             }
         }
         return DetectionResult(
