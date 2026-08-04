@@ -39,7 +39,16 @@ enum GitRepoScanner {
         ) else { return false }
 
         var truncated = false
+        var entryCount = 0
         for case let url as URL in enumerator {
+            // Soft deadline — check periodically, not just at repo boundaries:
+            // a repo-sparse tree (many non-repo dirs) would otherwise walk far
+            // past the budget without ever reaching a `.git` boundary.
+            entryCount += 1
+            if let deadline, entryCount % 128 == 0, Date() >= deadline {
+                truncated = true
+                break
+            }
             let name = url.lastPathComponent
             if skippedDirNames.contains(name) || heavyDirNames.contains(name) {
                 enumerator.skipDescendants()
@@ -48,17 +57,20 @@ enum GitRepoScanner {
             if enumerator.level >= maxDepth {
                 enumerator.skipDescendants()
             }
+            // A `.git` entry — directory (regular clone) or file (worktree /
+            // submodule whose `.git` contains `gitdir: ...`) — marks a repo.
+            // Counting the file form also prevents descending into the (often
+            // large) worktree contents, which is what made some scans appear
+            // to never finish.
             let gitDir = url.appendingPathComponent(".git")
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: gitDir.path,
-                                                 isDirectory: &isDir),
-                  isDir.boolValue else { continue }
-            if let deadline, Date() >= deadline {
-                truncated = true
-                break
+            if FileManager.default.fileExists(atPath: gitDir.path) {
+                if let deadline, Date() >= deadline {
+                    truncated = true
+                    break
+                }
+                handler(url)
+                enumerator.skipDescendants()
             }
-            handler(url)
-            enumerator.skipDescendants()
         }
         return truncated
     }

@@ -58,23 +58,6 @@ final class CostSourceArbiterTests: XCTestCase {
         XCTAssertEqual(conf, .estimated)
     }
 
-    // MARK: - Preferred API Key override
-
-    func testPreferredAPIKeySelected() {
-        let deepseek = makeAPIKey(id: "api-key:deepseek", providerId: "deepseek", models: ["deepseek-v4-pro", "claude-sonnet-4"])
-        let anthropic = makeAPIKey(id: "api-key:anthropic", providerId: "anthropic", models: ["claude-sonnet-4"], confidence: .estimated)
-        let sub = makeSubscription(id: "sub:claude-code:pro", toolId: "claude-code", models: ["claude-sonnet-4"])
-        let sources = [deepseek, anthropic, sub]
-        // Without preference, apiKey wins (first match)
-        let (csId1, _) = Arbitrator.resolve(model: "claude-sonnet-4", source: "claude-code", costSources: sources)
-        XCTAssertEqual(csId1, "api-key:deepseek")  // first apiKey in sources wins
-
-        // With preference, specified key wins even if not first
-        let (csId2, conf2) = Arbitrator.resolve(model: "claude-sonnet-4", source: "claude-code", costSources: sources, preferredAPIKeyId: "api-key:anthropic")
-        XCTAssertEqual(csId2, "api-key:anthropic")
-        XCTAssertEqual(conf2, .estimated)
-    }
-
     // MARK: - Model name normalization
 
     func testModelWithDateStampMatches() {

@@ -52,9 +52,4 @@ struct IntegrationConfig: Codable {
     var enabled: Bool = false
     var apiKey: String = ""
     var subscriptionTier: String = ""
-
-    /// When the user uses their own API Key inside this subscription-based IDE,
-    /// select the preferred apiKey CostSource to attribute usage to.
-    /// `nil` means no override — the subscription CostSource applies normally.
-    var preferredAPIKeyCostSourceId: String? = nil
 }

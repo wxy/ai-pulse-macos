@@ -26,32 +26,34 @@ enum Logger {
     }
 
     /// Detailed diagnostic messages.  Entirely compiled out in Release builds.
-    static func debug(_ msg: String,
-                      file: String = #fileID,
-                      function: String = #function) {
+    /// `nonisolated`: loggers are called from background contexts (scans,
+    /// timers); the Xcode target compiles with default-MainActor isolation.
+    nonisolated static func debug(_ msg: String,
+                                  file: String = #fileID,
+                                  function: String = #function) {
         #if DEBUG
         emit(level: .debug, msg, file: file, function: function)
         #endif
     }
 
     /// Key lifecycle events (startup, shutdown, data-change notifications).
-    static func info(_ msg: String,
-                     file: String = #fileID,
-                     function: String = #function) {
+    nonisolated static func info(_ msg: String,
+                                 file: String = #fileID,
+                                 function: String = #function) {
         emit(level: .info, msg, file: file, function: function)
     }
 
     /// Recoverable anomalies (missing optional resource, empty API response).
-    static func warning(_ msg: String,
-                        file: String = #fileID,
-                        function: String = #function) {
+    nonisolated static func warning(_ msg: String,
+                                    file: String = #fileID,
+                                    function: String = #function) {
         emit(level: .warning, msg, file: file, function: function)
     }
 
     /// Errors that need attention (DB write failure, API call failure).
-    static func error(_ msg: String,
-                      file: String = #fileID,
-                      function: String = #function) {
+    nonisolated static func error(_ msg: String,
+                                  file: String = #fileID,
+                                  function: String = #function) {
         emit(level: .error, msg, file: file, function: function)
     }
 
@@ -77,8 +79,8 @@ enum Logger {
     private static nonisolated let oslog = OSLog(
         subsystem: "com.wxy.aipulse", category: "general")
 
-    private static func emit(level: Level,
-                             _ msg: String,
+    private nonisolated static func emit(level: Level,
+                                         _ msg: String,
                              file: String,
                              function: String) {
         let line = format(level: level, msg, file: file, function: function)
@@ -100,10 +102,10 @@ enum Logger {
         }
     }
 
-    private static func format(level: Level,
-                               _ msg: String,
-                               file: String,
-                               function: String) -> String {
+    private nonisolated static func format(level: Level,
+                                           _ msg: String,
+                                           file: String,
+                                           function: String) -> String {
         let ts = ISO8601DateFormatter.string(
             from: Date(),
             timeZone: .current,
