@@ -44,18 +44,11 @@ struct IntegrationRow: View {
     /// Known subscription integration IDs (always show tier picker).
     private static let subscriptionIds: Set<String> = ["claude-code", "cursor", "copilot", "windsurf"]
 
-    /// Log-based dev tools: no subscription, no apiKey, but can use configured API keys.
-    private static let logToolIds: Set<String> = ["aider", "codex", "qwen-code", "opencode"]
-
     /// Is this integration primarily an apiKey type?
     var isAPIKeyType: Bool { Self.apiKeyIds.contains(integration.id) }
 
     /// Is this integration primarily a subscription type?
     var isSubscriptionType: Bool { Self.subscriptionIds.contains(integration.id) }
-
-    /// Log-based dev tool: can use API keys but has no subscription tiers.
-    var isLogTool: Bool { Self.logToolIds.contains(integration.id) }
-
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -84,7 +77,10 @@ struct IntegrationRow: View {
                     apiKeyControls
                 }
             } else {
-                // ---- Non-API layout (original single row) ----
+                // ---- Dev tool layout (single row) ----
+                // Name (+ detection info in parens) on the left; the plan
+                // dropdown on the right when installed. Log-based tools have
+                // no plan, so their right side stays empty.
                 HStack(spacing: 12) {
                     if detecting {
                         ProgressView().scaleEffect(0.6).frame(width: 20)
@@ -96,22 +92,22 @@ struct IntegrationRow: View {
 
                     Text(integration.displayName).font(.body).fontWeight(.medium)
 
-                    if !detected.found {
-                        Text(summaryText)
-                            .font(.caption).foregroundColor(.secondary).lineLimit(1)
+                    if detected.found {
+                        Text("(\(detected.summary))")
+                            .font(.caption).foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
 
                     Spacer()
 
                     if detected.found {
+                        if isSubscriptionType {
+                            planPicker
+                        }
+                    } else {
                         Text(summaryText)
                             .font(.caption).foregroundColor(.secondary).lineLimit(1)
                     }
-                }
-
-                if detected.found {
-                    devToolControls
-                        .padding(.leading, 32)
                 }
             }
         }
@@ -225,31 +221,21 @@ struct IntegrationRow: View {
         return isActive ? .green : .orange
     }
 
+    /// The plan (subscription tier) dropdown, shown directly on the row's right.
+    /// Only subscription-type tools (claude-code / cursor / copilot / windsurf)
+    /// have plans; log-based tools have none.
     @ViewBuilder
-    var devToolControls: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if isSubscriptionType {
-                labeledPicker(label: I18n.t("integrations.subscription_plan"), selection: $tierInput) {
-                    Text(I18n.t("integrations.select_plan")).tag("")
-                    ForEach(SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? [], id: \.label) { t in
-                        Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
-                    }
-                }
-                .onChange(of: tierInput) { _, v in
-                    if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
-                }
+    var planPicker: some View {
+        Picker("", selection: $tierInput) {
+            Text(I18n.t("integrations.select_plan")).tag("")
+            ForEach(SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? [], id: \.label) { t in
+                Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
             }
         }
-    }
-
-    func labeledPicker<C: View, V: Hashable>(label: String, selection: Binding<V>,
-                                               @ViewBuilder content: () -> C) -> some View {
-        HStack(spacing: 4) {
-            Text(label).font(.caption).foregroundColor(.secondary)
-                .frame(width: 152, alignment: .leading)
-            Picker("", selection: selection) { content() }
-                .pickerStyle(.menu)
-                .frame(width: 184, alignment: .leading)
+        .pickerStyle(.menu)
+        .frame(width: 184, alignment: .leading)
+        .onChange(of: tierInput) { _, v in
+            if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
         }
     }
 

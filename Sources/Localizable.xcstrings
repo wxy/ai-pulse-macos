@@ -51,6 +51,9 @@
       },
       "shouldTranslate" : false
     },
+    "@%@" : {
+
+    },
     "%@ ($%lld/mo)" : {
       "localizations" : {
         "en" : {
@@ -1460,7 +1463,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "配置 API Key 以获取官方用量数据。不配置则使用本地日志估算。"
+            "value" : "配置 API 密钥以获取官方用量数据。不配置则使用本地日志估算。"
           }
         },
         "zh-Hant-HK" : {
@@ -2120,7 +2123,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "有 Admin Billing API 但需 Admin Key，权限过高暂不支持。请在 console.mistral.ai 查看。"
+            "value" : "有 Admin Billing API 但需 Admin 密钥，权限过高暂不支持。请在 console.mistral.ai 查看。"
           }
         },
         "zh-Hant-HK" : {
@@ -2384,7 +2387,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "输入 API Key…"
+            "value" : "输入 API 密钥…"
           }
         },
         "zh-Hant-HK" : {
@@ -10222,7 +10225,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "支持的工具和服务显示如下。配置后即可自动追踪 AI 花费。填入 Key 仅用于校正用量，不解锁额外功能，所有数据仅存储在本地。"
+            "value" : "支持的工具和服务显示如下。配置后即可自动追踪 AI 花费。填入密钥仅用于校正用量，不解锁额外功能，所有数据仅存储在本地。"
           }
         },
         "zh-Hant-HK" : {
@@ -10354,7 +10357,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "填入 Key 仅用于校正和精确化用量统计，不解锁任何额外功能。Key 由各 AI 服务商提供，我们不提供这些 Key。用户需自行在各厂商官网生成。Key 仅存储在本地。"
+            "value" : "填入密钥仅用于校正和精确化用量统计，不解锁任何额外功能。密钥由各 AI 服务商提供，我们不提供这些密钥。用户需自行在各厂商官网生成。密钥仅存储在本地。"
           }
         },
         "zh-Hant-HK" : {
@@ -10552,7 +10555,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "填入 Key 以校正用量"
+            "value" : "填入密钥以校正用量"
           }
         },
         "zh-Hant-HK" : {
@@ -10750,7 +10753,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未配置 — 填入 Key 可校正用量统计"
+            "value" : "未配置 — 填入密钥可校正用量统计"
           }
         },
         "zh-Hant-HK" : {
@@ -10899,138 +10902,6 @@
         }
       }
     },
-    "integrations.not_used" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ninguno"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aucun"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "なし"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "없음"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nenhum"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不关联"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無"
-          }
-        }
-      }
-    },
-    "integrations.preferred_api_key" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verknüpfter Guthaben-Key"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Linked Balance Key"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clave de saldo vinculada"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clé de solde liée"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "リンク済み残高キー"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "연결된 잔액 키"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chave de saldo vinculada"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关联余额 Key"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "連結嘅餘額密鑰"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "連結的餘額金鑰"
-          }
-        }
-      }
-    },
     "integrations.redetect" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -11163,72 +11034,6 @@
         }
       }
     },
-    "integrations.subscription_plan" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abo-Tarif"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Subscription Plan"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Plan de suscripción"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Forfait d'abonnement"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サブスクリプションプラン"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "구독 플랜"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Plano de assinatura"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "订阅套餐"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "訂閱計劃"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "訂閱方案"
-          }
-        }
-      }
-    },
     "integrations.title" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -11344,7 +11149,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "假设此 Key 仅用于编程任务"
+            "value" : "假设此密钥仅用于编程任务"
           }
         },
         "zh-Hant-HK" : {
