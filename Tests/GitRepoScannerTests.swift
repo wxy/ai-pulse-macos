@@ -103,4 +103,30 @@ final class GitRepoScannerTests: XCTestCase {
         XCTAssertTrue(truncated)
         XCTAssertTrue(found.isEmpty)
     }
+
+    func testFortyReposWithNoiseCompletesFast() {
+        // A realistic dev dir: 40 git repos + nested plain dirs + a worktree
+        // whose `.git` is a FILE (must still be counted as a repo, and its
+        // subtree skipped so the walk stays bounded). The scan must complete
+        // quickly, find 41 repos (40 + worktree), and not truncate.
+        for i in 0..<40 { makeGitRepo("repo-\(i)") }
+        for i in 0..<30 { makePlainDir("plain-\(i)/sub/nested") }
+        // Worktree-style repo: .git is a file containing "gitdir: ...".
+        let w = tempDir.appendingPathComponent("worktree-like")
+        try! FileManager.default.createDirectory(at: w, withIntermediateDirectories: true)
+        try! "gitdir: ../.git/worktrees/x".write(
+            to: w.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+
+        var found: [String] = []
+        let deadline = Date().addingTimeInterval(5)
+        let start = Date()
+        let truncated = GitRepoScanner.enumerate(in: tempDir, deadline: deadline) {
+            found.append($0.lastPathComponent)
+        }
+        let elapsed = Date().timeIntervalSince(start)
+
+        XCTAssertFalse(truncated)
+        XCTAssertEqual(found.count, 41)
+        XCTAssertLessThan(elapsed, 3.0, "scan of 41 repos + noise took \(elapsed)s")
+    }
 }

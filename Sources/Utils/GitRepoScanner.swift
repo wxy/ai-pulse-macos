@@ -57,17 +57,20 @@ enum GitRepoScanner {
             if enumerator.level >= maxDepth {
                 enumerator.skipDescendants()
             }
+            // A `.git` entry — directory (regular clone) or file (worktree /
+            // submodule whose `.git` contains `gitdir: ...`) — marks a repo.
+            // Counting the file form also prevents descending into the (often
+            // large) worktree contents, which is what made some scans appear
+            // to never finish.
             let gitDir = url.appendingPathComponent(".git")
-            var isDir: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: gitDir.path,
-                                                 isDirectory: &isDir),
-                  isDir.boolValue else { continue }
-            if let deadline, Date() >= deadline {
-                truncated = true
-                break
+            if FileManager.default.fileExists(atPath: gitDir.path) {
+                if let deadline, Date() >= deadline {
+                    truncated = true
+                    break
+                }
+                handler(url)
+                enumerator.skipDescendants()
             }
-            handler(url)
-            enumerator.skipDescendants()
         }
         return truncated
     }

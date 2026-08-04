@@ -93,7 +93,9 @@ struct IntegrationRow: View {
                     Text(integration.displayName).font(.body).fontWeight(.medium)
 
                     if detected.found {
-                        Text("(\(detected.summary))")
+                        // verbatim: the summary is already localized; a plain
+                        // Text(...) would let Xcode extract a spurious "(%@)" key.
+                        Text(verbatim: "(\(detected.summary))")
                             .font(.caption).foregroundColor(.secondary)
                             .lineLimit(1)
                     }
