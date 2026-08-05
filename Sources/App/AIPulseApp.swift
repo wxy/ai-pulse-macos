@@ -7,6 +7,7 @@ import UserNotifications
 final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     private var securityScopedURLs: [URL] = []
     var menuBarController: MenuBarController?
+    private var windowSubmenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Single-instance: if another copy (same bundle id) is already running,
@@ -88,6 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             name: I18n.didChangeLanguage, object: nil
         )
         NotificationCenter.default.addObserver(
+            self, selector: #selector(refreshWindowMenuStats),
+            name: .dataDidChange, object: nil
+        )
+        NotificationCenter.default.addObserver(
             self, selector: #selector(onDemoModeChange),
             name: .demoModeDidChange, object: nil
         )
@@ -133,20 +138,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: initialTimeRange)
     }
 
+    /// Open (or focus) the Settings window on the given tab.
     @MainActor
-    @objc private func openPreferences() {
+    private func openSettings(tab: String) {
         NSApp.activate(ignoringOtherApps: true)
         if let w = SettingsWindowManager.shared.window, w.isVisible {
             w.makeKeyAndOrderFront(nil)
-            return
+            NotificationCenter.default.post(name: .settingsSwitchTab, object: nil, userInfo: ["tab": tab])
+        } else {
+            let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
+                             styleMask: [.titled, .closable, .miniaturizable],
+                             backing: .buffered, defer: false)
+            w.title = I18n.t("settings.title")
+            w.contentView = NSHostingView(rootView: SettingsView(initialTab: tab))
+            w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
+            SettingsWindowManager.shared.window = w
         }
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
-                         styleMask: [.titled, .closable, .miniaturizable],
-                         backing: .buffered, defer: false)
-        w.title = I18n.t("settings.title")
-        w.contentView = NSHostingView(rootView: SettingsView())
-        w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
-        SettingsWindowManager.shared.window = w
+    }
+
+    @MainActor
+    @objc private func openPreferences() {
+        openSettings(tab: "General")
+    }
+
+    @MainActor @objc private func showAbout() {
+        openSettings(tab: "About")
     }
 
     // MARK: - Main Menu
@@ -167,6 +183,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         aboutItem.target = self
         appSubmenu.addItem(aboutItem)
 
+        // macOS rewrites the Cmd+, item's title to the system-localized "设置…"
+        // regardless of the keyEquivalent, so keep the shortcut for the user.
         let prefsItem = NSMenuItem(title: I18n.t("menu.preferences"), action: #selector(openPreferences), keyEquivalent: ",")
         prefsItem.target = self
         appSubmenu.addItem(prefsItem)
@@ -184,53 +202,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         // --- File Menu ---
         let fileMenuItem = NSMenuItem()
         let fileSubmenu = NSMenu(title: "File")
-        let closeItem = NSMenuItem(title: I18n.t("menu.close_window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        fileSubmenu.addItem(closeItem)
-        fileMenuItem.submenu = fileSubmenu
-        mainMenu.addItem(fileMenuItem)
-
-        // --- Window Menu ---
-        let windowMenuItem = NSMenuItem()
-        let windowSubmenu = NSMenu(title: "Window")
-
-        let timeRanges: [(TimeRange, String)] = [
-            (.today, I18n.t("dashboard.today")),
-            (.thisWeek, I18n.t("dashboard.this_week")),
-            (.days30, I18n.t("dashboard.days_30")),
-        ]
-        for (tr, label) in timeRanges {
-            let item = NSMenuItem(title: "\(I18n.t("menu.dashboard_label")) — \(label)", action: #selector(openDashboardFromMenu(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = tr
-            windowSubmenu.addItem(item)
-        }
-
-        windowSubmenu.addItem(.separator())
 
         let welcomeItem = NSMenuItem(title: I18n.t("general.rerun_welcome"), action: #selector(showOnboardingFromMenu), keyEquivalent: "")
         welcomeItem.target = self
-        windowSubmenu.addItem(welcomeItem)
-
-        windowSubmenu.addItem(.separator())
+        fileSubmenu.addItem(welcomeItem)
 
         let demoToggleItem = NSMenuItem(title: demoModeMenuItemTitle, action: #selector(toggleDemoMode), keyEquivalent: "")
         demoToggleItem.target = self
         demoToggleItem.tag = 999  // marker to find and update later
-        windowSubmenu.addItem(demoToggleItem)
+        fileSubmenu.addItem(demoToggleItem)
 
+        fileSubmenu.addItem(.separator())
+
+        let closeItem = NSMenuItem(title: I18n.t("menu.close_window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        fileSubmenu.addItem(closeItem)
+
+        fileMenuItem.submenu = fileSubmenu
+        mainMenu.addItem(fileMenuItem)
+
+        // --- Window Menu ---
+        // Contents are the shared dynamic stats menu (today/week lines + submenus),
+        // built from MenuBarController.statsMenuItems() and refreshed on .dataDidChange
+        // so the Window and Dock menus stay identical.
+        let windowMenuItem = NSMenuItem()
+        let windowSubmenu = NSMenu(title: "Window")
         windowMenuItem.submenu = windowSubmenu
         mainMenu.addItem(windowMenuItem)
+        self.windowSubmenu = windowSubmenu
 
         NSApp.mainMenu = mainMenu
+
+        refreshWindowMenuStats()
     }
 
-    @MainActor @objc private func showAbout() {
-        NSApp.orderFrontStandardAboutPanel(nil)
-    }
-
-    @MainActor @objc private func openDashboardFromMenu(_ sender: NSMenuItem) {
-        let tr = sender.representedObject as? TimeRange ?? .today
-        DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: tr)
+    /// Rebuild the Window menu from the shared stats source (same items as the Dock
+    /// right-click menu). Called on launch, language change, and every .dataDidChange.
+    @MainActor @objc
+    private func refreshWindowMenuStats() {
+        guard let sub = windowSubmenu else { return }
+        sub.removeAllItems()
+        Task {
+            let items = await menuBarController?.statsMenuItems() ?? []
+            await MainActor.run {
+                guard let sub = windowSubmenu else { return }
+                sub.removeAllItems()
+                for item in items { sub.addItem(item) }
+            }
+        }
     }
 
     @MainActor @objc private func showOnboardingFromMenu() {

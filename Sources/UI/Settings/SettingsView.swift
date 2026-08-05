@@ -74,6 +74,11 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showIntegrationsTab)) { _ in
             selectedTab = "integrations.api"
         }
+        .onReceive(NotificationCenter.default.publisher(for: .settingsSwitchTab)) { notification in
+            if let tab = notification.userInfo?["tab"] as? String {
+                selectedTab = tab
+            }
+        }
     }
 }
 
@@ -542,7 +547,7 @@ struct AboutTab: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $showAcknowledgments) {
-            AcknowledgmentsView()
+            AcknowledgmentsView(isPresented: $showAcknowledgments)
         }
     }
 }

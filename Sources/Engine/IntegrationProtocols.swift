@@ -14,6 +14,10 @@ extension Notification.Name {
     /// Posted whenever ApiPoller writes a fresh balance or error into its cache.
     /// userInfo contains "providerId": String.
     static let apiBalanceDidUpdate = Notification.Name("AIPulseApiBalanceDidUpdate")
+
+    /// Posted to request an open Settings window to switch to a specific tab.
+    /// userInfo contains "tab": String (a SettingsView sidebar tab tag).
+    static let settingsSwitchTab = Notification.Name("AIPulseSettingsSwitchTab")
 }
 
 // MARK: - Detection

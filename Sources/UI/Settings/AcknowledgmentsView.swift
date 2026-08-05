@@ -18,10 +18,27 @@ enum Acknowledgments {
 
 /// In-app page crediting everyone who contributed code to AI Pulse.
 struct AcknowledgmentsView: View {
+    @Binding var isPresented: Bool
+
     var body: some View {
         VStack(spacing: 12) {
-            Text(I18n.t("about.acknowledgments"))
-                .font(.title2).fontWeight(.bold)
+            HStack {
+                Text(I18n.t("about.acknowledgments"))
+                    .font(.title2).fontWeight(.bold)
+                Spacer()
+                Button {
+                    isPresented = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                // No other focusable element on this page — without disabling the
+                // focus ring the button shows a thick border when focused.
+                .focusEffectDisabled()
+                .keyboardShortcut(.cancelAction)
+            }
 
             if Acknowledgments.contributors.isEmpty {
                 Text(I18n.t("about.acknowledgments_empty"))
