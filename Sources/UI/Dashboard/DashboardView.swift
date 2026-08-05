@@ -98,6 +98,7 @@ struct DashboardView: View {
     @State private var claudeDetailExpanded = false
     @State private var claudeStats: StatsService.ClaudeCodeStats?
     @State private var claudeStatsTS: Int64 = 0
+    @State private var claudeHoverModel: String? = nil  // model whose cache/non-cache cost tooltip is showing
     @State private var reposExpanded = false
 
     var hasActiveCostSources: Bool {
@@ -1310,6 +1311,8 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(stats.modelBreakdown, id: \.model) { mb in
                             let scaledCost = mb.cost * scale
+                            let cacheCost = scaledCost * mb.cacheRate
+                            let nonCacheCost = scaledCost - cacheCost
                             HStack(spacing: 6) {
                                 Text(mb.model)
                                     .font(.caption2).frame(width: 144, alignment: .leading)
@@ -1320,16 +1323,40 @@ struct DashboardView: View {
                                     let cacheW = rawCacheW < minW ? 0
                                         : (rawCacheW > fullW - minW ? fullW - minW : rawCacheW)
                                     ZStack(alignment: .leading) {
+                                        // Non-cache segment = deep green; cache segment overlaid in light green.
                                         RoundedRectangle(cornerRadius: 2)
-                                            .fill(Color.deepRed.opacity(0.4))
+                                            .fill(Color.marsGreen)
                                             .frame(width: fullW, height: 8)
                                         if cacheW > 0 {
                                             RoundedRectangle(cornerRadius: 2)
-                                                .fill(Color.marsGreen.opacity(0.8))
+                                                .fill(Color.marsGreenLight)
                                                 .frame(width: cacheW, height: 8)
                                         }
                                     }
-                                }.frame(height: 8)
+                                    .frame(width: geo.size.width, height: 8, alignment: .leading)
+                                    .overlay(alignment: .topLeading) {
+                                        if claudeHoverModel == mb.model {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                HStack(spacing: 4) {
+                                                    RoundedRectangle(cornerRadius: 1.5).fill(Color.marsGreenLight).frame(width: 8, height: 8)
+                                                    Text("\(I18n.t("dashboard.cache_cost")) \(String(format: "$%.2f", cacheCost))")
+                                                }
+                                                HStack(spacing: 4) {
+                                                    RoundedRectangle(cornerRadius: 1.5).fill(Color.marsGreen).frame(width: 8, height: 8)
+                                                    Text("\(I18n.t("dashboard.non_cache_cost")) \(String(format: "$%.2f", nonCacheCost))")
+                                                }
+                                            }
+                                            .font(.caption2).monospacedDigit()
+                                            .padding(6)
+                                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                                            .offset(y: -24)
+                                        }
+                                    }
+                                }
+                                .frame(height: 8)
+                                .onHover { inside in
+                                    claudeHoverModel = inside ? mb.model : nil
+                                }
                                 Text(String(format: "$%.2f", scaledCost))
                                     .font(.caption2).monospacedDigit().foregroundColor(.secondary)
                                     .frame(width: 50, alignment: .trailing)
