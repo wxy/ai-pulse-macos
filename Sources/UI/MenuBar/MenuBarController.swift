@@ -79,7 +79,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
     private func refreshStats() {
         Task {
             let demoActive = DemoData.isActive
-            let stats = demoActive ? Self.demoStats() : await fetchStats()
+            let statsItems = await statsMenuItems()
             DispatchQueue.main.async {
                 self.menu.removeAllItems()
 
@@ -108,74 +108,90 @@ final class MenuBarController: NSObject, @unchecked Sendable {
                     self.menu.addItem(.separator())
                 }
 
-                // Today line — click opens Dashboard (Today tab)
-                if let today = stats.todaySummary {
-                    let item = NSMenuItem(title: today, action: #selector(self.openDashboard(_:)), keyEquivalent: "")
-                    item.target = self
-                    item.representedObject = TimeRange.today
-                    self.menu.addItem(item)
-                }
-                // Week line — click opens Dashboard (This Week tab)
-                if let week = stats.weekSummary {
-                    let item = NSMenuItem(title: week, action: #selector(self.openDashboard(_:)), keyEquivalent: "")
-                    item.target = self
-                    item.representedObject = TimeRange.thisWeek
-                    self.menu.addItem(item)
-                }
-
-                // Stats submenus — only shown if they have items
-                let hasSubmenus = !stats.repos.isEmpty || !stats.providerCosts.isEmpty || !stats.toolCosts.isEmpty
-                if hasSubmenus { self.menu.addItem(.separator()) }
-
-                // Tool submenu — by dev tool
-                if !stats.toolCosts.isEmpty {
-                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_tool"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
-                    m.target = self
-                    let s = NSMenu()
-                    for tc in stats.toolCosts {
-                        let item = NSMenuItem(
-                            title: "\(tc.name) · $\(String(format: "%.2f", tc.cost))",
-                            action: #selector(self.openDashboard(_:)), keyEquivalent: ""
-                        )
-                        item.target = self
-                        s.addItem(item)
-                    }
-                    m.submenu = s; self.menu.addItem(m)
-                }
-
-                // Provider submenu — consumption from DB (USD)
-                if !stats.providerCosts.isEmpty {
-                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_provider"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
-                    m.target = self
-                    let s = NSMenu()
-                    for pc in stats.providerCosts {
-                        let name = IntegrationRegistry.all.first(where: { $0.id == pc.providerId })?.displayName ?? pc.providerId
-                        let item = NSMenuItem(
-                            title: "\(name) · $\(String(format: "%.2f", pc.cost))",
-                            action: #selector(self.openDashboard(_:)), keyEquivalent: ""
-                        )
-                        item.target = self
-                        s.addItem(item)
-                    }
-                    m.submenu = s; self.menu.addItem(m)
-                }
-                if !stats.repos.isEmpty {
-                    let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_repo"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
-                    m.target = self
-                    let s = NSMenu()
-                    for r in stats.repos {
-                        let item = NSMenuItem(title: "\(r.name) · \(r.summary)", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
-                        item.target = self
-                        s.addItem(item)
-                    }
-                    m.submenu = s; self.menu.addItem(m)
-                }
+                // Stats — today/week lines + by-tool/provider/repo submenus (shared source)
+                for item in statsItems { self.menu.addItem(item) }
 
                 self.menu.addItem(.separator())
                 let prefsItem = NSMenuItem(title: I18n.t("menu.preferences"), action: #selector(self.openPreferences), keyEquivalent: ",")
                 prefsItem.target = self; self.menu.addItem(prefsItem)
             }
         }
+    }
+
+    /// Build the stats menu items (today/week lines + this-week by-tool / by-provider /
+    /// by-repo submenus). Single source of truth shared by the Dock right-click menu
+    /// (via refreshStats) and the main Window menu so the two never drift apart.
+    func statsMenuItems() async -> [NSMenuItem] {
+        let stats = DemoData.isActive ? Self.demoStats() : await fetchStats()
+        var items: [NSMenuItem] = []
+
+        // Today line — click opens Dashboard (Today tab)
+        if let today = stats.todaySummary {
+            let item = NSMenuItem(title: today, action: #selector(self.openDashboard(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = TimeRange.today
+            items.append(item)
+        }
+        // Week line — click opens Dashboard (This Week tab)
+        if let week = stats.weekSummary {
+            let item = NSMenuItem(title: week, action: #selector(self.openDashboard(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = TimeRange.thisWeek
+            items.append(item)
+        }
+
+        // Stats submenus — only shown if they have items
+        if !stats.repos.isEmpty || !stats.providerCosts.isEmpty || !stats.toolCosts.isEmpty {
+            items.append(.separator())
+        }
+
+        // Tool submenu — by dev tool
+        if !stats.toolCosts.isEmpty {
+            let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_tool"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
+            m.target = self
+            let s = NSMenu()
+            for tc in stats.toolCosts {
+                let item = NSMenuItem(
+                    title: "\(tc.name) · $\(String(format: "%.2f", tc.cost))",
+                    action: #selector(self.openDashboard(_:)), keyEquivalent: ""
+                )
+                item.target = self
+                s.addItem(item)
+            }
+            m.submenu = s; items.append(m)
+        }
+
+        // Provider submenu — consumption from DB (USD)
+        if !stats.providerCosts.isEmpty {
+            let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_provider"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
+            m.target = self
+            let s = NSMenu()
+            for pc in stats.providerCosts {
+                let name = IntegrationRegistry.all.first(where: { $0.id == pc.providerId })?.displayName ?? pc.providerId
+                let item = NSMenuItem(
+                    title: "\(name) · $\(String(format: "%.2f", pc.cost))",
+                    action: #selector(self.openDashboard(_:)), keyEquivalent: ""
+                )
+                item.target = self
+                s.addItem(item)
+            }
+            m.submenu = s; items.append(m)
+        }
+
+        // Repo submenu
+        if !stats.repos.isEmpty {
+            let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_repo"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
+            m.target = self
+            let s = NSMenu()
+            for r in stats.repos {
+                let item = NSMenuItem(title: "\(r.name) · \(r.summary)", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
+                item.target = self
+                s.addItem(item)
+            }
+            m.submenu = s; items.append(m)
+        }
+
+        return items
     }
 
     // MARK: - Data
