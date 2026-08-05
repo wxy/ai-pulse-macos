@@ -980,6 +980,7 @@ struct DashboardView: View {
         // Hide providers with no usable balance (missing/invalid key) — same
         // filter iOS applies, so 0.00 rows never render.
         let balances = remainingBalances.filter { $0.balance > 0.001 }
+        let maxBalance = balances.map(\.balance).max() ?? 0
         let hasAny = !balances.isEmpty || !usageData.isEmpty
         return VStack(spacing: 12) {
             if hasAny {
@@ -987,14 +988,28 @@ struct DashboardView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
             }
-            // API balances
+            // API balances — bar length is relative to the largest balance in the
+            // list (balances have no limit to derive a % from).
             ForEach(balances, id: \.providerId) { item in
-                HStack {
-                    Text(item.displayName)
-                        .font(.caption).foregroundColor(.secondary)
-                    Spacer()
-                    Text(balanceString(item.balance, currency: item.currency))
-                        .font(.caption).fontWeight(.semibold).monospacedDigit()
+                VStack(spacing: 3) {
+                    HStack {
+                        Text(item.displayName)
+                            .font(.caption).foregroundColor(.secondary)
+                        Spacer()
+                        Text(balanceString(item.balance, currency: item.currency))
+                            .font(.caption).fontWeight(.semibold).monospacedDigit()
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color(nsColor: .quaternarySystemFill))
+                                .frame(height: 5)
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.marsGreen)
+                                .frame(width: max(geo.size.width * (maxBalance > 0 ? item.balance / maxBalance : 0), 2), height: 5)
+                        }
+                    }
+                    .frame(height: 5)
                 }
             }
             // Subscription quotas (Claude / Copilot window utilization + reset)
