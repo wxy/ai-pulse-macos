@@ -56,7 +56,6 @@ struct DashboardView: View {
     @State private var costHoverDate: Date? = nil
     @State private var lastUpdated: Date? = nil
     @State private var isRefreshing = false
-    @State private var isLoading = false
     @State private var lastSnapshotTS: Date? = nil
     @State private var lastDataChangeLoad: Date = .distantPast
     private let dataChangeThrottle: TimeInterval = 15  // min interval for data-change-driven reloads
@@ -99,6 +98,7 @@ struct DashboardView: View {
     @State private var claudeDetailExpanded = false
     @State private var claudeStats: StatsService.ClaudeCodeStats?
     @State private var claudeStatsTS: Int64 = 0
+    @State private var claudeHoverModel: String? = nil  // model whose cache/non-cache cost tooltip is showing
     @State private var reposExpanded = false
 
     var hasActiveCostSources: Bool {
@@ -660,8 +660,12 @@ struct DashboardView: View {
 
             // Donuts flanking stat cards: left donut | nose stats | right donut
             HStack(alignment: .top, spacing: 12) {
-                // Left: subscription vs API donut (placeholder when empty)
-                if subVsApi.total > 0.001 {
+                // Left: subscription vs API donut — show the real donut only once
+                // this range's data has actually loaded. Before that (first open)
+                // subTotal is already > 0 from the configured subscription, but the
+                // donut is held at opacity 0 — so render the gray placeholder instead
+                // of a hole on the left while the range loads.
+                if loadedTimeRange == timeRange, subVsApi.total > 0.001 {
                     subVsApiDonut(data: subVsApi)
                 } else {
                     emptyDonut(title: I18n.t("dashboard.sub_api_ratio"))
@@ -977,6 +981,7 @@ struct DashboardView: View {
         // Hide providers with no usable balance (missing/invalid key) — same
         // filter iOS applies, so 0.00 rows never render.
         let balances = remainingBalances.filter { $0.balance > 0.001 }
+        let maxBalance = balances.map(\.balance).max() ?? 0
         let hasAny = !balances.isEmpty || !usageData.isEmpty
         return VStack(spacing: 12) {
             if hasAny {
@@ -984,14 +989,28 @@ struct DashboardView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
             }
-            // API balances
+            // API balances — bar length is relative to the largest balance in the
+            // list (balances have no limit to derive a % from).
             ForEach(balances, id: \.providerId) { item in
-                HStack {
-                    Text(item.displayName)
-                        .font(.caption).foregroundColor(.secondary)
-                    Spacer()
-                    Text(balanceString(item.balance, currency: item.currency))
-                        .font(.caption).fontWeight(.semibold).monospacedDigit()
+                VStack(spacing: 3) {
+                    HStack {
+                        Text(item.displayName)
+                            .font(.caption).foregroundColor(.secondary)
+                        Spacer()
+                        Text(balanceString(item.balance, currency: item.currency))
+                            .font(.caption).fontWeight(.semibold).monospacedDigit()
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color(nsColor: .quaternarySystemFill))
+                                .frame(height: 5)
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.marsGreen)
+                                .frame(width: max(geo.size.width * (maxBalance > 0 ? item.balance / maxBalance : 0), 2), height: 5)
+                        }
+                    }
+                    .frame(height: 5)
                 }
             }
             // Subscription quotas (Claude / Copilot window utilization + reset)
@@ -1292,6 +1311,8 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(stats.modelBreakdown, id: \.model) { mb in
                             let scaledCost = mb.cost * scale
+                            let cacheCost = scaledCost * mb.cacheRate
+                            let nonCacheCost = scaledCost - cacheCost
                             HStack(spacing: 6) {
                                 Text(mb.model)
                                     .font(.caption2).frame(width: 144, alignment: .leading)
@@ -1302,16 +1323,40 @@ struct DashboardView: View {
                                     let cacheW = rawCacheW < minW ? 0
                                         : (rawCacheW > fullW - minW ? fullW - minW : rawCacheW)
                                     ZStack(alignment: .leading) {
+                                        // Non-cache segment = deep green; cache segment overlaid in light green.
                                         RoundedRectangle(cornerRadius: 2)
-                                            .fill(Color.deepRed.opacity(0.4))
+                                            .fill(Color.marsGreen)
                                             .frame(width: fullW, height: 8)
                                         if cacheW > 0 {
                                             RoundedRectangle(cornerRadius: 2)
-                                                .fill(Color.marsGreen.opacity(0.8))
+                                                .fill(Color.marsGreenLight)
                                                 .frame(width: cacheW, height: 8)
                                         }
                                     }
-                                }.frame(height: 8)
+                                    .frame(width: geo.size.width, height: 8, alignment: .leading)
+                                    .overlay(alignment: .topLeading) {
+                                        if claudeHoverModel == mb.model {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                HStack(spacing: 4) {
+                                                    RoundedRectangle(cornerRadius: 1.5).fill(Color.marsGreenLight).frame(width: 8, height: 8)
+                                                    Text("\(I18n.t("dashboard.cache_cost")) \(String(format: "$%.2f", cacheCost))")
+                                                }
+                                                HStack(spacing: 4) {
+                                                    RoundedRectangle(cornerRadius: 1.5).fill(Color.marsGreen).frame(width: 8, height: 8)
+                                                    Text("\(I18n.t("dashboard.non_cache_cost")) \(String(format: "$%.2f", nonCacheCost))")
+                                                }
+                                            }
+                                            .font(.caption2).monospacedDigit()
+                                            .padding(6)
+                                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                                            .offset(y: -24)
+                                        }
+                                    }
+                                }
+                                .frame(height: 8)
+                                .onHover { inside in
+                                    claudeHoverModel = inside ? mb.model : nil
+                                }
                                 Text(String(format: "$%.2f", scaledCost))
                                     .font(.caption2).monospacedDigit().foregroundColor(.secondary)
                                     .frame(width: 50, alignment: .trailing)
@@ -1370,13 +1415,17 @@ struct DashboardView: View {
         VStack(spacing: 6) {
             Text(title).font(.caption).foregroundColor(.secondary)
             ZStack {
+                // Ring geometry matches the real donuts (SectorMark innerRadius .ratio(0.5)
+                // in a 120×120 chart): inner radius 30, outer radius 60, thickness 30.
+                // A larger lineWidth would bleed the stroke past the outer radius.
                 Circle()
-                    .stroke(Color.secondary.opacity(0.12), lineWidth: 60)
-                    .frame(width: 120, height: 120)
+                    .stroke(Color.secondary.opacity(0.12), lineWidth: 30)
+                    .frame(width: 90, height: 90)
                 Text(I18n.t("dashboard.zero_cost"))
                     .font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(.secondary)
             }
+            .frame(width: 120, height: 120)
         }
         .frame(maxWidth: 140)
     }
@@ -1535,8 +1584,10 @@ struct DashboardView: View {
         NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
     }
 
-    /// Apply a cached snapshot to @State variables, skipping all DB queries.
-    private func applySnapshot(_ snap: DashboardSnapshot) {
+    /// Apply a snapshot to @State variables, skipping all DB queries.
+    /// `range` is the time range this snapshot was computed for — loadedTimeRange
+    /// must match the data, not the (possibly already-switched) current tab.
+    private func applySnapshot(_ snap: DashboardSnapshot, for range: TimeRange) {
         todayCombinedSpend = snap.todayCost
         weekCombinedSpend = snap.weekCost
         monthCombinedSpend = snap.monthCost
@@ -1563,7 +1614,7 @@ struct DashboardView: View {
         providerCosts = snap.providerBreakdown.map { ProviderDailyCost(date: Date(), providerId: $0.providerId, cost: $0.cost) }
         paddedChanges = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
         isDemoMode = false
-        loadedTimeRange = timeRange
+        loadedTimeRange = range
 
         // Same entry animation as the full load path
         animateBarIfNeeded()
@@ -1571,34 +1622,36 @@ struct DashboardView: View {
 
     @MainActor
     func load() async {
-        // Prevent concurrent loads — only one at a time.
-        guard !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
-
-        await loadUsageData()
-
-        // Bump generation so only the latest load() applies its results.
+        // Every request runs (tab switch / refresh / data-change) — a hard
+        // isLoading mutex would drop the newest tab's request while a slow load
+        // is in flight, stranding the dashboard on the previous range. Instead
+        // loadGeneration is the only gate: a stale generation discards itself.
         loadGeneration += 1
         let myGen = loadGeneration
+        let requestedRange = timeRange  // capture this request's range so data can't drift tabs
+
+        await loadUsageData()
+        guard myGen == loadGeneration else { return }
 
         // ── Cache check — skip on initial load to avoid stale-data flash ──
         // Max age matches Phase 4 refresh intervals: today=5min, week=1h, 30d=12h
         let cacheMaxAge: TimeInterval = {
-            switch timeRange { case .today: return 300; case .thisWeek: return 3600; default: return 43200 }
+            switch requestedRange { case .today: return 300; case .thisWeek: return 3600; default: return 43200 }
         }()
         if loadedTimeRange != nil,
-           let cached = await DashboardCache.read(timeRange: timeRange.cacheKey, maxAge: cacheMaxAge) {
+           let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: cacheMaxAge) {
             guard myGen == loadGeneration else { return }
-            // Skip if cache unchanged since last apply (debounce Phase-1 driven reloads)
-            if let last = lastSnapshotTS, abs(cached.updatedAt.timeIntervalSince(last)) < 1 { return }
-            applySnapshot(cached)
-            Logger.debug("Dashboard: loaded from cache (\(timeRange.label))")
+            // Debounce data-change reloads only when staying on the same range;
+            // a tab switch must always apply the new range's snapshot.
+            if loadedTimeRange == requestedRange,
+               let last = lastSnapshotTS, abs(cached.updatedAt.timeIntervalSince(last)) < 1 { return }
+            applySnapshot(cached, for: requestedRange)
+            Logger.debug("Dashboard: loaded from cache (\(requestedRange.label))")
             return
         }
 
         // ── Synchronous prep ──
-        let currentTimeRange = timeRange  // capture before async closures for sendability
+        let currentTimeRange = requestedRange  // capture before async closures for sendability
 
         // ── Demo mode: auto-activates when no integrations configured ──
         let demoActive = DemoData.isActive
@@ -1621,7 +1674,7 @@ struct DashboardView: View {
                 previousPeriodSpend = d.previousPeriodSpend
                 toolCostBreakdown = d.toolCostBreakdown
                 isDemoMode = true
-                loadedTimeRange = timeRange
+                loadedTimeRange = currentTimeRange
                 if barProgress < 0.5 { barProgress = 0; withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 } }
             }
             return
@@ -1632,7 +1685,7 @@ struct DashboardView: View {
 
         guard myGen == loadGeneration else { return }
 
-        applySnapshot(snap)
+        applySnapshot(snap, for: currentTimeRange)
 
         Task { await DashboardCache.write(timeRange: currentTimeRange.cacheKey, json: snap.jsonString()) }
 
