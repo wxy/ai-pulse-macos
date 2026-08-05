@@ -15,18 +15,27 @@
 
 ### macOS
 
-|  | English | 中文 |
+|  | 中文 | English |
 |:---:|:---:|:---:|
-| **仪表盘 · 今日 / Dashboard · Today** | <img src="docs/screenshots/macos-dashboard-today-en.jpg" alt="Dashboard Today (EN)" width="420"> | <img src="docs/screenshots/macos-dashboard-today-zh.jpg" alt="仪表盘今日 (ZH)" width="420"> |
-| **仪表盘 · 本周 / Dashboard · This Week** | <img src="docs/screenshots/macos-dashboard-week-en.jpg" alt="Dashboard This Week (EN)" width="420"> | <img src="docs/screenshots/macos-dashboard-week-zh.jpg" alt="仪表盘本周 (ZH)" width="420"> |
-| **设置 / Settings** | <img src="docs/screenshots/macos-settings-en.jpg" alt="Settings (EN)" width="420"> | <img src="docs/screenshots/macos-settings-zh.jpg" alt="设置 (ZH)" width="420"> |
+| **仪表盘 · 今日 / Dashboard · Today** | <img src="docs/screenshots/macos-dashboard-today-zh.jpg" alt="仪表盘今日" width="420"> | <img src="docs/screenshots/macos-dashboard-today-en.jpg" alt="Dashboard Today" width="420"> |
+| **仪表盘 · 30 天 / Dashboard · 30 Days** | <img src="docs/screenshots/macos-dashboard-30d-zh.jpg" alt="仪表盘30天" width="420"> | <img src="docs/screenshots/macos-dashboard-30d-en.jpg" alt="Dashboard 30 Days" width="420"> |
+| **欢迎 · 授权 / Onboarding · Access** | <img src="docs/screenshots/macos-onboarding-access-zh.jpg" alt="欢迎授权" width="420"> | <img src="docs/screenshots/macos-onboarding-access-en.jpg" alt="Onboarding Access" width="420"> |
+| **设置 · AI 服务商 / Settings · AI Providers** | <img src="docs/screenshots/macos-settings-providers-zh.jpg" alt="设置AI服务商" width="420"> | <img src="docs/screenshots/macos-settings-providers-en.jpg" alt="Settings AI Providers" width="420"> |
+| **设置 · 开发工具 / Settings · Dev Tools** | <img src="docs/screenshots/macos-settings-devtools-zh.jpg" alt="设置开发工具" width="420"> | <img src="docs/screenshots/macos-settings-devtools-en.jpg" alt="Settings Dev Tools" width="420"> |
+| **设置 · 仓库 / Settings · Repos** | <img src="docs/screenshots/macos-settings-repos-zh.jpg" alt="设置仓库" width="420"> | <img src="docs/screenshots/macos-settings-repos-en.jpg" alt="Settings Repos" width="420"> |
 
 ### iOS
 
-|  | English | 中文 |
+|  | 中文 | English |
 |:---:|:---:|:---:|
-| **仪表盘 · 今日 / Dashboard · Today** | <img src="docs/screenshots/ios-dashboard-today-en.jpg" alt="iOS Dashboard Today (EN)" width="220"> | <img src="docs/screenshots/ios-dashboard-today-zh.jpg" alt="iOS 仪表盘今日 (ZH)" width="220"> |
-| **仪表盘 · 30 天 / Dashboard · 30 Days** | <img src="docs/screenshots/ios-dashboard-30d-en.jpg" alt="iOS Dashboard 30 Days (EN)" width="220"> | <img src="docs/screenshots/ios-dashboard-30d-zh.jpg" alt="iOS 仪表盘30天 (ZH)" width="220"> |
+| **仪表盘 · 今日 / Dashboard · Today** | <img src="docs/screenshots/ios-dashboard-today-zh.jpg" alt="iOS 仪表盘今日" width="220"> | <img src="docs/screenshots/ios-dashboard-today-en.jpg" alt="iOS Dashboard Today" width="220"> |
+| **仪表盘 · 30 天 / Dashboard · 30 Days** | <img src="docs/screenshots/ios-dashboard-30d-zh.jpg" alt="iOS 仪表盘30天" width="220"> | <img src="docs/screenshots/ios-dashboard-30d-en.jpg" alt="iOS Dashboard 30 Days" width="220"> |
+
+### watchOS
+
+|  | 中文 | English |
+|:---:|:---:|:---:|
+| **首页 / Home** | <img src="docs/screenshots/watchos-home-zh.jpg" alt="watchOS 首页" width="160"> | <img src="docs/screenshots/watchos-home-en.jpg" alt="watchOS Home" width="160"> |
 
 ## 下载（Download）
 
@@ -106,8 +115,8 @@ AI Pulse tracks 13 AI tools today across three collection methods:
    **Grant Home access** — to read logs from Claude Code, Codex, OpenCode, Qwen, and aider inside the sandbox, allow Home-folder access when prompted.
 4. **添加 API Key** — 设置 → 集成 → **AI 服务商**。Key 仅保存在本地，并通过实时余额校验验证。<br>
    **Add API keys** — Settings → Integrations → **AI Providers**. Keys are stored locally and validated with a live balance check.
-5. **选择订阅方案** — 设置 → 集成 → **开发工具**，选择你的订阅方案（如 Cursor Pro）与首选 API Key。<br>
-   **Choose plans** — Settings → Integrations → **Dev Tools** lets you pick your subscription plan (e.g. Cursor Pro) and preferred API key.
+5. **选择订阅方案** — 设置 → 集成 → **开发工具**，选择你的订阅方案（如 Cursor Pro）。<br>
+   **Choose plans** — Settings → Integrations → **Dev Tools** lets you pick your subscription plan (e.g. Cursor Pro).
 6. **浏览仪表盘** — 在今日、本周、30 天之间切换。<br>
    **Explore the Dashboard** — switch between Today, This Week, and 30 Days.
 7. **随时右键 Dock 图标** 查看快速统计菜单。<br>
