@@ -494,7 +494,7 @@ enum StatsService {
             }
             return rows.filter { !$0.toolId.isEmpty }
         } catch {
-            Logger.debug("StatsService.latestQuotaStatus: \(error)")
+            Logger.error("StatsService.latestQuotaStatus: \(error)")
             return []
         }
     }
@@ -680,6 +680,18 @@ enum StatsService {
 
     // MARK: - Full snapshot builder (shared by DashboardView and Phase 4 timer)
 
+    /// Await a throwing async value, logging the failure before returning the
+    /// fallback. Replaces bare `try?` in dashboardSnapshot so a data-source
+    /// failure is visible in logs instead of silently degrading.
+    private static func resultOrLog<T>(_ label: String, _ fallback: T, _ body: () async throws -> T) async -> T {
+        do {
+            return try await body()
+        } catch {
+            Logger.error("StatsService.dashboardSnapshot: \(label) failed: \(error)")
+            return fallback
+        }
+    }
+
     /// Computes everything needed for a complete DashboardSnapshot for `days`.
     /// Used by both live Dashboard loading and background cache refresh.
     static func dashboardSnapshot(days: Int) async -> DashboardSnapshot {
@@ -704,27 +716,25 @@ enum StatsService {
         //
         // ── Unified cost computation: all three ranges use combinedSpend ──
         // combinedSpend = balance API (with 14d lookback) + subscription × days
-        async let todayCombined = StatsService.combinedSpend(sinceMs: todayStartMs)
-        async let weekCombined = StatsService.combinedSpend(sinceMs: mondayStartMs)
-        async let monthCombined = StatsService.combinedSpend(sinceMs: monthStartMs)
-        async let yesterdayCombined = StatsService.combinedSpend(sinceMs: yesterdayStartMs)
-        async let stats = StatsService.dailyStats(days: days)
-        async let bal = StatsService.balanceDailySpend(days: days, sinceMs: rangeStartMs)
+        async let tcR = StatsService.combinedSpend(sinceMs: todayStartMs)
+        async let wcR = StatsService.combinedSpend(sinceMs: mondayStartMs)
+        async let mcR = StatsService.combinedSpend(sinceMs: monthStartMs)
+        async let ycR = StatsService.combinedSpend(sinceMs: yesterdayStartMs)
+        // Each throwing source goes through resultOrLog so a failure is logged
+        // (label + error) instead of being swallowed by bare `try?`.
+        async let stR = resultOrLog("dailyStats", []) { try await StatsService.dailyStats(days: days) }
+        async let blR = resultOrLog("balanceDailySpend", []) { try await StatsService.balanceDailySpend(days: days, sinceMs: rangeStartMs) }
         // Query full 30 days of balance data + 14d lookback for provider breakdown
-        async let balMonth = StatsService.balanceDailySpend(days: 44, sinceMs: lookbackStartMs)
-        async let code = StatsService.dailyCodeChanges(days: days)
-        async let repos = StatsService.repoBreakdown(days: days)
-        async let pred = StatsService.prediction()
-        async let latestBals = StatsService.latestRemainingBalances(sinceMs: lookbackStartMs)
-        async let quotas = StatsService.latestQuotaStatus()
+        async let bmR = resultOrLog("balanceDailySpend44", []) { try await StatsService.balanceDailySpend(days: 44, sinceMs: lookbackStartMs) }
+        async let cdR = resultOrLog("dailyCodeChanges", []) { try await StatsService.dailyCodeChanges(days: days) }
+        async let rpR = resultOrLog("repoBreakdown", []) { try await StatsService.repoBreakdown(days: days) }
+        async let prR = StatsService.prediction()
+        async let lbR = resultOrLog("latestRemainingBalances", []) { try await StatsService.latestRemainingBalances(sinceMs: lookbackStartMs) }
+        async let qsR = StatsService.latestQuotaStatus()
 
         let (tc, wc, mc, yc, st, bl, bm, cd, rp, pr, lb, qs) = await (
-            todayCombined, weekCombined, monthCombined, yesterdayCombined,
-            (try? stats) ?? [], (try? bal) ?? [],
-            (try? balMonth) ?? [],
-            (try? code) ?? [],
-            (try? repos) ?? [], pred,
-            (try? latestBals) ?? [], quotas
+            tcR, wcR, mcR, ycR,
+            stR, blR, bmR, cdR, rpR, prR, lbR, qsR
         )
 
         let subAmort = subscriptionDailyAmortization()
@@ -749,9 +759,11 @@ enum StatsService {
 
         // Tool costs from usage_event source aggregation
         let toolStartMs = rangeStartMs
-        let toolRows: [GRDB.Row] = (try? await AppDatabase.shared.read { db in
-            try GRDB.Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [toolStartMs])
-        }) ?? []
+        let toolRows: [GRDB.Row] = await resultOrLog("toolCosts", []) {
+            try await AppDatabase.shared.read { db in
+                try GRDB.Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [toolStartMs])
+            }
+        }
         var toolMap: [String: Double] = [:]
         for r in toolRows {
             if let s: String = r["s"], let c: Double = r["c"], c > 0 { toolMap[s] = c }

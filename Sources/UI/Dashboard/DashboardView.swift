@@ -56,7 +56,6 @@ struct DashboardView: View {
     @State private var costHoverDate: Date? = nil
     @State private var lastUpdated: Date? = nil
     @State private var isRefreshing = false
-    @State private var isLoading = false
     @State private var lastSnapshotTS: Date? = nil
     @State private var lastDataChangeLoad: Date = .distantPast
     private let dataChangeThrottle: TimeInterval = 15  // min interval for data-change-driven reloads
@@ -660,8 +659,12 @@ struct DashboardView: View {
 
             // Donuts flanking stat cards: left donut | nose stats | right donut
             HStack(alignment: .top, spacing: 12) {
-                // Left: subscription vs API donut (placeholder when empty)
-                if subVsApi.total > 0.001 {
+                // Left: subscription vs API donut — show the real donut only once
+                // this range's data has actually loaded. Before that (first open)
+                // subTotal is already > 0 from the configured subscription, but the
+                // donut is held at opacity 0 — so render the gray placeholder instead
+                // of a hole on the left while the range loads.
+                if loadedTimeRange == timeRange, subVsApi.total > 0.001 {
                     subVsApiDonut(data: subVsApi)
                 } else {
                     emptyDonut(title: I18n.t("dashboard.sub_api_ratio"))
@@ -1370,13 +1373,17 @@ struct DashboardView: View {
         VStack(spacing: 6) {
             Text(title).font(.caption).foregroundColor(.secondary)
             ZStack {
+                // Ring geometry matches the real donuts (SectorMark innerRadius .ratio(0.5)
+                // in a 120×120 chart): inner radius 30, outer radius 60, thickness 30.
+                // A larger lineWidth would bleed the stroke past the outer radius.
                 Circle()
-                    .stroke(Color.secondary.opacity(0.12), lineWidth: 60)
-                    .frame(width: 120, height: 120)
+                    .stroke(Color.secondary.opacity(0.12), lineWidth: 30)
+                    .frame(width: 90, height: 90)
                 Text(I18n.t("dashboard.zero_cost"))
                     .font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(.secondary)
             }
+            .frame(width: 120, height: 120)
         }
         .frame(maxWidth: 140)
     }
@@ -1535,8 +1542,10 @@ struct DashboardView: View {
         NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
     }
 
-    /// Apply a cached snapshot to @State variables, skipping all DB queries.
-    private func applySnapshot(_ snap: DashboardSnapshot) {
+    /// Apply a snapshot to @State variables, skipping all DB queries.
+    /// `range` is the time range this snapshot was computed for — loadedTimeRange
+    /// must match the data, not the (possibly already-switched) current tab.
+    private func applySnapshot(_ snap: DashboardSnapshot, for range: TimeRange) {
         todayCombinedSpend = snap.todayCost
         weekCombinedSpend = snap.weekCost
         monthCombinedSpend = snap.monthCost
@@ -1563,7 +1572,7 @@ struct DashboardView: View {
         providerCosts = snap.providerBreakdown.map { ProviderDailyCost(date: Date(), providerId: $0.providerId, cost: $0.cost) }
         paddedChanges = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
         isDemoMode = false
-        loadedTimeRange = timeRange
+        loadedTimeRange = range
 
         // Same entry animation as the full load path
         animateBarIfNeeded()
@@ -1571,34 +1580,36 @@ struct DashboardView: View {
 
     @MainActor
     func load() async {
-        // Prevent concurrent loads — only one at a time.
-        guard !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
-
-        await loadUsageData()
-
-        // Bump generation so only the latest load() applies its results.
+        // Every request runs (tab switch / refresh / data-change) — a hard
+        // isLoading mutex would drop the newest tab's request while a slow load
+        // is in flight, stranding the dashboard on the previous range. Instead
+        // loadGeneration is the only gate: a stale generation discards itself.
         loadGeneration += 1
         let myGen = loadGeneration
+        let requestedRange = timeRange  // capture this request's range so data can't drift tabs
+
+        await loadUsageData()
+        guard myGen == loadGeneration else { return }
 
         // ── Cache check — skip on initial load to avoid stale-data flash ──
         // Max age matches Phase 4 refresh intervals: today=5min, week=1h, 30d=12h
         let cacheMaxAge: TimeInterval = {
-            switch timeRange { case .today: return 300; case .thisWeek: return 3600; default: return 43200 }
+            switch requestedRange { case .today: return 300; case .thisWeek: return 3600; default: return 43200 }
         }()
         if loadedTimeRange != nil,
-           let cached = await DashboardCache.read(timeRange: timeRange.cacheKey, maxAge: cacheMaxAge) {
+           let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: cacheMaxAge) {
             guard myGen == loadGeneration else { return }
-            // Skip if cache unchanged since last apply (debounce Phase-1 driven reloads)
-            if let last = lastSnapshotTS, abs(cached.updatedAt.timeIntervalSince(last)) < 1 { return }
-            applySnapshot(cached)
-            Logger.debug("Dashboard: loaded from cache (\(timeRange.label))")
+            // Debounce data-change reloads only when staying on the same range;
+            // a tab switch must always apply the new range's snapshot.
+            if loadedTimeRange == requestedRange,
+               let last = lastSnapshotTS, abs(cached.updatedAt.timeIntervalSince(last)) < 1 { return }
+            applySnapshot(cached, for: requestedRange)
+            Logger.debug("Dashboard: loaded from cache (\(requestedRange.label))")
             return
         }
 
         // ── Synchronous prep ──
-        let currentTimeRange = timeRange  // capture before async closures for sendability
+        let currentTimeRange = requestedRange  // capture before async closures for sendability
 
         // ── Demo mode: auto-activates when no integrations configured ──
         let demoActive = DemoData.isActive
@@ -1621,7 +1632,7 @@ struct DashboardView: View {
                 previousPeriodSpend = d.previousPeriodSpend
                 toolCostBreakdown = d.toolCostBreakdown
                 isDemoMode = true
-                loadedTimeRange = timeRange
+                loadedTimeRange = currentTimeRange
                 if barProgress < 0.5 { barProgress = 0; withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 } }
             }
             return
@@ -1632,7 +1643,7 @@ struct DashboardView: View {
 
         guard myGen == loadGeneration else { return }
 
-        applySnapshot(snap)
+        applySnapshot(snap, for: currentTimeRange)
 
         Task { await DashboardCache.write(timeRange: currentTimeRange.cacheKey, json: snap.jsonString()) }
 
