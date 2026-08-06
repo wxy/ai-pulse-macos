@@ -12,7 +12,7 @@ import Foundation
 /// Ingestion modules push-change notifications to the coordinator when they
 /// successfully write new data. The coordinator applies a 500ms debounce and
 /// posts `.dataDidChange` to notify all UI consumers.
-final class DataRefreshCoordinator: @unchecked Sendable {
+nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     static let shared = DataRefreshCoordinator()
 
     private var phase1Timer: DispatchSourceTimer?
@@ -102,27 +102,27 @@ final class DataRefreshCoordinator: @unchecked Sendable {
         // Timer callbacks fire on notifyQueue (utility). Hop to MainActor
         // since runPhase* methods are MainActor-isolated.
         phase1Timer = makeTimer(interval: .seconds(30), firstDeadline: .now() + 5) { [weak self] in
-            Task { @MainActor [weak self] in self?.runPhase1() }
+            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.runPhase1() } }
         }
         phase2Timer = makeTimer(interval: .seconds(300), firstDeadline: .now() + 15) { [weak self] in
-            Task { @MainActor [weak self] in self?.runPhase2() }
+            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.runPhase2() } }
         }
         phase3Timer = makeTimer(interval: .seconds(3600), firstDeadline: .now() + 10) { [weak self] in
-            Task { @MainActor [weak self] in self?.runPhase3() }
+            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.runPhase3() } }
         }
         phase4Timer = makeTimer(interval: .seconds(300), firstDeadline: .now() + 20) { [weak self] in
-            Task { @MainActor [weak self] in self?.runPhase4() }
+            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.runPhase4() } }
         }
     }
 
     func triggerIngest() {
         notifyQueue.async { [weak self] in
-            Task { @MainActor [weak self] in self?.runPhase1() }
+            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.runPhase1() } }
         }
     }
 
     func notifyDataChange() {
-        Task { @MainActor [weak self] in self?.scheduleUINotify() }
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify() } }
     }
 
     // MARK: - Phase runners
@@ -195,17 +195,17 @@ final class DataRefreshCoordinator: @unchecked Sendable {
 
     /// Called by LogWatcher after a usage_event row is inserted.
     func notifyPhaseIngest() {
-        Task { @MainActor [weak self] in self?.scheduleUINotify(playSound: true) }
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify(playSound: true) } }
     }
 
     /// Called by GitMonitor after a code_change row is inserted.
     func notifyPhaseGitScan() {
-        Task { @MainActor [weak self] in self?.scheduleUINotify(playSound: true) }
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify(playSound: true) } }
     }
 
     /// Called by ApiPoller after a balance_snapshot row is inserted.
     func notifyPhaseBalance() {
-        Task { @MainActor [weak self] in self?.scheduleUINotify(playSound: true) }
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify(playSound: true) } }
     }
 
     // MARK: - Debounce & dispatch

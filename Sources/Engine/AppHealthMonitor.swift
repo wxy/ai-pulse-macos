@@ -100,7 +100,8 @@ final class AppHealthMonitor: @unchecked Sendable {
         let severityChanged: Bool
         lock.lock()
         oldSeverity = _severity
-        _severity = max(_severity, newSeverity)
+        let updatedSeverity = max(_severity, newSeverity)
+        _severity = updatedSeverity
         switch category {
         case .db:    _hasDBError = true
         case .api:   _apiErrors.insert(providerId)
@@ -111,15 +112,15 @@ final class AppHealthMonitor: @unchecked Sendable {
             _messages.append(message)
             if _messages.count > 20 { _messages.removeFirst(_messages.count - 20) }
         }
-        severityChanged = (_severity != oldSeverity)
+        severityChanged = (updatedSeverity != oldSeverity)
         lock.unlock()
 
         if severityChanged {
-            Logger.warning("HealthMonitor: severity \(oldSeverity) → \(_severity) — \(message)")
+            Logger.warning("HealthMonitor: severity \(oldSeverity) → \(updatedSeverity) — \(message)")
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .appHealthDidChange, object: nil)
             }
-            if _severity == .critical {
+            if updatedSeverity == .critical {
                 sendCriticalNotification(message: message)
             }
         }
@@ -146,10 +147,11 @@ final class AppHealthMonitor: @unchecked Sendable {
         case .stats: _hasStatsError = false
         }
         let prev = _severity
-        _severity = recomputeSeverity()
+        let updated = recomputeSeverity()
+        _severity = updated
         lock.unlock()
-        if _severity != prev {
-            Logger.info("HealthMonitor: severity \(prev) → \(_severity) (cleared)")
+        if updated != prev {
+            Logger.info("HealthMonitor: severity \(prev) → \(updated) (cleared)")
         }
         // Always notify so the UI refreshes (messages may have changed)
         DispatchQueue.main.async {

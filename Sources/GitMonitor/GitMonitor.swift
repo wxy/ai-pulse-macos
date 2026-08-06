@@ -11,7 +11,7 @@ struct CodeChange: Codable {
 }
 
 /// Monitors git repositories for new commits and extracts net line changes
-final class GitMonitor: @unchecked Sendable {
+nonisolated final class GitMonitor: @unchecked Sendable {
     static let shared = GitMonitor()
     /// Guards `watchedRepos` and `lastSeenCommit`. `watch()` can be invoked from
     /// multiple background contexts (initial scan, FSEvent handlers), so the
@@ -140,11 +140,16 @@ final class GitMonitor: @unchecked Sendable {
                 newHash = commit.hash
             }
 
-            Task { @MainActor [self, changes, newHash, repo, repoName] in
-                for change in changes { insertChange(change) }
-                if let h = newHash { lock.withLock { lastSeenCommit[repo] = h } }
-                persistLastSeen()
-                AppHealthMonitor.shared.clearAPIError(providerId: "git-\(repoName)")
+            // Dispatch to the main queue instead of `Task { @MainActor }` — creating
+            // a MainActor-isolated Task from this GCD block (gitOpQueue) trips
+            // Swift's isolation check and crashes on quit.
+            DispatchQueue.main.async { [self, changes, newHash, repo, repoName] in
+                MainActor.assumeIsolated {
+                    for change in changes { insertChange(change) }
+                    if let h = newHash { lock.withLock { lastSeenCommit[repo] = h } }
+                    persistLastSeen()
+                    AppHealthMonitor.shared.clearAPIError(providerId: "git-\(repoName)")
+                }
             }
         }
     }

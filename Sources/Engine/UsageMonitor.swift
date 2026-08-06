@@ -4,7 +4,7 @@ import GRDB
 /// Monitors subscription IDE usage percentages:
 /// - Claude Pro/Max: reads `~/.claude/vscode-claude-status-cache.json` (local, zero network)
 /// - GitHub Copilot: polls `GET api.github.com/copilot_internal/user` (HTTP OAuth)
-final class UsageMonitor: @unchecked Sendable {
+nonisolated final class UsageMonitor: @unchecked Sendable {
     static let shared = UsageMonitor()
 
     private let session: URLSession = {
@@ -137,10 +137,12 @@ final class UsageMonitor: @unchecked Sendable {
 
         session.dataTask(with: req) { [healthMonitor = AppHealthMonitor.shared] data, resp, error in
             if let error {
-                Task { @MainActor in
-                    Logger.debug("UsageMonitor: Copilot API error: \(error.localizedDescription)")
-                    healthMonitor.reportAPIError(providerId: "copilot-usage",
-                        message: "Copilot usage: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                                        Logger.debug("UsageMonitor: Copilot API error: \(error.localizedDescription)")
+                                        healthMonitor.reportAPIError(providerId: "copilot-usage",
+                                            message: "Copilot usage: \(error.localizedDescription)")
+                    }
                 }
                 return
             }
@@ -149,25 +151,31 @@ final class UsageMonitor: @unchecked Sendable {
                   httpResp.statusCode == 200,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else {
-                Task { @MainActor in
-                    Logger.debug("UsageMonitor: Copilot API unexpected response")
-                    healthMonitor.reportAPIError(providerId: "copilot-usage",
-                        message: "Copilot usage: unexpected response")
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                                        Logger.debug("UsageMonitor: Copilot API unexpected response")
+                                        healthMonitor.reportAPIError(providerId: "copilot-usage",
+                                            message: "Copilot usage: unexpected response")
+                    }
                 }
                 return
             }
 
             guard let parsed = Self.parseCopilotResponse(json) else {
-                Task { @MainActor in
-                    Logger.debug("UsageMonitor: Copilot API unexpected response")
-                    healthMonitor.reportAPIError(providerId: "copilot-usage",
-                        message: "Copilot usage: unexpected response")
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                                        Logger.debug("UsageMonitor: Copilot API unexpected response")
+                                        healthMonitor.reportAPIError(providerId: "copilot-usage",
+                                            message: "Copilot usage: unexpected response")
+                    }
                 }
                 return
             }
 
-            Task { @MainActor in
-                healthMonitor.clearAPIError(providerId: "copilot-usage")
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                                healthMonitor.clearAPIError(providerId: "copilot-usage")
+                }
             }
             let usedPercent = parsed.usedPercent
             let overageCount = parsed.overageCount
