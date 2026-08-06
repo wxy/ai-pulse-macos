@@ -20,7 +20,7 @@ Track Claude/Copilot quota with reset countdowns; new Codex & OpenCode support; 
 **简体中文 (zh-Hans):**
 
 ```
-追踪 Claude/Copilot 订阅配额与重置倒计时；新增 Codex 与 OpenCode 支持；优化选项卡切换与余额进度条；Window 与 Dock 统计菜单统一。
+追踪 Claude/Copilot 订阅配额与重置倒计时；新增 OpenCode 支持；优化选项卡切换与余额进度条；Window 与 Dock 统计菜单统一。
 ```
 
 **繁體中文 (zh-Hant):**
@@ -45,7 +45,7 @@ Track Claude/Copilot quota with reset countdowns; new Codex & OpenCode support; 
 
 ```
 • 订阅配额追踪——查看 Claude 与 Copilot 用量及重置倒计时
-• 新增 Codex 与 OpenCode 支持——新解析器、集成与定价
+• 新增 OpenCode 支持——新解析器、集成与定价
 • 仪表盘改进——统一的占位圈、更快的选项卡切换、余额相对进度条、Claude 详情悬停费用
 • 主菜单统一——Window 与 Dock 菜单现在共用同一份实时统计
 • 稳定性修复——后台线程安全、审计修复、更快的仓库扫描

@@ -52,7 +52,7 @@
 **简体中文:**
 - 页面名称：欢迎 · 授权
 - 简短标题：检测工具并扫描你的仓库
-- 说明：授权目录后，AI Pulse 自动检测你的 AI 工具（Claude Code、aider、Codex、OpenCode 等）并扫描代码仓库——授权一次，零配置。
+- 说明：授权目录后，AI Pulse 自动检测你的 AI 工具（Claude Code、aider、OpenCode 等）并扫描代码仓库——授权一次，零配置。
 
 **繁體中文:**
 - 页面名称：歡迎 · 授權
@@ -71,7 +71,7 @@
 **简体中文:**
 - 页面名称：设置 · AI 服务商
 - 简短标题：连接你的 AI 服务商
-- 说明：为 DeepSeek、OpenAI、Kimi、智谱和 Anthropic 添加 API 密钥，精确追踪余额差值与各服务商费用。
+- 说明：为 DeepSeek、Kimi、智谱和 Anthropic 添加 API 密钥，精确追踪余额差值与各服务商费用。
 
 **繁體中文:**
 - 页面名称：設定 · AI 服務商
@@ -90,7 +90,7 @@
 **简体中文:**
 - 页面名称：设置 · 开发工具
 - 简短标题：检测你的编程工具
-- 说明：自动检测 Claude Code、aider、Codex 和 OpenCode，并为 Cursor、Copilot、Windsurf 配置订阅。
+- 说明：自动检测 Claude Code、aider 和 OpenCode，并为 Cursor、Copilot、Windsurf 配置订阅。
 
 **繁體中文:**
 - 页面名称：設定 · 開發工具

@@ -65,8 +65,8 @@ AI Pulse 是你的 AI 编程花费追踪仪 —— 精确追踪每笔 AI 费用�
 iOS 伴侣应用会通过 iCloud 将您的 AI 用量与花费以只读方式同步到 iPhone / iPad，数据不会离开您的 Apple ID 生态。
 
 AI Pulse 通过四层数据采集发现你的 AI 支出：
-- 日志解析 — 从 Claude Code、aider、Codex 和 OpenCode 请求日志中提取 Token 级精确计价
-- 余额 API — DeepSeek、OpenAI、Kimi（月之暗面）、智谱、Anthropic API 的每日余额差值
+- 日志解析 — 从 Claude Code、aider、OpenCode 请求日志中提取 Token 级精确计价
+- 余额 API — DeepSeek、Kimi（月之暗面）、智谱、Anthropic API 的每日余额差值
 - 订阅检测 — Cursor、Copilot、Windsurf、Claude Code Pro 的月费按天摊销
 - 配额追踪 — 在仪表盘中实时查看 Claude 与 Copilot 订阅用量及重置倒计时
 
@@ -91,7 +91,7 @@ AI Pulse 通过四层数据采集发现你的 AI 支出：
 ### 本次更新（版本 1.2.3）
 
 - 订阅配额追踪——Claude 与 Copilot 用量及重置倒计时
-- 新增 Codex 与 OpenCode 支持——新解析器、集成与定价
+- 新增 OpenCode 支持——新解析器、集成与定价
 - 仪表盘改进——统一的占位圈、更快的选项卡切换、余额相对进度条、Claude 详情悬停费用
 - 主菜单统一——Window 与 Dock 菜单现在共用同一份实时统计
 - 稳定性修复——后台线程安全、审计修复、更快的仓库扫描

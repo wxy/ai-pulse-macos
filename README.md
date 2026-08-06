@@ -99,8 +99,8 @@ AI Pulse tracks 13 AI tools today across three collection methods:
 
 | 采集方式 / Collection method | 工具 / Tools |
 |---|---|
-| **日志解析**（Token 级计价）/ **Log parsing** (token-level) | Claude Code、aider、Codex CLI、OpenCode、Qwen Code |
-| **余额 API**（精确余额差值）/ **Balance API** (exact deltas) | DeepSeek、OpenAI、Kimi、智谱（ChatGLM）、Anthropic\* |
+| **日志解析**（Token 级计价）/ **Log parsing** (token-level) | Claude Code、aider、OpenCode、Qwen Code |
+| **余额 API**（精确余额差值）/ **Balance API** (exact deltas) | DeepSeek、Kimi、智谱（ChatGLM）、Anthropic\* |
 | **订阅检测**（月费按天摊销）/ **Subscription detection** | Cursor、GitHub Copilot、Windsurf（+ Trae、Augment Code） |
 
 \* Anthropic 无余额 API，其用量按 Token 计价估算。 / Anthropic has no balance API, so its usage is estimated from token pricing.
@@ -111,7 +111,7 @@ AI Pulse tracks 13 AI tools today across three collection methods:
    **Install** — download from the Mac App Store (requires macOS 14 or later).
 2. **首次引导** — 首次启动的四步引导会检测你已安装的 AI 工具：AI 服务商、开发工具、仓库、完成。检测到的工具会自动启用。<br>
    **Onboarding** — on first launch, a short walkthrough detects your installed AI tools across four steps: AI providers, dev tools, repos, and a summary. Detected tools are enabled automatically.
-3. **授权主目录访问** — 在沙盒环境下读取 Claude Code、Codex、OpenCode、Qwen 和 aider 的日志时，按提示允许访问主目录。<br>
+3. **授权主目录访问** — 在沙盒环境下读取 Claude Code、OpenCode、Qwen 和 aider 的日志时，按提示允许访问主目录。<br>
    **Grant Home access** — to read logs from Claude Code, Codex, OpenCode, Qwen, and aider inside the sandbox, allow Home-folder access when prompted.
 4. **添加 API Key** — 设置 → 集成 → **AI 服务商**。Key 仅保存在本地，并通过实时余额校验验证。<br>
    **Add API keys** — Settings → Integrations → **AI Providers**. Keys are stored locally and validated with a live balance check.
@@ -142,7 +142,7 @@ AI Pulse tracks 13 AI tools today across three collection methods:
 
 ## 相关项目（Related Projects）
 
-- [AI Pulse Chrome 扩展](https://github.com/wxy/ai-pulse) — 覆盖网页端 AI 工具（ChatGPT、Claude.ai、DeepSeek Chat 等）<br>
+- [AI Pulse Chrome 扩展](https://github.com/wxy/ai-pulse) — 覆盖网页端 AI 工具（Claude.ai、DeepSeek Chat 等）<br>
   [AI Pulse for Chrome](https://github.com/wxy/ai-pulse) — browser extension for web-based AI tools (ChatGPT, Claude.ai, DeepSeek Chat, and more)
 
 ## 参与贡献（Contributing）
