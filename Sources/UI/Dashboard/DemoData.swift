@@ -88,13 +88,13 @@ enum DemoData {
 
     // MARK: - Provider Distributed Costs
 
-    /// Provider shares: Anthropic 38%, OpenAI 33%, DeepSeek 29%
+    /// Provider shares: Anthropic 38%, Kimi 33%, DeepSeek 29%
     private static let providerShares: [(String, Double)] = [
-        ("anthropic", 0.38), ("openai", 0.33), ("deepseek", 0.29),
+        ("anthropic", 0.38), ("moonshot", 0.33), ("deepseek", 0.29),
     ]
 
     private static let providerNames: [String: String] = [
-        "anthropic": "Anthropic", "openai": "OpenAI", "deepseek": "DeepSeek",
+        "anthropic": "Anthropic", "moonshot": "Kimi", "deepseek": "DeepSeek",
     ]
 
     static let providerCosts: [ProviderDailyCost] = {

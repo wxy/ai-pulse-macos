@@ -8762,7 +8762,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未检测到 Codex CLI 会话"
+            "value" : "未检测到该工具会话"
           }
         },
         "zh-Hant-HK" : {
