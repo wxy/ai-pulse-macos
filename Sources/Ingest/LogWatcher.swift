@@ -6,7 +6,7 @@ import GRDB
 /// Incremental parsing: tracks per-file byte positions so FSEvent rescans only
 /// read new data (not the whole file).  Positions are persisted to UserDefaults
 /// so they survive restarts.
-final class LogWatcher: @unchecked Sendable {
+nonisolated final class LogWatcher: @unchecked Sendable {
     static let shared = LogWatcher()
     private var claudeSource: DispatchSourceFileSystemObject?
 
@@ -61,16 +61,18 @@ final class LogWatcher: @unchecked Sendable {
     func start() {
         scanQueue.async { [weak self] in
             let timedOut = self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                if timedOut {
-                    Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+                MainActor.assumeIsolated {
+                    if timedOut {
+                        Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+                    }
+                    self.watchClaudeCode()
+                    self.discoverAndWatchRepos()
+                    self.scanCodexSessions()
+                    self.scanQwenSessions()
+                    self.scanOpenCodeSessions()
                 }
-                self.watchClaudeCode()
-                self.discoverAndWatchRepos()
-                self.scanCodexSessions()
-                self.scanQwenSessions()
-                self.scanOpenCodeSessions()
             }
         }
     }
@@ -80,16 +82,18 @@ final class LogWatcher: @unchecked Sendable {
     func scan() {
         scanQueue.async { [weak self] in
             let timedOut = self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                if timedOut {
-                    Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+                MainActor.assumeIsolated {
+                    if timedOut {
+                        Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+                    }
+                    self.scanClaudeProjectsOnly()
+                    self.discoverAndWatchRepos()
+                    self.scanCodexSessions()
+                    self.scanQwenSessions()
+                    self.scanOpenCodeSessions()
                 }
-                self.scanClaudeProjectsOnly()
-                self.discoverAndWatchRepos()
-                self.scanCodexSessions()
-                self.scanQwenSessions()
-                self.scanOpenCodeSessions()
             }
         }
     }
@@ -141,8 +145,15 @@ final class LogWatcher: @unchecked Sendable {
             guard let self else { return }
             self.scanQueue.async { [weak self] in
                 guard let self else { return }
-                Task { @MainActor in
-                    self.scanClaudeCode(at: dir)
+                // Hop to the main queue explicitly instead of `Task { @MainActor }`:
+                // creating a MainActor-isolated Task from a GCD block (this source
+                // runs on utility-qos) trips Swift's isolation check and crashes
+                // with _dispatch_assert_queue_fail on quit.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    MainActor.assumeIsolated {
+                        self.scanClaudeCode(at: dir)
+                    }
                 }
             }
         }

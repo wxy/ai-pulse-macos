@@ -28,7 +28,7 @@ struct CachedDirScan: Codable, Equatable {
 /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` (unannotated types become
 /// MainActor), while the SwiftPM build defaults to nonisolated. Marking members
 /// `nonisolated` keeps the semantics identical in both.
-final class RepoScanCache: @unchecked Sendable {
+nonisolated final class RepoScanCache: @unchecked Sendable {
     nonisolated static let shared = RepoScanCache()
     nonisolated static let ttl: TimeInterval = 300            // 5 min; older scans are "missing"
     nonisolated static let scanBudget: TimeInterval = 2.0      // soft budget per directory

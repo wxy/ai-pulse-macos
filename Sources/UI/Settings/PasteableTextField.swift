@@ -82,6 +82,7 @@ struct PasteableTextField: NSViewRepresentable {
 
     // MARK: - Coordinator
 
+    @MainActor
     final class Coordinator: NSObject, NSTextFieldDelegate, @unchecked Sendable {
         let parent: PasteableTextField
         nonisolated(unsafe) private var monitor: Any?

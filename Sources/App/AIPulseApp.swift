@@ -292,7 +292,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         IntegrationRegistry.stopAll()
         DockManager.shared.stop()
         BookmarkManager.stopAll(securityScopedURLs)
-        GitRepo.teardown()
+        // Intentionally skip GitRepo.teardown() (git_libgit2_shutdown). GitMonitor
+        // can have a libgit2 op in flight on its utility-qos queue at quit; shutdown
+        // waits on it and hangs the app on exit. The OS reclaims libgit2 memory when
+        // the process exits, so quitting stays instant and non-blocking.
     }
 
     // MARK: - Onboarding

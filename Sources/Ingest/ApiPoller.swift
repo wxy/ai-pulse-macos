@@ -3,7 +3,7 @@ import GRDB
 
 /// Periodically polls provider balance/usage APIs (Tier B).
 /// Runs every hour by default, same as the Chrome extension.
-final class ApiPoller: @unchecked Sendable {
+nonisolated final class ApiPoller: @unchecked Sendable {
     static let shared = ApiPoller()
     private let session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -19,8 +19,10 @@ final class ApiPoller: @unchecked Sendable {
     func start() {
         // Initial poll at +10s (coordinator Phase 3 handles periodic polling).
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 10) { [weak self] in
-            Task { @MainActor in
-                self?.pollAll()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                                self?.pollAll()
+                }
             }
         }
     }
