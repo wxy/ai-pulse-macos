@@ -48,7 +48,8 @@ enum IntegrationRegistry {
     }
 
     /// Provider IDs restricted in mainland China (regulatory compliance).
-    private static let chinaRestrictedIds: Set<String> = ["openai", "anthropic"]
+    /// Includes OpenAI-family tools: Codex CLI is OpenAI's coding agent.
+    private static let chinaRestrictedIds: Set<String> = ["openai", "anthropic", "codex"]
 
     private static func isRestrictedInChina(_ integrationId: String) -> Bool {
         guard chinaRestrictedIds.contains(integrationId) else { return false }
