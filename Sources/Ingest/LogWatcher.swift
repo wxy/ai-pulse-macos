@@ -98,9 +98,12 @@ final class LogWatcher: @unchecked Sendable {
         claudeSource?.cancel()
         claudeSource = nil
         persistPositions()
-        if persistGroup.wait(timeout: .now() + 3.0) == .timedOut {
-            Logger.warning("LogWatcher: persist positions timed out during stop")
-        }
+        // Deliberately NO blocking wait for the persist group: at quit the main
+        // thread must stay on the run loop so queued @MainActor work (the FSEvent
+        // handler's `Task { @MainActor ... }`) can be dispatched. Blocking here
+        // wedges the Swift MainActor executor and crashes with
+        // _dispatch_assert_queue_fail ("did not quit normally"). Persisting the
+        // last byte offsets is best-effort; losing them just re-scans on next run.
     }
 
     // MARK: - Claude Code
