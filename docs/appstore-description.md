@@ -98,7 +98,7 @@ AI Pulse 通过四层数据采集发现你的 AI 支出：
 
 ### 关键词
 
-ai,花费,追踪,claude,code,codex,opencode,openai,deepseek,cursor,copilot,gpt,api,订阅,配额,编程,开发者,工具,费用,监控
+ai,花费,追踪,claude,code,opencode,deepseek,cursor,copilot,gpt,api,订阅,配额,编程,开发者,工具,费用,监控
 
 ---
 
