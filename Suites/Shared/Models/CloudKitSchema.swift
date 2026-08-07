@@ -8,6 +8,12 @@ import Foundation
 enum CKSchema {
     static let recordType = "DashboardCache_v1"
 
+    /// JSON payload format version the reader accepts (exact match). Bump ONLY
+    /// when the DashboardSnapshot JSON structure changes, and set it to the
+    /// macOS app version that introduces the new format (e.g. "1.2.4").
+    /// MUST stay in sync with Sources/Sync/CloudKitSchema.swift (macOS).
+    static let payloadVersion = "1.2.4"
+
     enum RecordName {
         static let today = "snapshot-today"
         static let week  = "snapshot-week"

@@ -803,7 +803,7 @@ enum StatsService {
         let todayCall = Int64(st.reduce(0) { $0 + $1.calls })
         let todayTok = Int64(st.reduce(0) { $0 + $1.tokens })
 
-        return DashboardSnapshot(
+        var snap = DashboardSnapshot(
             todayCost: tc, weekCost: wc, monthCost: mc,
             yesterdaySpend: yc, previousPeriodSpend: previousPeriodSpend,
             subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok,
@@ -813,5 +813,8 @@ enum StatsService {
             remainingBalances: lb, quotaStatus: qs,
             updatedAt: Date()
         )
+        snap.payloadVersion = CKSchema.payloadVersion
+        snap.writerAppVersion = CKSchema.writerAppVersion
+        return snap
     }
 }

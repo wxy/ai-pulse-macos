@@ -39,12 +39,14 @@ enum AppState: Equatable {
     case ready
     case noData
     case error
+    case needsUpgrade
 }
 
 struct ContentView: View {
     @EnvironmentObject var cloudData: CloudDataService
     @State private var state: AppState = .loading
     @State private var splashVisible = true
+    @State private var upgradeInfo: (macosTooOld: Bool, recordVersion: String?)?
 
     var body: some View {
         Group {
@@ -67,6 +69,11 @@ struct ContentView: View {
                 DashboardView()
             } else if case .noData = state {
                 WelcomeView()
+            } else if case .needsUpgrade = state {
+                VersionMismatchView(
+                    macosTooOld: upgradeInfo?.macosTooOld ?? true,
+                    recordVersion: upgradeInfo?.recordVersion
+                )
             } else if case .error = state {
                 CloudErrorView { await checkCloud(isRetry: true) }
             }
@@ -107,6 +114,9 @@ struct ContentView: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } catch CloudError.noData {
             state = .noData
+        } catch CloudError.versionMismatch(let macosTooOld, let recordVersion) {
+            upgradeInfo = (macosTooOld, recordVersion)
+            state = .needsUpgrade
         } catch {
             // If we have cached data from a previous session, show it even when offline.
             // Only show the error screen if there's nothing to display.
