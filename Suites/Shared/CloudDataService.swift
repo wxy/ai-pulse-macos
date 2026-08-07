@@ -7,6 +7,37 @@ import WidgetKit
 enum CloudError: Error {
     case noData
     case unavailable
+    /// The record's payload version is not the one this client expects.
+    /// `macosTooOld` is true when the record was written by an older macOS
+    /// format (upgrade macOS); false when the record is newer (upgrade iOS).
+    case versionMismatch(macosTooOld: Bool, recordVersion: String?)
+}
+
+/// Minimal first-class fields decoded from the top of every snapshot JSON,
+/// before full decode — so the version check works even when the payload body
+/// can no longer be decoded by this client.
+struct SnapshotEnvelope: Codable {
+    var payloadVersion: String?
+    var writerAppVersion: String?
+}
+
+enum PayloadVersion {
+    /// Compares two "X.Y.Z" version strings numerically; returns -1 / 0 / 1.
+    static func compare(_ a: String?, _ b: String?) -> Int {
+        let pa = parts(a ?? "")
+        let pb = parts(b ?? "")
+        for i in 0..<3 {
+            if pa[i] != pb[i] { return pa[i] < pb[i] ? -1 : 1 }
+        }
+        return 0
+    }
+
+    private static func parts(_ s: String) -> [Int] {
+        let comps = s.split(separator: ".").prefix(3).map { Int($0) ?? 0 }
+        return [comps.count > 0 ? comps[0] : 0,
+                comps.count > 1 ? comps[1] : 0,
+                comps.count > 2 ? comps[2] : 0]
+    }
 }
 
 /// Reads the DashboardCache_v1 record synced by macOS.
@@ -97,6 +128,25 @@ final class CloudDataService: ObservableObject {
         }
     }
 
+    /// Throws `.versionMismatch` unless the record's payloadVersion exactly
+    /// matches the version this client expects. Records without a
+    /// payloadVersion are legacy (written before versioning) and are treated
+    /// as older-than-current — i.e. the macOS side needs upgrading.
+    private func checkPayloadVersion(_ envelope: SnapshotEnvelope) throws {
+        let expected = CKSchema.payloadVersion
+        guard let recordVersion = envelope.payloadVersion else {
+            throw CloudError.versionMismatch(macosTooOld: true, recordVersion: nil)
+        }
+        let cmp = PayloadVersion.compare(recordVersion, expected)
+        if cmp == 0 { return }
+        throw CloudError.versionMismatch(macosTooOld: cmp < 0, recordVersion: recordVersion)
+    }
+
+    private func checkEnvelope(in data: Data) throws {
+        guard let envelope = try? JSONDecoder().decode(SnapshotEnvelope.self, from: data) else { return }
+        try checkPayloadVersion(envelope)
+    }
+
     /// Check if CloudKit has data. On success, merge the today record's costs
     /// into the current snapshot WITHOUT replacing breakdown data (repos, trends).
     /// This preserves previously-cached week/30d breakdowns if they can't be
@@ -116,6 +166,7 @@ final class CloudDataService: ObservableObject {
                     self.log.warning("hasData: json field missing")
                     throw CloudError.noData
                 }
+                try self.checkEnvelope(in: data)
                 let snap: DashboardSnapshot
                 do {
                     snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
@@ -208,6 +259,12 @@ final class CloudDataService: ObservableObject {
             guard let json = record[CKSchema.Field.json] as? String,
                   let data = json.data(using: .utf8) else {
                 self.log.error("fetchAndStore(\(range)): json field missing or not a string")
+                return
+            }
+            do {
+                try self.checkEnvelope(in: data)
+            } catch {
+                self.log.error("fetchAndStore(\(range)): payload version mismatch — keep existing data")
                 return
             }
             let snap: DashboardSnapshot

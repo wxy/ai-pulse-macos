@@ -110,3 +110,106 @@ View AI coding costs on your iPhone or iPad — today, this week, 30-day trends,
 - 透過 iCloud 從 Mac 同步即時額度
 - 儀表板打磨與穩定性修復
 ```
+
+---
+
+## 1.2.4 — macOS
+
+### Promotional Text（推广文本）
+
+**English (en):**
+
+```
+Smarter iCloud sync compatibility — clear upgrade prompts when data was written by an older version. Plus crash/hang fixes on quit and refined regional copy.
+```
+
+**简体中文 (zh-Hans):**
+
+```
+更智能的 iCloud 同步兼容——当数据由旧版 macOS 写入时，清晰提示升级方向。另有退出卡死/崩溃修复与区域性文案优化。
+```
+
+**繁體中文 (zh-Hant):**
+
+```
+更聰明的 iCloud 同步相容——當資料由舊版 macOS 寫入時，清楚提示升級方向。另有結束卡住/當機修復與區域性文案最佳化。
+```
+
+### What's New（版本说明）
+
+**English (en):**
+
+```
+• iCloud sync version compatibility — if data was written by an older macOS build, AI Pulse now shows a clear prompt to update macOS or iOS instead of silently showing no data
+• Quit reliability — fixed a hang/crash on quit; shutdown no longer blocks while saving
+• Background safety — thread-safety fixes for app health monitoring
+• Regional refinements — optimized tool detection and copy for mainland China
+```
+
+**简体中文 (zh-Hans):**
+
+```
+• iCloud 同步版本兼容——当数据由旧版 macOS 写入时，现在会清晰提示升级 macOS 或 iOS，而不是静默显示无数据
+• 退出稳定性——修复退出时的卡死/崩溃问题，退出保存不再阻塞
+• 后台安全——应用健康监控的线程安全修复
+• 区域性优化——中国大陆地区的工具检测与文案优化
+```
+
+**繁體中文 (zh-Hant):**
+
+```
+• iCloud 同步版本相容——當資料由舊版 macOS 寫入時，現在會清楚提示升級 macOS 或 iOS，而不是靜默顯示無資料
+• 結束穩定性——修復結束時的卡住/當機問題，結束儲存不再阻塞
+• 背景安全——應用程式健康監控的執行緒安全修復
+• 區域性最佳化——中國大陸地區的工具偵測與文案最佳化
+```
+
+---
+
+## 1.2.4 — iOS
+
+### Promotional Text（推广文本）
+
+**English (en):**
+
+```
+Smarter iCloud sync — if data was written by an older macOS version, AI Pulse clearly tells you which app to update instead of showing “no data” or an iCloud error.
+```
+
+**简体中文 (zh-Hans):**
+
+```
+更智能的 iCloud 同步——当数据由旧版 macOS 写入时，应用会明确提示升级方向，不再误显示为“无数据”或 iCloud 故障。
+```
+
+**繁體中文 (zh-Hant):**
+
+```
+更聰明的 iCloud 同步——當資料由舊版 macOS 寫入時，應用程式會明確提示升級方向，不再誤顯示為「無資料」或 iCloud 故障。
+```
+
+### What's New（版本说明）
+
+**English (en):**
+
+```
+• Smarter iCloud sync — if data was written by an older macOS version, AI Pulse now shows a clear upgrade prompt instead of appearing as “no data” or an iCloud error
+• Clear upgrade guidance — the app tells you whether to update the macOS or iOS app, with a direct link to the App Store
+• Reliability fixes
+```
+
+**简体中文 (zh-Hans):**
+
+```
+• 更智能的 iCloud 同步——当数据由旧版 macOS 写入时，现在会显示明确的升级提示，而不是显示为“无数据”或 iCloud 错误
+• 清晰的升级指引——应用会告知您需要升级 macOS 版还是 iOS 版，并附 App Store 直达链接
+• 稳定性修复
+```
+
+**繁體中文 (zh-Hant):**
+
+```
+• 更聰明的 iCloud 同步——當資料由舊版 macOS 寫入時，現在會顯示明確的升級提示，而不是顯示為「無資料」或 iCloud 錯誤
+• 清晰的升級指引——應用程式會告知您需要升級 macOS 版還是 iOS 版，並附上 App Store 直達連結
+• 穩定性修復
+```

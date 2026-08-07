@@ -75,6 +75,13 @@ struct DashboardSnapshot: Codable {
     var remainingBalances: [RemainingBalanceItem] = []
     var quotaStatus: [QuotaStatusItem] = []  // subscription quota (Claude/Copilot)
 
+    // Sync metadata (written by macOS, read by iOS/watchOS):
+    // `payloadVersion` is the JSON payload format version (bumped only when the
+    // structure changes); `writerAppVersion` is the macOS app version that
+    // produced this snapshot.
+    var payloadVersion: String?
+    var writerAppVersion: String?
+
     var updatedAt: Date = Date()
 
     func jsonString() -> String {

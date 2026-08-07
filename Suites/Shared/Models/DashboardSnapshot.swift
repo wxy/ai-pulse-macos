@@ -25,6 +25,13 @@ struct DashboardSnapshot: Codable {
     var remainingBalances: [RemainingBalanceItem] = []
     var quotaStatus: [QuotaStatusItem] = []
 
+    // Sync metadata written by macOS:
+    // `payloadVersion` = JSON payload format version; `writerAppVersion` = the
+    // macOS app version that produced this snapshot. Optional so legacy
+    // records (pre-versioning) still decode structurally.
+    var payloadVersion: String?
+    var writerAppVersion: String?
+
     var updatedAt: Date = Date()
 }
 
