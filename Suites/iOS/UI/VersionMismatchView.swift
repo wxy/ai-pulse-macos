@@ -31,7 +31,7 @@ struct VersionMismatchView: View {
                 .padding(.horizontal, 40)
 
             if let recordVersion, !recordVersion.isEmpty {
-                Text("payload v\(recordVersion)")
+                Text(String(format: I18n.t("version.mismatch.payload"), recordVersion))
                     .font(.caption).foregroundColor(.secondary)
             }
 

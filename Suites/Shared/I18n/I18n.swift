@@ -38,6 +38,7 @@ enum I18n {
             "dashboard.remaining_balance": "Remaining Balance",
             "dashboard.quota_stale": "pending refresh",
             "dashboard.vs_yesterday": "vs yesterday",
+            "version.mismatch.payload": "Payload version %@",
         ],
         "zh-Hans": [
             "time.today": "今日", "time.week": "本周", "time.30d": "30 天",
@@ -74,6 +75,7 @@ enum I18n {
             "dashboard.remaining_balance": "剩余余额",
             "dashboard.quota_stale": "待更新",
             "dashboard.vs_yesterday": "vs昨日",
+            "version.mismatch.payload": "载荷版本 %@",
         ],
         "zh-Hant-TW": [
             "time.today": "今日", "time.week": "本週", "time.30d": "30 天",
@@ -109,6 +111,7 @@ enum I18n {
             "dashboard.remaining_balance": "剩餘餘額",
             "dashboard.quota_stale": "待更新",
             "dashboard.vs_yesterday": "vs昨日",
+            "version.mismatch.payload": "資料版本 %@",
         ],
         "zh-Hant-HK": [
             "time.today": "今日", "time.week": "本週", "time.30d": "30 天",
@@ -144,6 +147,7 @@ enum I18n {
             "dashboard.remaining_balance": "剩餘餘額",
             "dashboard.quota_stale": "待更新",
             "dashboard.vs_yesterday": "vs昨日",
+            "version.mismatch.payload": "資料版本 %@",
         ],
         "ja": [
             "time.today": "今日", "time.week": "今週", "time.30d": "30日",
@@ -179,6 +183,7 @@ enum I18n {
             "dashboard.remaining_balance": "残高",
             "dashboard.quota_stale": "更新待ち",
             "dashboard.vs_yesterday": "前日比",
+            "version.mismatch.payload": "ペイロードバージョン %@",
         ],
         "ko": [
             "time.today": "오늘", "time.week": "이번 주", "time.30d": "30일",
@@ -214,6 +219,7 @@ enum I18n {
             "dashboard.remaining_balance": "잔액",
             "dashboard.quota_stale": "갱신 대기",
             "dashboard.vs_yesterday": "어제 대비",
+            "version.mismatch.payload": "페이로드 버전 %@",
         ],
         "de": [
             "time.today": "Heute", "time.week": "Woche", "time.30d": "30 Tage",
@@ -249,6 +255,7 @@ enum I18n {
             "dashboard.remaining_balance": "Guthaben",
             "dashboard.quota_stale": "Aktualisierung ausstehend",
             "dashboard.vs_yesterday": "vs gestern",
+            "version.mismatch.payload": "Payload-Version %@",
         ],
         "fr": [
             "time.today": "Aujourd'hui", "time.week": "Semaine", "time.30d": "30 jours",
@@ -284,6 +291,7 @@ enum I18n {
             "dashboard.remaining_balance": "Solde restant",
             "dashboard.quota_stale": "actualisation en attente",
             "dashboard.vs_yesterday": "vs hier",
+            "version.mismatch.payload": "Version des données %@",
         ],
         "es": [
             "time.today": "Hoy", "time.week": "Semana", "time.30d": "30 días",
@@ -319,6 +327,7 @@ enum I18n {
             "dashboard.remaining_balance": "Saldo restante",
             "dashboard.quota_stale": "pendiente de actualizar",
             "dashboard.vs_yesterday": "vs ayer",
+            "version.mismatch.payload": "Versión de datos %@",
         ],
         "pt-BR": [
             "time.today": "Hoje", "time.week": "Semana", "time.30d": "30 dias",
@@ -354,6 +363,7 @@ enum I18n {
             "dashboard.remaining_balance": "Saldo restante",
             "dashboard.quota_stale": "pendiente de actualizar",
             "dashboard.vs_yesterday": "vs ontem",
+            "version.mismatch.payload": "Versão de dados %@",
         ],
     ]
 
