@@ -537,9 +537,9 @@ enum StatsService {
         }
     }
 
-    // MARK: - Claude Code detail
+    // MARK: - Tool usage detail (Claude Code / ChatGPT)
 
-    struct ClaudeCodeStats {
+    struct ToolUsageStats {
         var sessionCount: Int = 0
         var avgCostPerSession: Double = 0
         var topSessionId: String = ""
@@ -556,9 +556,20 @@ enum StatsService {
         }
     }
 
-    static func claudeCodeStats(sinceMs: Int64) async -> ClaudeCodeStats {
+    static func claudeCodeStats(sinceMs: Int64) async -> ToolUsageStats {
+        await toolStats(source: "claude-code", sinceMs: sinceMs)
+    }
+
+    static func codexStats(sinceMs: Int64) async -> ToolUsageStats {
+        await toolStats(source: "codex", sinceMs: sinceMs)
+    }
+
+    /// Shared session-level usage stats for a log-based tool. ChatGPT / Codex
+    /// sessions land in the same `usage_event` shape as Claude Code, so the
+    /// same queries work for both sources.
+    private static func toolStats(source: String, sinceMs: Int64) async -> ToolUsageStats {
         let todayMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-        var stats = ClaudeCodeStats()
+        var stats = ToolUsageStats()
 
         do {
             // Session count + avg cost
@@ -567,8 +578,8 @@ enum StatsService {
                     SELECT COUNT(DISTINCT session_id) AS cnt,
                            COALESCE(SUM(cost_usd), 0) AS total
                     FROM usage_event
-                    WHERE source = 'claude-code' AND (model IS NULL OR model != '<synthetic>') AND ts >= ? AND ts < ?
-                    """, arguments: [sinceMs, todayMs + 86_400_000])
+                    WHERE source = ? AND (model IS NULL OR model != '<synthetic>') AND ts >= ? AND ts < ?
+                    """, arguments: [source, sinceMs, todayMs + 86_400_000])
             }
             if let row = sessionRows.first {
                 let cnt: Int = row["cnt"] ?? 0
@@ -584,10 +595,10 @@ enum StatsService {
                     SELECT session_id, COALESCE(repo_path, '') AS repo,
                            COALESCE(SUM(cost_usd), 0) AS cost
                     FROM usage_event
-                    WHERE source = 'claude-code' AND session_id IS NOT NULL
+                    WHERE source = ? AND session_id IS NOT NULL
                       AND ts >= ? AND ts < ?
                     GROUP BY session_id ORDER BY cost DESC LIMIT 1
-                    """, arguments: [sinceMs, todayMs + 86_400_000])
+                    """, arguments: [source, sinceMs, todayMs + 86_400_000])
             }
             if let tr = topRows.first {
                 let sid: String = tr["session_id"] ?? ""
@@ -606,9 +617,9 @@ enum StatsService {
                            COALESCE(SUM(in_tokens), 0) AS ins,
                            COALESCE(SUM(cache_tokens), 0) AS cache
                     FROM usage_event
-                    WHERE source = 'claude-code' AND (model IS NULL OR model != '<synthetic>') AND ts >= ? AND ts < ?
+                    WHERE source = ? AND (model IS NULL OR model != '<synthetic>') AND ts >= ? AND ts < ?
                     GROUP BY m ORDER BY c DESC
-                    """, arguments: [sinceMs, todayMs + 86_400_000])
+                    """, arguments: [source, sinceMs, todayMs + 86_400_000])
             }
             let totalModelCost = modelRows.reduce(0.0) { $0 + (($1["c"] as? Double) ?? 0) }
             let pricing = PricingManager.shared
@@ -624,13 +635,13 @@ enum StatsService {
                 let inPrice = pricing2?.inPricePerMtok ?? 3.0
                 let cachePrice = pricing2?.cachePricePerMtok ?? 0.3
                 let savings = Double(cache) / 1_000_000 * (inPrice - cachePrice)
-                return ClaudeCodeStats.ModelDetail(
+                return ToolUsageStats.ModelDetail(
                     model: modelDisplayName(model), cost: cost, pct: pct,
                     cacheRate: cacheRate, cacheSavings: savings
                 )
             }
         } catch {
-            Logger.error("StatsService.claudeCodeStats: query failed — \(error)")
+            Logger.error("StatsService.toolStats(\(source)): query failed — \(error)")
         }
         return stats
     }
@@ -639,6 +650,7 @@ enum StatsService {
         if model.contains("opus") { return "Opus" }
         if model.contains("sonnet") { return "Sonnet" }
         if model.contains("haiku") { return "Haiku" }
+        if model.contains("codex") { return "Codex" }
         return model
     }
 

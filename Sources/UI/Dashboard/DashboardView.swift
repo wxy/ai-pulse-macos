@@ -96,9 +96,13 @@ struct DashboardView: View {
     @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
     @State private var toolsExpanded = false
     @State private var claudeDetailExpanded = false
-    @State private var claudeStats: StatsService.ClaudeCodeStats?
+    @State private var claudeStats: StatsService.ToolUsageStats?
     @State private var claudeStatsTS: Int64 = 0
     @State private var claudeHoverModel: String? = nil  // model whose cache/non-cache cost tooltip is showing
+    @State private var codexDetailExpanded = false
+    @State private var codexStats: StatsService.ToolUsageStats?
+    @State private var codexStatsTS: Int64 = 0
+    @State private var codexHoverModel: String? = nil
     @State private var reposExpanded = false
 
     var hasActiveCostSources: Bool {
@@ -288,6 +292,7 @@ struct DashboardView: View {
             barProgress = 0
             Task { await load() }
             if claudeDetailExpanded { Task { await loadClaudeStats() } }
+            if codexDetailExpanded { Task { await loadCodexStats() } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             // Manual refresh / forceRefresh — immediate, no throttle
@@ -831,23 +836,36 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
                     ForEach(Array(shown.enumerated()), id: \.element.name) { idx, tc in
-                        let displayName = tc.name == "Claude Code"
+                        let isClaude = tc.name == "Claude Code"
+                        let isCodex = tc.name == "ChatGPT"
+                        let displayName = isClaude
                             ? (claudeDetailExpanded ? "⌄ Claude Code" : "› Claude Code")
-                            : tc.name
+                            : (isCodex
+                                ? (codexDetailExpanded ? "⌄ ChatGPT" : "› ChatGPT")
+                                : tc.name)
                         toolBarRow(name: displayName, cost: tc.cost, total: totalCost, index: idx)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                if tc.name == "Claude Code" {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    if isClaude {
                                         claudeDetailExpanded.toggle()
                                     }
-                                    if claudeDetailExpanded {
-                                        Task { await loadClaudeStats() }
+                                    if isCodex {
+                                        codexDetailExpanded.toggle()
                                     }
                                 }
+                                if isClaude && claudeDetailExpanded {
+                                    Task { await loadClaudeStats() }
+                                } else if isCodex && codexDetailExpanded {
+                                    Task { await loadCodexStats() }
+                                }
                             }
-                        if tc.name == "Claude Code" && claudeDetailExpanded {
+                        if isClaude && claudeDetailExpanded {
                             claudeDetailCard
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                        if isCodex && codexDetailExpanded {
+                            codexDetailCard
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }
@@ -1278,16 +1296,7 @@ struct DashboardView: View {
     }
 
     func loadClaudeStats() async {
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: Date())
-        let since: Date
-        switch timeRange {
-        case .today:   since = todayStart
-        case .thisWeek:
-            since = Calendar.mondayOfWeek()
-        case .days30:  since = cal.date(byAdding: .day, value: -29, to: todayStart)!
-        }
-        let sinceMs = Int64(since.timeIntervalSince1970 * 1000)
+        let sinceMs = rangeSinceMs()
         let stats = await StatsService.claudeCodeStats(sinceMs: sinceMs)
         await MainActor.run {
             claudeStats = stats
@@ -1295,12 +1304,51 @@ struct DashboardView: View {
         }
     }
 
+    func loadCodexStats() async {
+        let sinceMs = rangeSinceMs()
+        let stats = await StatsService.codexStats(sinceMs: sinceMs)
+        await MainActor.run {
+            codexStats = stats
+            codexStatsTS = sinceMs
+        }
+    }
+
+    private func rangeSinceMs() -> Int64 {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        switch timeRange {
+        case .today:
+            return Int64(todayStart.timeIntervalSince1970 * 1000)
+        case .thisWeek:
+            return Int64(Calendar.mondayOfWeek().timeIntervalSince1970 * 1000)
+        case .days30:
+            return Int64(cal.date(byAdding: .day, value: -29, to: todayStart)!.timeIntervalSince1970 * 1000)
+        }
+    }
+
     @ViewBuilder
     var claudeDetailCard: some View {
-        if let stats = claudeStats, stats.sessionCount > 0 {
+        detailCard(stats: claudeStats, toolBarName: "Claude Code", hoverModel: $claudeHoverModel)
+    }
+
+    @ViewBuilder
+    var codexDetailCard: some View {
+        detailCard(stats: codexStats, toolBarName: "ChatGPT", hoverModel: $codexHoverModel)
+    }
+
+    /// Expandable per-tool usage card (session stats + per-model cost bars).
+    /// Shared by Claude Code and ChatGPT — both read the same `usage_event`
+    /// shape from their own session logs.
+    @ViewBuilder
+    private func detailCard(
+        stats: StatsService.ToolUsageStats?,
+        toolBarName: String,
+        hoverModel: Binding<String?>
+    ) -> some View {
+        if let stats = stats, stats.sessionCount > 0 {
             // Scale raw token-pricing costs to match dashboard tool bar total
             let rawTotal = stats.modelBreakdown.reduce(0.0) { $0 + $1.cost }
-            let toolBarCost = computeToolCosts().first(where: { $0.name == "Claude Code" })?.cost ?? rawTotal
+            let toolBarCost = computeToolCosts().first(where: { $0.name == toolBarName })?.cost ?? rawTotal
             let scale = rawTotal > 0 ? toolBarCost / rawTotal : 1.0
             VStack(alignment: .leading, spacing: 6) {
                 Text("\(stats.sessionCount) sessions · avg \(String(format: "$%.2f", stats.avgCostPerSession * scale)) · top \(String(format: "$%.2f", stats.topSessionCost * scale))")
@@ -1335,7 +1383,7 @@ struct DashboardView: View {
                                     }
                                     .frame(width: geo.size.width, height: 8, alignment: .leading)
                                     .overlay(alignment: .topLeading) {
-                                        if claudeHoverModel == mb.model {
+                                        if hoverModel.wrappedValue == mb.model {
                                             VStack(alignment: .leading, spacing: 2) {
                                                 HStack(spacing: 4) {
                                                     RoundedRectangle(cornerRadius: 1.5).fill(Color.marsGreenLight).frame(width: 8, height: 8)
@@ -1355,7 +1403,7 @@ struct DashboardView: View {
                                 }
                                 .frame(height: 8)
                                 .onHover { inside in
-                                    claudeHoverModel = inside ? mb.model : nil
+                                    hoverModel.wrappedValue = inside ? mb.model : nil
                                 }
                                 Text(String(format: "$%.2f", scaledCost))
                                     .font(.caption2).monospacedDigit().foregroundColor(.secondary)
