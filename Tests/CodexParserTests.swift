@@ -19,6 +19,34 @@ final class CodexParserTests: XCTestCase {
         XCTAssertTrue(event?.dedupeKey.hasPrefix("codex|") ?? false)
     }
 
+    func testParseEventMsgWrappedTokenCount() {
+        // ChatGPT desktop app format: token_count nested inside event_msg.info.
+        let line = """
+        {"timestamp":"2026-08-09T00:40:35.898Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":22364,"cached_input_tokens":9728,"output_tokens":669,"reasoning_output_tokens":469,"total_tokens":23033},"last_token_usage":{"input_tokens":22364,"cached_input_tokens":9728,"output_tokens":669,"reasoning_output_tokens":469,"total_tokens":23033},"model_context_window":996147},"rate_limits":{"limit_id":"codex"}}}
+        """
+        let event = CodexParser.parse(
+            line: line,
+            cwd: "/Users/test/repo",
+            model: "gpt-5-codex",
+            sessionId: "thread-1"
+        )
+        XCTAssertNotNil(event)
+        XCTAssertEqual(event?.source, "codex")
+        XCTAssertEqual(event?.model, "gpt-5-codex")
+        XCTAssertEqual(event?.repoPath, "/Users/test/repo")
+        XCTAssertEqual(event?.sessionId, "thread-1")
+        XCTAssertEqual(event?.inTokens, 22364)
+        XCTAssertEqual(event?.outTokens, 1138)  // output + reasoning
+        XCTAssertEqual(event?.cacheTokens, 9728)
+    }
+
+    func testEventMsgWithoutTokenCountSkipped() {
+        let line = """
+        {"timestamp":"2026-08-09T00:40:35Z","type":"event_msg","payload":{"type":"output_text","text":"hi"}}
+        """
+        XCTAssertNil(CodexParser.parse(line: line, cwd: nil, model: nil))
+    }
+
     func testNonTokenCountLineSkipped() {
         let line = """
         {"timestamp":"2026-08-02T10:00:00Z","type":"response_item","payload":{"id":"x"}}
@@ -35,6 +63,13 @@ final class CodexParserTests: XCTestCase {
         {"timestamp":"2026-08-02T10:00:00Z","type":"session_meta","payload":{"id":"s1","cwd":"/Users/me/proj","model_provider":"openai"}}
         """
         XCTAssertEqual(CodexParser.cwd(fromLine: line), "/Users/me/proj")
+    }
+
+    func testSessionMetaSessionIdExtraction() {
+        let line = """
+        {"timestamp":"2026-08-02T10:00:00Z","type":"session_meta","payload":{"session_id":"019fda52-1234","cwd":"/Users/me/proj"}}
+        """
+        XCTAssertEqual(CodexParser.sessionId(fromLine: line), "019fda52-1234")
     }
 
     func testTurnContextModelExtraction() {

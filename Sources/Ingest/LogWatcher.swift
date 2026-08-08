@@ -9,6 +9,7 @@ import GRDB
 nonisolated final class LogWatcher: @unchecked Sendable {
     static let shared = LogWatcher()
     private var claudeSource: DispatchSourceFileSystemObject?
+    private var codexSource: DispatchSourceFileSystemObject?
 
     /// Serial queue for ALL scanning/parsing. Serializing prevents data races on
     /// the mutable state below (filePositions/partialLines) and on GitMonitor's
@@ -68,8 +69,8 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                         Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
                     }
                     self.watchClaudeCode()
+                    self.watchCodex()
                     self.discoverAndWatchRepos()
-                    self.scanCodexSessions()
                     self.scanQwenSessions()
                     self.scanOpenCodeSessions()
                 }
@@ -101,6 +102,8 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     func stop() {
         claudeSource?.cancel()
         claudeSource = nil
+        codexSource?.cancel()
+        codexSource = nil
         persistPositions()
         // Deliberately NO blocking wait for the persist group: at quit the main
         // thread must stay on the run loop so queued @MainActor work (the FSEvent
@@ -185,7 +188,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
-    // MARK: - Codex CLI
+    // MARK: - Codex CLI / ChatGPT desktop
 
     /// Scan `~/.codex/sessions/**/rollout-*.jsonl` incrementally.
     /// Idempotent — `parseLinesIncremental` resumes from the persisted byte
@@ -206,16 +209,59 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
+    /// Watch `~/.codex/sessions` with FSEvents so ChatGPT desktop / Codex CLI
+    /// sessions are ingested in real time, mirroring the Claude Code watcher.
+    private func watchCodex() {
+        let home = FileManager.default.realHomeDirectory
+        let sessionsDir = home.appendingPathComponent(".codex/sessions")
+        guard FileManager.default.fileExists(atPath: sessionsDir.path) else {
+            Logger.warning("Codex sessions dir not found")
+            return
+        }
+        scanCodexSessions()
+
+        guard codexSource == nil else { return }
+
+        let fd = open(sessionsDir.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        codexSource = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .rename],
+            queue: DispatchQueue.global(qos: .utility)
+        )
+        codexSource?.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.scanQueue.async { [weak self] in
+                guard let self else { return }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    MainActor.assumeIsolated {
+                        self.scanCodexSessions()
+                    }
+                }
+            }
+        }
+        codexSource?.setCancelHandler { close(fd) }
+        codexSource?.resume()
+    }
+
     private func parseCodexFile(_ file: URL) {
         var currentCwd: String? = nil
         var currentModel: String? = nil
+        var currentSessionId: String? = nil
         var parsedCount = 0
         let filePath = file.path
         parseLinesIncremental(from: file) { line in
-            // Track cwd (session_meta) and model (turn_context) across lines.
+            // Track cwd / session_id (session_meta) and model (turn_context) across lines.
             if let cwd = CodexParser.cwd(fromLine: line) { currentCwd = cwd }
+            if let sid = CodexParser.sessionId(fromLine: line) { currentSessionId = sid }
             if let m = CodexParser.model(fromLine: line) { currentModel = m }
-            if let event = CodexParser.parse(line: line, cwd: currentCwd, model: currentModel) {
+            if let event = CodexParser.parse(
+                line: line,
+                cwd: currentCwd,
+                model: currentModel,
+                sessionId: currentSessionId
+            ) {
                 parsedCount += 1
                 return event
             }
