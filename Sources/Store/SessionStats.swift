@@ -81,14 +81,6 @@ struct ContextTrend {
     }
     var compactionIndexes: Set<Int> { SessionStats.compactionMarks(turns) }
 
-    /// Turns where the cache was invalidated (cache read = 0 on a substantial
-    /// context) — the expensive "cache miss" turns.
-    var cacheMissIndexes: Set<Int> {
-        Set(turns.compactMap { turn in
-            turn.cacheTokens == 0 && turn.contextTokens > 10_000 ? turn.index : nil
-        })
-    }
-
     /// True when the series looks like cumulative context growth (most turns
     /// grow or hold steady). Some providers report per-request token counts
     /// that oscillate wildly; for those the context-trend interpretation is

@@ -187,9 +187,7 @@ struct ToolDetailOverlayView: View {
                 HStack(spacing: 12) {
                     legendSwatch(line: Color.marsGreen, I18n.t("panel.chart_context"))
                     legendSwatch(line: Color.marsGreenLight, I18n.t("panel.chart_cache"))
-                    legendSwatch(area: Color.deepRed, I18n.t("panel.chart_uncached"))
                     legendSwatch(cross: Color.deepRed, I18n.t("panel.chart_compaction"))
-                    legendSwatch(dot: .orange, I18n.t("panel.chart_cache_miss"))
                 }
                 .font(.caption2).foregroundColor(.secondary)
             }
@@ -213,20 +211,6 @@ struct ToolDetailOverlayView: View {
         }
     }
 
-    private func legendSwatch(area color: Color, _ label: String) -> some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 2).fill(color.opacity(0.5)).frame(width: 12, height: 8)
-            Text(label)
-        }
-    }
-
-    private func legendSwatch(dot color: Color, _ label: String) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            Text(label)
-        }
-    }
-
     private func legendSwatch(cross color: Color, _ label: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "multiply")
@@ -242,25 +226,27 @@ struct ToolDetailOverlayView: View {
         let yMax = trend.windowTokens.map { max($0, maxContext) } ?? Int(Double(maxContext) * 1.15)
         return Chart {
             ForEach(trend.turns) { t in
-                // Stacked bars: cache (bottom) + uncached (top, prominent).
-                // Bars have no interpolation, so the fills can never cross or
-                // invert even when cache ≈ context.
-                BarMark(
+                // Base fill: the whole context area, very light.
+                AreaMark(
+                    x: .value(turnLabel, t.index),
+                    yStart: .value(zeroLabel, 0),
+                    yEnd: .value(contextLabel, t.contextTokens)
+                )
+                    .foregroundStyle(Color.marsGreen.opacity(0.10))
+                    .interpolationMethod(.monotone)
+                // Cache fill under the cache curve, brighter green.
+                AreaMark(
                     x: .value(turnLabel, t.index),
                     yStart: .value(zeroLabel, 0),
                     yEnd: .value(cacheLabel, t.cacheTokens)
                 )
-                    .foregroundStyle(Color.marsGreenLight.opacity(0.6))
-                BarMark(
-                    x: .value(turnLabel, t.index),
-                    yStart: .value(cacheLabel, t.cacheTokens),
-                    yEnd: .value(contextLabel, t.contextTokens)
-                )
-                    .foregroundStyle(Color.deepRed.opacity(0.5))
-                // Cache and context curves trace over the bars.
+                    .foregroundStyle(Color.marsGreenLight.opacity(0.40))
+                    .interpolationMethod(.monotone)
+                // Cache curve (usually hugging the context curve).
                 LineMark(x: .value(turnLabel, t.index), y: .value(cacheLabel, t.cacheTokens))
                     .foregroundStyle(Color.marsGreenLight)
                     .interpolationMethod(.monotone)
+                // Context window curve.
                 LineMark(x: .value(turnLabel, t.index), y: .value(contextLabel, t.contextTokens))
                     .foregroundStyle(Color.marsGreen)
                     .interpolationMethod(.monotone)
@@ -275,12 +261,7 @@ struct ToolDetailOverlayView: View {
                     PointMark(x: .value(turnLabel, idx), y: .value(contextLabel, point.contextTokens))
                         .foregroundStyle(Color.deepRed)
                         .symbol(.cross)
-                }
-            }
-            ForEach(Array(trend.cacheMissIndexes), id: \.self) { idx in
-                if let point = trend.turns.first(where: { $0.index == idx }) {
-                    PointMark(x: .value(turnLabel, idx), y: .value(contextLabel, point.contextTokens))
-                        .foregroundStyle(Color.orange)
+                        .symbolSize(4)
                 }
             }
         }
