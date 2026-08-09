@@ -53,6 +53,11 @@ struct TurnPoint: Identifiable, Equatable, Decodable, FetchableRecord {
     let cacheTokens: Int
     let outTokens: Int
     let cost: Double
+
+    enum CodingKeys: String, CodingKey {
+        case index = "turn_index"
+        case ts, inputTokens, cacheTokens, outTokens, cost
+    }
 }
 
 /// Full per-turn trajectory of one session, with compaction marks.

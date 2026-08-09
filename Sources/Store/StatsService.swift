@@ -927,7 +927,7 @@ enum StatsService {
         do {
             return try await AppDatabase.shared.read { db -> ContextTrend in
                 let turns = try TurnPoint.fetchAll(db, sql: """
-                    SELECT (ROW_NUMBER() OVER (ORDER BY ts)) AS index,
+                    SELECT (ROW_NUMBER() OVER (ORDER BY ts)) AS turn_index,
                            ts, in_tokens AS inputTokens, cache_tokens AS cacheTokens,
                            out_tokens AS outTokens, COALESCE(cost_usd, 0) AS cost
                     FROM usage_event
