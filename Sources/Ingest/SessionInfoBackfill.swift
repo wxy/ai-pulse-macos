@@ -4,7 +4,9 @@ import Foundation
 /// session log and upsert its session metadata, so old sessions get titles
 /// without a full re-parse. Guarded by UserDefaults so it runs once.
 enum SessionInfoBackfill {
-    private static let doneKey = "session_info_backfill_v1"
+    // v2: also pulls proper thread titles from the ChatGPT app's state db and
+    // fixes titles captured mid-session by the incremental parser.
+    private static let doneKey = "session_info_backfill_v2"
 
     static func runIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: doneKey) else { return }
@@ -72,9 +74,14 @@ enum SessionInfoBackfill {
         for case let url as URL in enumerator
         where url.lastPathComponent.hasPrefix("rollout-") && url.pathExtension == "jsonl" {
             guard let data = try? readPrefix(of: url, bytes: 64 * 1024),
-                  let record = metadataFromSnippet(data, source: "codex", sessionId: nil, repo: nil)
+                  let record = metadataFromSnippet(data, source: "codex", sessionId: nil, repo: nil),
+                  let sid = record.sessionId
             else { continue }
-            LogWatcher.upsertForBackfill(record)
+            let resolvedTitle = CodexThreadTitles.title(for: sid) ?? record.title
+            LogWatcher.upsertForBackfill(SessionInfoRecord(
+                source: record.source, sessionId: sid, title: resolvedTitle,
+                repo: record.repo, firstTs: record.firstTs, lastTs: record.lastTs,
+                completed: record.completed, windowTokens: record.windowTokens))
         }
     }
 
@@ -92,6 +99,16 @@ enum SessionInfoBackfill {
             else { continue }
             LogWatcher.upsertForBackfill(record)
         }
+    }
+
+    /// Claude session metadata read from the file head (first user message +
+    /// session id + cwd), so titles are correct even when a session is scanned
+    /// while still being written.
+    static func claudePrefixMetadata(from file: URL) -> (sessionId: String?, title: String?, repo: String?)? {
+        guard let data = try? readPrefix(of: file, bytes: 4096),
+              let record = metadataFromSnippet(data, source: "claude-code", sessionId: nil, repo: nil)
+        else { return nil }
+        return (record.sessionId, record.title, record.repo)
     }
 
     private static func readPrefix(of url: URL, bytes: Int) throws -> Data {

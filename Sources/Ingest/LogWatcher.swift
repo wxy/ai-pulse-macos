@@ -173,9 +173,10 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             // Register the repo even for files with no new content — ensures
             // repos from past sessions are re-watched after an app restart.
             discoverAndWatchRepo(from: file)
-            var sessionId: String? = nil
-            var title: String? = nil
-            var repo: String? = nil
+            let prefixMeta = SessionInfoBackfill.claudePrefixMetadata(from: file)
+            var sessionId: String? = prefixMeta?.sessionId
+            var title: String? = prefixMeta?.title
+            var repo: String? = prefixMeta?.repo
             var minTs = Int.max
             var maxTs = 0
             parseLinesIncremental(from: file) { line in
@@ -296,8 +297,10 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             return nil
         }
         guard let sid = currentSessionId, maxTs > 0 else { return }
+        // Prefer the ChatGPT app's own thread title over the first log message.
+        let resolvedTitle = CodexThreadTitles.title(for: sid) ?? currentTitle
         upsertSessionInfo(SessionInfoRecord(
-            source: "codex", sessionId: sid, title: currentTitle, repo: currentCwd,
+            source: "codex", sessionId: sid, title: resolvedTitle, repo: currentCwd,
             firstTs: minTs, lastTs: maxTs, completed: currentCompleted ? true : nil,
             windowTokens: currentWindow))
         if parsedCount > 0 {
