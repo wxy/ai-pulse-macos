@@ -96,13 +96,10 @@ struct DashboardView: View {
     @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
     @State private var toolsExpanded = false
     @State private var claudeDetailExpanded = false
-    @State private var claudeStats: StatsService.ToolUsageStats?
-    @State private var claudeStatsTS: Int64 = 0
-    @State private var claudeHoverModel: String? = nil  // model whose cache/non-cache cost tooltip is showing
     @State private var codexDetailExpanded = false
-    @State private var codexStats: StatsService.ToolUsageStats?
-    @State private var codexStatsTS: Int64 = 0
-    @State private var codexHoverModel: String? = nil
+    @State private var selectedToolForOverlay: String? = nil
+    @State private var claudeConclusion: ToolConclusion?
+    @State private var codexConclusion: ToolConclusion?
     @State private var reposExpanded = false
 
     var hasActiveCostSources: Bool {
@@ -319,6 +316,15 @@ struct DashboardView: View {
             i18nToken += 1
         }
         .id(i18nToken)
+        .overlay {
+            if let toolId = selectedToolForOverlay {
+                ToolDetailOverlayView(
+                    toolId: toolId,
+                    sinceMs: rangeSinceMs(),
+                    onClose: { selectedToolForOverlay = nil })
+                    .transition(.opacity)
+            }
+        }
     }
 
     // MARK: - Health banner helpers
@@ -1297,20 +1303,14 @@ struct DashboardView: View {
 
     func loadClaudeStats() async {
         let sinceMs = rangeSinceMs()
-        let stats = await StatsService.claudeCodeStats(sinceMs: sinceMs)
-        await MainActor.run {
-            claudeStats = stats
-            claudeStatsTS = sinceMs
-        }
+        let conclusion = await StatsService.toolConclusion(source: "claude-code", sinceMs: sinceMs)
+        await MainActor.run { claudeConclusion = conclusion }
     }
 
     func loadCodexStats() async {
         let sinceMs = rangeSinceMs()
-        let stats = await StatsService.codexStats(sinceMs: sinceMs)
-        await MainActor.run {
-            codexStats = stats
-            codexStatsTS = sinceMs
-        }
+        let conclusion = await StatsService.toolConclusion(source: "codex", sinceMs: sinceMs)
+        await MainActor.run { codexConclusion = conclusion }
     }
 
     private func rangeSinceMs() -> Int64 {
@@ -1328,95 +1328,54 @@ struct DashboardView: View {
 
     @ViewBuilder
     var claudeDetailCard: some View {
-        detailCard(stats: claudeStats, toolBarName: "Claude Code", hoverModel: $claudeHoverModel)
+        conclusionCard(
+            conclusion: claudeConclusion,
+            onOpen: { selectedToolForOverlay = "claude-code" })
     }
 
     @ViewBuilder
     var codexDetailCard: some View {
-        detailCard(stats: codexStats, toolBarName: "ChatGPT", hoverModel: $codexHoverModel)
+        conclusionCard(
+            conclusion: codexConclusion,
+            onOpen: { selectedToolForOverlay = "codex" })
     }
 
-    /// Expandable per-tool usage card (session stats + per-model cost bars).
-    /// Shared by Claude Code and ChatGPT — both read the same `usage_event`
-    /// shape from their own session logs.
+    /// Three-line conclusion card: spend, output, worth. Tapping it opens the
+    /// full-window session explorer overlay.
     @ViewBuilder
-    private func detailCard(
-        stats: StatsService.ToolUsageStats?,
-        toolBarName: String,
-        hoverModel: Binding<String?>
+    private func conclusionCard(
+        conclusion: ToolConclusion?,
+        onOpen: @escaping () -> Void
     ) -> some View {
-        if let stats = stats, stats.sessionCount > 0 {
-            // Scale raw token-pricing costs to match dashboard tool bar total
-            let rawTotal = stats.modelBreakdown.reduce(0.0) { $0 + $1.cost }
-            let toolBarCost = computeToolCosts().first(where: { $0.name == toolBarName })?.cost ?? rawTotal
-            let scale = rawTotal > 0 ? toolBarCost / rawTotal : 1.0
-            VStack(alignment: .leading, spacing: 6) {
-                Text("\(stats.sessionCount) sessions · avg \(String(format: "$%.2f", stats.avgCostPerSession * scale)) · top \(String(format: "$%.2f", stats.topSessionCost * scale))")
-                    .font(.caption).foregroundColor(.secondary)
-
-                if !stats.modelBreakdown.isEmpty {
-                    let maxPct = stats.modelBreakdown.map(\.pct).max() ?? 1
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(stats.modelBreakdown, id: \.model) { mb in
-                            let scaledCost = mb.cost * scale
-                            let cacheCost = scaledCost * mb.cacheRate
-                            let nonCacheCost = scaledCost - cacheCost
-                            HStack(spacing: 6) {
-                                Text(mb.model)
-                                    .font(.caption2).frame(width: 144, alignment: .leading)
-                                GeometryReader { geo in
-                                    let fullW = max(geo.size.width * CGFloat(mb.pct / maxPct), 4)
-                                    let rawCacheW = fullW * CGFloat(mb.cacheRate)
-                                    let minW: CGFloat = 3
-                                    let cacheW = rawCacheW < minW ? 0
-                                        : (rawCacheW > fullW - minW ? fullW - minW : rawCacheW)
-                                    ZStack(alignment: .leading) {
-                                        // Non-cache segment = deep green; cache segment overlaid in light green.
-                                        RoundedRectangle(cornerRadius: 2)
-                                            .fill(Color.marsGreen)
-                                            .frame(width: fullW, height: 8)
-                                        if cacheW > 0 {
-                                            RoundedRectangle(cornerRadius: 2)
-                                                .fill(Color.marsGreenLight)
-                                                .frame(width: cacheW, height: 8)
-                                        }
-                                    }
-                                    .frame(width: geo.size.width, height: 8, alignment: .leading)
-                                    .overlay(alignment: .topLeading) {
-                                        if hoverModel.wrappedValue == mb.model {
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                HStack(spacing: 4) {
-                                                    RoundedRectangle(cornerRadius: 1.5).fill(Color.marsGreenLight).frame(width: 8, height: 8)
-                                                    Text("\(I18n.t("dashboard.cache_cost")) \(String(format: "$%.2f", cacheCost))")
-                                                }
-                                                HStack(spacing: 4) {
-                                                    RoundedRectangle(cornerRadius: 1.5).fill(Color.marsGreen).frame(width: 8, height: 8)
-                                                    Text("\(I18n.t("dashboard.non_cache_cost")) \(String(format: "$%.2f", nonCacheCost))")
-                                                }
-                                            }
-                                            .font(.caption2).monospacedDigit()
-                                            .padding(6)
-                                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-                                            .offset(y: -24)
-                                        }
-                                    }
-                                }
-                                .frame(height: 8)
-                                .onHover { inside in
-                                    hoverModel.wrappedValue = inside ? mb.model : nil
-                                }
-                                Text(String(format: "$%.2f", scaledCost))
-                                    .font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                                    .frame(width: 50, alignment: .trailing)
-                            }
-                        }
-                    }
-                }
+        if let c = conclusion, c.sessionCount > 0 {
+            let trend = c.deltaPct >= 0 ? "↑" : "↓"
+            let money = String(format: "$%.2f", c.spend)
+            let projected = String(format: "$%.2f", c.projectedMonth)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(format: I18n.t("card.spend"), money, trend,
+                            String(format: "%.0f", abs(c.deltaPct)), projected))
+                Text(String(format: I18n.t("card.output"),
+                            c.sessionCount, c.commitCount, c.addedLines))
+                Text(String(format: I18n.t("card.worth"),
+                            String(format: "$%.2f", c.avgCostPerSession),
+                            String(format: "$%.2f", c.cpl),
+                            crossText(c)))
             }
+            .font(.caption2).foregroundColor(.secondary)
             .padding(10)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
             .padding(.leading, 28)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
         }
+    }
+
+    private func crossText(_ c: ToolConclusion) -> String {
+        guard let d = c.crossToolDeltaPct else { return "—" }
+        let pct = String(format: "%.0f", abs(d))
+        return d >= 0
+            ? String(format: I18n.t("card.cross_more"), pct)
+            : String(format: I18n.t("card.cross_less"), pct)
     }
 
     func balanceString(_ v: Double, currency: String) -> String {
