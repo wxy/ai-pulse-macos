@@ -53,10 +53,14 @@ struct TurnPoint: Identifiable, Equatable, Decodable, FetchableRecord {
     let cacheTokens: Int
     let outTokens: Int
     let cost: Double
+    /// Total prompt context at this turn: for Codex `inputTokens` already
+    /// includes the cached portion; for Claude Code (BYOK gateways) it does
+    /// not, so context = input + cache. Computed in the query.
+    let contextTokens: Int
 
     enum CodingKeys: String, CodingKey {
         case index = "turn_index"
-        case ts, inputTokens, cacheTokens, outTokens, cost
+        case ts, inputTokens, cacheTokens, outTokens, cost, contextTokens
     }
 }
 
@@ -69,7 +73,7 @@ struct ContextTrend {
     var totalCost: Double { turns.reduce(0) { $0 + $1.cost } }
     var finalOccupancy: Double? {
         guard let window = windowTokens, window > 0, let last = turns.last else { return nil }
-        return Double(last.inputTokens) / Double(window)
+        return Double(last.contextTokens) / Double(window)
     }
     var needsCompactionHint: Bool {
         guard let occupancy = finalOccupancy else { return false }
@@ -84,7 +88,7 @@ struct ContextTrend {
     var isContextLike: Bool {
         guard turns.count >= 3 else { return false }
         var growth = 0
-        for i in 1..<turns.count where turns[i].inputTokens >= turns[i - 1].inputTokens {
+        for i in 1..<turns.count where turns[i].contextTokens >= turns[i - 1].contextTokens {
             growth += 1
         }
         return Double(growth) / Double(turns.count - 1) >= 0.6
@@ -130,8 +134,8 @@ enum SessionStats {
         var marks = Set<Int>()
         guard turns.count > 1 else { return marks }
         for i in 1..<turns.count {
-            let prev = turns[i - 1].inputTokens
-            let curr = turns[i].inputTokens
+            let prev = turns[i - 1].contextTokens
+            let curr = turns[i].contextTokens
             if prev > 0, Double(curr) < Double(prev) * 0.7 {
                 marks.insert(turns[i].index)
             }

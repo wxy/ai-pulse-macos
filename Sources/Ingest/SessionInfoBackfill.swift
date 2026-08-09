@@ -4,9 +4,8 @@ import Foundation
 /// session log and upsert its session metadata, so old sessions get titles
 /// without a full re-parse. Guarded by UserDefaults so it runs once.
 enum SessionInfoBackfill {
-    // v2: also pulls proper thread titles from the ChatGPT app's state db and
-    // fixes titles captured mid-session by the incremental parser.
-    private static let doneKey = "session_info_backfill_v2"
+    // v3: re-derives titles with the concise first-line/first-sentence rule.
+    private static let doneKey = "session_info_backfill_v3"
 
     static func runIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: doneKey) else { return }

@@ -929,11 +929,12 @@ enum StatsService {
                 let turns = try TurnPoint.fetchAll(db, sql: """
                     SELECT (ROW_NUMBER() OVER (ORDER BY ts)) AS turn_index,
                            ts, in_tokens AS inputTokens, cache_tokens AS cacheTokens,
-                           out_tokens AS outTokens, COALESCE(cost_usd, 0) AS cost
+                           out_tokens AS outTokens, COALESCE(cost_usd, 0) AS cost,
+                           (in_tokens + CASE WHEN ? = 'claude-code' THEN cache_tokens ELSE 0 END) AS contextTokens
                     FROM usage_event
-                    WHERE source = ? AND session_id = ?
+                    WHERE source = ? AND session_id = ? AND (in_tokens + cache_tokens) > 0
                     ORDER BY ts
-                    """, arguments: [source, sessionId])
+                    """, arguments: [source, source, sessionId])
                 let window: Int? = try Int.fetchOne(db, sql: """
                     SELECT window_tokens FROM session_info WHERE source = ? AND session_id = ?
                     """, arguments: [source, sessionId])

@@ -189,14 +189,14 @@ struct ToolDetailOverlayView: View {
     }
 
     private func contextChart(_ trend: ContextTrend) -> some View {
-        let maxInput = trend.turns.map(\.inputTokens).max() ?? 1
-        let yMax = trend.windowTokens.map { max($0, maxInput) } ?? maxInput * 2
+        let maxContext = trend.turns.map(\.contextTokens).max() ?? 1
+        let yMax = trend.windowTokens.map { max($0, maxContext) } ?? maxContext * 2
         return Chart {
             ForEach(trend.turns) { t in
-                AreaMark(x: .value("turn", t.index), y: .value("input", t.inputTokens))
+                AreaMark(x: .value("turn", t.index), y: .value("cache", t.cacheTokens))
                     .foregroundStyle(Color.marsGreenLight.opacity(0.35))
                     .interpolationMethod(.catmullRom)
-                LineMark(x: .value("turn", t.index), y: .value("input", t.inputTokens))
+                LineMark(x: .value("turn", t.index), y: .value("context", t.contextTokens))
                     .foregroundStyle(Color.marsGreen)
                     .interpolationMethod(.catmullRom)
             }
@@ -207,7 +207,7 @@ struct ToolDetailOverlayView: View {
             }
             ForEach(Array(trend.compactionIndexes), id: \.self) { idx in
                 if let point = trend.turns.first(where: { $0.index == idx }) {
-                    PointMark(x: .value("turn", idx), y: .value("input", point.inputTokens))
+                    PointMark(x: .value("turn", idx), y: .value("context", point.contextTokens))
                         .foregroundStyle(Color.deepRed)
                 }
             }
