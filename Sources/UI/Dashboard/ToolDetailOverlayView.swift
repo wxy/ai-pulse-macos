@@ -238,11 +238,14 @@ struct ToolDetailOverlayView: View {
                     .interpolationMethod(.monotone)
                 // Cache curve (usually hugging the context curve).
                 LineMark(x: .value(turnLabel, t.index), y: .value(cacheLabel, t.cacheTokens))
-                    .foregroundStyle(Color.marsGreenLight)
+                    .foregroundStyle(Color.marsGreenLight.opacity(0.9))
+                    .lineStyle(StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
                     .interpolationMethod(.monotone)
-                // Context window curve.
+                // Context window curve — thick dark line so it reads as the
+                // main curve even where the cache line nearly coincides.
                 LineMark(x: .value(turnLabel, t.index), y: .value(contextLabel, t.contextTokens))
                     .foregroundStyle(Color.marsGreen)
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                     .interpolationMethod(.monotone)
             }
             if let window = trend.windowTokens, window > 0 {
