@@ -866,6 +866,7 @@ struct DashboardView: View {
                                     Task { await loadCodexStats() }
                                 }
                             }
+                            .pointingHandCursor(isClaude || isCodex)
                         if isClaude && claudeDetailExpanded {
                             claudeDetailCard
                                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -1380,6 +1381,7 @@ struct DashboardView: View {
             .padding(.leading, 28)
             .contentShape(Rectangle())
             .onTapGesture(perform: onOpen)
+            .pointingHandCursor()
         }
     }
 

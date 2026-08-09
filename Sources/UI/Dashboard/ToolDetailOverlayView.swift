@@ -112,6 +112,7 @@ struct ToolDetailOverlayView: View {
                 }
             }
             .buttonStyle(.plain)
+            .pointingHandCursor()
 
             if !collapsed {
                 ForEach(sortedSessions(group.sessions)) { row in
@@ -167,6 +168,7 @@ struct ToolDetailOverlayView: View {
                 }
             }
         }
+        .pointingHandCursor()
     }
 
     @ViewBuilder
