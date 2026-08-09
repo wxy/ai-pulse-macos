@@ -71,10 +71,11 @@ enum IntegrationRegistry {
     private static func isRestrictedInChina(_ integrationId: String) -> Bool {
         guard chinaRestrictedIds.contains(integrationId) else { return false }
         #if DEBUG
-        // Dev/test builds are never gated: the full feature set (Codex, OpenAI,
-        // ChatGPT, Anthropic) must stay visible during development. Gating only
-        // applies to the App Store release in mainland China.
-        return false
+        // Dev/test builds mirror production gating based on the selected
+        // language: Simplified Chinese hides China-restricted providers. This
+        // keeps the full feature set visible in other languages during
+        // development and lets us capture screenshots of both states.
+        return I18n.resolvedLang() == "zh-Hans"
         #else
         // Gate only when the App Store storefront itself is mainland China.
         // No fallback to the system locale: without a storefront (non-App Store
