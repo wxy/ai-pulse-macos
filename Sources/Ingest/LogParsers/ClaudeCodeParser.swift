@@ -85,4 +85,20 @@ struct ClaudeCodeParser {
         }
         return nil
     }
+
+    /// Extract the first user-authored text from a `user` line.
+    static func firstUserMessage(fromLine line: String) -> String? {
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["type"] as? String == "user",
+              let message = json["message"] as? [String: Any],
+              let content = message["content"] as? [[String: Any]]
+        else { return nil }
+        for item in content {
+            if let text = item["text"] as? String, !text.isEmpty {
+                return text
+            }
+        }
+        return nil
+    }
 }

@@ -87,4 +87,23 @@ final class CodexParserTests: XCTestCase {
         // 2026-08-02T10:00:00Z in ms
         XCTAssertEqual(event?.ts, 1785664800000)
     }
+
+    func testFirstUserMessageFromUserMessageEvent() {
+        let line = """
+        {"timestamp":"2026-08-09T00:40:28Z","type":"event_msg","payload":{"type":"user_message","client_id":"x","message":"排查硬盘占用并给出方案"}}
+        """
+        XCTAssertEqual(CodexParser.firstUserMessage(fromLine: line), "排查硬盘占用并给出方案")
+    }
+
+    func testWindowTokensFromTokenCountEvent() {
+        let line = """
+        {"timestamp":"2026-08-09T00:40:35Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1},"model_context_window":996147}}}
+        """
+        XCTAssertEqual(CodexParser.windowTokens(fromLine: line), 996147)
+    }
+
+    func testIsSessionComplete() {
+        XCTAssertTrue(CodexParser.isSessionComplete(fromLine: #"{"type":"task_complete","payload":{}}"#))
+        XCTAssertFalse(CodexParser.isSessionComplete(fromLine: #"{"type":"task_started","payload":{}}"#))
+    }
 }

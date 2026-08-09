@@ -102,4 +102,36 @@ struct CodexParser {
         else { return nil }
         return payload["model"] as? String
     }
+
+    /// Extract the first user-authored message from a `user_message` event.
+    static func firstUserMessage(fromLine line: String) -> String? {
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["type"] as? String == "event_msg",
+              let payload = json["payload"] as? [String: Any],
+              payload["type"] as? String == "user_message"
+        else { return nil }
+        return payload["message"] as? String
+    }
+
+    /// Extract the model context window from a `token_count` event.
+    static func windowTokens(fromLine line: String) -> Int? {
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["type"] as? String == "event_msg",
+              let payload = json["payload"] as? [String: Any],
+              payload["type"] as? String == "token_count",
+              let info = payload["info"] as? [String: Any],
+              let window = info["model_context_window"] as? NSNumber
+        else { return nil }
+        return window.intValue
+    }
+
+    /// True when the line marks the session as completed.
+    static func isSessionComplete(fromLine line: String) -> Bool {
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        return json["type"] as? String == "task_complete"
+    }
 }
