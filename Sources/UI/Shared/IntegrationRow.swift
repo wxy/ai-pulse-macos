@@ -42,7 +42,7 @@ struct IntegrationRow: View {
     private static let apiKeyIds: Set<String> = ["deepseek", "openai", "moonshot", "zhipu", "anthropic"]
 
     /// Known subscription integration IDs (always show tier picker).
-    private static let subscriptionIds: Set<String> = ["claude-code", "cursor", "copilot", "windsurf"]
+    private static let subscriptionIds: Set<String> = ["claude-code", "codex", "cursor", "copilot", "windsurf"]
 
     /// Is this integration primarily an apiKey type?
     var isAPIKeyType: Bool { Self.apiKeyIds.contains(integration.id) }
@@ -224,8 +224,8 @@ struct IntegrationRow: View {
     }
 
     /// The plan (subscription tier) dropdown, shown directly on the row's right.
-    /// Only subscription-type tools (claude-code / cursor / copilot / windsurf)
-    /// have plans; log-based tools have none.
+    /// Only subscription-type tools (claude-code / codex / cursor / copilot /
+    /// windsurf) have plans; other log-based tools have none.
     @ViewBuilder
     var planPicker: some View {
         Picker("", selection: $tierInput) {

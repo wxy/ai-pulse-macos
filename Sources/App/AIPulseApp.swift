@@ -51,6 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         showOnboardingIfNeeded()
         // Start all enabled, detected integrations via the registry
         IntegrationRegistry.startAllEnabled()
+        // Cache the App Store storefront once at launch for region-based gating.
+        Task { await IntegrationRegistry.refreshStorefrontRegion() }
         // Sync active CostSources to database for StatsService queries
         CostSource.syncToDatabase(IntegrationRegistry.activeCostSources())
         Logger.debug("integrations started, costSources synced")

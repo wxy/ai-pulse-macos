@@ -50,6 +50,9 @@ enum SubscriptionRegistry {
         }
 
         let defs: [(name: String, bundleIds: [String], tiers: [(String, Double)])] = [
+            ("ChatGPT", ["com.openai.codex"], [
+                ("Plus", 20), ("Pro", 200),
+            ]),
             ("Claude Code", ["com.anthropic.claude"], [
                 ("Pro", 20), ("Max 5x", 100), ("Max 20x", 200),
             ]),

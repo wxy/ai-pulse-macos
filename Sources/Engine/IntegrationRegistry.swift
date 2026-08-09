@@ -1,4 +1,5 @@
 import Foundation
+import StoreKit
 
 /// Compile-time registry of all integrations.
 /// Each integration registers itself via `all`.
@@ -47,13 +48,40 @@ enum IntegrationRegistry {
         all.filter { !isRestrictedInChina($0.id) }
     }
 
+    // MARK: - Region gating
+
+    /// App Store storefront country code (ISO 3166-1 alpha-3, e.g. "CHN"),
+    /// cached after the first read. `nonisolated(unsafe)` matches the registry's
+    /// existing concurrency pattern; a stale value is harmless (worst case the
+    /// gating applies one launch late).
+    private static nonisolated(unsafe) var storefrontCountryCode: String?
+
+    /// Cache the App Store storefront region once at launch.
+    /// Per docs/superpowers/specs/2026-07-17-region-based-feature-gating.md,
+    /// prefer `Storefront.current` over `Locale.current` — the storefront is the
+    /// user's App Store region, not the system language/region.
+    static func refreshStorefrontRegion() async {
+        storefrontCountryCode = await Storefront.current?.countryCode
+    }
+
     /// Provider IDs restricted in mainland China (regulatory compliance).
     /// Includes OpenAI-family tools: Codex CLI is OpenAI's coding agent.
     private static let chinaRestrictedIds: Set<String> = ["openai", "anthropic", "codex"]
 
     private static func isRestrictedInChina(_ integrationId: String) -> Bool {
         guard chinaRestrictedIds.contains(integrationId) else { return false }
-        return Locale.current.region?.identifier == "CN"
+        #if DEBUG
+        // Dev/test builds mirror production gating based on the selected
+        // language: Simplified Chinese hides China-restricted providers. This
+        // keeps the full feature set visible in other languages during
+        // development and lets us capture screenshots of both states.
+        return I18n.resolvedLang() == "zh-Hans"
+        #else
+        // Gate only when the App Store storefront itself is mainland China.
+        // No fallback to the system locale: without a storefront (non-App Store
+        // builds, storefront unavailable) nothing is hidden.
+        return storefrontCountryCode == "CHN"   // Storefront uses ISO 3166-1 alpha-3
+        #endif
     }
 
     /// Integrations that are both detected AND enabled.
