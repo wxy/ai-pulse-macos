@@ -249,26 +249,6 @@
     "@%@" : {
 
     },
-    "%@ · %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · %2$@"
-          }
-        }
-      }
-    },
-    "%@ · 共 %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · 共 %2$@"
-          }
-        }
-      }
-    },
     "%@ ($%lld/mo)" : {
       "localizations" : {
         "en" : {
@@ -312,16 +292,6 @@
         }
       },
       "shouldTranslate" : false
-    },
-    "%@%@%%" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@%2$@%%"
-          }
-        }
-      }
     },
     "%@$%@%@" : {
       "localizations" : {
@@ -3220,9 +3190,6 @@
         }
       }
     },
-    "cache" : {
-
-    },
     "card.cross_less" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3547,9 +3514,6 @@
           }
         }
       }
-    },
-    "context" : {
-
     },
     "Cost" : {
       "localizations" : {
@@ -18835,9 +18799,6 @@
         }
       }
     },
-    "turn" : {
-
-    },
     "Type" : {
       "localizations" : {
         "en" : {
@@ -18870,9 +18831,6 @@
         }
       },
       "shouldTranslate" : false
-    },
-    "window" : {
-
     }
   },
   "version" : "1.0"
