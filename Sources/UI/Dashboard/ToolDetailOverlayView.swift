@@ -248,11 +248,10 @@ struct ToolDetailOverlayView: View {
                 )
                     .foregroundStyle(Color.marsGreenLight.opacity(0.40))
                     .interpolationMethod(.monotone)
-                // Context window curve — thick dark line so it reads as the
-                // main curve even where the cache line nearly coincides.
+                // Context window curve — dark green line.
                 LineMark(x: .value(turnLabel, t.index), y: .value(contextLabel, t.contextTokens))
                     .foregroundStyle(Color.marsGreen)
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .lineStyle(StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
                     .interpolationMethod(.monotone)
             }
             if let window = trend.windowTokens, window > 0 {
@@ -266,7 +265,7 @@ struct ToolDetailOverlayView: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                         if let point = trend.turns.first(where: { $0.index == idx }) {
-                            turnTooltip(point)
+                            turnTooltip(point, isCompaction: trend.compactionIndexes.contains(point.index))
                         }
                     }
             }
@@ -286,7 +285,11 @@ struct ToolDetailOverlayView: View {
                     .onContinuousHover { phase in
                         switch phase {
                         case .active(let location):
-                            selectedTurnIndex = proxy.value(atX: location.x)
+                            // Location.x is measured from the chart's left edge,
+                            // including the y-axis labels. Subtract the plot
+                            // area origin so the selection starts at the axis.
+                            let plotX = location.x - proxy.plotAreaFrame.minX
+                            selectedTurnIndex = proxy.value(atX: plotX)
                         case .ended:
                             selectedTurnIndex = nil
                         }
@@ -306,13 +309,17 @@ struct ToolDetailOverlayView: View {
         .frame(height: 140)
     }
 
-    private func turnTooltip(_ point: TurnPoint) -> some View {
+    private func turnTooltip(_ point: TurnPoint, isCompaction: Bool) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(String(format: I18n.t("panel.turns"), point.index))
                 .font(.caption2).fontWeight(.semibold)
             Text("\(I18n.t("panel.chart_context")) \(Self.abbrevTokens(point.contextTokens))")
             Text("\(I18n.t("panel.chart_cache")) \(Self.abbrevTokens(point.cacheTokens))")
             Text("\(I18n.t("panel.chart_uncached")) \(Self.abbrevTokens(max(point.contextTokens - point.cacheTokens, 0)))")
+            if isCompaction {
+                Text(I18n.t("panel.chart_compaction"))
+                    .foregroundColor(Color.deepRed)
+            }
         }
         .font(.caption2).monospacedDigit()
         .padding(6)
