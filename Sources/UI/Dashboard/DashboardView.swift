@@ -1348,14 +1348,27 @@ struct DashboardView: View {
         onOpen: @escaping () -> Void
     ) -> some View {
         if let c = conclusion, c.sessionCount > 0 {
-            let trend = c.deltaPct >= 0 ? "↑" : "↓"
             let money = String(format: "$%.2f", c.spend)
             let projected = String(format: "$%.2f", c.projectedMonth)
+            let progress = c.projectedMonth > 0 ? min(max(c.spend / c.projectedMonth, 0), 1) : 0
             VStack(alignment: .leading, spacing: 4) {
-                Text(String(format: I18n.t("card.spend"), money, trend,
-                            String(format: "%.0f", abs(c.deltaPct)), projected))
+                HStack(spacing: 6) {
+                    Text(money).font(.caption).fontWeight(.semibold).monospacedDigit()
+                    deltaBadge(c)
+                    Spacer()
+                    Text(String(format: I18n.t("card.spend"), projected))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.secondary.opacity(0.15))
+                        Capsule().fill(Color.marsGreen)
+                            .frame(width: max(geo.size.width * CGFloat(progress), 2))
+                    }
+                }
+                .frame(height: 4)
                 Text(String(format: I18n.t("card.output"),
-                            c.sessionCount, c.commitCount, c.addedLines))
+                            c.sessionCount, c.commitCount, c.addedLines, c.deletedLines))
                 Text(String(format: I18n.t("card.worth"),
                             String(format: "$%.2f", c.avgCostPerSession),
                             String(format: "$%.2f", c.cpl),
@@ -1368,6 +1381,16 @@ struct DashboardView: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: onOpen)
         }
+    }
+
+    /// Colored pill showing this period's spend change vs the previous period.
+    private func deltaBadge(_ c: ToolConclusion) -> some View {
+        let up = c.deltaPct >= 0
+        return Text("\(up ? "↑" : "↓")\(String(format: "%.0f", abs(c.deltaPct)))%")
+            .font(.caption2).fontWeight(.medium).monospacedDigit()
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background((up ? Color.deepRed : Color.marsGreen).opacity(0.12), in: Capsule())
+            .foregroundColor(up ? .deepRed : .marsGreen)
     }
 
     private func crossText(_ c: ToolConclusion) -> String {

@@ -15,18 +15,23 @@ struct ToolDetailOverlayView: View {
     @State private var trend: ContextTrend?
     @State private var sortByCost = false
     @State private var collapsedRepos: Set<String> = []
+    @State private var hoveredSessionId: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(groups) { group in
-                        groupSection(group)
+            if groups.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(groups) { group in
+                            groupSection(group)
+                        }
                     }
+                    .padding(16)
                 }
-                .padding(16)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -45,21 +50,35 @@ struct ToolDetailOverlayView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text(toolDisplayName).font(.headline)
-            Text("\(String(format: I18n.t("panel.repos_count"), groups.count)) · 共 \(totalCostText)")
-                .font(.caption).foregroundColor(.secondary)
+            Image(systemName: toolId == "codex" ? "sparkles" : "bubble.left.and.bubble.right")
+                .foregroundColor(.accentColor)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(toolDisplayName).font(.headline)
+                Text("\(String(format: I18n.t("panel.repos_count"), groups.count)) · 共 \(totalCostText)")
+                    .font(.caption2).foregroundColor(.secondary)
+            }
             Spacer()
             Picker("", selection: $sortByCost) {
                 Text(I18n.t("panel.recent")).tag(false)
                 Text(I18n.t("panel.most_expensive")).tag(true)
             }
-            .pickerStyle(.segmented).frame(width: 160)
+            .pickerStyle(.segmented).frame(width: 170).labelsHidden()
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
             }
             .buttonStyle(.plain).foregroundColor(.secondary)
         }
-        .padding(12)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "tray")
+                .font(.title2).foregroundColor(.secondary)
+            Text(I18n.t("panel.empty_sessions"))
+                .font(.caption).foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func groupSection(_ group: RepoSessionGroup) -> some View {
@@ -69,13 +88,17 @@ struct ToolDetailOverlayView: View {
                 withAnimation(.easeInOut(duration: 0.15)) { toggleCollapse(group.repo) }
             } label: {
                 HStack {
+                    Image(systemName: "folder")
+                        .foregroundColor(.accentColor.opacity(0.8))
                     Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                        .font(.caption2).foregroundColor(.secondary)
                     Text(group.repo == SessionStats.noRepoKey ? I18n.t("panel.no_repo_group") : group.repo)
                         .font(.caption).fontWeight(.semibold)
                         .lineLimit(1)
                     Spacer()
                     Text("\(String(format: I18n.t("panel.sessions_count"), group.sessions.count)) · \(String(format: "$%.2f", group.totalCost))")
                         .font(.caption2).foregroundColor(.secondary)
+                        .monospacedDigit()
                 }
             }
             .buttonStyle(.plain)
@@ -100,6 +123,7 @@ struct ToolDetailOverlayView: View {
 
     private func sessionRow(_ row: SessionRow) -> some View {
         let expanded = expandedSessionId == row.sessionId
+        let hovered = hoveredSessionId == row.sessionId
         return HStack(spacing: 8) {
             Text(timeText(row.lastTs))
                 .font(.caption2).foregroundColor(.secondary)
@@ -109,10 +133,15 @@ struct ToolDetailOverlayView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             occupancyBar(row)
             Text(String(format: "$%.2f", row.cost))
-                .font(.caption).monospacedDigit()
+                .font(.caption).fontWeight(expanded ? .semibold : .regular).monospacedDigit()
+                .foregroundColor(expanded ? .accentColor : .primary)
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 6).padding(.vertical, 5)
+        .background(hovered ? Color.primary.opacity(0.05) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
+        .onHover { inside in
+            hoveredSessionId = inside ? row.sessionId : nil
+        }
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.2)) {
                 expandedSessionId = expanded ? nil : row.sessionId
@@ -129,23 +158,28 @@ struct ToolDetailOverlayView: View {
         if let trend {
             VStack(alignment: .leading, spacing: 6) {
                 contextChart(trend)
-                HStack(spacing: 12) {
-                    Text(String(format: I18n.t("panel.turns"), trend.turns.count))
-                    Text(occupancyText(trend.finalOccupancy))
-                    Text(String(format: I18n.t("panel.total_cost"), String(format: "$%.2f", trend.totalCost)))
-                    Text(String(format: I18n.t("panel.cache_savings"), String(format: "$%.2f", cacheSavingsText(trend))))
+                HStack(spacing: 14) {
+                    metric("arrow.turn.up.right", String(format: I18n.t("panel.turns"), trend.turns.count))
+                    metric("cylinder.split.1x2", occupancyText(trend.finalOccupancy))
+                    metric("dollarsign.circle", String(format: I18n.t("panel.total_cost"), String(format: "$%.2f", trend.totalCost)))
+                    metric("bolt.badge.clock", String(format: I18n.t("panel.cache_savings"), String(format: "$%.2f", cacheSavingsText(trend))))
                 }
-                .font(.caption2).foregroundColor(.secondary)
                 if trend.needsCompactionHint {
-                    Text(I18n.t("panel.compact_hint"))
+                    Label(I18n.t("panel.compact_hint"), systemImage: "exclamationmark.triangle.fill")
                         .font(.caption2).foregroundColor(.orange)
                 }
             }
-            .padding(8)
-            .background(.background.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+            .padding(10)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
         } else {
             ProgressView().controlSize(.small).padding(8)
         }
+    }
+
+    private func metric(_ icon: String, _ text: String) -> some View {
+        Label(text, systemImage: icon)
+            .font(.caption2).foregroundColor(.secondary)
+            .labelStyle(.titleAndIcon)
     }
 
     private func contextChart(_ trend: ContextTrend) -> some View {
