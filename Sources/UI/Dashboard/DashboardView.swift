@@ -1386,7 +1386,8 @@ struct DashboardView: View {
     /// Colored pill showing this period's spend change vs the previous period.
     private func deltaBadge(_ c: ToolConclusion) -> some View {
         let up = c.deltaPct >= 0
-        return Text("\(up ? "↑" : "↓")\(String(format: "%.0f", abs(c.deltaPct)))%")
+        let pct = String(format: "%.0f", abs(c.deltaPct))
+        return Text((up ? "↑" : "↓") + pct + "%")
             .font(.caption2).fontWeight(.medium).monospacedDigit()
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background((up ? Color.deepRed : Color.marsGreen).opacity(0.12), in: Capsule())

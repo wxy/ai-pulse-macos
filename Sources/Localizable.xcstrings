@@ -93,6 +93,71 @@
         }
       }
     },
+    "panel.header_cost" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d Repos · gesamt %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d repos · total %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d repos · total %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d dépôts · total %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d リポジトリ · 合計 %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장소 %d개 · 총 %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d repositórios · total %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个仓库 · 共 %@"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個倉庫 · 共 %@"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個倉庫 · 共 %@"
+          }
+        }
+      }
+    },
     "· %@" : {
       "localizations" : {
         "en" : {
@@ -118,26 +183,6 @@
     },
     "@%@" : {
 
-    },
-    "%@ · %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · %2$@"
-          }
-        }
-      }
-    },
-    "%@ · 共 %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · 共 %2$@"
-          }
-        }
-      }
     },
     "%@ ($%lld/mo)" : {
       "localizations" : {
@@ -182,16 +227,6 @@
         }
       },
       "shouldTranslate" : false
-    },
-    "%@%@%%" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@%2$@%%"
-          }
-        }
-      }
     },
     "%@$%@%@" : {
       "localizations" : {
@@ -3090,9 +3125,6 @@
         }
       }
     },
-    "cache" : {
-
-    },
     "card.cross_less" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3417,9 +3449,6 @@
           }
         }
       }
-    },
-    "context" : {
-
     },
     "Cost" : {
       "localizations" : {
@@ -18965,9 +18994,6 @@
         }
       }
     },
-    "turn" : {
-
-    },
     "Type" : {
       "localizations" : {
         "en" : {
@@ -19000,12 +19026,6 @@
         }
       },
       "shouldTranslate" : false
-    },
-    "window" : {
-
-    },
-    "zero" : {
-
     }
   },
   "version" : "1.0"

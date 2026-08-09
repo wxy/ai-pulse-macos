@@ -17,6 +17,14 @@ struct ToolDetailOverlayView: View {
     @State private var collapsedRepos: Set<String> = []
     @State private var hoveredSessionId: String? = nil
 
+    // Chart axis labels as runtime values so Xcode's string catalog does not
+    // auto-extract them as translatable keys.
+    private let turnLabel = "turn"
+    private let contextLabel = "context"
+    private let cacheLabel = "cache"
+    private let zeroLabel = "zero"
+    private let windowLabel = "window"
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -54,7 +62,7 @@ struct ToolDetailOverlayView: View {
                 .foregroundColor(.accentColor)
             VStack(alignment: .leading, spacing: 1) {
                 Text(toolDisplayName).font(.headline)
-                Text("\(String(format: I18n.t("panel.repos_count"), groups.count)) · 共 \(totalCostText)")
+                Text(String(format: I18n.t("panel.header_cost"), groups.count, totalCostText))
                     .font(.caption2).foregroundColor(.secondary)
             }
             Spacer()
@@ -236,38 +244,38 @@ struct ToolDetailOverlayView: View {
             ForEach(trend.turns) { t in
                 // Stacked areas: cache (bottom) + non-cached (top, prominent).
                 AreaMark(
-                    x: .value("turn", t.index),
-                    yStart: .value("zero", 0),
-                    yEnd: .value("cache", t.cacheTokens)
+                    x: .value(turnLabel, t.index),
+                    yStart: .value(zeroLabel, 0),
+                    yEnd: .value(cacheLabel, t.cacheTokens)
                 )
                     .foregroundStyle(Color.marsGreenLight.opacity(0.5))
                     .interpolationMethod(.linear)
                 AreaMark(
-                    x: .value("turn", t.index),
-                    yStart: .value("cache", t.cacheTokens),
-                    yEnd: .value("context", t.contextTokens)
+                    x: .value(turnLabel, t.index),
+                    yStart: .value(cacheLabel, t.cacheTokens),
+                    yEnd: .value(contextLabel, t.contextTokens)
                 )
                     .foregroundStyle(Color.deepRed.opacity(0.45))
                     .interpolationMethod(.linear)
-                LineMark(x: .value("turn", t.index), y: .value("context", t.contextTokens))
+                LineMark(x: .value(turnLabel, t.index), y: .value(contextLabel, t.contextTokens))
                     .foregroundStyle(Color.marsGreen)
                     .interpolationMethod(.catmullRom)
             }
             if let window = trend.windowTokens, window > 0 {
-                RuleMark(y: .value("window", window))
+                RuleMark(y: .value(windowLabel, window))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     .foregroundStyle(Color.secondary)
             }
             ForEach(Array(trend.compactionIndexes), id: \.self) { idx in
                 if let point = trend.turns.first(where: { $0.index == idx }) {
-                    PointMark(x: .value("turn", idx), y: .value("context", point.contextTokens))
+                    PointMark(x: .value(turnLabel, idx), y: .value(contextLabel, point.contextTokens))
                         .foregroundStyle(Color.deepRed)
                         .symbol(.cross)
                 }
             }
             ForEach(Array(trend.cacheMissIndexes), id: \.self) { idx in
                 if let point = trend.turns.first(where: { $0.index == idx }) {
-                    PointMark(x: .value("turn", idx), y: .value("context", point.contextTokens))
+                    PointMark(x: .value(turnLabel, idx), y: .value(contextLabel, point.contextTokens))
                         .foregroundStyle(Color.orange)
                 }
             }
