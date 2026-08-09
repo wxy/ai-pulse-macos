@@ -104,7 +104,7 @@ struct ToolDetailOverlayView: View {
                         .font(.caption).fontWeight(.semibold)
                         .lineLimit(1)
                     Spacer()
-                    Text("\(String(format: I18n.t("panel.sessions_count"), group.sessions.count)) · \(String(format: "$%.2f", group.totalCost))")
+                    Text(String(format: I18n.t("panel.group_header"), group.sessions.count, String(format: "$%.2f", group.totalCost)))
                         .font(.caption2).foregroundColor(.secondary)
                         .monospacedDigit()
                 }
