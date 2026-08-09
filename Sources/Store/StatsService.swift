@@ -537,111 +537,6 @@ enum StatsService {
         }
     }
 
-    // MARK: - Claude Code detail
-
-    struct ClaudeCodeStats {
-        var sessionCount: Int = 0
-        var avgCostPerSession: Double = 0
-        var topSessionId: String = ""
-        var topSessionRepo: String = ""
-        var topSessionCost: Double = 0
-        var modelBreakdown: [ModelDetail] = []
-
-        struct ModelDetail {
-            var model: String = ""
-            var cost: Double = 0
-            var pct: Double = 0
-            var cacheRate: Double = 0
-            var cacheSavings: Double = 0
-        }
-    }
-
-    static func claudeCodeStats(sinceMs: Int64) async -> ClaudeCodeStats {
-        let todayMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-        var stats = ClaudeCodeStats()
-
-        do {
-            // Session count + avg cost
-            let sessionRows = try await AppDatabase.shared.read { db -> [Row] in
-                try Row.fetchAll(db, sql: """
-                    SELECT COUNT(DISTINCT session_id) AS cnt,
-                           COALESCE(SUM(cost_usd), 0) AS total
-                    FROM usage_event
-                    WHERE source = 'claude-code' AND (model IS NULL OR model != '<synthetic>') AND ts >= ? AND ts < ?
-                    """, arguments: [sinceMs, todayMs + 86_400_000])
-            }
-            if let row = sessionRows.first {
-                let cnt: Int = row["cnt"] ?? 0
-                let total: Double = row["total"] ?? 0
-                stats.sessionCount = cnt
-                stats.avgCostPerSession = cnt > 0 ? total / Double(cnt) : 0
-            }
-            guard stats.sessionCount > 0 else { return stats }
-
-            // Most expensive session
-            let topRows = try await AppDatabase.shared.read { db -> [Row] in
-                try Row.fetchAll(db, sql: """
-                    SELECT session_id, COALESCE(repo_path, '') AS repo,
-                           COALESCE(SUM(cost_usd), 0) AS cost
-                    FROM usage_event
-                    WHERE source = 'claude-code' AND session_id IS NOT NULL
-                      AND ts >= ? AND ts < ?
-                    GROUP BY session_id ORDER BY cost DESC LIMIT 1
-                    """, arguments: [sinceMs, todayMs + 86_400_000])
-            }
-            if let tr = topRows.first {
-                let sid: String = tr["session_id"] ?? ""
-                let repo: String = tr["repo"] ?? ""
-                let cost: Double = tr["cost"] ?? 0
-                stats.topSessionId = String(sid.prefix(8))
-                stats.topSessionRepo = URL(fileURLWithPath: repo).lastPathComponent
-                stats.topSessionCost = cost
-            }
-
-            // Per-model breakdown with cache stats
-            let modelRows = try await AppDatabase.shared.read { db -> [Row] in
-                try Row.fetchAll(db, sql: """
-                    SELECT COALESCE(model, 'unknown') AS m,
-                           COALESCE(SUM(cost_usd), 0) AS c,
-                           COALESCE(SUM(in_tokens), 0) AS ins,
-                           COALESCE(SUM(cache_tokens), 0) AS cache
-                    FROM usage_event
-                    WHERE source = 'claude-code' AND (model IS NULL OR model != '<synthetic>') AND ts >= ? AND ts < ?
-                    GROUP BY m ORDER BY c DESC
-                    """, arguments: [sinceMs, todayMs + 86_400_000])
-            }
-            let totalModelCost = modelRows.reduce(0.0) { $0 + (($1["c"] as? Double) ?? 0) }
-            let pricing = PricingManager.shared
-            stats.modelBreakdown = modelRows.compactMap { r in
-                let model: String = r["m"] ?? "unknown"
-                let cost: Double = r["c"] ?? 0
-                let ins: Int64 = r["ins"] ?? 0
-                let cache: Int64 = r["cache"] ?? 0
-                let pct = totalModelCost > 0 ? cost / totalModelCost : 0
-                let totalInput = Double(ins + cache)
-                let cacheRate = totalInput > 0 ? Double(cache) / totalInput : 0
-                let pricing2 = pricing.pricing(for: model)
-                let inPrice = pricing2?.inPricePerMtok ?? 3.0
-                let cachePrice = pricing2?.cachePricePerMtok ?? 0.3
-                let savings = Double(cache) / 1_000_000 * (inPrice - cachePrice)
-                return ClaudeCodeStats.ModelDetail(
-                    model: modelDisplayName(model), cost: cost, pct: pct,
-                    cacheRate: cacheRate, cacheSavings: savings
-                )
-            }
-        } catch {
-            Logger.error("StatsService.claudeCodeStats: query failed — \(error)")
-        }
-        return stats
-    }
-
-    private static func modelDisplayName(_ model: String) -> String {
-        if model.contains("opus") { return "Opus" }
-        if model.contains("sonnet") { return "Sonnet" }
-        if model.contains("haiku") { return "Haiku" }
-        return model
-    }
-
     // MARK: - Daily code changes
 
     /// Daily added/deleted lines (separate, not net) for the code-change chart.
@@ -816,5 +711,164 @@ enum StatsService {
         snap.payloadVersion = CKSchema.payloadVersion
         snap.writerAppVersion = CKSchema.writerAppVersion
         return snap
+    }
+
+    // MARK: - Tool detail (conclusion card + session explorer)
+
+    /// Period summary for one tool's dashboard conclusion card.
+    static func toolConclusion(source: String, sinceMs: Int64) async -> ToolConclusion {
+        let cal = Calendar.current
+        let todayMs = Int64(cal.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+        let toMs = todayMs + 86_400_000
+        let rangeLen = toMs - sinceMs
+        let prevSince = sinceMs - rangeLen
+
+        let spend = await sourceSpend(source: source, sinceMs: sinceMs, toMs: toMs)
+        let previous = await sourceSpend(source: source, sinceMs: prevSince, toMs: sinceMs)
+        let rows = await sessionRows(source: source, sinceMs: sinceMs)
+        let changes = await attributedChanges(source: source, sinceMs: sinceMs, toMs: toMs)
+
+        let daysElapsed = max(1, Int((todayMs - sinceMs) / 86_400_000) + 1)
+        let daysInMonth = cal.range(of: .day, in: .month, for: Date())?.count ?? 30
+        let totalLines = changes.added + changes.deleted
+        let cpl = totalLines > 0 ? spend / Double(totalLines) * 1000 : 0
+        let count = rows.count
+        let otherSource = source == "codex" ? "claude-code" : "codex"
+        let otherRows = await sessionRows(source: otherSource, sinceMs: sinceMs)
+        let thisAvg = count > 0 ? spend / Double(count) : 0
+        let otherAvg = otherRows.count > 0
+            ? (await sourceSpend(source: otherSource, sinceMs: sinceMs, toMs: toMs)) / Double(otherRows.count)
+            : 0
+
+        return ToolConclusion(
+            spend: spend,
+            previousSpend: previous,
+            deltaPct: SessionStats.deltaPct(current: spend, previous: previous),
+            projectedMonth: SessionStats.projectMonth(
+                spendSoFar: spend, daysElapsed: daysElapsed, daysInMonth: daysInMonth),
+            sessionCount: count,
+            commitCount: changes.commits,
+            addedLines: changes.added,
+            deletedLines: changes.deleted,
+            avgCostPerSession: thisAvg,
+            cpl: cpl,
+            crossToolDeltaPct: otherAvg > 0 ? SessionStats.deltaPct(current: thisAvg, previous: otherAvg) : nil)
+    }
+
+    /// Sessions that had interactions in `[sinceMs, today+1d)`, newest-cost ordered.
+    static func sessionRows(source: String, sinceMs: Int64) async -> [SessionRow] {
+        let toMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000) + 86_400_000
+        do {
+            return try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: """
+                    SELECT u.session_id AS sid,
+                           MIN(u.ts) AS first_ts,
+                           MAX(u.ts) AS last_ts,
+                           (SELECT in_tokens FROM usage_event u3
+                            WHERE u3.source = u.source AND u3.session_id = u.session_id
+                            ORDER BY u3.ts DESC LIMIT 1) AS last_input,
+                           COALESCE(SUM(u.cost_usd), 0) AS cost,
+                           COALESCE((SELECT repo_path FROM usage_event u2
+                                     WHERE u2.source = u.source AND u2.session_id = u.session_id
+                                     ORDER BY u2.ts LIMIT 1), '') AS repo,
+                           s.title AS title,
+                           s.window_tokens AS window
+                    FROM usage_event u
+                    LEFT JOIN session_info s ON s.source = u.source AND s.session_id = u.session_id
+                    WHERE u.source = ? AND u.ts >= ? AND u.ts < ? AND u.session_id IS NOT NULL
+                    GROUP BY u.session_id
+                    ORDER BY cost DESC
+                    """, arguments: [source, sinceMs, toMs]).map { row in
+                    let repo: String? = row["repo"]
+                    let title: String? = row["title"]
+                    let window: Int? = row["window"]
+                    let firstTs: Int? = row["first_ts"]
+                    let lastTs: Int? = row["last_ts"]
+                    let lastInput: Int? = row["last_input"]
+                    let cost: Double = row["cost"] ?? 0
+                    let sid: String? = row["sid"]
+                    return SessionRow(
+                        source: source,
+                        sessionId: sid,
+                        title: title,
+                        repo: repo?.isEmpty == true ? nil : repo,
+                        firstTs: firstTs ?? 0,
+                        lastTs: lastTs ?? 0,
+                        lastInput: lastInput ?? 0,
+                        cost: cost,
+                        windowTokens: window)
+                }
+            }
+        } catch {
+            Logger.error("StatsService.sessionRows failed: \(error)")
+            return []
+        }
+    }
+
+    /// Full per-turn trajectory of one session (context trend chart data).
+    static func turnSeries(source: String, sessionId: String) async -> ContextTrend {
+        do {
+            return try await AppDatabase.shared.read { db -> ContextTrend in
+                let turns = try TurnPoint.fetchAll(db, sql: """
+                    SELECT (ROW_NUMBER() OVER (ORDER BY ts)) AS turn_index,
+                           ts, in_tokens AS inputTokens, cache_tokens AS cacheTokens,
+                           out_tokens AS outTokens, COALESCE(cost_usd, 0) AS cost,
+                           (in_tokens + CASE WHEN ? = 'claude-code' THEN cache_tokens ELSE 0 END) AS contextTokens
+                    FROM usage_event
+                    WHERE source = ? AND session_id = ? AND (in_tokens + cache_tokens) > 0
+                    ORDER BY ts
+                    """, arguments: [source, source, sessionId])
+                let window: Int? = try Int.fetchOne(db, sql: """
+                    SELECT window_tokens FROM session_info WHERE source = ? AND session_id = ?
+                    """, arguments: [source, sessionId])
+                let model: String? = try String.fetchOne(db, sql: """
+                    SELECT MAX(model) FROM usage_event WHERE source = ? AND session_id = ? AND model IS NOT NULL
+                    """, arguments: [source, sessionId])
+                return ContextTrend(turns: turns, windowTokens: window, model: model)
+            }
+        } catch {
+            Logger.error("StatsService.turnSeries failed: \(error)")
+            return ContextTrend(turns: [], windowTokens: nil, model: nil)
+        }
+    }
+
+    private static func sourceSpend(source: String, sinceMs: Int64, toMs: Int64) async -> Double {
+        do {
+            return try await AppDatabase.shared.read { db in
+                try Double.fetchOne(db, sql: """
+                    SELECT COALESCE(SUM(cost_usd), 0) FROM usage_event
+                    WHERE source = ? AND ts >= ? AND ts < ?
+                    """, arguments: [source, sinceMs, toMs]) ?? 0
+            }
+        } catch {
+            Logger.error("StatsService.sourceSpend failed: \(error)")
+            return 0
+        }
+    }
+
+    /// Commits / lines in repos the tool touched during the range (approximate
+    /// attribution, same repo-level model as the dashboard CPL).
+    private static func attributedChanges(source: String, sinceMs: Int64, toMs: Int64) async -> (commits: Int, added: Int, deleted: Int) {
+        do {
+            return try await AppDatabase.shared.read { db in
+                let row = try Row.fetchOne(db, sql: """
+                    SELECT COUNT(DISTINCT c.commit_hash) AS commits,
+                           COALESCE(SUM(c.added), 0) AS added,
+                           COALESCE(SUM(c.deleted), 0) AS deleted
+                    FROM code_change c
+                    WHERE c.repo_path IN (
+                        SELECT DISTINCT u.repo_path FROM usage_event u
+                        WHERE u.source = ? AND u.ts >= ? AND u.ts < ? AND u.repo_path IS NOT NULL
+                    ) AND c.ts >= ? AND c.ts < ?
+                    """, arguments: [source, sinceMs, toMs, sinceMs, toMs])
+                let commits: Int = row?["commits"] ?? 0
+                let added: Int = row?["added"] ?? 0
+                let deleted: Int = row?["deleted"] ?? 0
+                return (commits: commits, added: added, deleted: deleted)
+            }
+        } catch {
+            Logger.error("StatsService.attributedChanges failed: \(error)")
+            return (0, 0, 0)
+        }
     }
 }

@@ -15,7 +15,23 @@ final class AppDatabase: @unchecked Sendable {
         dbQueue = try DatabaseQueue(path: dbPath)
         Logger.info("DB opened at \(dbPath)")
 
-        let tables: [(String, (Database) throws -> Void)] = [
+        try dbQueue?.write { try AppDatabase.createAllTables($0) }
+
+        // Additive column migrations for existing installs
+        // (create-ifNotExists won't add columns to tables that already exist).
+        addColumnIfMissing("quota_status", "window_seconds", "REAL")
+        Logger.info("DB migration complete")
+    }
+
+    /// All table migrations, in dependency order. Exposed as a static so
+    /// tests can run the same schema against an in-memory database.
+    static func createAllTables(_ db: Database) throws {
+        for (_, migration) in tables {
+            try migration(db)
+        }
+    }
+
+    private static nonisolated(unsafe) let tables: [(String, (Database) throws -> Void)] = [
             ("usage_event", { db in
                 try db.create(table: "usage_event", ifNotExists: true) { t in
                     t.autoIncrementedPrimaryKey("id")
@@ -112,23 +128,22 @@ final class AppDatabase: @unchecked Sendable {
                     t.column("updated_at", .datetime).notNull()
                     t.primaryKey(["time_range"])
                 }
+            }),
+            ("session_info", { db in
+                try db.create(table: "session_info", ifNotExists: true) { t in
+                    t.column("source", .text).notNull()
+                    t.column("session_id", .text).notNull()
+                    t.column("title", .text)
+                    t.column("repo", .text)
+                    t.column("first_ts", .integer)
+                    t.column("last_ts", .integer)
+                    t.column("completed", .boolean)
+                    t.column("window_tokens", .integer)
+                    t.primaryKey(["source", "session_id"])
+                }
+                try? db.create(indexOn: "session_info", columns: ["source", "session_id"])
             })
         ]
-
-        for (name, migration) in tables {
-            do {
-                try dbQueue?.write { try migration($0) }
-                Logger.debug("  ✓ \(name)")
-            } catch {
-                Logger.error("  ✗ \(name): \(error)")
-            }
-        }
-
-        // Additive column migrations for existing installs
-        // (create-ifNotExists won't add columns to tables that already exist).
-        addColumnIfMissing("quota_status", "window_seconds", "REAL")
-        Logger.info("DB migration complete")
-    }
 
     /// Add a column to an existing table if it doesn't already have it.
     private func addColumnIfMissing(_ table: String, _ column: String, _ type: String) {

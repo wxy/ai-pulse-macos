@@ -52,4 +52,11 @@ final class ClaudeCodeParserTests: XCTestCase {
         """)
         XCTAssertEqual(result?.repoPath, "/Users/xingyuwang/develop/ai-pulse")
     }
+
+    func testFirstUserMessageFromUserLine() {
+        let line = """
+        {"type":"user","message":{"role":"user","content":[{"type":"text","text":"请分析这个项目"}]}}
+        """
+        XCTAssertEqual(ClaudeCodeParser.firstUserMessage(fromLine: line), "请分析这个项目")
+    }
 }

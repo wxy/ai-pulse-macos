@@ -9,6 +9,7 @@ import GRDB
 nonisolated final class LogWatcher: @unchecked Sendable {
     static let shared = LogWatcher()
     private var claudeSource: DispatchSourceFileSystemObject?
+    private var codexSource: DispatchSourceFileSystemObject?
 
     /// Serial queue for ALL scanning/parsing. Serializing prevents data races on
     /// the mutable state below (filePositions/partialLines) and on GitMonitor's
@@ -68,8 +69,8 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                         Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
                     }
                     self.watchClaudeCode()
+                    self.watchCodex()
                     self.discoverAndWatchRepos()
-                    self.scanCodexSessions()
                     self.scanQwenSessions()
                     self.scanOpenCodeSessions()
                 }
@@ -101,6 +102,8 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     func stop() {
         claudeSource?.cancel()
         claudeSource = nil
+        codexSource?.cancel()
+        codexSource = nil
         persistPositions()
         // Deliberately NO blocking wait for the persist group: at quit the main
         // thread must stay on the run loop so queued @MainActor work (the FSEvent
@@ -170,8 +173,21 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             // Register the repo even for files with no new content — ensures
             // repos from past sessions are re-watched after an app restart.
             discoverAndWatchRepo(from: file)
+            let prefixMeta = SessionInfoBackfill.claudePrefixMetadata(from: file)
+            var sessionId: String? = prefixMeta?.sessionId
+            var title: String? = prefixMeta?.title
+            var repo: String? = prefixMeta?.repo
+            var minTs = Int.max
+            var maxTs = 0
             parseLinesIncremental(from: file) { line in
+                if sessionId == nil { sessionId = line.jsonStringField("sessionId") }
+                if repo == nil { repo = line.jsonStringField("cwd") }
+                if title == nil, let msg = ClaudeCodeParser.firstUserMessage(fromLine: line) {
+                    title = SessionInfoRecord.makeTitle(msg)
+                }
                 guard let event = ClaudeCodeParser.parse(line: line) else { return nil }
+                minTs = min(minTs, event.ts)
+                maxTs = max(maxTs, event.ts)
                 // Resolve cwd to git repo root for consistent repo_path
                 var repoPath = event.repoPath
                 if let repoUrl = findGitRepo(containing: repoPath) {
@@ -182,10 +198,14 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                     inTokens: event.inTokens, outTokens: event.outTokens, cacheTokens: event.cacheTokens,
                     repoPath: repoPath, sessionId: event.sessionId, dedupeKey: event.dedupeKey)
             }
+            guard let sid = sessionId, maxTs > 0 else { continue }
+            upsertSessionInfo(SessionInfoRecord(
+                source: "claude-code", sessionId: sid, title: title, repo: repo,
+                firstTs: minTs, lastTs: maxTs, completed: nil, windowTokens: nil))
         }
     }
 
-    // MARK: - Codex CLI
+    // MARK: - Codex CLI / ChatGPT desktop
 
     /// Scan `~/.codex/sessions/**/rollout-*.jsonl` incrementally.
     /// Idempotent — `parseLinesIncremental` resumes from the persisted byte
@@ -206,21 +226,83 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
+    /// Watch `~/.codex/sessions` with FSEvents so ChatGPT desktop / Codex CLI
+    /// sessions are ingested in real time, mirroring the Claude Code watcher.
+    private func watchCodex() {
+        let home = FileManager.default.realHomeDirectory
+        let sessionsDir = home.appendingPathComponent(".codex/sessions")
+        guard FileManager.default.fileExists(atPath: sessionsDir.path) else {
+            Logger.warning("Codex sessions dir not found")
+            return
+        }
+        scanCodexSessions()
+
+        guard codexSource == nil else { return }
+
+        let fd = open(sessionsDir.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        codexSource = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .extend, .rename],
+            queue: DispatchQueue.global(qos: .utility)
+        )
+        codexSource?.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.scanQueue.async { [weak self] in
+                guard let self else { return }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    MainActor.assumeIsolated {
+                        self.scanCodexSessions()
+                    }
+                }
+            }
+        }
+        codexSource?.setCancelHandler { close(fd) }
+        codexSource?.resume()
+    }
+
     private func parseCodexFile(_ file: URL) {
         var currentCwd: String? = nil
         var currentModel: String? = nil
+        var currentSessionId: String? = nil
+        var currentTitle: String? = nil
+        var currentWindow: Int? = nil
+        var currentCompleted = false
+        var minTs = Int.max
+        var maxTs = 0
         var parsedCount = 0
         let filePath = file.path
         parseLinesIncremental(from: file) { line in
-            // Track cwd (session_meta) and model (turn_context) across lines.
+            // Track cwd / session_id (session_meta) and model (turn_context) across lines.
             if let cwd = CodexParser.cwd(fromLine: line) { currentCwd = cwd }
+            if let sid = CodexParser.sessionId(fromLine: line) { currentSessionId = sid }
             if let m = CodexParser.model(fromLine: line) { currentModel = m }
-            if let event = CodexParser.parse(line: line, cwd: currentCwd, model: currentModel) {
+            if currentTitle == nil, let msg = CodexParser.firstUserMessage(fromLine: line) {
+                currentTitle = SessionInfoRecord.makeTitle(msg)
+            }
+            if currentWindow == nil, let w = CodexParser.windowTokens(fromLine: line) { currentWindow = w }
+            if CodexParser.isSessionComplete(fromLine: line) { currentCompleted = true }
+            if let event = CodexParser.parse(
+                line: line,
+                cwd: currentCwd,
+                model: currentModel,
+                sessionId: currentSessionId
+            ) {
+                minTs = min(minTs, event.ts)
+                maxTs = max(maxTs, event.ts)
                 parsedCount += 1
                 return event
             }
             return nil
         }
+        guard let sid = currentSessionId, maxTs > 0 else { return }
+        // Prefer the ChatGPT app's own thread title over the first log message.
+        let resolvedTitle = CodexThreadTitles.title(for: sid) ?? currentTitle
+        upsertSessionInfo(SessionInfoRecord(
+            source: "codex", sessionId: sid, title: resolvedTitle, repo: currentCwd,
+            firstTs: minTs, lastTs: maxTs, completed: currentCompleted ? true : nil,
+            windowTokens: currentWindow))
         if parsedCount > 0 {
             Logger.info("LogWatcher: parsed \(parsedCount) codex events from \(filePath)")
         }
@@ -491,4 +573,45 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         GitMonitor.shared.watch(repoPath: repoUrl.path)
     }
 
+    /// Upsert one session's metadata into `session_info`. Runs async like the
+    /// other DB writes in this file; failures are logged, never fatal.
+    private func upsertSessionInfo(_ record: SessionInfoRecord) {
+        guard let sid = record.sessionId else { return }
+        Task {
+            do {
+                try await AppDatabase.shared.write { db in
+                    try db.execute(sql: """
+                        INSERT INTO session_info (source, session_id, title, repo, first_ts, last_ts, completed, window_tokens)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(source, session_id) DO UPDATE SET
+                            title = COALESCE(excluded.title, session_info.title),
+                            repo = COALESCE(excluded.repo, session_info.repo),
+                            first_ts = MIN(session_info.first_ts, excluded.first_ts),
+                            last_ts = MAX(session_info.last_ts, excluded.last_ts),
+                            completed = COALESCE(excluded.completed, session_info.completed),
+                            window_tokens = COALESCE(excluded.window_tokens, session_info.window_tokens)
+                        """, arguments: [record.source, sid, record.title, record.repo,
+                                         record.firstTs, record.lastTs, record.completed, record.windowTokens])
+                }
+            } catch {
+                Logger.error("LogWatcher: session_info upsert failed: \(error)")
+            }
+        }
+    }
+
+    /// Entry point for the one-time backfill (SessionInfoBackfill) to reuse
+    /// the same upsert path without exposing it.
+    static func upsertForBackfill(_ record: SessionInfoRecord) {
+        LogWatcher.shared.upsertSessionInfo(record)
+    }
+}
+
+private extension String {
+    /// Read a top-level string field from a JSON line.
+    func jsonStringField(_ key: String) -> String? {
+        guard let data = data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return json[key] as? String
+    }
 }

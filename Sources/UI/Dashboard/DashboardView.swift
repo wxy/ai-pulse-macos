@@ -96,9 +96,10 @@ struct DashboardView: View {
     @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
     @State private var toolsExpanded = false
     @State private var claudeDetailExpanded = false
-    @State private var claudeStats: StatsService.ClaudeCodeStats?
-    @State private var claudeStatsTS: Int64 = 0
-    @State private var claudeHoverModel: String? = nil  // model whose cache/non-cache cost tooltip is showing
+    @State private var codexDetailExpanded = false
+    @State private var selectedToolForOverlay: String? = nil
+    @State private var claudeConclusion: ToolConclusion?
+    @State private var codexConclusion: ToolConclusion?
     @State private var reposExpanded = false
 
     var hasActiveCostSources: Bool {
@@ -191,7 +192,7 @@ struct DashboardView: View {
                     Text(I18n.t("dashboard.today")).tag(TimeRange.today)
                     Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
                     Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
-                }.pickerStyle(.segmented).frame(width: 240)
+                }.pickerStyle(.segmented).frame(width: 240).pointingHandCursor()
             }
             .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
 
@@ -288,6 +289,7 @@ struct DashboardView: View {
             barProgress = 0
             Task { await load() }
             if claudeDetailExpanded { Task { await loadClaudeStats() } }
+            if codexDetailExpanded { Task { await loadCodexStats() } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             // Manual refresh / forceRefresh — immediate, no throttle
@@ -314,6 +316,15 @@ struct DashboardView: View {
             i18nToken += 1
         }
         .id(i18nToken)
+        .overlay {
+            if let toolId = selectedToolForOverlay {
+                ToolDetailOverlayView(
+                    toolId: toolId,
+                    sinceMs: rangeSinceMs(),
+                    onClose: { selectedToolForOverlay = nil })
+                    .transition(.opacity)
+            }
+        }
     }
 
     // MARK: - Health banner helpers
@@ -831,23 +842,37 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
                     ForEach(Array(shown.enumerated()), id: \.element.name) { idx, tc in
-                        let displayName = tc.name == "Claude Code"
+                        let isClaude = tc.name == "Claude Code"
+                        let isCodex = tc.name == "ChatGPT"
+                        let displayName = isClaude
                             ? (claudeDetailExpanded ? "⌄ Claude Code" : "› Claude Code")
-                            : tc.name
+                            : (isCodex
+                                ? (codexDetailExpanded ? "⌄ ChatGPT" : "› ChatGPT")
+                                : tc.name)
                         toolBarRow(name: displayName, cost: tc.cost, total: totalCost, index: idx)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                if tc.name == "Claude Code" {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    if isClaude {
                                         claudeDetailExpanded.toggle()
                                     }
-                                    if claudeDetailExpanded {
-                                        Task { await loadClaudeStats() }
+                                    if isCodex {
+                                        codexDetailExpanded.toggle()
                                     }
                                 }
+                                if isClaude && claudeDetailExpanded {
+                                    Task { await loadClaudeStats() }
+                                } else if isCodex && codexDetailExpanded {
+                                    Task { await loadCodexStats() }
+                                }
                             }
-                        if tc.name == "Claude Code" && claudeDetailExpanded {
+                            .pointingHandCursor(isClaude || isCodex)
+                        if isClaude && claudeDetailExpanded {
                             claudeDetailCard
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                        if isCodex && codexDetailExpanded {
+                            codexDetailCard
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }
@@ -1278,97 +1303,105 @@ struct DashboardView: View {
     }
 
     func loadClaudeStats() async {
+        let sinceMs = rangeSinceMs()
+        let conclusion = await StatsService.toolConclusion(source: "claude-code", sinceMs: sinceMs)
+        await MainActor.run { claudeConclusion = conclusion }
+    }
+
+    func loadCodexStats() async {
+        let sinceMs = rangeSinceMs()
+        let conclusion = await StatsService.toolConclusion(source: "codex", sinceMs: sinceMs)
+        await MainActor.run { codexConclusion = conclusion }
+    }
+
+    private func rangeSinceMs() -> Int64 {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
-        let since: Date
         switch timeRange {
-        case .today:   since = todayStart
+        case .today:
+            return Int64(todayStart.timeIntervalSince1970 * 1000)
         case .thisWeek:
-            since = Calendar.mondayOfWeek()
-        case .days30:  since = cal.date(byAdding: .day, value: -29, to: todayStart)!
-        }
-        let sinceMs = Int64(since.timeIntervalSince1970 * 1000)
-        let stats = await StatsService.claudeCodeStats(sinceMs: sinceMs)
-        await MainActor.run {
-            claudeStats = stats
-            claudeStatsTS = sinceMs
+            return Int64(Calendar.mondayOfWeek().timeIntervalSince1970 * 1000)
+        case .days30:
+            return Int64(cal.date(byAdding: .day, value: -29, to: todayStart)!.timeIntervalSince1970 * 1000)
         }
     }
 
     @ViewBuilder
     var claudeDetailCard: some View {
-        if let stats = claudeStats, stats.sessionCount > 0 {
-            // Scale raw token-pricing costs to match dashboard tool bar total
-            let rawTotal = stats.modelBreakdown.reduce(0.0) { $0 + $1.cost }
-            let toolBarCost = computeToolCosts().first(where: { $0.name == "Claude Code" })?.cost ?? rawTotal
-            let scale = rawTotal > 0 ? toolBarCost / rawTotal : 1.0
-            VStack(alignment: .leading, spacing: 6) {
-                Text("\(stats.sessionCount) sessions · avg \(String(format: "$%.2f", stats.avgCostPerSession * scale)) · top \(String(format: "$%.2f", stats.topSessionCost * scale))")
-                    .font(.caption).foregroundColor(.secondary)
+        conclusionCard(
+            conclusion: claudeConclusion,
+            onOpen: { selectedToolForOverlay = "claude-code" })
+    }
 
-                if !stats.modelBreakdown.isEmpty {
-                    let maxPct = stats.modelBreakdown.map(\.pct).max() ?? 1
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(stats.modelBreakdown, id: \.model) { mb in
-                            let scaledCost = mb.cost * scale
-                            let cacheCost = scaledCost * mb.cacheRate
-                            let nonCacheCost = scaledCost - cacheCost
-                            HStack(spacing: 6) {
-                                Text(mb.model)
-                                    .font(.caption2).frame(width: 144, alignment: .leading)
-                                GeometryReader { geo in
-                                    let fullW = max(geo.size.width * CGFloat(mb.pct / maxPct), 4)
-                                    let rawCacheW = fullW * CGFloat(mb.cacheRate)
-                                    let minW: CGFloat = 3
-                                    let cacheW = rawCacheW < minW ? 0
-                                        : (rawCacheW > fullW - minW ? fullW - minW : rawCacheW)
-                                    ZStack(alignment: .leading) {
-                                        // Non-cache segment = deep green; cache segment overlaid in light green.
-                                        RoundedRectangle(cornerRadius: 2)
-                                            .fill(Color.marsGreen)
-                                            .frame(width: fullW, height: 8)
-                                        if cacheW > 0 {
-                                            RoundedRectangle(cornerRadius: 2)
-                                                .fill(Color.marsGreenLight)
-                                                .frame(width: cacheW, height: 8)
-                                        }
-                                    }
-                                    .frame(width: geo.size.width, height: 8, alignment: .leading)
-                                    .overlay(alignment: .topLeading) {
-                                        if claudeHoverModel == mb.model {
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                HStack(spacing: 4) {
-                                                    RoundedRectangle(cornerRadius: 1.5).fill(Color.marsGreenLight).frame(width: 8, height: 8)
-                                                    Text("\(I18n.t("dashboard.cache_cost")) \(String(format: "$%.2f", cacheCost))")
-                                                }
-                                                HStack(spacing: 4) {
-                                                    RoundedRectangle(cornerRadius: 1.5).fill(Color.marsGreen).frame(width: 8, height: 8)
-                                                    Text("\(I18n.t("dashboard.non_cache_cost")) \(String(format: "$%.2f", nonCacheCost))")
-                                                }
-                                            }
-                                            .font(.caption2).monospacedDigit()
-                                            .padding(6)
-                                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-                                            .offset(y: -24)
-                                        }
-                                    }
-                                }
-                                .frame(height: 8)
-                                .onHover { inside in
-                                    claudeHoverModel = inside ? mb.model : nil
-                                }
-                                Text(String(format: "$%.2f", scaledCost))
-                                    .font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                                    .frame(width: 50, alignment: .trailing)
-                            }
-                        }
+    @ViewBuilder
+    var codexDetailCard: some View {
+        conclusionCard(
+            conclusion: codexConclusion,
+            onOpen: { selectedToolForOverlay = "codex" })
+    }
+
+    /// Three-line conclusion card: spend, output, worth. Tapping it opens the
+    /// full-window session explorer overlay.
+    @ViewBuilder
+    private func conclusionCard(
+        conclusion: ToolConclusion?,
+        onOpen: @escaping () -> Void
+    ) -> some View {
+        if let c = conclusion, c.sessionCount > 0 {
+            let money = String(format: "$%.2f", c.spend)
+            let projected = String(format: "$%.2f", c.projectedMonth)
+            let progress = c.projectedMonth > 0 ? min(max(c.spend / c.projectedMonth, 0), 1) : 0
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(money).font(.caption).fontWeight(.semibold).monospacedDigit()
+                    deltaBadge(c)
+                    Spacer()
+                    Text(String(format: I18n.t("card.spend"), projected))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.secondary.opacity(0.15))
+                        Capsule().fill(Color.marsGreen)
+                            .frame(width: max(geo.size.width * CGFloat(progress), 2))
                     }
                 }
+                .frame(height: 4)
+                Text(String(format: I18n.t("card.output"),
+                            c.sessionCount, c.commitCount, c.addedLines, c.deletedLines))
+                Text(String(format: I18n.t("card.worth"),
+                            String(format: "$%.2f", c.avgCostPerSession),
+                            String(format: "$%.2f", c.cpl),
+                            crossText(c)))
             }
+            .font(.caption2).foregroundColor(.secondary)
             .padding(10)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
             .padding(.leading, 28)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
+            .pointingHandCursor()
         }
+    }
+
+    /// Colored pill showing this period's spend change vs the previous period.
+    private func deltaBadge(_ c: ToolConclusion) -> some View {
+        let up = c.deltaPct >= 0
+        let pct = String(format: "%.0f", abs(c.deltaPct))
+        return Text((up ? "↑" : "↓") + pct + "%")
+            .font(.caption2).fontWeight(.medium).monospacedDigit()
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background((up ? Color.deepRed : Color.marsGreen).opacity(0.12), in: Capsule())
+            .foregroundColor(up ? .deepRed : .marsGreen)
+    }
+
+    private func crossText(_ c: ToolConclusion) -> String {
+        guard let d = c.crossToolDeltaPct else { return "—" }
+        let pct = String(format: "%.0f", abs(d))
+        return d >= 0
+            ? String(format: I18n.t("card.cross_more"), pct)
+            : String(format: I18n.t("card.cross_less"), pct)
     }
 
     func balanceString(_ v: Double, currency: String) -> String {
@@ -1542,10 +1575,7 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16).padding(.horizontal, 20)
             .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.pointingHand.push() }
-                else { NSCursor.pop() }
-            }
+            .pointingHandCursor()
             .onTapGesture {
                 guard !isRefreshing else { return }
                 isRefreshing = true

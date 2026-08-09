@@ -178,7 +178,7 @@ enum IntegrationRegistry {
         switch integrationId {
         case "claude-code": return "Claude Code"
         case "aider":       return "aider"
-        case "codex":       return "Codex CLI"
+        case "codex":       return "ChatGPT"
         case "qwen-code":   return "Qwen Code"
         case "opencode":    return "OpenCode"
         case "cursor":      return "Cursor"
