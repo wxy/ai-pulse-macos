@@ -30,7 +30,7 @@ let package = Package(
         ),
         .testTarget(
             name: "AIPulseTests",
-            dependencies: ["AIPulse"],
+            dependencies: ["AIPulse", .product(name: "GRDB", package: "GRDB.swift")],
             path: "Tests"
         ),
     ]
