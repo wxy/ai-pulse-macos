@@ -9,9 +9,11 @@ extension View {
             guard enabled else { return }
             switch phase {
             case .active:
-                NSCursor.pointingHand.push()
+                // set() is idempotent — .active fires on every mouse move and
+                // push() would leak the cursor stack.
+                NSCursor.pointingHand.set()
             case .ended:
-                NSCursor.pop()
+                NSCursor.arrow.set()
             }
         }
     }

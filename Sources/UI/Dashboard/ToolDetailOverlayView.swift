@@ -73,10 +73,12 @@ struct ToolDetailOverlayView: View {
                 Text(I18n.t("panel.most_expensive")).tag(true)
             }
             .pickerStyle(.segmented).frame(width: 170).labelsHidden()
+            .pointingHandCursor()
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
             }
             .buttonStyle(.plain).foregroundColor(.secondary)
+            .pointingHandCursor()
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
     }
