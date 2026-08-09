@@ -595,6 +595,12 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             }
         }
     }
+
+    /// Entry point for the one-time backfill (SessionInfoBackfill) to reuse
+    /// the same upsert path without exposing it.
+    static func upsertForBackfill(_ record: SessionInfoRecord) {
+        LogWatcher.shared.upsertSessionInfo(record)
+    }
 }
 
 private extension String {

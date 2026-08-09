@@ -40,6 +40,9 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     // MARK: - Public
 
     func start() {
+        // One-time session metadata backfill for logs that predate the
+        // session_info table (runs once, guarded internally).
+        SessionInfoBackfill.runIfNeeded()
         recreateTimers()
 
         Logger.info("DataRefreshCoordinator: started (P1=30s, P2=5min, P3=1h)")
