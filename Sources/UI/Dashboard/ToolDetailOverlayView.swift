@@ -288,7 +288,8 @@ struct ToolDetailOverlayView: View {
                             // Location.x is measured from the chart's left edge,
                             // including the y-axis labels. Subtract the plot
                             // area origin so the selection starts at the axis.
-                            let plotX = location.x - proxy.plotAreaFrame.minX
+                            let plotFrame = geo[proxy.plotAreaFrame]
+                            let plotX = location.x - plotFrame.minX
                             selectedTurnIndex = proxy.value(atX: plotX)
                         case .ended:
                             selectedTurnIndex = nil
