@@ -6,12 +6,32 @@ import AppKit
 /// (bundle id `com.openai.codex`) writes its sessions into the same
 /// `~/.codex/sessions/**/rollout-*.jsonl` directory as the CLI.
 /// Data source: `~/.codex/sessions/**/rollout-*.jsonl`
-/// Not a CostSource itself — log entries are attributed to the existing
-/// `openai` apiKey CostSource via the Arbitrator.
+/// Log entries are attributed to the `openai` apiKey CostSource via the
+/// Arbitrator, unless the user picks a ChatGPT subscription (Plus/Pro) — then
+/// that amortized plan becomes the fallback source for ChatGPT-family models.
 struct CodexIntegration: Detectable {
     let id = "codex"
     let displayName = "ChatGPT"
-    var costSources: [CostSource] { [] }
+
+    var costSources: [CostSource] {
+        var sources: [CostSource] = []
+        // ChatGPT subscription (if configured) — mirrors Claude Code.
+        let cfg = IntegrationRegistry.config(for: id)
+        if !cfg.subscriptionTier.isEmpty,
+           let tool = SubscriptionRegistry.tool(forName: "ChatGPT"),
+           let tier = tool.tiers.first(where: { $0.label == cfg.subscriptionTier }),
+           tier.fee > 0 {
+            sources.append(CostSource(
+                id: "sub:codex:\(tier.label.lowercased())",
+                label: "ChatGPT \(tier.label)",
+                kind: .subscription(toolId: "codex", tierLabel: tier.label, monthlyFee: tier.fee),
+                coveredModels: PricingManager.shared.modelsForTool("codex"),
+                confidence: .amortized,
+                limitations: []
+            ))
+        }
+        return sources
+    }
 
     func detect() -> DetectionResult {
         let home = FileManager.default.realHomeDirectory

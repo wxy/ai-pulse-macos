@@ -109,6 +109,8 @@ final class PricingManager: @unchecked Sendable {
         switch toolId {
         case "claude-code":
             return claudeModels()
+        case "codex":
+            return modelsForProvider("openai")
         case "cursor":
             return claudeModels().union(modelsForProvider("openai"))
         case "copilot":
