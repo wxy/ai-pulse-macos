@@ -186,7 +186,7 @@ struct ToolDetailOverlayView: View {
                 }
                 HStack(spacing: 12) {
                     legendSwatch(line: Color.marsGreen, I18n.t("panel.chart_context"))
-                    legendSwatch(area: Color.marsGreenLight, I18n.t("panel.chart_cache"))
+                    legendSwatch(line: Color.marsGreenLight, I18n.t("panel.chart_cache"))
                     legendSwatch(area: Color.deepRed, I18n.t("panel.chart_uncached"))
                     legendSwatch(cross: Color.deepRed, I18n.t("panel.chart_compaction"))
                     legendSwatch(dot: .orange, I18n.t("panel.chart_cache_miss"))
@@ -249,17 +249,20 @@ struct ToolDetailOverlayView: View {
                     yEnd: .value(cacheLabel, t.cacheTokens)
                 )
                     .foregroundStyle(Color.marsGreenLight.opacity(0.5))
-                    .interpolationMethod(.linear)
+                    .interpolationMethod(.monotone)
                 AreaMark(
                     x: .value(turnLabel, t.index),
                     yStart: .value(cacheLabel, t.cacheTokens),
                     yEnd: .value(contextLabel, t.contextTokens)
                 )
                     .foregroundStyle(Color.deepRed.opacity(0.45))
-                    .interpolationMethod(.linear)
+                    .interpolationMethod(.monotone)
+                LineMark(x: .value(turnLabel, t.index), y: .value(cacheLabel, t.cacheTokens))
+                    .foregroundStyle(Color.marsGreenLight)
+                    .interpolationMethod(.monotone)
                 LineMark(x: .value(turnLabel, t.index), y: .value(contextLabel, t.contextTokens))
                     .foregroundStyle(Color.marsGreen)
-                    .interpolationMethod(.catmullRom)
+                    .interpolationMethod(.monotone)
             }
             if let window = trend.windowTokens, window > 0 {
                 RuleMark(y: .value(windowLabel, window))
