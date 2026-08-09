@@ -157,14 +157,20 @@ struct ToolDetailOverlayView: View {
     private func trendCard(for row: SessionRow) -> some View {
         if let trend {
             VStack(alignment: .leading, spacing: 6) {
-                contextChart(trend)
+                if trend.isContextLike {
+                    contextChart(trend)
+                } else {
+                    Label(I18n.t("panel.context_unavailable"), systemImage: "exclamationmark.triangle")
+                        .font(.caption2).foregroundColor(.secondary)
+                        .padding(.vertical, 4)
+                }
                 HStack(spacing: 14) {
                     metric("arrow.turn.up.right", String(format: I18n.t("panel.turns"), trend.turns.count))
                     metric("cylinder.split.1x2", occupancyText(trend.finalOccupancy))
                     metric("dollarsign.circle", String(format: I18n.t("panel.total_cost"), String(format: "$%.2f", trend.totalCost)))
                     metric("bolt.badge.clock", String(format: I18n.t("panel.cache_savings"), String(format: "$%.2f", cacheSavingsText(trend))))
                 }
-                if trend.needsCompactionHint {
+                if trend.isContextLike && trend.needsCompactionHint {
                     Label(I18n.t("panel.compact_hint"), systemImage: "exclamationmark.triangle.fill")
                         .font(.caption2).foregroundColor(.orange)
                 }
@@ -189,8 +195,10 @@ struct ToolDetailOverlayView: View {
             ForEach(trend.turns) { t in
                 AreaMark(x: .value("turn", t.index), y: .value("input", t.inputTokens))
                     .foregroundStyle(Color.marsGreenLight.opacity(0.35))
+                    .interpolationMethod(.catmullRom)
                 LineMark(x: .value("turn", t.index), y: .value("input", t.inputTokens))
                     .foregroundStyle(Color.marsGreen)
+                    .interpolationMethod(.catmullRom)
             }
             if let window = trend.windowTokens, window > 0 {
                 RuleMark(y: .value("window", window))
@@ -205,6 +213,9 @@ struct ToolDetailOverlayView: View {
             }
         }
         .chartYScale(domain: 0...yMax)
+        .chartYAxis {
+            AxisMarks(position: .leading)
+        }
         .frame(height: 140)
     }
 

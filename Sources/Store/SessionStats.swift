@@ -76,6 +76,19 @@ struct ContextTrend {
         return occupancy > 0.8
     }
     var compactionIndexes: Set<Int> { SessionStats.compactionMarks(turns) }
+
+    /// True when the series looks like cumulative context growth (most turns
+    /// grow or hold steady). Some providers report per-request token counts
+    /// that oscillate wildly; for those the context-trend interpretation is
+    /// invalid and compaction marks would be noise.
+    var isContextLike: Bool {
+        guard turns.count >= 3 else { return false }
+        var growth = 0
+        for i in 1..<turns.count where turns[i].inputTokens >= turns[i - 1].inputTokens {
+            growth += 1
+        }
+        return Double(growth) / Double(turns.count - 1) >= 0.6
+    }
 }
 
 /// Pure, testable session statistics.

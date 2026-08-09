@@ -28,67 +28,67 @@
       },
       "shouldTranslate" : false
     },
-    "panel.empty_sessions" : {
+    "panel.context_unavailable" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Keine Sitzungen in diesem Zeitraum"
+            "value" : "Die Kontextdaten dieser Sitzung sind nicht kumulativ — Wachstumstrend nicht verfügbar"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No sessions in this period"
+            "value" : "This session's context data is not cumulative — growth trend unavailable"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sin sesiones en este período"
+            "value" : "Los datos de contexto de esta sesión no son acumulativos — tendencia no disponible"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aucune session sur cette période"
+            "value" : "Les données de contexte de cette session ne sont pas cumulatives — tendance indisponible"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "この期間にセッションはありません"
+            "value" : "このセッションのコンテキストデータは累積形式ではありません — 増加トレンドを表示できません"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 기간에 세션이 없습니다"
+            "value" : "이 세션의 컨텍스트 데이터가 누적 형식이 아닙니다 — 증가 추세를 표시할 수 없습니다"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sem sessões neste período"
+            "value" : "Os dados de contexto desta sessão não são cumulativos — tendência indisponível"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "该时间段内没有会话"
+            "value" : "该会话的上下文数据不是累计格式，无法显示增长趋势"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此時間範圍內沒有工作階段"
+            "value" : "此工作階段的上下文資料不是累計格式，無法顯示增長趨勢"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此時間範圍內沒有工作階段"
+            "value" : "此工作階段的上下文資料不是累計格式，無法顯示增長趨勢"
           }
         }
       }
@@ -118,6 +118,26 @@
     },
     "@%@" : {
 
+    },
+    "%@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ · 共 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · 共 %2$@"
+          }
+        }
+      }
     },
     "%@ ($%lld/mo)" : {
       "localizations" : {
@@ -162,6 +182,16 @@
         }
       },
       "shouldTranslate" : false
+    },
+    "%@%@%%" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$@%%"
+          }
+        }
+      }
     },
     "%@$%@%@" : {
       "localizations" : {
@@ -3255,7 +3285,6 @@
         }
       }
     },
-
     "card.spend" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3321,7 +3350,6 @@
         }
       }
     },
-
     "card.worth" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10766,6 +10794,9 @@
         }
       }
     },
+    "input" : {
+
+    },
     "integrations.desc" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -15069,6 +15100,71 @@
         }
       }
     },
+    "panel.empty_sessions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine Sitzungen in diesem Zeitraum"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No sessions in this period"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin sesiones en este período"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune session sur cette période"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この期間にセッションはありません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 기간에 세션이 없습니다"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sem sessões neste período"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该时间段内没有会话"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此時間範圍內沒有工作階段"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此時間範圍內沒有工作階段"
+          }
+        }
+      }
+    },
     "panel.most_expensive" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18541,6 +18637,9 @@
         }
       }
     },
+    "turn" : {
+
+    },
     "Type" : {
       "localizations" : {
         "en" : {
@@ -18573,6 +18672,9 @@
         }
       },
       "shouldTranslate" : false
+    },
+    "window" : {
+
     }
   },
   "version" : "1.0"

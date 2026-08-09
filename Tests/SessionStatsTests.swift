@@ -51,4 +51,18 @@ final class SessionStatsTests: XCTestCase {
             windowTokens: 200, model: nil)
         XCTAssertTrue(nearFull.needsCompactionHint) // 0.81 > 0.8 触发
     }
+
+    func testContextLikeDetection() {
+        let mono = [100, 120, 130, 150].enumerated().map {
+            TurnPoint(index: $0.offset + 1, ts: $0.offset, inputTokens: $0.element, cacheTokens: 0, outTokens: 0, cost: 0)
+        }
+        XCTAssertTrue(ContextTrend(turns: mono, windowTokens: 1000, model: nil).isContextLike)
+
+        let noisy = [100, 50, 120, 60, 130, 70].enumerated().map {
+            TurnPoint(index: $0.offset + 1, ts: $0.offset, inputTokens: $0.element, cacheTokens: 0, outTokens: 0, cost: 0)
+        }
+        XCTAssertFalse(ContextTrend(turns: noisy, windowTokens: 1000, model: nil).isContextLike)
+
+        XCTAssertFalse(ContextTrend(turns: Array(mono.prefix(2)), windowTokens: 1000, model: nil).isContextLike)
+    }
 }
