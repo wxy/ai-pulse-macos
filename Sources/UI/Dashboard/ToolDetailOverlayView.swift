@@ -177,6 +177,7 @@ struct ToolDetailOverlayView: View {
                 HStack(spacing: 12) {
                     legendSwatch(line: Color.marsGreen, I18n.t("panel.chart_context"))
                     legendSwatch(area: Color.marsGreenLight, I18n.t("panel.chart_cache"))
+                    legendSwatch(area: Color.deepRed, I18n.t("panel.chart_uncached"))
                     legendSwatch(dot: .orange, I18n.t("panel.chart_cache_miss"))
                 }
                 .font(.caption2).foregroundColor(.secondary)
@@ -220,8 +221,20 @@ struct ToolDetailOverlayView: View {
         let yMax = trend.windowTokens.map { max($0, maxContext) } ?? maxContext * 2
         return Chart {
             ForEach(trend.turns) { t in
-                AreaMark(x: .value("turn", t.index), y: .value("cache", t.cacheTokens))
-                    .foregroundStyle(Color.marsGreenLight.opacity(0.35))
+                // Stacked areas: cache (bottom) + non-cached (top, prominent).
+                AreaMark(
+                    x: .value("turn", t.index),
+                    yStart: .value("zero", 0),
+                    yEnd: .value("cache", t.cacheTokens)
+                )
+                    .foregroundStyle(Color.marsGreenLight.opacity(0.5))
+                    .interpolationMethod(.catmullRom)
+                AreaMark(
+                    x: .value("turn", t.index),
+                    yStart: .value("cache", t.cacheTokens),
+                    yEnd: .value("context", t.contextTokens)
+                )
+                    .foregroundStyle(Color.deepRed.opacity(0.45))
                     .interpolationMethod(.catmullRom)
                 LineMark(x: .value("turn", t.index), y: .value("context", t.contextTokens))
                     .foregroundStyle(Color.marsGreen)
