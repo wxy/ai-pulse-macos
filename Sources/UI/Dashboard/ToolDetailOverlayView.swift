@@ -16,6 +16,7 @@ struct ToolDetailOverlayView: View {
     @State private var sortByCost = false
     @State private var collapsedRepos: Set<String> = []
     @State private var hoveredSessionId: String? = nil
+    @State private var selectedTurnIndex: Int? = nil
 
     // Chart axis labels as runtime values so Xcode's string catalog does not
     // auto-extract them as translatable keys.
@@ -172,22 +173,26 @@ struct ToolDetailOverlayView: View {
                         .font(.caption2).foregroundColor(.secondary)
                         .padding(.vertical, 4)
                 }
-                HStack(spacing: 14) {
-                    metric("arrow.turn.up.right", String(format: I18n.t("panel.turns"), trend.turns.count))
-                    if let occ = trend.finalOccupancy {
-                        metric("cylinder.split.1x2", occupancyText(occ))
-                    }
-                    metric("dollarsign.circle", String(format: I18n.t("panel.total_cost"), String(format: "$%.2f", trend.totalCost)))
-                    metric("bolt.badge.clock", String(format: I18n.t("panel.cache_savings"), String(format: "$%.2f", cacheSavingsText(trend))))
-                }
                 if trend.isContextLike && trend.needsCompactionHint {
                     Label(I18n.t("panel.compact_hint"), systemImage: "exclamationmark.triangle.fill")
                         .font(.caption2).foregroundColor(.orange)
                 }
                 HStack(spacing: 12) {
-                    legendSwatch(line: Color.marsGreen, I18n.t("panel.chart_context"))
-                    legendSwatch(line: Color.marsGreenLight, I18n.t("panel.chart_cache"))
-                    legendSwatch(cross: Color.deepRed, I18n.t("panel.chart_compaction"))
+                    HStack(spacing: 14) {
+                        metric("arrow.turn.up.right", String(format: I18n.t("panel.turns"), trend.turns.count))
+                        if let occ = trend.finalOccupancy {
+                            metric("cylinder.split.1x2", occupancyText(occ))
+                        }
+                        metric("dollarsign.circle", String(format: I18n.t("panel.total_cost"), String(format: "$%.2f", trend.totalCost)))
+                        metric("bolt.badge.clock", String(format: I18n.t("panel.cache_savings"), String(format: "$%.2f", cacheSavingsText(trend))))
+                    }
+                    .layoutPriority(1)
+                    Spacer(minLength: 8)
+                    HStack(spacing: 10) {
+                        legendSwatch(line: Color.marsGreen, I18n.t("panel.chart_context"))
+                        legendSwatch(fill: Color.marsGreenLight, I18n.t("panel.chart_cache"))
+                        legendSwatch(cross: Color.deepRed, I18n.t("panel.chart_compaction"))
+                    }
                 }
                 .font(.caption2).foregroundColor(.secondary)
             }
@@ -207,6 +212,13 @@ struct ToolDetailOverlayView: View {
     private func legendSwatch(line color: Color, _ label: String) -> some View {
         HStack(spacing: 4) {
             Capsule().fill(color).frame(width: 16, height: 3)
+            Text(label)
+        }
+    }
+
+    private func legendSwatch(fill color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2).fill(color.opacity(0.55)).frame(width: 12, height: 8)
             Text(label)
         }
     }
@@ -236,11 +248,6 @@ struct ToolDetailOverlayView: View {
                 )
                     .foregroundStyle(Color.marsGreenLight.opacity(0.40))
                     .interpolationMethod(.monotone)
-                // Cache curve (usually hugging the context curve).
-                LineMark(x: .value(turnLabel, t.index), y: .value(cacheLabel, t.cacheTokens))
-                    .foregroundStyle(Color.marsGreenLight.opacity(0.9))
-                    .lineStyle(StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
-                    .interpolationMethod(.monotone)
                 // Context window curve — thick dark line so it reads as the
                 // main curve even where the cache line nearly coincides.
                 LineMark(x: .value(turnLabel, t.index), y: .value(contextLabel, t.contextTokens))
@@ -253,16 +260,39 @@ struct ToolDetailOverlayView: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     .foregroundStyle(Color.secondary)
             }
+            if let idx = selectedTurnIndex {
+                RuleMark(x: .value(turnLabel, idx))
+                    .foregroundStyle(Color.secondary.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    .annotation(position: .top, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                        if let point = trend.turns.first(where: { $0.index == idx }) {
+                            turnTooltip(point)
+                        }
+                    }
+            }
             ForEach(Array(trend.compactionIndexes), id: \.self) { idx in
                 if let point = trend.turns.first(where: { $0.index == idx }) {
                     PointMark(x: .value(turnLabel, idx), y: .value(contextLabel, point.contextTokens))
                         .foregroundStyle(Color.deepRed)
                         .symbol(.cross)
-                        .symbolSize(4)
+                        .symbolSize(8)
                 }
             }
         }
         .chartYScale(domain: 0...yMax)
+        .chartOverlay { proxy in
+            GeometryReader { geo in
+                Rectangle().fill(.clear).contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            selectedTurnIndex = proxy.value(atX: location.x)
+                        case .ended:
+                            selectedTurnIndex = nil
+                        }
+                    }
+            }
+        }
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic) { value in
                 AxisGridLine()
@@ -274,6 +304,19 @@ struct ToolDetailOverlayView: View {
             }
         }
         .frame(height: 140)
+    }
+
+    private func turnTooltip(_ point: TurnPoint) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(String(format: I18n.t("panel.turns"), point.index))
+                .font(.caption2).fontWeight(.semibold)
+            Text("\(I18n.t("panel.chart_context")) \(Self.abbrevTokens(point.contextTokens))")
+            Text("\(I18n.t("panel.chart_cache")) \(Self.abbrevTokens(point.cacheTokens))")
+            Text("\(I18n.t("panel.chart_uncached")) \(Self.abbrevTokens(max(point.contextTokens - point.cacheTokens, 0)))")
+        }
+        .font(.caption2).monospacedDigit()
+        .padding(6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
     }
 
     /// Compact axis labels: 250000 → "250K", 1200000 → "1.2M".
