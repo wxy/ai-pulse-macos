@@ -174,6 +174,12 @@ struct ToolDetailOverlayView: View {
                     Label(I18n.t("panel.compact_hint"), systemImage: "exclamationmark.triangle.fill")
                         .font(.caption2).foregroundColor(.orange)
                 }
+                HStack(spacing: 12) {
+                    legendSwatch(Color.marsGreen, I18n.t("panel.chart_context"))
+                    legendSwatch(Color.marsGreenLight, I18n.t("panel.chart_cache"))
+                    legendSwatch(.orange, I18n.t("panel.chart_cache_miss"))
+                }
+                .font(.caption2).foregroundColor(.secondary)
             }
             .padding(10)
             .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
@@ -186,6 +192,13 @@ struct ToolDetailOverlayView: View {
         Label(text, systemImage: icon)
             .font(.caption2).foregroundColor(.secondary)
             .labelStyle(.titleAndIcon)
+    }
+
+    private func legendSwatch(_ color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 10, height: 4)
+            Text(label)
+        }
     }
 
     private func contextChart(_ trend: ContextTrend) -> some View {
@@ -209,6 +222,12 @@ struct ToolDetailOverlayView: View {
                 if let point = trend.turns.first(where: { $0.index == idx }) {
                     PointMark(x: .value("turn", idx), y: .value("context", point.contextTokens))
                         .foregroundStyle(Color.deepRed)
+                }
+            }
+            ForEach(Array(trend.cacheMissIndexes), id: \.self) { idx in
+                if let point = trend.turns.first(where: { $0.index == idx }) {
+                    PointMark(x: .value("turn", idx), y: .value("context", point.contextTokens))
+                        .foregroundStyle(Color.orange)
                 }
             }
         }

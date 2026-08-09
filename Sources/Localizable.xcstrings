@@ -28,67 +28,197 @@
       },
       "shouldTranslate" : false
     },
-    "panel.context_unavailable" : {
+    "panel.chart_cache" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die Kontextdaten dieser Sitzung sind nicht kumulativ — Wachstumstrend nicht verfügbar"
+            "value" : "Cache"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This session's context data is not cumulative — growth trend unavailable"
+            "value" : "cache"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los datos de contexto de esta sesión no son acumulativos — tendencia no disponible"
+            "value" : "caché"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les données de contexte de cette session ne sont pas cumulatives — tendance indisponible"
+            "value" : "cache"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このセッションのコンテキストデータは累積形式ではありません — 増加トレンドを表示できません"
+            "value" : "キャッシュ"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 세션의 컨텍스트 데이터가 누적 형식이 아닙니다 — 증가 추세를 표시할 수 없습니다"
+            "value" : "캐시"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Os dados de contexto desta sessão não são cumulativos — tendência indisponível"
+            "value" : "cache"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "该会话的上下文数据不是累计格式，无法显示增长趋势"
+            "value" : "缓存"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此工作階段的上下文資料不是累計格式，無法顯示增長趨勢"
+            "value" : "快取"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此工作階段的上下文資料不是累計格式，無法顯示增長趨勢"
+            "value" : "快取"
+          }
+        }
+      }
+    },
+    "panel.chart_cache_miss" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache-Fehltreffer"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cache miss"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "fallo de caché"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "échec de cache"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャッシュミス"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "캐시 미스"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "falha de cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缓存失效"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快取失效"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快取失效"
+          }
+        }
+      }
+    },
+    "panel.chart_context" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kontext"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "context"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "contexto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "contexte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンテキスト"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "컨텍스트"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "contexto"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上下文"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上下文"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上下文"
           }
         }
       }
@@ -3090,6 +3220,9 @@
         }
       }
     },
+    "cache" : {
+
+    },
     "card.cross_less" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3414,6 +3547,9 @@
           }
         }
       }
+    },
+    "context" : {
+
     },
     "Cost" : {
       "localizations" : {
@@ -10794,9 +10930,6 @@
         }
       }
     },
-    "input" : {
-
-    },
     "integrations.desc" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -15096,6 +15229,71 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此工作階段接近上下文上限，建議壓縮/新開工作階段"
+          }
+        }
+      }
+    },
+    "panel.context_unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Kontextdaten dieser Sitzung sind nicht kumulativ — Wachstumstrend nicht verfügbar"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This session's context data is not cumulative — growth trend unavailable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los datos de contexto de esta sesión no son acumulativos — tendencia no disponible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les données de contexte de cette session ne sont pas cumulatives — tendance indisponible"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このセッションのコンテキストデータは累積形式ではありません — 増加トレンドを表示できません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 세션의 컨텍스트 데이터가 누적 형식이 아닙니다 — 증가 추세를 표시할 수 없습니다"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os dados de contexto desta sessão não são cumulativos — tendência indisponível"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该会话的上下文数据不是累计格式，无法显示增长趋势"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此工作階段的上下文資料不是累計格式，無法顯示增長趨勢"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此工作階段的上下文資料不是累計格式，無法顯示增長趨勢"
           }
         }
       }

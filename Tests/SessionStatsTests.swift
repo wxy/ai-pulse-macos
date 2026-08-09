@@ -65,4 +65,14 @@ final class SessionStatsTests: XCTestCase {
 
         XCTAssertFalse(ContextTrend(turns: Array(mono.prefix(2)), windowTokens: 1000, model: nil).isContextLike)
     }
+
+    func testCacheMissIndexes() {
+        let turns = [
+            TurnPoint(index: 1, ts: 1, inputTokens: 500, cacheTokens: 0, outTokens: 0, cost: 0, contextTokens: 500),   // first turn, small — not a miss
+            TurnPoint(index: 2, ts: 2, inputTokens: 120, cacheTokens: 30_000, outTokens: 0, cost: 0, contextTokens: 30_120),
+            TurnPoint(index: 3, ts: 3, inputTokens: 82_818, cacheTokens: 0, outTokens: 0, cost: 0, contextTokens: 82_818), // real miss
+            TurnPoint(index: 4, ts: 4, inputTokens: 100, cacheTokens: 83_000, outTokens: 0, cost: 0, contextTokens: 83_100),
+        ]
+        XCTAssertEqual(ContextTrend(turns: turns, windowTokens: nil, model: nil).cacheMissIndexes, [3])
+    }
 }
