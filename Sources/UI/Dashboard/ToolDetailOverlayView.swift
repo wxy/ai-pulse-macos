@@ -239,24 +239,25 @@ struct ToolDetailOverlayView: View {
 
     private func contextChart(_ trend: ContextTrend) -> some View {
         let maxContext = trend.turns.map(\.contextTokens).max() ?? 1
-        let yMax = trend.windowTokens.map { max($0, maxContext) } ?? maxContext * 2
+        let yMax = trend.windowTokens.map { max($0, maxContext) } ?? Int(Double(maxContext) * 1.15)
         return Chart {
             ForEach(trend.turns) { t in
-                // Stacked areas: cache (bottom) + non-cached (top, prominent).
-                AreaMark(
+                // Stacked bars: cache (bottom) + uncached (top, prominent).
+                // Bars have no interpolation, so the fills can never cross or
+                // invert even when cache ≈ context.
+                BarMark(
                     x: .value(turnLabel, t.index),
                     yStart: .value(zeroLabel, 0),
                     yEnd: .value(cacheLabel, t.cacheTokens)
                 )
-                    .foregroundStyle(Color.marsGreenLight.opacity(0.5))
-                    .interpolationMethod(.monotone)
-                AreaMark(
+                    .foregroundStyle(Color.marsGreenLight.opacity(0.6))
+                BarMark(
                     x: .value(turnLabel, t.index),
                     yStart: .value(cacheLabel, t.cacheTokens),
                     yEnd: .value(contextLabel, t.contextTokens)
                 )
-                    .foregroundStyle(Color.deepRed.opacity(0.45))
-                    .interpolationMethod(.monotone)
+                    .foregroundStyle(Color.deepRed.opacity(0.5))
+                // Cache and context curves trace over the bars.
                 LineMark(x: .value(turnLabel, t.index), y: .value(cacheLabel, t.cacheTokens))
                     .foregroundStyle(Color.marsGreenLight)
                     .interpolationMethod(.monotone)
