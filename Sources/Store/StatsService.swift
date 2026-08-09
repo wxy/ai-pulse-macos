@@ -829,4 +829,162 @@ enum StatsService {
         snap.writerAppVersion = CKSchema.writerAppVersion
         return snap
     }
+
+    // MARK: - Tool detail (conclusion card + session explorer)
+
+    /// Period summary for one tool's dashboard conclusion card.
+    static func toolConclusion(source: String, sinceMs: Int64) async -> ToolConclusion {
+        let cal = Calendar.current
+        let todayMs = Int64(cal.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+        let toMs = todayMs + 86_400_000
+        let rangeLen = toMs - sinceMs
+        let prevSince = sinceMs - rangeLen
+
+        let spend = await sourceSpend(source: source, sinceMs: sinceMs, toMs: toMs)
+        let previous = await sourceSpend(source: source, sinceMs: prevSince, toMs: sinceMs)
+        let rows = await sessionRows(source: source, sinceMs: sinceMs)
+        let changes = await attributedChanges(source: source, sinceMs: sinceMs, toMs: toMs)
+
+        let daysElapsed = max(1, Int((todayMs - sinceMs) / 86_400_000) + 1)
+        let daysInMonth = cal.range(of: .day, in: .month, for: Date())?.count ?? 30
+        let totalLines = changes.added + changes.deleted
+        let cpl = totalLines > 0 ? spend / Double(totalLines) * 1000 : 0
+        let count = rows.count
+        let otherSource = source == "codex" ? "claude-code" : "codex"
+        let otherRows = await sessionRows(source: otherSource, sinceMs: sinceMs)
+        let thisAvg = count > 0 ? spend / Double(count) : 0
+        let otherAvg = otherRows.count > 0
+            ? (await sourceSpend(source: otherSource, sinceMs: sinceMs, toMs: toMs)) / Double(otherRows.count)
+            : 0
+
+        return ToolConclusion(
+            spend: spend,
+            previousSpend: previous,
+            deltaPct: SessionStats.deltaPct(current: spend, previous: previous),
+            projectedMonth: SessionStats.projectMonth(
+                spendSoFar: spend, daysElapsed: daysElapsed, daysInMonth: daysInMonth),
+            sessionCount: count,
+            commitCount: changes.commits,
+            addedLines: changes.added,
+            deletedLines: changes.deleted,
+            avgCostPerSession: thisAvg,
+            cpl: cpl,
+            crossToolDeltaPct: otherAvg > 0 ? SessionStats.deltaPct(current: thisAvg, previous: otherAvg) : nil)
+    }
+
+    /// Sessions that had interactions in `[sinceMs, today+1d)`, newest-cost ordered.
+    static func sessionRows(source: String, sinceMs: Int64) async -> [SessionRow] {
+        let toMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000) + 86_400_000
+        do {
+            return try await AppDatabase.shared.read { db in
+                try Row.fetchAll(db, sql: """
+                    SELECT u.session_id AS sid,
+                           MIN(u.ts) AS first_ts,
+                           MAX(u.ts) AS last_ts,
+                           (SELECT in_tokens FROM usage_event u3
+                            WHERE u3.source = u.source AND u3.session_id = u.session_id
+                            ORDER BY u3.ts DESC LIMIT 1) AS last_input,
+                           COALESCE(SUM(u.cost_usd), 0) AS cost,
+                           COALESCE((SELECT repo_path FROM usage_event u2
+                                     WHERE u2.source = u.source AND u2.session_id = u.session_id
+                                     ORDER BY u2.ts LIMIT 1), '') AS repo,
+                           s.title AS title,
+                           s.window_tokens AS window
+                    FROM usage_event u
+                    LEFT JOIN session_info s ON s.source = u.source AND s.session_id = u.session_id
+                    WHERE u.source = ? AND u.ts >= ? AND u.ts < ? AND u.session_id IS NOT NULL
+                    GROUP BY u.session_id
+                    ORDER BY cost DESC
+                    """, arguments: [source, sinceMs, toMs]).map { row in
+                    let repo: String? = row["repo"]
+                    let title: String? = row["title"]
+                    let window: Int? = row["window"]
+                    let firstTs: Int? = row["first_ts"]
+                    let lastTs: Int? = row["last_ts"]
+                    let lastInput: Int? = row["last_input"]
+                    let cost: Double = row["cost"] ?? 0
+                    let sid: String? = row["sid"]
+                    return SessionRow(
+                        source: source,
+                        sessionId: sid,
+                        title: title,
+                        repo: repo?.isEmpty == true ? nil : repo,
+                        firstTs: firstTs ?? 0,
+                        lastTs: lastTs ?? 0,
+                        lastInput: lastInput ?? 0,
+                        cost: cost,
+                        windowTokens: window)
+                }
+            }
+        } catch {
+            Logger.error("StatsService.sessionRows failed: \(error)")
+            return []
+        }
+    }
+
+    /// Full per-turn trajectory of one session (context trend chart data).
+    static func turnSeries(source: String, sessionId: String) async -> ContextTrend {
+        do {
+            return try await AppDatabase.shared.read { db -> ContextTrend in
+                let turns = try TurnPoint.fetchAll(db, sql: """
+                    SELECT (ROW_NUMBER() OVER (ORDER BY ts)) AS index,
+                           ts, in_tokens AS inputTokens, cache_tokens AS cacheTokens,
+                           out_tokens AS outTokens, COALESCE(cost_usd, 0) AS cost
+                    FROM usage_event
+                    WHERE source = ? AND session_id = ?
+                    ORDER BY ts
+                    """, arguments: [source, sessionId])
+                let window: Int? = try Int.fetchOne(db, sql: """
+                    SELECT window_tokens FROM session_info WHERE source = ? AND session_id = ?
+                    """, arguments: [source, sessionId])
+                let model: String? = try String.fetchOne(db, sql: """
+                    SELECT MAX(model) FROM usage_event WHERE source = ? AND session_id = ? AND model IS NOT NULL
+                    """, arguments: [source, sessionId])
+                return ContextTrend(turns: turns, windowTokens: window, model: model)
+            }
+        } catch {
+            Logger.error("StatsService.turnSeries failed: \(error)")
+            return ContextTrend(turns: [], windowTokens: nil, model: nil)
+        }
+    }
+
+    private static func sourceSpend(source: String, sinceMs: Int64, toMs: Int64) async -> Double {
+        do {
+            return try await AppDatabase.shared.read { db in
+                try Double.fetchOne(db, sql: """
+                    SELECT COALESCE(SUM(cost_usd), 0) FROM usage_event
+                    WHERE source = ? AND ts >= ? AND ts < ?
+                    """, arguments: [source, sinceMs, toMs]) ?? 0
+            }
+        } catch {
+            Logger.error("StatsService.sourceSpend failed: \(error)")
+            return 0
+        }
+    }
+
+    /// Commits / lines in repos the tool touched during the range (approximate
+    /// attribution, same repo-level model as the dashboard CPL).
+    private static func attributedChanges(source: String, sinceMs: Int64, toMs: Int64) async -> (commits: Int, added: Int, deleted: Int) {
+        do {
+            return try await AppDatabase.shared.read { db in
+                let row = try Row.fetchOne(db, sql: """
+                    SELECT COUNT(DISTINCT c.commit_hash) AS commits,
+                           COALESCE(SUM(c.added), 0) AS added,
+                           COALESCE(SUM(c.deleted), 0) AS deleted
+                    FROM code_change c
+                    WHERE c.repo_path IN (
+                        SELECT DISTINCT u.repo_path FROM usage_event u
+                        WHERE u.source = ? AND u.ts >= ? AND u.ts < ? AND u.repo_path IS NOT NULL
+                    ) AND c.ts >= ? AND c.ts < ?
+                    """, arguments: [source, sinceMs, toMs, sinceMs, toMs])
+                let commits: Int = row?["commits"] ?? 0
+                let added: Int = row?["added"] ?? 0
+                let deleted: Int = row?["deleted"] ?? 0
+                return (commits: commits, added: added, deleted: deleted)
+            }
+        } catch {
+            Logger.error("StatsService.attributedChanges failed: \(error)")
+            return (0, 0, 0)
+        }
+    }
 }
