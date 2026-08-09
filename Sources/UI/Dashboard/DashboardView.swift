@@ -192,7 +192,7 @@ struct DashboardView: View {
                     Text(I18n.t("dashboard.today")).tag(TimeRange.today)
                     Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
                     Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
-                }.pickerStyle(.segmented).frame(width: 240)
+                }.pickerStyle(.segmented).frame(width: 240).pointingHandCursor()
             }
             .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
 
@@ -1575,10 +1575,7 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16).padding(.horizontal, 20)
             .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.pointingHand.push() }
-                else { NSCursor.pop() }
-            }
+            .pointingHandCursor()
             .onTapGesture {
                 guard !isRefreshing else { return }
                 isRefreshing = true

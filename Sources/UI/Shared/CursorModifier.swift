@@ -5,11 +5,12 @@ extension View {
     /// Shows a pointing-hand cursor while the pointer is over the view.
     /// No-op when `enabled` is false (keeps the modifier chain simple).
     func pointingHandCursor(_ enabled: Bool = true) -> some View {
-        onHover { inside in
+        onContinuousHover { phase in
             guard enabled else { return }
-            if inside {
+            switch phase {
+            case .active:
                 NSCursor.pointingHand.push()
-            } else {
+            case .ended:
                 NSCursor.pop()
             }
         }
