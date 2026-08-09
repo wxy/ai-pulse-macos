@@ -166,7 +166,9 @@ struct ToolDetailOverlayView: View {
                 }
                 HStack(spacing: 14) {
                     metric("arrow.turn.up.right", String(format: I18n.t("panel.turns"), trend.turns.count))
-                    metric("cylinder.split.1x2", occupancyText(trend.finalOccupancy))
+                    if let occ = trend.finalOccupancy {
+                        metric("cylinder.split.1x2", occupancyText(occ))
+                    }
                     metric("dollarsign.circle", String(format: I18n.t("panel.total_cost"), String(format: "$%.2f", trend.totalCost)))
                     metric("bolt.badge.clock", String(format: I18n.t("panel.cache_savings"), String(format: "$%.2f", cacheSavingsText(trend))))
                 }
@@ -178,6 +180,7 @@ struct ToolDetailOverlayView: View {
                     legendSwatch(line: Color.marsGreen, I18n.t("panel.chart_context"))
                     legendSwatch(area: Color.marsGreenLight, I18n.t("panel.chart_cache"))
                     legendSwatch(area: Color.deepRed, I18n.t("panel.chart_uncached"))
+                    legendSwatch(cross: Color.deepRed, I18n.t("panel.chart_compaction"))
                     legendSwatch(dot: .orange, I18n.t("panel.chart_cache_miss"))
                 }
                 .font(.caption2).foregroundColor(.secondary)
@@ -216,6 +219,16 @@ struct ToolDetailOverlayView: View {
         }
     }
 
+    private func legendSwatch(cross color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "multiply")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(color)
+                .frame(width: 10, height: 10)
+            Text(label)
+        }
+    }
+
     private func contextChart(_ trend: ContextTrend) -> some View {
         let maxContext = trend.turns.map(\.contextTokens).max() ?? 1
         let yMax = trend.windowTokens.map { max($0, maxContext) } ?? maxContext * 2
@@ -228,14 +241,14 @@ struct ToolDetailOverlayView: View {
                     yEnd: .value("cache", t.cacheTokens)
                 )
                     .foregroundStyle(Color.marsGreenLight.opacity(0.5))
-                    .interpolationMethod(.catmullRom)
+                    .interpolationMethod(.linear)
                 AreaMark(
                     x: .value("turn", t.index),
                     yStart: .value("cache", t.cacheTokens),
                     yEnd: .value("context", t.contextTokens)
                 )
                     .foregroundStyle(Color.deepRed.opacity(0.45))
-                    .interpolationMethod(.catmullRom)
+                    .interpolationMethod(.linear)
                 LineMark(x: .value("turn", t.index), y: .value("context", t.contextTokens))
                     .foregroundStyle(Color.marsGreen)
                     .interpolationMethod(.catmullRom)
@@ -249,6 +262,7 @@ struct ToolDetailOverlayView: View {
                 if let point = trend.turns.first(where: { $0.index == idx }) {
                     PointMark(x: .value("turn", idx), y: .value("context", point.contextTokens))
                         .foregroundStyle(Color.deepRed)
+                        .symbol(.cross)
                 }
             }
             ForEach(Array(trend.cacheMissIndexes), id: \.self) { idx in
