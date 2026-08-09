@@ -17,6 +17,7 @@ struct ToolDetailOverlayView: View {
     @State private var collapsedRepos: Set<String> = []
     @State private var hoveredSessionId: String? = nil
     @State private var selectedTurnIndex: Int? = nil
+    @State private var trendSessionId: String? = nil
 
     // Chart axis labels as runtime values so Xcode's string catalog does not
     // auto-extract them as translatable keys.
@@ -157,7 +158,13 @@ struct ToolDetailOverlayView: View {
             }
             if expandedSessionId == row.sessionId, let sid = row.sessionId {
                 trend = nil
-                Task { trend = await StatsService.turnSeries(source: row.source, sessionId: sid) }
+                trendSessionId = sid
+                Task {
+                    let loaded = await StatsService.turnSeries(source: row.source, sessionId: sid)
+                    if trendSessionId == sid {
+                        trend = loaded
+                    }
+                }
             }
         }
     }
@@ -361,13 +368,16 @@ struct ToolDetailOverlayView: View {
     }
 
     private func timeText(_ ts: Int) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "MM-dd HH:mm"
-        return f.string(from: Date(timeIntervalSince1970: Double(ts) / 1000))
+        Self.timeFormatter.string(from: Date(timeIntervalSince1970: Double(ts) / 1000))
     }
 
-    private func occupancyText(_ occ: Double?) -> String {
-        guard let occ else { return I18n.t("panel.occupancy_na") }
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        return f
+    }()
+
+    private func occupancyText(_ occ: Double) -> String {
         return String(format: I18n.t("panel.occupancy"), Int(occ * 100))
     }
 
