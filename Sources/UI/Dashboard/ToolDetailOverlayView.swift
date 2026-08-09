@@ -175,9 +175,9 @@ struct ToolDetailOverlayView: View {
                         .font(.caption2).foregroundColor(.orange)
                 }
                 HStack(spacing: 12) {
-                    legendSwatch(Color.marsGreen, I18n.t("panel.chart_context"))
-                    legendSwatch(Color.marsGreenLight, I18n.t("panel.chart_cache"))
-                    legendSwatch(.orange, I18n.t("panel.chart_cache_miss"))
+                    legendSwatch(line: Color.marsGreen, I18n.t("panel.chart_context"))
+                    legendSwatch(area: Color.marsGreenLight, I18n.t("panel.chart_cache"))
+                    legendSwatch(dot: .orange, I18n.t("panel.chart_cache_miss"))
                 }
                 .font(.caption2).foregroundColor(.secondary)
             }
@@ -194,9 +194,23 @@ struct ToolDetailOverlayView: View {
             .labelStyle(.titleAndIcon)
     }
 
-    private func legendSwatch(_ color: Color, _ label: String) -> some View {
+    private func legendSwatch(line color: Color, _ label: String) -> some View {
         HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 10, height: 4)
+            Capsule().fill(color).frame(width: 16, height: 3)
+            Text(label)
+        }
+    }
+
+    private func legendSwatch(area color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2).fill(color.opacity(0.5)).frame(width: 12, height: 8)
+            Text(label)
+        }
+    }
+
+    private func legendSwatch(dot color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 8, height: 8)
             Text(label)
         }
     }
@@ -233,9 +247,27 @@ struct ToolDetailOverlayView: View {
         }
         .chartYScale(domain: 0...yMax)
         .chartYAxis {
-            AxisMarks(position: .leading)
+            AxisMarks(position: .leading, values: .automatic) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let v = value.as(Double.self) {
+                        Text(Self.abbrevTokens(Int(v)))
+                    }
+                }
+            }
         }
         .frame(height: 140)
+    }
+
+    /// Compact axis labels: 250000 → "250K", 1200000 → "1.2M".
+    private static func abbrevTokens(_ tokens: Int) -> String {
+        if tokens >= 1_000_000 {
+            return String(format: "%.1fM", Double(tokens) / 1_000_000)
+        }
+        if tokens >= 1_000 {
+            return String(format: "%.0fK", Double(tokens) / 1_000)
+        }
+        return "\(tokens)"
     }
 
     private func occupancyBar(_ row: SessionRow) -> some View {
