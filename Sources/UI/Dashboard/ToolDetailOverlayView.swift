@@ -226,15 +226,9 @@ struct ToolDetailOverlayView: View {
         let yMax = trend.windowTokens.map { max($0, maxContext) } ?? Int(Double(maxContext) * 1.15)
         return Chart {
             ForEach(trend.turns) { t in
-                // Base fill: the whole context area, very light.
-                AreaMark(
-                    x: .value(turnLabel, t.index),
-                    yStart: .value(zeroLabel, 0),
-                    yEnd: .value(contextLabel, t.contextTokens)
-                )
-                    .foregroundStyle(Color.marsGreen.opacity(0.10))
-                    .interpolationMethod(.monotone)
-                // Cache fill under the cache curve, brighter green.
+                // Single fill: cache area from zero. The space between this
+                // fill's top and the context line is the uncached portion —
+                // naturally visible as a narrow gap (cache is usually ~99%).
                 AreaMark(
                     x: .value(turnLabel, t.index),
                     yStart: .value(zeroLabel, 0),
