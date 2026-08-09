@@ -119,26 +119,6 @@
     "@%@" : {
 
     },
-    "%@ · %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · %2$@"
-          }
-        }
-      }
-    },
-    "%@ · 共 %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · 共 %2$@"
-          }
-        }
-      }
-    },
     "%@ ($%lld/mo)" : {
       "localizations" : {
         "en" : {
@@ -10786,9 +10766,6 @@
         }
       }
     },
-    "input" : {
-
-    },
     "integrations.desc" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -18564,9 +18541,6 @@
         }
       }
     },
-    "turn" : {
-
-    },
     "Type" : {
       "localizations" : {
         "en" : {
@@ -18599,9 +18573,6 @@
         }
       },
       "shouldTranslate" : false
-    },
-    "window" : {
-
     }
   },
   "version" : "1.0"
