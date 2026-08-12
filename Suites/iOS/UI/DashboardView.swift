@@ -168,7 +168,7 @@ struct DashboardView: View {
                 }
 
                 HStack(spacing: 6) {
-                    Text("CloudKit \(CKSchema.payloadVersion)")
+                    Text("AI Pulse v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0")/CloudKit \(CKSchema.payloadVersion)")
                         .font(.caption2).foregroundColor(.secondary)
                     if let updated = cloudData.lastUpdated {
                         Text("\(I18n.t("dashboard.updated")) \(updated, format: .dateTime.month(.abbreviated).day().hour().minute().locale(.current))")
