@@ -29,6 +29,12 @@ struct SessionRow: Identifiable, Equatable {
     let cost: Double
     let windowTokens: Int?
 
+    // Session profile metrics (computed by StatsService.sessionRows)
+    var turnCount: Int = 0
+    var avgOccupancy: Double? = nil
+    var avgCacheRatio: Double? = nil
+    var compactionCount: Int = 0
+
     /// Fraction (0-1) of the model context window the session's last turn used.
     var finalOccupancy: Double? {
         guard let w = windowTokens, w > 0 else { return nil }
@@ -145,5 +151,29 @@ enum SessionStats {
 
     static func cacheSavings(cacheTokens: Int, inPricePerMtok: Double, cachePricePerMtok: Double) -> Double {
         Double(cacheTokens) / 1_000_000 * (inPricePerMtok - cachePricePerMtok)
+    }
+
+    /// Aggregated per-session profile metrics for the iOS session card.
+    struct SessionMetrics: Equatable {
+        var turnCount: Int = 0
+        var avgOccupancy: Double?
+        var avgCacheRatio: Double?
+        var compactionCount: Int = 0
+    }
+
+    static func metrics(turns: [TurnPoint], windowTokens: Int?) -> SessionMetrics {
+        var m = SessionMetrics()
+        m.turnCount = turns.count
+        if let window = windowTokens, window > 0, !turns.isEmpty {
+            m.avgOccupancy = turns.reduce(0.0) { $0 + Double($1.contextTokens) } / Double(turns.count * window)
+        }
+        let ratios = turns
+            .filter { $0.contextTokens > 0 }
+            .map { Double($0.cacheTokens) / Double($0.contextTokens) }
+        if !ratios.isEmpty {
+            m.avgCacheRatio = ratios.reduce(0.0, +) / Double(ratios.count)
+        }
+        m.compactionCount = compactionMarks(turns).count
+        return m
     }
 }
