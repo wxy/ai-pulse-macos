@@ -75,6 +75,10 @@ struct DashboardSnapshot: Codable {
     var remainingBalances: [RemainingBalanceItem] = []
     var quotaStatus: [QuotaStatusItem] = []  // subscription quota (Claude/Copilot)
 
+    // Tool detail: per-tool conclusion summary + session list, added in 1.2.5
+    // as a backward-compatible increment (old clients ignore this field).
+    var toolDetails: [ToolDetailItem] = []
+
     // Sync metadata (written by macOS, read by iOS/watchOS):
     // `payloadVersion` is the JSON payload format version (bumped only when the
     // structure changes); `writerAppVersion` is the macOS app version that
@@ -124,6 +128,41 @@ struct TrendPoint: Codable {
     var netLines: Int
     var added: Int = 0
     var deleted: Int = 0
+}
+
+struct ToolDetailItem: Codable {
+    var source: String
+    var conclusion: ToolConclusionItem
+    var sessions: [ToolSessionItem]
+}
+
+struct ToolConclusionItem: Codable {
+    var spend: Double
+    var previousSpend: Double
+    var deltaPct: Double
+    var projectedMonth: Double
+    var sessionCount: Int
+    var commitCount: Int
+    var addedLines: Int
+    var deletedLines: Int
+    var avgCostPerSession: Double
+    var cpl: Double
+    var crossToolDeltaPct: Double?
+}
+
+struct ToolSessionItem: Codable {
+    var sessionId: String?
+    var title: String?
+    var repo: String?
+    var firstTs: Int
+    var lastTs: Int
+    var cost: Double
+    var windowTokens: Int?
+    var lastInput: Int
+    var turnCount: Int
+    var avgOccupancy: Double?
+    var avgCacheRatio: Double?
+    var compactionCount: Int
 }
 
 struct RemainingBalanceItem: Codable {
