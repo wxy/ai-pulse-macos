@@ -6,6 +6,7 @@ struct ToolDetailSheetView: View {
     let detail: ToolDetailItem
     @Environment(\.dismiss) private var dismiss
     @State private var expandedSessionId: String? = nil
+    @State private var collapsedRepos: Set<String> = []
 
     var body: some View {
         NavigationStack {
@@ -36,18 +37,36 @@ struct ToolDetailSheetView: View {
         let c = detail.conclusion
         let delta = c.deltaPct
         return VStack(alignment: .leading, spacing: 8) {
-            Text(detail.source == "codex" ? "ChatGPT" : "Claude Code")
-                .font(.headline)
-            Text(String(format: I18n.t("tool.detail.spend"), "$\(String(format: "%.2f", c.spend))"))
-                .font(.title3).fontWeight(.bold)
-            Text(String(format: I18n.t("tool.detail.delta"), String(format: "%+.1f%%", delta)))
-                .font(.caption).foregroundColor(delta > 0 ? Color.deepRed : Color.marsGreen)
+            HStack(spacing: 8) {
+                Image(systemName: detail.source == "codex" ? "sparkles" : "bubble.left.and.bubble.right")
+                    .foregroundColor(.accentColor)
+                Text(detail.source == "codex" ? "ChatGPT" : "Claude Code")
+                    .font(.headline)
+                Spacer()
+                HStack(spacing: 3) {
+                    Image(systemName: delta > 0 ? "arrow.up.right" : "arrow.down.right")
+                    Text(String(format: "%+.1f%%", delta))
+                }
+                .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                .foregroundColor(delta > 0 ? Color.deepRed : Color.marsGreen)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background((delta > 0 ? Color.deepRed : Color.marsGreen).opacity(0.12),
+                            in: Capsule())
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("$\(String(format: "%.2f", c.spend))")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.deepRed)
+                Text(I18n.t("tool.detail.spend_label"))
+                    .font(.caption).foregroundColor(.secondary)
+            }
             HStack(spacing: 10) {
                 Text(String(format: I18n.t("tool.detail.sessions_count"), c.sessionCount))
                 Text(String(format: I18n.t("tool.detail.commits"), c.commitCount))
                 Text(String(format: I18n.t("tool.detail.lines"), c.addedLines, c.deletedLines))
             }
-            .font(.caption2).foregroundColor(.secondary)
+            .font(.caption2).foregroundColor(.secondary).monospacedDigit()
             HStack(spacing: 10) {
                 Text(String(format: I18n.t("tool.detail.avg_cost"), "$\(String(format: "%.2f", c.avgCostPerSession))"))
                 Text(String(format: I18n.t("tool.detail.cpl"), String(format: "%.2f", c.cpl)))
@@ -55,24 +74,77 @@ struct ToolDetailSheetView: View {
                     Text(String(format: I18n.t("tool.detail.projected"), "$\(String(format: "%.0f", c.projectedMonth))"))
                 }
             }
-            .font(.caption2).foregroundColor(.secondary)
+            .font(.caption2).foregroundColor(.secondary).monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var sessionList: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(I18n.t("tool.detail.sessions")).font(.caption).foregroundColor(.secondary)
-            ForEach(detail.sessions, id: \.sessionId) { row in
-                sessionRow(row)
-                if expandedSessionId == row.sessionId {
-                    profileCard(row)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+            ForEach(groups) { group in
+                groupSection(group)
+            }
+        }
+    }
+
+    private struct RepoGroup: Identifiable {
+        var id: String { repo }
+        let repo: String
+        let sessions: [ToolSessionItem]
+        var totalCost: Double { sessions.reduce(0) { $0 + $1.cost } }
+    }
+
+    private var groups: [RepoGroup] {
+        Dictionary(grouping: detail.sessions, by: { $0.repo ?? I18n.t("tool.detail.no_repo") })
+            .map { RepoGroup(repo: $0.key, sessions: $0.value) }
+            .sorted { $0.totalCost > $1.totalCost }
+    }
+
+    private func groupSection(_ group: RepoGroup) -> some View {
+        let collapsed = collapsedRepos.contains(group.repo)
+        return VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    if collapsed {
+                        collapsedRepos.remove(group.repo)
+                    } else {
+                        collapsedRepos.insert(group.repo)
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .foregroundColor(.accentColor.opacity(0.8))
+                    Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                        .font(.caption2).foregroundColor(.secondary)
+                    Text(group.repo)
+                        .font(.caption).fontWeight(.semibold)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(String(format: I18n.t("tool.detail.group_header"),
+                                group.sessions.count,
+                                "$\(String(format: "%.2f", group.totalCost))"))
+                        .font(.caption2).foregroundColor(.secondary)
+                        .monospacedDigit()
+                }
+            }
+            .buttonStyle(.plain)
+
+            if !collapsed {
+                ForEach(group.sessions, id: \.sessionId) { row in
+                    sessionRow(row)
+                    if expandedSessionId == row.sessionId {
+                        profileCard(row)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
             }
         }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func sessionRow(_ row: ToolSessionItem) -> some View {
@@ -82,16 +154,23 @@ struct ToolDetailSheetView: View {
                 Text(row.title ?? I18n.t("tool.detail.no_title"))
                     .font(.caption).lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                occupancyBar(row)
                 Text("$\(String(format: "%.2f", row.cost))")
                     .font(.caption).monospacedDigit()
+                    .fontWeight(expanded ? .semibold : .regular)
                     .foregroundColor(expanded ? Color.accentColor : Color.primary)
             }
-            Text("\(row.lastTs > 0 ? Date(timeIntervalSince1970: Double(row.lastTs) / 1000).formatted(date: .abbreviated, time: .shortened) : "") · \(row.repo ?? I18n.t("tool.detail.no_repo"))")
-                .font(.caption2).foregroundColor(.secondary)
+            HStack(spacing: 8) {
+                Text(row.lastTs > 0 ? Date(timeIntervalSince1970: Double(row.lastTs) / 1000).formatted(date: .abbreviated, time: .shortened) : "")
+                    .font(.caption2).foregroundColor(.secondary)
+                Spacer()
+                occupancyBar(row)
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.horizontal, 6).padding(.vertical, 5)
-        .background(expanded ? Color.primary.opacity(0.05) : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .background(expanded ? Color.accentColor.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -110,16 +189,33 @@ struct ToolDetailSheetView: View {
     }
 
     private func profileCard(_ row: ToolSessionItem) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(String(format: I18n.t("tool.detail.turns"), row.turnCount))
-            Text(String(format: I18n.t("tool.detail.avg_occupancy"), row.avgOccupancy.map { String(format: "%.0f%%", $0 * 100) } ?? "—"))
-            Text(String(format: I18n.t("tool.detail.avg_cache"), row.avgCacheRatio.map { String(format: "%.0f%%", $0 * 100) } ?? "—"))
-            Text(String(format: I18n.t("tool.detail.compactions"), row.compactionCount))
-            Text(I18n.t("tool.detail.macos_note"))
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 14) {
+                metric(I18n.t("tool.detail.turns_label"),
+                       String(format: "%d", row.turnCount))
+                Spacer()
+                metric(I18n.t("tool.detail.avg_occupancy_label"),
+                       row.avgOccupancy.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
+            }
+            HStack(spacing: 14) {
+                metric(I18n.t("tool.detail.avg_cache_label"),
+                       row.avgCacheRatio.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
+                Spacer()
+                metric(I18n.t("tool.detail.compactions_label"),
+                       String(format: "%d", row.compactionCount))
+            }
+            Divider()
+            Label(I18n.t("tool.detail.macos_note"), systemImage: "macwindow")
                 .font(.caption2).foregroundColor(.secondary)
         }
-        .font(.caption)
         .padding(10)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func metric(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 4) {
+            Text(label).font(.caption2).foregroundColor(.secondary)
+            Text(value).font(.caption).fontWeight(.semibold).monospacedDigit()
+        }
     }
 }
