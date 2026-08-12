@@ -75,10 +75,28 @@ struct ToolSessionItem: Codable {
     var cost: Double
     var windowTokens: Int?
     var lastInput: Int
+    /// 会话档案指标——macOS 在生成快照时对每个会话做聚合计算后写入：
+    var turnCount: Int          // 对话轮次（usage_event 中 (in+cache)>0 的行数）
+    var avgOccupancy: Double?   // 平均上下文占用率（AVG(context)/window，0-1）
+    var avgCacheRatio: Double?  // 平均缓存比例（AVG(cache_tokens/context_tokens)，0-1）
+    var compactionCount: Int    // 上下文压缩次数（复用 SessionStats.compactionMarks 判定）
 }
 ```
 
 数据来源：macOS 现有 `StatsService.toolConclusion(source:sinceMs:)` 与 `StatsService.sessionRows(source:sinceMs:)`，直接复用。
+
+### 会话档案指标的计算
+
+四个档案指标均为 macOS 在 `dashboardSnapshot(days:)` 填充 `toolDetails` 时计算，来源是本地 GRDB 的 `usage_event` / `session_info`：
+
+| 指标 | 计算方式 |
+| --- | --- |
+| `turnCount` | 该会话 `(in_tokens + cache_tokens) > 0` 的 usage_event 行数 |
+| `avgOccupancy` | `AVG(in_tokens + (source=="claude-code" ? cache_tokens : 0)) / window_tokens` |
+| `avgCacheRatio` | 对 `context_tokens > 0` 的 turn 求 `cache_tokens / context_tokens` 的平均（0-1） |
+| `compactionCount` | 复用 `SessionStats.compactionMarks(turns)` 逻辑（相邻 turn 的 context 跌到 <70%） |
+
+实现时优先考虑单次批量读取 + Swift 分组聚合（30 天约 1.9 万行，本地毫秒级），避免逐会话查询；若验证发现慢再优化为 SQL 窗口函数。`avgCacheRatio` 不依赖定价表。
 
 数据量估算：30 天快照加会话列表后约 100KB 出头，远低于 CloudKit 单记录 1MB 上限。**不新增 CloudKit 记录类型**，同步循环与订阅不变。
 
@@ -96,6 +114,7 @@ struct ToolSessionItem: Codable {
 2. `Suites/iOS/UI/DashboardView.swift`：
    - 工具行（toolBars）改为可点击，点击后弹出详情面板（sheet）。
    - 详情面板显示该工具的三行摘要 + 会话列表；会话行显示标题、时间、成本、上下文占用率（复用现有 SessionRow 展示逻辑，按 iOS 样式重写）。
+   - 会话行可点开，展开显示**会话档案卡**：对话轮次、平均占用率、平均缓存比例、上下文压缩次数，并标注"对话历史趋势图请在 macOS 版查看"。
    - `toolDetails` 为空时显示"暂无会话数据"空态。
 3. 仪表盘底部显示改为 `AI Pulse v1.2.5/CloudKit 1.2.4`。
 4. `Suites/Shared/I18n/I18n.swift`：新增详情面板相关文案，补齐 10 种语言（如"会话"、"暂无会话数据"、"提交行数"等）。
