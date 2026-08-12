@@ -44,6 +44,10 @@ enum TimeRange: Hashable {
 }
 
 struct DashboardView: View {
+    private static var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+    }
+
     let initialTimeRange: TimeRange
 
     @State private var dailyStats: [DailyStat] = []
@@ -1562,7 +1566,7 @@ struct DashboardView: View {
     @ViewBuilder
     private var lastUpdatedFooter: some View {
         HStack(spacing: 6) {
-            Text("CloudKit \(CKSchema.payloadVersion)")
+            Text("AI Pulse v\(Self.appVersion)/CloudKit \(CKSchema.payloadVersion)")
                 .font(.caption2).foregroundColor(.secondary)
             if let updated = lastUpdated {
                 if isRefreshing {
