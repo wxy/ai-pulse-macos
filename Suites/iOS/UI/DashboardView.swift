@@ -30,6 +30,7 @@ struct DashboardView: View {
     @State private var toolsExpanded = false
     @State private var reposExpanded = false
     @State private var fetchTask: Task<Void, Never>?
+    @State private var selectedTool: ToolDetailItem? = nil
 
     private var snap: DashboardSnapshot { cloudData.snapshot ?? DashboardSnapshot() }
 
@@ -204,6 +205,9 @@ struct DashboardView: View {
             let key = timeRange.cacheKey
             fetchTask = Task { try? await cloudData.fetchSnapshot(for: key) }
         }
+        .sheet(item: $selectedTool) { detail in
+            ToolDetailSheetView(detail: detail)
+        }
     }
 
     // MARK: - Donuts
@@ -350,6 +354,16 @@ struct DashboardView: View {
         }
     }
 
+    private func matchingToolDetail(for displayName: String) -> ToolDetailItem? {
+        let source: String
+        switch displayName {
+        case "ChatGPT":      source = "codex"
+        case "Claude Code":  source = "claude-code"
+        default:             return nil
+        }
+        return snap.toolDetails.first { $0.source == source }
+    }
+
     private func quotaColor(_ percent: Double) -> Color {
         switch percent {
         case 0..<75:  return .marsGreen
@@ -376,15 +390,20 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
             ForEach(shown, id: \.name) { tool in
-                HStack {
-                    Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
-                    GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 3).fill(Color.marsGreenBar)
-                            .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
-                    }.frame(height: 8)
-                    Spacer()
-                    Text(usd(tool.cost)).font(.caption2).monospacedDigit()
+                Button {
+                    selectedTool = matchingToolDetail(for: tool.name)
+                } label: {
+                    HStack {
+                        Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
+                        GeometryReader { geo in
+                            RoundedRectangle(cornerRadius: 3).fill(Color.marsGreenBar)
+                                .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
+                        }.frame(height: 8)
+                        Spacer()
+                        Text(usd(tool.cost)).font(.caption2).monospacedDigit()
+                    }
                 }
+                .buttonStyle(.plain)
             }
             if all.count > 3 {
                 Button(toolsExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {

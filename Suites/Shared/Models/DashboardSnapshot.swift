@@ -126,3 +126,7 @@ struct ToolSessionItem: Codable {
     var avgCacheRatio: Double?
     var compactionCount: Int
 }
+
+extension ToolDetailItem: Identifiable {
+    var id: String { source }
+}
