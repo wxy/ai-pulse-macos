@@ -10,27 +10,37 @@ struct ToolDetailSheetView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    conclusionCard
-                    if detail.sessions.isEmpty {
-                        Text(I18n.t("tool.detail.no_sessions"))
-                            .font(.caption).foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 24)
-                    } else {
-                        sessionList
+            VStack(spacing: 0) {
+                header
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        conclusionCard
+                        if detail.sessions.isEmpty {
+                            Text(I18n.t("tool.detail.no_sessions"))
+                                .font(.caption).foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 24)
+                        } else {
+                            sessionList
+                        }
                     }
-                }
-                .padding()
-            }
-            .navigationTitle(I18n.t("tool.detail.title"))
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(I18n.t("tool.detail.done")) { dismiss() }.fontWeight(.semibold)
+                    .padding()
                 }
             }
+            .toolbar(.hidden, for: .navigationBar)
         }
+    }
+
+    private var header: some View {
+        HStack {
+            Text(I18n.t("tool.detail.title"))
+                .font(.headline)
+            Spacer()
+            Button(I18n.t("tool.detail.done")) { dismiss() }
+                .fontWeight(.semibold)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
     }
 
     private var conclusionCard: some View {
