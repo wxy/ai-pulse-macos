@@ -54,7 +54,7 @@ struct ToolDetailSheetView: View {
                     .font(.headline)
                 Spacer()
                 HStack(spacing: 3) {
-                    Image(systemName: delta > 0 ? "arrow.up.right" : "arrow.down.right")
+                    Image(systemName: delta > 0 ? "arrow.up.right" : (delta < 0 ? "arrow.down.right" : "minus"))
                     Text(String(format: "%+.1f%%", delta))
                 }
                 .font(.caption2).fontWeight(.semibold).monospacedDigit()

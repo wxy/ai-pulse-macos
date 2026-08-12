@@ -661,7 +661,9 @@ enum StatsService {
         }
         async let codexDetail = StatsService.toolDetail(source: "codex", sinceMs: toolStartMs)
         async let claudeDetail = StatsService.toolDetail(source: "claude-code", sinceMs: toolStartMs)
-        let detailItems = [await codexDetail, await claudeDetail].filter { !$0.sessions.isEmpty }
+        // Keep both entries even when a tool has no sessions — the iOS detail
+        // sheet falls back to an empty state instead of a dead tap.
+        let detailItems = [await codexDetail, await claudeDetail]
         var toolMap: [String: Double] = [:]
         for r in toolRows {
             if let s: String = r["s"], let c: Double = r["c"], c > 0 { toolMap[s] = c }

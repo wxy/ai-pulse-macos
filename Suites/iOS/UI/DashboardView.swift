@@ -357,11 +357,16 @@ struct DashboardView: View {
     private func matchingToolDetail(for displayName: String) -> ToolDetailItem? {
         let source: String
         switch displayName {
-        case "ChatGPT":      source = "codex"
-        case "Claude Code":  source = "claude-code"
-        default:             return nil
+        case "ChatGPT":        source = "codex"
+        case "Claude Code":    source = "claude-code"
+        case "GitHub Copilot": source = "copilot"
+        default:               return nil
         }
+        // Fall back to an empty entry so the sheet opens with a "no session
+        // data" state instead of a dead tap (e.g. old macOS snapshots that
+        // predate toolDetails, or tools without session data).
         return snap.toolDetails.first { $0.source == source }
+            ?? ToolDetailItem(source: source, conclusion: ToolConclusionItem(), sessions: [])
     }
 
     private func quotaColor(_ percent: Double) -> Color {

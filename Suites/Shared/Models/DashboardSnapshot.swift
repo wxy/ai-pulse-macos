@@ -99,17 +99,17 @@ struct ToolDetailItem: Codable {
 }
 
 struct ToolConclusionItem: Codable {
-    var spend: Double
-    var previousSpend: Double
-    var deltaPct: Double
-    var projectedMonth: Double
-    var sessionCount: Int
-    var commitCount: Int
-    var addedLines: Int
-    var deletedLines: Int
-    var avgCostPerSession: Double
-    var cpl: Double
-    var crossToolDeltaPct: Double?
+    var spend: Double = 0
+    var previousSpend: Double = 0
+    var deltaPct: Double = 0
+    var projectedMonth: Double = 0
+    var sessionCount: Int = 0
+    var commitCount: Int = 0
+    var addedLines: Int = 0
+    var deletedLines: Int = 0
+    var avgCostPerSession: Double = 0
+    var cpl: Double = 0
+    var crossToolDeltaPct: Double? = nil
 }
 
 struct ToolSessionItem: Codable {
