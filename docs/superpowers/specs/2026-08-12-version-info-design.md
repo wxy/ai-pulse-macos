@@ -77,7 +77,7 @@ CloudKit 提供版本：<recordVersion>
 - `version.mismatch.supported`（"当前支持版本 %@" / 对应各语言）
 - 云端版本复用现有 `version.mismatch.payload`（"载荷版本 %@"）
 
-I18n 需要在 `Suites/Shared/I18n/I18n.swift` 的 5 种语言（en / zh-Hans / zh-Hant / ja / ko）中补齐。
+I18n 需要在 `Suites/Shared/I18n/I18n.swift` 的全部 10 种语言（en / zh-Hans / zh-Hant-TW / zh-Hant-HK / ja / ko / de / fr / es / pt-BR）中补齐。
 
 ## 不做的内容（YAGNI）
 
