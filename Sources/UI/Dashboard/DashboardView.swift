@@ -274,6 +274,11 @@ struct DashboardView: View {
                     }
 
                     lastUpdatedFooter
+
+                    Text("CloudKit \(CKSchema.payloadVersion)")
+                        .font(.caption2).foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 12)
                 }
             }
         }
