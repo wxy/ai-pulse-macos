@@ -25,6 +25,10 @@ struct DashboardSnapshot: Codable {
     var remainingBalances: [RemainingBalanceItem] = []
     var quotaStatus: [QuotaStatusItem] = []
 
+    // Tool detail: per-tool conclusion summary + session list. Optional/empty
+    // when produced by an older macOS app; old iOS clients ignore this field.
+    var toolDetails: [ToolDetailItem] = []
+
     // Sync metadata written by macOS:
     // `payloadVersion` = JSON payload format version; `writerAppVersion` = the
     // macOS app version that produced this snapshot. Optional so legacy
@@ -86,4 +90,39 @@ struct QuotaStatusItem: Codable {
     var limitStatus: String
     var resetAt: Double
     var windowSeconds: Double
+}
+
+struct ToolDetailItem: Codable {
+    var source: String
+    var conclusion: ToolConclusionItem
+    var sessions: [ToolSessionItem]
+}
+
+struct ToolConclusionItem: Codable {
+    var spend: Double
+    var previousSpend: Double
+    var deltaPct: Double
+    var projectedMonth: Double
+    var sessionCount: Int
+    var commitCount: Int
+    var addedLines: Int
+    var deletedLines: Int
+    var avgCostPerSession: Double
+    var cpl: Double
+    var crossToolDeltaPct: Double?
+}
+
+struct ToolSessionItem: Codable {
+    var sessionId: String?
+    var title: String?
+    var repo: String?
+    var firstTs: Int
+    var lastTs: Int
+    var cost: Double
+    var windowTokens: Int?
+    var lastInput: Int
+    var turnCount: Int
+    var avgOccupancy: Double?
+    var avgCacheRatio: Double?
+    var compactionCount: Int
 }
