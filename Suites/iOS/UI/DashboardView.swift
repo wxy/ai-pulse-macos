@@ -170,6 +170,8 @@ struct DashboardView: View {
                     Text("\(I18n.t("dashboard.updated")) \(updated, format: .dateTime.month(.abbreviated).day().hour().minute().locale(.current))")
                         .font(.caption2).foregroundColor(.secondary)
                 }
+                Text("CloudKit \(CKSchema.payloadVersion)")
+                    .font(.caption2).foregroundColor(.secondary)
             }
             .padding()
         }
