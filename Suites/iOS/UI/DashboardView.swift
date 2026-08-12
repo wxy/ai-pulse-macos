@@ -166,9 +166,13 @@ struct DashboardView: View {
                         )
                 }
 
-                if let updated = cloudData.lastUpdated {
-                    Text("\(I18n.t("dashboard.updated")) \(updated, format: .dateTime.month(.abbreviated).day().hour().minute().locale(.current))")
+                HStack(spacing: 6) {
+                    Text("CloudKit \(CKSchema.payloadVersion)")
                         .font(.caption2).foregroundColor(.secondary)
+                    if let updated = cloudData.lastUpdated {
+                        Text("\(I18n.t("dashboard.updated")) \(updated, format: .dateTime.month(.abbreviated).day().hour().minute().locale(.current))")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
                 }
             }
             .padding()

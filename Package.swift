@@ -1,5 +1,20 @@
 // swift-tools-version: 6.0
+import Foundation
 import PackageDescription
+
+// Resolve the repository root from the manifest's own path so linker flags
+// work regardless of the working directory SwiftPM/Xcode invokes the build
+// from. `@executable_path`-relative rpaths do not resolve for SwiftPM build
+// products (bare executables and .xctest bundles have no app-bundle layout),
+// which made `swift test` fail to load libgit2 at runtime.
+let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
+let libgit2LibPath = "\(packageRoot)/Libraries/libgit2/lib"
+let libgit2LinkerSettings: [LinkerSetting] = [
+    .unsafeFlags([
+        "-L\(libgit2LibPath)",
+        "-Xlinker", "-rpath", "-Xlinker", libgit2LibPath,
+    ]),
+]
 
 let package = Package(
     name: "AIPulse",
@@ -21,17 +36,13 @@ let package = Package(
             path: "Sources",
             exclude: ["Clibgit2"],
             resources: [.process("Localizable.xcstrings")],
-            linkerSettings: [
-                .unsafeFlags([
-                    "-LLibraries/libgit2/lib",
-                    "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Libraries/libgit2/lib",
-                ]),
-            ]
+            linkerSettings: libgit2LinkerSettings
         ),
         .testTarget(
             name: "AIPulseTests",
             dependencies: ["AIPulse", .product(name: "GRDB", package: "GRDB.swift")],
-            path: "Tests"
+            path: "Tests",
+            linkerSettings: libgit2LinkerSettings
         ),
     ]
 )

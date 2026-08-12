@@ -39,6 +39,7 @@ enum I18n {
             "dashboard.quota_stale": "pending refresh",
             "dashboard.vs_yesterday": "vs yesterday",
             "version.mismatch.payload": "Payload version %@",
+            "version.mismatch.supported": "Supported version %@",
         ],
         "zh-Hans": [
             "time.today": "今日", "time.week": "本周", "time.30d": "30 天",
@@ -76,6 +77,7 @@ enum I18n {
             "dashboard.quota_stale": "待更新",
             "dashboard.vs_yesterday": "vs昨日",
             "version.mismatch.payload": "载荷版本 %@",
+            "version.mismatch.supported": "当前支持版本 %@",
         ],
         "zh-Hant-TW": [
             "time.today": "今日", "time.week": "本週", "time.30d": "30 天",
@@ -112,6 +114,7 @@ enum I18n {
             "dashboard.quota_stale": "待更新",
             "dashboard.vs_yesterday": "vs昨日",
             "version.mismatch.payload": "資料版本 %@",
+            "version.mismatch.supported": "目前支援版本 %@",
         ],
         "zh-Hant-HK": [
             "time.today": "今日", "time.week": "本週", "time.30d": "30 天",
@@ -148,6 +151,7 @@ enum I18n {
             "dashboard.quota_stale": "待更新",
             "dashboard.vs_yesterday": "vs昨日",
             "version.mismatch.payload": "資料版本 %@",
+            "version.mismatch.supported": "目前支援版本 %@",
         ],
         "ja": [
             "time.today": "今日", "time.week": "今週", "time.30d": "30日",
@@ -184,6 +188,7 @@ enum I18n {
             "dashboard.quota_stale": "更新待ち",
             "dashboard.vs_yesterday": "前日比",
             "version.mismatch.payload": "ペイロードバージョン %@",
+            "version.mismatch.supported": "対応バージョン %@",
         ],
         "ko": [
             "time.today": "오늘", "time.week": "이번 주", "time.30d": "30일",
@@ -220,6 +225,7 @@ enum I18n {
             "dashboard.quota_stale": "갱신 대기",
             "dashboard.vs_yesterday": "어제 대비",
             "version.mismatch.payload": "페이로드 버전 %@",
+            "version.mismatch.supported": "지원 버전 %@",
         ],
         "de": [
             "time.today": "Heute", "time.week": "Woche", "time.30d": "30 Tage",
@@ -256,6 +262,7 @@ enum I18n {
             "dashboard.quota_stale": "Aktualisierung ausstehend",
             "dashboard.vs_yesterday": "vs gestern",
             "version.mismatch.payload": "Payload-Version %@",
+            "version.mismatch.supported": "Unterstützte Version %@",
         ],
         "fr": [
             "time.today": "Aujourd'hui", "time.week": "Semaine", "time.30d": "30 jours",
@@ -292,6 +299,7 @@ enum I18n {
             "dashboard.quota_stale": "actualisation en attente",
             "dashboard.vs_yesterday": "vs hier",
             "version.mismatch.payload": "Version des données %@",
+            "version.mismatch.supported": "Version prise en charge %@",
         ],
         "es": [
             "time.today": "Hoy", "time.week": "Semana", "time.30d": "30 días",
@@ -328,6 +336,7 @@ enum I18n {
             "dashboard.quota_stale": "pendiente de actualizar",
             "dashboard.vs_yesterday": "vs ayer",
             "version.mismatch.payload": "Versión de datos %@",
+            "version.mismatch.supported": "Versión compatible %@",
         ],
         "pt-BR": [
             "time.today": "Hoje", "time.week": "Semana", "time.30d": "30 dias",
@@ -364,6 +373,7 @@ enum I18n {
             "dashboard.quota_stale": "pendiente de actualizar",
             "dashboard.vs_yesterday": "vs ontem",
             "version.mismatch.payload": "Versão de dados %@",
+            "version.mismatch.supported": "Versão compatível %@",
         ],
     ]
 

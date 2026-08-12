@@ -30,6 +30,8 @@ struct VersionMismatchView: View {
                 .font(.body).foregroundColor(.secondary)
                 .padding(.horizontal, 40)
 
+            Text(String(format: I18n.t("version.mismatch.supported"), CKSchema.payloadVersion))
+                .font(.caption).foregroundColor(.secondary)
             if let recordVersion, !recordVersion.isEmpty {
                 Text(String(format: I18n.t("version.mismatch.payload"), recordVersion))
                     .font(.caption).foregroundColor(.secondary)
