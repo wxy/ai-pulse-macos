@@ -61,24 +61,32 @@ struct ToolDetailSheetView: View {
                 Text(I18n.t("tool.detail.spend_label"))
                     .font(.caption).foregroundColor(.secondary)
             }
-            HStack(spacing: 10) {
-                Text(String(format: I18n.t("tool.detail.sessions_count"), c.sessionCount))
-                Text(String(format: I18n.t("tool.detail.commits"), c.commitCount))
-                Text(String(format: I18n.t("tool.detail.lines"), c.addedLines, c.deletedLines))
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3),
+                      alignment: .leading, spacing: 10) {
+                statCell(I18n.t("tool.detail.sessions_label"),
+                         String(format: "%d", c.sessionCount))
+                statCell(I18n.t("tool.detail.commits_label"),
+                         String(format: "%d", c.commitCount))
+                statCell(I18n.t("tool.detail.lines_label"),
+                         String(format: "+%d/-%d", c.addedLines, c.deletedLines))
+                statCell(I18n.t("tool.detail.avg_cost_label"),
+                         "$\(String(format: "%.2f", c.avgCostPerSession))")
+                statCell(I18n.t("tool.detail.cpl_label"),
+                         String(format: "%.2f", c.cpl))
+                statCell(I18n.t("tool.detail.projected_label"),
+                         c.projectedMonth > 0 ? "$\(String(format: "%.0f", c.projectedMonth))" : "—")
             }
-            .font(.caption2).foregroundColor(.secondary).monospacedDigit()
-            HStack(spacing: 10) {
-                Text(String(format: I18n.t("tool.detail.avg_cost"), "$\(String(format: "%.2f", c.avgCostPerSession))"))
-                Text(String(format: I18n.t("tool.detail.cpl"), String(format: "%.2f", c.cpl)))
-                if c.projectedMonth > 0 {
-                    Text(String(format: I18n.t("tool.detail.projected"), "$\(String(format: "%.0f", c.projectedMonth))"))
-                }
-            }
-            .font(.caption2).foregroundColor(.secondary).monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func statCell(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.caption2).foregroundColor(.secondary)
+            Text(value).font(.caption).fontWeight(.semibold).monospacedDigit()
+        }
     }
 
     private var sessionList: some View {
@@ -115,15 +123,17 @@ struct ToolDetailSheetView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "folder")
-                        .foregroundColor(.accentColor.opacity(0.8))
-                    Image(systemName: collapsed ? "chevron.right" : "chevron.down")
-                        .font(.caption2).foregroundColor(.secondary)
-                    Text(group.repo)
-                        .font(.caption).fontWeight(.semibold)
-                        .lineLimit(1)
-                    Spacer()
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder")
+                            .foregroundColor(.accentColor.opacity(0.8))
+                        Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                            .font(.caption2).foregroundColor(.secondary)
+                        Text(group.repo)
+                            .font(.caption).fontWeight(.semibold)
+                            .lineLimit(3)
+                        Spacer(minLength: 0)
+                    }
                     Text(String(format: I18n.t("tool.detail.group_header"),
                                 group.sessions.count,
                                 "$\(String(format: "%.2f", group.totalCost))"))
@@ -194,15 +204,15 @@ struct ToolDetailSheetView: View {
                 metric(I18n.t("tool.detail.turns_label"),
                        String(format: "%d", row.turnCount))
                 Spacer()
-                metric(I18n.t("tool.detail.avg_occupancy_label"),
-                       row.avgOccupancy.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
+                metric(I18n.t("tool.detail.compactions_label"),
+                       String(format: "%d", row.compactionCount))
             }
             HStack(spacing: 14) {
                 metric(I18n.t("tool.detail.avg_cache_label"),
                        row.avgCacheRatio.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
                 Spacer()
-                metric(I18n.t("tool.detail.compactions_label"),
-                       String(format: "%d", row.compactionCount))
+                metric(I18n.t("tool.detail.avg_occupancy_label"),
+                       row.avgOccupancy.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
             }
             Divider()
             Label(I18n.t("tool.detail.macos_note"), systemImage: "macwindow")
