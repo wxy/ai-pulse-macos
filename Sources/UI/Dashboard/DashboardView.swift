@@ -274,11 +274,6 @@ struct DashboardView: View {
                     }
 
                     lastUpdatedFooter
-
-                    Text("CloudKit \(CKSchema.payloadVersion)")
-                        .font(.caption2).foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.bottom, 12)
                 }
             }
         }
@@ -1566,8 +1561,10 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var lastUpdatedFooter: some View {
-        if let updated = lastUpdated {
-            HStack {
+        HStack(spacing: 6) {
+            Text("CloudKit \(CKSchema.payloadVersion)")
+                .font(.caption2).foregroundColor(.secondary)
+            if let updated = lastUpdated {
                 if isRefreshing {
                     ProgressView().scaleEffect(0.6).frame(width: 12, height: 12)
                     Text(I18n.t("general.refreshing"))
@@ -1577,17 +1574,17 @@ struct DashboardView: View {
                         .font(.caption2).foregroundColor(.secondary)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16).padding(.horizontal, 20)
-            .contentShape(Rectangle())
-            .pointingHandCursor()
-            .onTapGesture {
-                guard !isRefreshing else { return }
-                isRefreshing = true
-                Task {
-                    await forceRefresh()
-                    isRefreshing = false
-                }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16).padding(.horizontal, 20)
+        .contentShape(Rectangle())
+        .pointingHandCursor()
+        .onTapGesture {
+            guard !isRefreshing else { return }
+            isRefreshing = true
+            Task {
+                await forceRefresh()
+                isRefreshing = false
             }
         }
     }
