@@ -66,4 +66,26 @@ final class SessionStatsTests: XCTestCase {
         XCTAssertFalse(ContextTrend(turns: Array(mono.prefix(2)), windowTokens: 1000, model: nil).isContextLike)
     }
 
+    func testSessionMetricsComputesProfile() {
+        let turns = [
+            TurnPoint(index: 0, ts: 1, inputTokens: 50, cacheTokens: 40, outTokens: 10, cost: 0.1, contextTokens: 50),
+            TurnPoint(index: 1, ts: 2, inputTokens: 100, cacheTokens: 90, outTokens: 20, cost: 0.2, contextTokens: 100),
+            // context 100 → 60 (< 70%) is marked as a compaction
+            TurnPoint(index: 2, ts: 3, inputTokens: 60, cacheTokens: 50, outTokens: 30, cost: 0.3, contextTokens: 60),
+        ]
+        let m = SessionStats.metrics(turns: turns, windowTokens: 200)
+        XCTAssertEqual(m.turnCount, 3)
+        XCTAssertEqual(m.avgOccupancy ?? -1, (50 + 100 + 60) / Double(3 * 200), accuracy: 0.0001)
+        XCTAssertEqual(m.avgCacheRatio ?? -1, (40.0 / 50 + 90.0 / 100 + 50.0 / 60) / 3, accuracy: 0.0001)
+        XCTAssertEqual(m.compactionCount, 1)
+    }
+
+    func testSessionMetricsEmptyAndNilWindow() {
+        let m = SessionStats.metrics(turns: [], windowTokens: nil)
+        XCTAssertEqual(m.turnCount, 0)
+        XCTAssertNil(m.avgOccupancy)
+        XCTAssertNil(m.avgCacheRatio)
+        XCTAssertEqual(m.compactionCount, 0)
+    }
+
 }

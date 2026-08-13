@@ -513,7 +513,9 @@ struct AboutTab: View {
         VStack(spacing: 16) {
             Image(nsImage: AppIconLoader.uiImage(size: 64))
             Text(I18n.t("about.title")).font(.title).fontWeight(.bold)
-            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.9.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"))").font(.caption).foregroundColor(.secondary)
+            Text("AI Pulse v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.9.0")").font(.caption).foregroundColor(.secondary)
+            Text("CloudKit \(CKSchema.payloadVersion)")
+                .font(.caption).foregroundColor(.secondary)
             Text(I18n.t("about.desc")).multilineTextAlignment(.center)
             Text(I18n.t("about.privacy")).font(.caption2).foregroundColor(.secondary)
             HStack(spacing: 16) {

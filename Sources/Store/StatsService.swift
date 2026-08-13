@@ -659,6 +659,11 @@ enum StatsService {
                 try GRDB.Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [toolStartMs])
             }
         }
+        async let codexDetail = StatsService.toolDetail(source: "codex", sinceMs: toolStartMs)
+        async let claudeDetail = StatsService.toolDetail(source: "claude-code", sinceMs: toolStartMs)
+        // Keep both entries even when a tool has no sessions — the iOS detail
+        // sheet falls back to an empty state instead of a dead tap.
+        let detailItems = [await codexDetail, await claudeDetail]
         var toolMap: [String: Double] = [:]
         for r in toolRows {
             if let s: String = r["s"], let c: Double = r["c"], c > 0 { toolMap[s] = c }
@@ -708,6 +713,7 @@ enum StatsService {
             remainingBalances: lb, quotaStatus: qs,
             updatedAt: Date()
         )
+        snap.toolDetails = detailItems
         snap.payloadVersion = CKSchema.payloadVersion
         snap.writerAppVersion = CKSchema.writerAppVersion
         return snap
@@ -759,8 +765,8 @@ enum StatsService {
     static func sessionRows(source: String, sinceMs: Int64) async -> [SessionRow] {
         let toMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000) + 86_400_000
         do {
-            return try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: """
+            return try await AppDatabase.shared.read { db -> [SessionRow] in
+                let rows = try Row.fetchAll(db, sql: """
                     SELECT u.session_id AS sid,
                            MIN(u.ts) AS first_ts,
                            MAX(u.ts) AS last_ts,
@@ -778,7 +784,30 @@ enum StatsService {
                     WHERE u.source = ? AND u.ts >= ? AND u.ts < ? AND u.session_id IS NOT NULL
                     GROUP BY u.session_id
                     ORDER BY cost DESC
-                    """, arguments: [source, sinceMs, toMs]).map { row in
+                    """, arguments: [source, sinceMs, toMs])
+                // Batch-load all turns in the range, then aggregate per session
+                // in Swift (30d ≈ 20k rows, millisecond-scale; keeps SQL simple
+                // and the aggregation logic unit-testable via SessionStats.metrics).
+                let turns = try Row.fetchAll(db, sql: """
+                    SELECT session_id AS sid, in_tokens AS inT, cache_tokens AS cacheT
+                    FROM usage_event
+                    WHERE source = ? AND ts >= ? AND ts < ? AND session_id IS NOT NULL
+                      AND (in_tokens + cache_tokens) > 0
+                    ORDER BY ts
+                    """, arguments: [source, sinceMs, toMs])
+                var grouped: [String: [TurnPoint]] = [:]
+                for turn in turns {
+                    let sid: String = turn["sid"]
+                    let input: Int = turn["inT"] ?? 0
+                    let cache: Int = turn["cacheT"] ?? 0
+                    let ctx = input + (source == "claude-code" ? cache : 0)
+                    var list = grouped[sid] ?? []
+                    list.append(TurnPoint(
+                        index: list.count, ts: 0, inputTokens: input,
+                        cacheTokens: cache, outTokens: 0, cost: 0, contextTokens: ctx))
+                    grouped[sid] = list
+                }
+                return rows.map { row in
                     let repo: String? = row["repo"]
                     let title: String? = row["title"]
                     let window: Int? = row["window"]
@@ -787,6 +816,9 @@ enum StatsService {
                     let lastInput: Int? = row["last_input"]
                     let cost: Double = row["cost"] ?? 0
                     let sid: String? = row["sid"]
+                    let m = SessionStats.metrics(
+                        turns: sid.flatMap { grouped[$0] } ?? [],
+                        windowTokens: window)
                     return SessionRow(
                         source: source,
                         sessionId: sid,
@@ -796,13 +828,54 @@ enum StatsService {
                         lastTs: lastTs ?? 0,
                         lastInput: lastInput ?? 0,
                         cost: cost,
-                        windowTokens: window)
+                        windowTokens: window,
+                        turnCount: m.turnCount,
+                        avgOccupancy: m.avgOccupancy,
+                        avgCacheRatio: m.avgCacheRatio,
+                        compactionCount: m.compactionCount)
                 }
             }
         } catch {
             Logger.error("StatsService.sessionRows failed: \(error)")
             return []
         }
+    }
+
+    /// One tool's detail block for the iOS detail panel: conclusion summary
+    /// + session list with profile metrics.
+    static func toolDetail(source: String, sinceMs: Int64) async -> ToolDetailItem {
+        async let conclusion = toolConclusion(source: source, sinceMs: sinceMs)
+        let rows = await sessionRows(source: source, sinceMs: sinceMs)
+        let c = await conclusion
+        return ToolDetailItem(
+            source: source,
+            conclusion: ToolConclusionItem(
+                spend: c.spend,
+                previousSpend: c.previousSpend,
+                deltaPct: c.deltaPct,
+                projectedMonth: c.projectedMonth,
+                sessionCount: c.sessionCount,
+                commitCount: c.commitCount,
+                addedLines: c.addedLines,
+                deletedLines: c.deletedLines,
+                avgCostPerSession: c.avgCostPerSession,
+                cpl: c.cpl,
+                crossToolDeltaPct: c.crossToolDeltaPct),
+            sessions: rows.map {
+                ToolSessionItem(
+                    sessionId: $0.sessionId,
+                    title: $0.title,
+                    repo: $0.repo,
+                    firstTs: $0.firstTs,
+                    lastTs: $0.lastTs,
+                    cost: $0.cost,
+                    windowTokens: $0.windowTokens,
+                    lastInput: $0.lastInput,
+                    turnCount: $0.turnCount,
+                    avgOccupancy: $0.avgOccupancy,
+                    avgCacheRatio: $0.avgCacheRatio,
+                    compactionCount: $0.compactionCount)
+            })
     }
 
     /// Full per-turn trajectory of one session (context trend chart data).

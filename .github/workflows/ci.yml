@@ -40,10 +40,13 @@ jobs:
           swift build --build-tests -Xcc -I$(pwd)/Libraries/libgit2/include
 
           # SPM's @rpath doesn't resolve for xctest bundles — inject the
-          # absolute path to libgit2 before execution.
+          # absolute path to libgit2 before execution. The test target may
+          # already carry the rpath via Package.swift linker settings, so
+          # only add it when missing (idempotent).
           BIN_DIR=$(swift build --show-bin-path)
           TEST_BIN="$BIN_DIR/AIPulsePackageTests.xctest/Contents/MacOS/AIPulsePackageTests"
-          install_name_tool -add_rpath "$(pwd)/Libraries/libgit2/lib" "$TEST_BIN"
+          otool -l "$TEST_BIN" | grep -q "$(pwd)/Libraries/libgit2/lib" || \
+            install_name_tool -add_rpath "$(pwd)/Libraries/libgit2/lib" "$TEST_BIN"
 
           # Run tests without rebuilding.
           swift test --skip-build

@@ -30,6 +30,7 @@ struct DashboardView: View {
     @State private var toolsExpanded = false
     @State private var reposExpanded = false
     @State private var fetchTask: Task<Void, Never>?
+    @State private var selectedTool: ToolDetailItem? = nil
 
     private var snap: DashboardSnapshot { cloudData.snapshot ?? DashboardSnapshot() }
 
@@ -166,9 +167,13 @@ struct DashboardView: View {
                         )
                 }
 
-                if let updated = cloudData.lastUpdated {
-                    Text("\(I18n.t("dashboard.updated")) \(updated, format: .dateTime.month(.abbreviated).day().hour().minute().locale(.current))")
+                HStack(spacing: 6) {
+                    Text("AI Pulse v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0")/CloudKit \(CKSchema.payloadVersion)")
                         .font(.caption2).foregroundColor(.secondary)
+                    if let updated = cloudData.lastUpdated {
+                        Text("\(I18n.t("dashboard.updated")) \(updated, format: .dateTime.month(.abbreviated).day().hour().minute().locale(.current))")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
                 }
             }
             .padding()
@@ -199,6 +204,9 @@ struct DashboardView: View {
             fetchTask?.cancel()
             let key = timeRange.cacheKey
             fetchTask = Task { try? await cloudData.fetchSnapshot(for: key) }
+        }
+        .sheet(item: $selectedTool) { detail in
+            ToolDetailSheetView(detail: detail)
         }
     }
 
@@ -346,6 +354,21 @@ struct DashboardView: View {
         }
     }
 
+    private func matchingToolDetail(for displayName: String) -> ToolDetailItem? {
+        let source: String
+        switch displayName {
+        case "ChatGPT":        source = "codex"
+        case "Claude Code":    source = "claude-code"
+        case "GitHub Copilot": source = "copilot"
+        default:               return nil
+        }
+        // Fall back to an empty entry so the sheet opens with a "no session
+        // data" state instead of a dead tap (e.g. old macOS snapshots that
+        // predate toolDetails, or tools without session data).
+        return snap.toolDetails.first { $0.source == source }
+            ?? ToolDetailItem(source: source, conclusion: ToolConclusionItem(), sessions: [])
+    }
+
     private func quotaColor(_ percent: Double) -> Color {
         switch percent {
         case 0..<75:  return .marsGreen
@@ -372,15 +395,20 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
             ForEach(shown, id: \.name) { tool in
-                HStack {
-                    Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
-                    GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 3).fill(Color.marsGreenBar)
-                            .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
-                    }.frame(height: 8)
-                    Spacer()
-                    Text(usd(tool.cost)).font(.caption2).monospacedDigit()
+                Button {
+                    selectedTool = matchingToolDetail(for: tool.name)
+                } label: {
+                    HStack {
+                        Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
+                        GeometryReader { geo in
+                            RoundedRectangle(cornerRadius: 3).fill(Color.marsGreenBar)
+                                .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
+                        }.frame(height: 8)
+                        Spacer()
+                        Text(usd(tool.cost)).font(.caption2).monospacedDigit()
+                    }
                 }
+                .buttonStyle(.plain)
             }
             if all.count > 3 {
                 Button(toolsExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
