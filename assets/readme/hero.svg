@@ -102,4 +102,11 @@
   <path d="M 1068 108 L 1069.6 113.6 L 1075 115 L 1069.6 116.4 L 1068 122 L 1066.4 116.4 L 1061 115 L 1066.4 113.6 Z" fill="#E8954C"/>
   <path d="M 1207 204 L 1208.4 208.6 L 1213 210 L 1208.4 211.4 L 1207 216 L 1205.6 211.4 L 1201 210 L 1205.6 208.6 Z" fill="#D98E2B" opacity="0.8"/>
   <path d="M 1026 348 L 1027.2 352 L 1031 353.2 L 1027.2 354.4 L 1026 358.2 L 1024.8 354.4 L 1021 353.2 L 1024.8 352 Z" fill="#E8A24B" opacity="0.7"/>
+
+  <!-- pulse wave filling the lower right -->
+  <path d="M 806 368 C 940 396 1060 372 1180 404" fill="none" stroke="#E8A24B" stroke-opacity="0.6" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="4 7"/>
+  <circle cx="1240" cy="402" r="4.5" fill="#F0C75F" stroke="#2B2620" stroke-width="2.5"/>
+  <circle cx="978" cy="386" r="3" fill="#D98E2B" opacity="0.7"/>
+  <circle cx="1136" cy="390" r="2.5" fill="#D98E2B" opacity="0.7"/>
+  <path d="M 1156 428 L 1157.2 432.2 L 1161.4 433.4 L 1157.2 434.6 L 1156 438.8 L 1154.8 434.6 L 1150.6 433.4 L 1154.8 432.2 Z" fill="#E8A24B" opacity="0.6"/>
 </svg>

@@ -2,17 +2,17 @@
 
 <p align="center">
   <img src="assets/readme/icon-rounded.png" width="96" height="96" alt="AI Pulse App Icon">&nbsp;
-  <a href="https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12"><img src="assets/readme/download-button-appstore-mac.svg" width="360" height="82" alt="Download on the Mac App Store"></a>&nbsp;
-  <a href="https://apps.apple.com/us/app/ai-pulse-coding-cost-tracker/id6786290416?mt=8"><img src="assets/readme/download-button-appstore-ios.svg" width="360" height="82" alt="Download on the iOS App Store"></a>
+  <a href="https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12"><img src="assets/readme/download-button-appstore-mac.svg" width="300" height="69" alt="Download on the Mac App Store"></a>&nbsp;
+  <a href="https://apps.apple.com/us/app/ai-pulse-coding-cost-tracker/id6786290416?mt=8"><img src="assets/readme/download-button-appstore-ios.svg" width="300" height="69" alt="Download on the iOS App Store"></a>
 </p>
 
 <p align="center"><code>SWIFTUI · SWIFT 6 · MACOS 14+ · IOS 16+</code></p>
 
 <p align="center">
-  [![CI](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml)
-  [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-  [![Platform](https://img.shields.io/badge/platform-macOS%2014%2B%20%2F%20iOS%2016%2B-lightgrey)]()
-  [![Swift](https://img.shields.io/badge/swift-6.0-orange)]()
+  <a href="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml"><img src="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg" alt="CI"></a>&nbsp;
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License"></a>&nbsp;
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B%20%2F%20iOS%2016%2B-lightgrey" alt="Platform">&nbsp;
+  <img src="https://img.shields.io/badge/swift-6.0-orange" alt="Swift">
 </p>
 
 <p align="center"><img src="assets/readme/section-screens.svg" width="100%" alt="Screens · 截图"></p>
