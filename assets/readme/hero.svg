@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="480" viewBox="0 0 1280 480" role="img" aria-labelledby="heroTitle heroDesc">
+  <title id="heroTitle">AI Pulse — AI 编程花费追踪仪</title>
+  <desc id="heroDesc">浅色 hero：左侧产品名与中英双语标语，右侧机器人头像、金色脉冲环与迷你仪表盘装饰插画。</desc>
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F8F4EA"/>
+      <stop offset="1" stop-color="#F1EBDD"/>
+    </linearGradient>
+    <pattern id="gridPat" width="34" height="34" patternUnits="userSpaceOnUse">
+      <path d="M34 0H0V34" fill="none" stroke="#2B2620" stroke-opacity="0.045"/>
+    </pattern>
+    <radialGradient id="warmGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#F0C75F" stop-opacity="0.35"/>
+      <stop offset="0.55" stop-color="#F0C75F" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#F0C75F" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="pathGrad" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#C77B2E"/>
+      <stop offset="0.5" stop-color="#E8A24B"/>
+      <stop offset="0.85" stop-color="#F0C75F"/>
+      <stop offset="1" stop-color="#F6D98A"/>
+    </linearGradient>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="480" fill="url(#bgGrad)"/>
+  <rect width="1280" height="480" fill="url(#gridPat)"/>
+  <circle cx="910" cy="245" r="300" fill="url(#warmGlow)"/>
+  <line x1="512" y1="44" x2="512" y2="438" stroke="#2B2620" stroke-opacity="0.10"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
+    <text x="54" y="60" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13.5" font-weight="700" letter-spacing="2" fill="#A97A3B">AI CODING COST TRACKER</text>
+    <text x="52" y="126" font-size="74" font-weight="850" letter-spacing="-1.5" fill="#2B2620">AI Pulse</text>
+    <rect x="54" y="138" width="230" height="11" rx="5.5" fill="#F0C75F" opacity="0.9"/>
+    <text x="56" y="182" font-size="26" font-weight="700" fill="#B26B24">AI 编程花费追踪仪</text>
+    <text x="56" y="214" font-size="26" font-weight="700" fill="#B26B24">Your AI Coding Cost Tracker</text>
+    <text x="56" y="248" font-size="19" font-weight="520" fill="#6B6255">精确掌握每一笔 AI 花费，以及产出是否值得</text>
+    <text x="56" y="278" font-size="17" fill="#6B6255">See your AI spend — and whether it&apos;s worth it</text>
+    <text x="56" y="310" font-size="14.5" fill="#8A8070">100% 本地运行 · 数据绝不出设备</text>
+    <text x="56" y="332" font-size="14.5" fill="#8A8070">100% local · zero data leaves your machine</text>
+  </g>
+
+  <g font-family="ui-monospace, 'SF Mono', Menlo, monospace">
+    <circle cx="64" cy="392" r="9" fill="#E8954C" stroke="#2B2620" stroke-width="3"/>
+    <text x="82" y="397" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7A6F5F">TRACK</text>
+    <line x1="150" y1="392" x2="190" y2="392" stroke="#2B2620" stroke-width="2"/>
+    <path d="M188 386 L196 392 L188 398 Z" fill="#2B2620"/>
+    <circle cx="208" cy="392" r="9" fill="#E8A24B" stroke="#2B2620" stroke-width="3"/>
+    <text x="226" y="397" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7A6F5F">ATTRIBUTE</text>
+    <line x1="326" y1="392" x2="366" y2="392" stroke="#2B2620" stroke-width="2"/>
+    <path d="M364 386 L372 392 L364 398 Z" fill="#2B2620"/>
+    <circle cx="384" cy="392" r="9" fill="#F6C85F" stroke="#2B2620" stroke-width="3"/>
+    <text x="402" y="397" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7A6F5F">GUARD</text>
+  </g>
+
+  <!-- gold pulse rings around the robot -->
+  <circle cx="910" cy="245" r="118" fill="none" stroke="#E8A24B" stroke-opacity="0.25" stroke-width="3"/>
+  <circle cx="910" cy="245" r="96" fill="none" stroke="#E8954C" stroke-opacity="0.5" stroke-width="4" stroke-dasharray="6 10"/>
+  <circle cx="910" cy="341" r="6" fill="#F0C75F" stroke="#2B2620" stroke-width="2.5"/>
+  <circle cx="910" cy="245" r="86" fill="#F0C75F" opacity="0.22" filter="url(#softGlow)"/>
+
+  <!-- robot head mascot -->
+  <g>
+    <rect x="838" y="180" width="144" height="130" rx="38" fill="#BFDAE4" stroke="#2B2620" stroke-width="4.5"/>
+    <line x1="856" y1="192" x2="822" y2="150" stroke="#8A8070" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="816" cy="142" r="9" fill="#F0C75F" stroke="#2B2620" stroke-width="3"/>
+    <line x1="964" y1="192" x2="998" y2="150" stroke="#8A8070" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="1004" cy="142" r="9" fill="#F0C75F" stroke="#2B2620" stroke-width="3"/>
+    <line x1="910" y1="180" x2="910" y2="148" stroke="#8A8070" stroke-width="4" stroke-linecap="round"/>
+    <rect x="895" y="124" width="30" height="22" rx="10" fill="#D9D2C4" stroke="#2B2620" stroke-width="3.5"/>
+    <circle cx="874" cy="230" r="13.5" fill="#FFF9E8" stroke="#2B2620" stroke-width="3.5"/>
+    <circle cx="946" cy="230" r="13.5" fill="#FFF9E8" stroke="#2B2620" stroke-width="3.5"/>
+    <circle cx="872" cy="228" r="6" fill="#2B2620"/>
+    <circle cx="944" cy="228" r="6" fill="#2B2620"/>
+    <circle cx="869" cy="225" r="2" fill="#FFF9E8"/>
+    <circle cx="941" cy="225" r="2" fill="#FFF9E8"/>
+    <circle cx="846" cy="258" r="7.5" fill="#F2A9A9" opacity="0.75"/>
+    <circle cx="974" cy="258" r="7.5" fill="#F2A9A9" opacity="0.75"/>
+    <path d="M 882 262 Q 910 280 938 262" fill="none" stroke="#2B2620" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <!-- mini dashboard: donut + trend bars + coin -->
+  <g>
+    <circle cx="1125" cy="160" r="36" fill="none" stroke="#E8E2D4" stroke-width="13"/>
+    <path d="M 1125 124 A 36 36 0 0 1 1161 160" fill="none" stroke="#9CC3D6" stroke-width="13" stroke-linecap="round"/>
+    <path d="M 1161 160 A 36 36 0 0 1 1125 196" fill="none" stroke="#E8A24B" stroke-width="13" stroke-linecap="round"/>
+    <circle cx="1125" cy="160" r="7" fill="#FFF9E8" stroke="#2B2620" stroke-width="2.5"/>
+  </g>
+  <g>
+    <rect x="1083" y="310" width="12" height="16" rx="4" fill="#BFDAE4" stroke="#2B2620" stroke-width="2"/>
+    <rect x="1103" y="302" width="12" height="24" rx="4" fill="#C9E0EA" stroke="#2B2620" stroke-width="2"/>
+    <rect x="1123" y="306" width="12" height="20" rx="4" fill="#BFDAE4" stroke="#2B2620" stroke-width="2"/>
+    <rect x="1143" y="294" width="12" height="32" rx="4" fill="#E8A24B" opacity="0.8" stroke="#2B2620" stroke-width="2"/>
+    <rect x="1163" y="282" width="12" height="44" rx="4" fill="#F0C75F" stroke="#2B2620" stroke-width="2.5"/>
+  </g>
+  <circle cx="1125" cy="104" r="10" fill="#F6C85F" stroke="#2B2620" stroke-width="3"/>
+  <circle cx="1125" cy="104" r="6.5" fill="none" stroke="#2B2620" stroke-width="2"/>
+
+  <!-- sparkles -->
+  <path d="M 1068 108 L 1069.6 113.6 L 1075 115 L 1069.6 116.4 L 1068 122 L 1066.4 116.4 L 1061 115 L 1066.4 113.6 Z" fill="#E8954C"/>
+  <path d="M 1207 204 L 1208.4 208.6 L 1213 210 L 1208.4 211.4 L 1207 216 L 1205.6 211.4 L 1201 210 L 1205.6 208.6 Z" fill="#D98E2B" opacity="0.8"/>
+  <path d="M 1026 348 L 1027.2 352 L 1031 353.2 L 1027.2 354.4 L 1026 358.2 L 1024.8 354.4 L 1021 353.2 L 1024.8 352 Z" fill="#E8A24B" opacity="0.7"/>
+</svg>
