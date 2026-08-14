@@ -4,12 +4,16 @@ import UserNotifications
 
 /// Dock app. Shows Dashboard as the primary window. No menu bar icon.
 
-final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, @unchecked Sendable {
     private var securityScopedURLs: [URL] = []
     var menuBarController: MenuBarController?
     private var windowSubmenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Present foreground notifications with sound; without a delegate macOS
+        // may show the banner but silently drop the sound.
+        UNUserNotificationCenter.current().delegate = self
+
         // Single-instance: if another copy (same bundle id) is already running,
         // activate it and quit this one.
         if let bid = Bundle.main.bundleIdentifier {
@@ -104,6 +108,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         openDashboard()
         return true
+    }
+
+    // MARK: - UNUserNotificationCenterDelegate
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
     }
 
     // MARK: - Dock menu

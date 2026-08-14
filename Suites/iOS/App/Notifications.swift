@@ -244,6 +244,6 @@ final class NotificationService: NSObject {
 extension NotificationService: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner]
+        [.banner, .sound]
     }
 }
