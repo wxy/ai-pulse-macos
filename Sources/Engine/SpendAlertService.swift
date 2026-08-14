@@ -58,34 +58,33 @@ final class SpendAlertService: @unchecked Sendable {
 
     private func spendRateCandidates() async -> [SpendAlertPayload] {
         let now = Date()
-        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
-        let hourMs = Int64(3_600_000)
-        let dayMs = Int64(86_400_000)
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: now)
 
         do {
-            // 1-hour window vs 7-day hourly median.
-            let hourlyBaseline = try await hourlyBaseline(nowMs: nowMs)
-            let latestHour = try await cost(since: nowMs - hourMs)
-            let hourLevel = SpendAlertRules.levelForSpendRate(
-                current: latestHour, baseline: hourlyBaseline, thresholds: thresholds)
+            // Today's balance-derived spend vs the median of the prior 7 local
+            // calendar days. Same source as the Dashboard "Spend" chart, and
+            // subscriptions are intentionally excluded.
+            let daily = try await balanceDailyTotals(now: now)
+            let today = daily[todayStart] ?? 0
+            let baseline = Array(daily.filter { $0.key < todayStart }.values)
+            // Don't fire on a cold start: a rate surge needs enough history to
+            // establish what "normal" looks like, otherwise day one with a few
+            // dollars of spend would look like a 2x surge over an empty median.
+            guard baseline.count >= 3 else { return [] }
+            let baselineMedian = SpendAlertRules.median(baseline)
 
-            // 24-hour window vs 7-day daily median.
-            let dailyBaseline = try await dailyBaseline(nowMs: nowMs)
-            let latestDay = try await cost(since: nowMs - dayMs)
-            let dayLevel = SpendAlertRules.levelForSpendRate(
-                current: latestDay, baseline: dailyBaseline, thresholds: thresholds)
+            guard let level = SpendAlertRules.levelForSpendRate(
+                current: today, baseline: baselineMedian, thresholds: thresholds)
+            else { return [] }
 
-            let level = [hourLevel, dayLevel].compactMap { $0 }.max()
-            guard let level else { return [] }
-
-            let baseline = max(hourlyBaseline, dailyBaseline)
             return [SpendAlertPayload(
                 eventId: UUID().uuidString,
                 level: level.rawValue,
                 kind: SpendAlertKind.spendRate.rawValue,
                 source: "aggregate",
-                amountUsd: max(latestHour, latestDay),
-                baselineUsd: baseline,
+                amountUsd: today,
+                baselineUsd: baselineMedian,
                 occurredAt: now
             )]
         } catch {
@@ -94,47 +93,25 @@ final class SpendAlertService: @unchecked Sendable {
         }
     }
 
-    private func hourlyBaseline(nowMs: Int64) async throws -> Double {
-        let hourMs = Int64(3_600_000)
-        let start = nowMs - 7 * 24 * hourMs
-        let end = nowMs - hourMs  // exclude the in-progress hour from baseline
-        let buckets = try await AppDatabase.shared.read { db in
-            let rows = try Row.fetchAll(db, sql: """
-                SELECT (ts / ?) AS bucket, COALESCE(SUM(cost_usd), 0) AS c
-                FROM usage_event
-                WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
-                GROUP BY bucket
-                """, arguments: [hourMs, start, end])
-            return rows.map { ($0["c"] as Double? ?? 0) }
-        }
-        return SpendAlertRules.median(buckets)
-    }
+    /// Local calendar-day balance-derived spend (USD) for the last 7 days plus
+    /// today. Reuses `StatsService.balanceDailySpend`, the exact source behind
+    /// the Dashboard "Spend" chart, so alert and Dashboard totals agree.
+    private func balanceDailyTotals(now: Date) async throws -> [Date: Double] {
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: now)
+        let firstDay = cal.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart
+        // One extra day of lookback captures the delta that straddles `firstDay`.
+        let queryStart = cal.date(byAdding: .day, value: -1, to: firstDay) ?? firstDay
 
-    private func dailyBaseline(nowMs: Int64) async throws -> Double {
-        let dayMs = Int64(86_400_000)
-        let start = nowMs - 7 * dayMs
-        let end = nowMs - dayMs
-        let buckets = try await AppDatabase.shared.read { db in
-            let rows = try Row.fetchAll(db, sql: """
-                SELECT (ts / ?) AS bucket, COALESCE(SUM(cost_usd), 0) AS c
-                FROM usage_event
-                WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
-                GROUP BY bucket
-                """, arguments: [dayMs, start, end])
-            return rows.map { ($0["c"] as Double? ?? 0) }
-        }
-        return SpendAlertRules.median(buckets)
-    }
+        let rows = try await StatsService.balanceDailySpend(
+            days: 1,
+            sinceMs: Int64(queryStart.timeIntervalSince1970 * 1000))
 
-    private func cost(since startMs: Int64) async throws -> Double {
-        try await AppDatabase.shared.read { db in
-            let value = try Double.fetchOne(db, sql: """
-                SELECT COALESCE(SUM(cost_usd), 0)
-                FROM usage_event
-                WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
-                """, arguments: [startMs]) ?? 0
-            return value
+        var totals: [Date: Double] = [:]
+        for row in rows where row.date >= firstDay {
+            totals[row.date, default: 0] += row.spend
         }
+        return totals
     }
 
     // MARK: - Balance drop
@@ -142,16 +119,17 @@ final class SpendAlertService: @unchecked Sendable {
     private func balanceDropCandidates() async -> [SpendAlertPayload] {
         let now = Date()
         let dayMs = Int64(86_400_000)
-        let startMs = Int64(now.timeIntervalSince1970 * 1000) - dayMs
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        let startMs = nowMs - dayMs
 
         do {
             let rows = try await AppDatabase.shared.read { db -> [(providerId: String, ts: Int64, balance: Double, currency: String)] in
                 let fetched = try Row.fetchAll(db, sql: """
                     SELECT provider_id, ts, balance, currency
                     FROM balance_snapshot
-                    WHERE ts >= ?
+                    WHERE ts >= ? AND ts <= ?
                     ORDER BY provider_id, ts
-                    """, arguments: [startMs])
+                    """, arguments: [startMs - dayMs, nowMs])
                 return fetched.map { row in
                     let providerId: String = row["provider_id"] ?? ""
                     let ts: Int64 = row["ts"] ?? 0
@@ -169,11 +147,14 @@ final class SpendAlertService: @unchecked Sendable {
 
             var candidates: [SpendAlertPayload] = []
             for (pid, snapshots) in byProvider {
-                guard snapshots.count >= 2,
-                      let newest = snapshots.last,
-                      let oldest = snapshots.first else { continue }
+                guard let newest = snapshots.last,
+                      let baseline = snapshots.last(where: { $0.ts <= startMs }) else { continue }
 
-                let dropRaw = oldest.balance - newest.balance
+                // Measure from the last snapshot at-or-before the 24h boundary,
+                // not the first snapshot inside the window. Otherwise the first
+                // in-window snapshot already reflects part of the drop and the
+                // 24h change is under-counted.
+                let dropRaw = baseline.balance - newest.balance
                 guard dropRaw > 0 else { continue }
                 let dropUSD = dropRaw * StatsService.toUSD(currency: newest.currency)
                 guard let level = SpendAlertRules.levelForBalanceDrop(

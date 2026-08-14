@@ -34,8 +34,13 @@ final class PricingCatalogTests: XCTestCase {
     func testCostUSDForDeepSeekPro() {
         let cost = PricingManager.shared.costUSD(model: "deepseek-v4-pro", inTokens: 1_000_000, outTokens: 500_000, cacheTokens: 1_000_000)
         XCTAssertNotNil(cost)
-        // 1M in @ $0.42 + 0.5M out @ $0.83 + 1M cache @ $0.0035 = 0.42 + 0.415 + 0.0035 = 0.8385
-        XCTAssertEqual(cost!, 0.8385, accuracy: 0.001)
+        // cacheTokens is a subset of inTokens, so the cached 1M is billed at
+        // cache price (not additionally at full input price):
+        // non-cached input = 0 → $0
+        // 0.5M out @ $0.83 = 0.415
+        // 1M cache @ $0.0035 = 0.0035
+        // total = 0.4185
+        XCTAssertEqual(cost!, 0.4185, accuracy: 0.001)
     }
 
     func testPricingForUnknownModelReturnsNil() {
