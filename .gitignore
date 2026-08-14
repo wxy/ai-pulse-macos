@@ -3,6 +3,7 @@
 *.xcarchive
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
+**/xcuserdata/
 DerivedData/
 
 # SPM
