@@ -253,11 +253,10 @@ struct GeneralTab: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var demoActive = DemoData.isActive
     @State private var spendAlertsEnabled = SpendAlertSettings.current().master
-    @State private var balanceDropAlertsEnabled = SpendAlertSettings.current().balanceDrop
-    @State private var spendRateAlertsEnabled = SpendAlertSettings.current().spendRate
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
             Text(I18n.t("general.title")).font(.title3).fontWeight(.semibold)
             Text(I18n.t("general.desc")).font(.caption).foregroundColor(.secondary)
 
@@ -308,36 +307,6 @@ struct GeneralTab: View {
                     .toggleStyle(.switch)
                     .onChange(of: spendAlertsEnabled) { _, v in
                         UserDefaults.standard.set(v, forKey: SpendAlertSettings.masterKey)
-                    }
-            }
-
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(I18n.t("general.balance_drop_alerts")).font(.body)
-                    Text(I18n.t("general.balance_drop_alerts_desc"))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                Spacer()
-                Toggle("", isOn: $balanceDropAlertsEnabled)
-                    .toggleStyle(.switch)
-                    .disabled(!spendAlertsEnabled)
-                    .onChange(of: balanceDropAlertsEnabled) { _, v in
-                        UserDefaults.standard.set(v, forKey: SpendAlertSettings.balanceKey)
-                    }
-            }
-
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(I18n.t("general.spend_rate_alerts")).font(.body)
-                    Text(I18n.t("general.spend_rate_alerts_desc"))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                Spacer()
-                Toggle("", isOn: $spendRateAlertsEnabled)
-                    .toggleStyle(.switch)
-                    .disabled(!spendAlertsEnabled)
-                    .onChange(of: spendRateAlertsEnabled) { _, v in
-                        UserDefaults.standard.set(v, forKey: SpendAlertSettings.rateKey)
                     }
             }
 
@@ -401,6 +370,7 @@ struct GeneralTab: View {
                 w.contentView = NSHostingView(rootView: OnboardingView())
                 w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
                 OnboardingWindowManager.shared.window = w
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .demoModeDidChange)) { _ in

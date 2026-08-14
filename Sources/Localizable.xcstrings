@@ -54,16 +54,6 @@
     "@%@" : {
 
     },
-    "%@ · %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · %2$@"
-          }
-        }
-      }
-    },
     "%@ ($%lld/mo)" : {
       "localizations" : {
         "en" : {
@@ -1159,6 +1149,151 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "AI Pulse v%1$@/CloudKit %2$@"
+          }
+        }
+      }
+    },
+    "alert.balance_drop.body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Provider balance dropped by %@ in the last 24 hours."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务商余额在过去 24 小时下降了 %@。"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務商餘額在過去 24 小時下降了 %@。"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務商餘額在過去 24 小時下降了 %@。"
+          }
+        }
+      }
+    },
+    "alert.l1.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ AI Spending Reminder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ AI 花费提醒"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ AI 花費提醒"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ AI 花費提醒"
+          }
+        }
+      }
+    },
+    "alert.l2.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ AI Spending Warning"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ AI 花费警告"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ AI 花費警告"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⚠️ AI 花費警告"
+          }
+        }
+      }
+    },
+    "alert.l3.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🚨 AI Spending Critical"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🚨 AI 花费严重告警"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🚨 AI 花費嚴重告警"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "🚨 AI 花費嚴重告警"
+          }
+        }
+      }
+    },
+    "alert.spend_rate.body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spend reached %@ vs. %@ recent baseline."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "花费已达 %@，近期基线为 %@。"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "花費已達 %@，近期基線為 %@。"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "花費已達 %@，近期基線為 %@。"
           }
         }
       }
@@ -9726,6 +9861,66 @@
         }
       }
     },
+    "general.balance_drop_alerts" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Balance Drop Alerts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "余额骤降提醒"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "餘額驟降提醒"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "餘額驟降提醒"
+          }
+        }
+      }
+    },
+    "general.balance_drop_alerts_desc" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notify when a provider balance drops sharply (most reliable)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当服务商余额大幅下降时提醒（最可靠）。"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當服務商餘額大幅下降時提醒（最可靠）。"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當服務商餘額大幅下降時提醒（最可靠）。"
+          }
+        }
+      }
+    },
     "general.coin_sound" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -10331,6 +10526,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新執行首次啟動歡迎畫面，重新偵測工具並設定整合。"
+          }
+        }
+      }
+    },
+    "general.spend_alerts" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spend Alerts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "花费激增提醒"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "花費激增提醒"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "花費激增提醒"
+          }
+        }
+      }
+    },
+    "general.spend_alerts_desc" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warn when spending spikes unexpectedly or a balance drops sharply."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当花费意外激增或余额骤降时发出警告。"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當花費意外激增或餘額驟降時發出警告。"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當花費意外激增或餘額驟降時發出警告。"
+          }
+        }
+      }
+    },
+    "general.spend_rate_alerts" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spend Rate Alerts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "花费速率激增提醒"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "花費速率激增提醒"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "花費速率激增提醒"
+          }
+        }
+      }
+    },
+    "general.spend_rate_alerts_desc" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notify when spending jumps far above your recent baseline."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当花费远超近期基线时提醒。"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當花費遠超近期基線時提醒。"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當花費遠超近期基線時提醒。"
           }
         }
       }
@@ -18994,331 +19309,6 @@
         }
       },
       "shouldTranslate" : false
-    },
-    "alert.balance_drop.body" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Provider balance dropped by %@ in the last 24 hours."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服务商余额在过去 24 小时下降了 %@。"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服務商餘額在過去 24 小時下降了 %@。"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "服務商餘額在過去 24 小時下降了 %@。"
-          }
-        }
-      }
-    },
-    "alert.l1.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⚠️ AI Spending Reminder"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⚠️ AI 花费提醒"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⚠️ AI 花費提醒"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⚠️ AI 花費提醒"
-          }
-        }
-      }
-    },
-    "alert.l2.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⚠️ AI Spending Warning"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⚠️ AI 花费警告"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⚠️ AI 花費警告"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "⚠️ AI 花費警告"
-          }
-        }
-      }
-    },
-    "alert.l3.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "🚨 AI Spending Critical"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "🚨 AI 花费严重告警"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "🚨 AI 花費嚴重告警"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "🚨 AI 花費嚴重告警"
-          }
-        }
-      }
-    },
-    "alert.spend_rate.body" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spend reached %@ vs. %@ recent baseline."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花费已达 %@，近期基线为 %@。"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花費已達 %@，近期基線為 %@。"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花費已達 %@，近期基線為 %@。"
-          }
-        }
-      }
-    },
-    "general.balance_drop_alerts" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Balance Drop Alerts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "余额骤降提醒"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "餘額驟降提醒"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "餘額驟降提醒"
-          }
-        }
-      }
-    },
-    "general.balance_drop_alerts_desc" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notify when a provider balance drops sharply (most reliable)."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当服务商余额大幅下降时提醒（最可靠）。"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "當服務商餘額大幅下降時提醒（最可靠）。"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "當服務商餘額大幅下降時提醒（最可靠）。"
-          }
-        }
-      }
-    },
-    "general.spend_alerts" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spend Alerts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花费激增提醒"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花費激增提醒"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花費激增提醒"
-          }
-        }
-      }
-    },
-    "general.spend_alerts_desc" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Warn when spending spikes unexpectedly or a balance drops sharply."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当花费意外激增或余额骤降时发出警告。"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "當花費意外激增或餘額驟降時發出警告。"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "當花費意外激增或餘額驟降時發出警告。"
-          }
-        }
-      }
-    },
-    "general.spend_rate_alerts" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spend Rate Alerts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花费速率激增提醒"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花費速率激增提醒"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花費速率激增提醒"
-          }
-        }
-      }
-    },
-    "general.spend_rate_alerts_desc" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notify when spending jumps far above your recent baseline."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当花费远超近期基线时提醒。"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "當花費遠超近期基線時提醒。"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "當花費遠超近期基線時提醒。"
-          }
-        }
-      }
     }
   },
   "version" : "1.0"

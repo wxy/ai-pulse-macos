@@ -19,19 +19,12 @@ struct SpendAlertPayload: Codable, Sendable {
 
 struct SpendAlertSettings {
     static let masterKey = "spend_alerts_enabled"
-    static let balanceKey = "balance_drop_alerts_enabled"
-    static let rateKey = "spend_rate_alerts_enabled"
-
     var master: Bool
-    var balanceDrop: Bool
-    var spendRate: Bool
 
     static func current() -> SpendAlertSettings {
         let d = UserDefaults.standard
         return SpendAlertSettings(
-            master: d.object(forKey: masterKey) == nil ? true : d.bool(forKey: masterKey),
-            balanceDrop: d.object(forKey: balanceKey) == nil ? true : d.bool(forKey: balanceKey),
-            spendRate: d.object(forKey: rateKey) == nil ? true : d.bool(forKey: rateKey)
+            master: d.object(forKey: masterKey) == nil ? true : d.bool(forKey: masterKey)
         )
     }
 }
@@ -51,12 +44,8 @@ final class SpendAlertService: @unchecked Sendable {
         guard settings.master else { return }
 
         var candidates: [SpendAlertPayload] = []
-        if settings.spendRate {
-            candidates += await spendRateCandidates()
-        }
-        if settings.balanceDrop {
-            candidates += await balanceDropCandidates()
-        }
+        candidates += await spendRateCandidates()
+        candidates += await balanceDropCandidates()
 
         for payload in candidates {
             guard shouldFire(payload) else { continue }
