@@ -12,7 +12,7 @@
 核心原则：
 
 - 只告知，不拦截——我们无法阻止消费继续，但可以让用户尽早知情。
-- 可配置（opt-in）——避免对“消费模式本就不规律”的用户造成骚扰。
+- 可配置且默认开启（opt-out）——一次真实告警的价值远高于偶尔的误报；同时提供关闭/静音入口，避免对消费模式本就不规律的用户长期骚扰。
 - 信号来自可观测数据（本地日志花费速率 + 服务商余额差值），不依赖订阅周期。
 - 跨端：macOS 检测 → CloudKit 新记录 → iOS 静默推送 → 本地通知（→ 镜像到 Apple Watch）。
 
@@ -59,6 +59,12 @@
 | L2 警告 | 最近 1h ≥ 5× 小时基线且 ≥ $5，或 24h ≥ 2× 日基线且 ≥ $20 | 24h 下降 ≥ $50，或单次环比下降 ≥ $100 |
 | L3 严重 | 最近 1h ≥ 10× 小时基线且 ≥ $10，或 24h ≥ 5× 日基线且 ≥ $50 | 24h 下降 ≥ $200，或单次环比下降 ≥ $500 |
 
+金额下限采用“绝对下限 + 相对倍数”双条件（AND）：
+
+- 绝对下限为**硬编码**（按级别），用于过滤“绝对金额很小、但相对涨幅很大”的抖动。
+- 相对倍数为**历史基线**（中位数），用于适配不同用户的日常消费量级。
+- 冷启动：历史不足 N 个窗口时，速率激增信号暂用保守默认基线，或仅发余额骤降；余额骤降为纯绝对判断，立即可用。
+
 升级语义：
 
 - 同一信号在连续检测周期内持续超标时，级别可提升（L1 → L2 → L3）。
@@ -71,9 +77,9 @@ macOS 设置页新增：
 
 | 开关 | 默认 | 说明 |
 | --- | --- | --- |
-| `spend_alerts_enabled` | 关 | 主开关，opt-in |
-| `balance_drop_alerts_enabled` | 开（主开关开启时） | 余额骤降，误报极低，推荐开启 |
-| `spend_rate_alerts_enabled` | 关 | 速率激增，误报较高，仅对消费模式规律的用户开启 |
+| `spend_alerts_enabled` | 开 | 主开关，默认开启（opt-out） |
+| `balance_drop_alerts_enabled` | 开 | 余额骤降，误报极低 |
+| `spend_rate_alerts_enabled` | 开 | 速率激增，依赖历史基线 |
 
 这样“突然消费、随后长时间不消费”的用户可以只开启余额骤降，关闭速率激增。
 
@@ -111,9 +117,9 @@ struct SpendAlertPayload: Codable {
 
 ## 通知行为与声音
 
-- macOS：`UNNotificationRequest`，`interruptionLevel = .timeSensitive`，`sound = .default`。前台可额外播放独立 `alert.mp3`（可选新增，区别于金币声）。
+- macOS：`UNNotificationRequest`，`interruptionLevel = .timeSensitive`，`sound = .default`（系统默认声音，与应用内金币声互不影响）。
 - iOS：带声音的 `.timeSensitive`，区别于现有静默 `cost-update`（金币声）。
-- 不新增系统权限，复用现有 `UNUserNotificationCenter` 授权。
+- 不新增系统权限，不新增告警音资源，复用现有 `UNUserNotificationCenter` 授权与系统声音。
 
 ## 本地化
 
@@ -132,6 +138,7 @@ struct SpendAlertPayload: Codable {
 - 排除 `<synthetic>` 合成行。
 - 去重键 + 冷却。
 - 余额骤降与日志速率双信号，余额信号天然更可靠。
+- 冷启动：历史不足时速率信号保守处理，余额信号照常。
 
 ## 改动范围（文件）
 
@@ -142,7 +149,6 @@ macOS：
 - `Sources/Sync/CloudKitSchema.swift`（新增 `SpendAlert_v1`）
 - `Sources/Sync/CloudSyncService.swift`（写 alert 记录）
 - 设置 UI、`Sources/Utils/I18n.swift`、`Sources/Localizable.xcstrings`
-- 可选 `Resources/alert.mp3` + 声音播放逻辑
 
 iOS：
 
