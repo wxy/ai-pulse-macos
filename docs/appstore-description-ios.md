@@ -21,7 +21,7 @@ A single purchase covers both platforms. Already own the Mac version but still s
 - Donut chart — cost breakdown by AI tool and provider
 - Tool & repo ranking — which projects and AI tools cost the most
 - Subscription quotas — Claude & Copilot usage with reset countdowns
-- Push notifications — spending alerts with coin sound effects
+- Spend alerts — time-sensitive spend-surge & balance-drop notifications with coin sound effects
 - iCloud sync — automatic, zero configuration
 
 [Privacy]
@@ -58,7 +58,7 @@ AI Pulse 的 iOS 版是 macOS 版的伴侣应用，仅以只读方式在您的 i
 - 环形图 —— 按 AI 工具和供应商统计费用分布
 - 工具 & 仓库排行 —— 哪些项目和 AI 工具烧钱最多
 - 订阅配额 —— Claude 与 Copilot 用量及重置倒计时
-- 推送通知 —— 花费提醒，搭配金币音效
+- 花费告警 —— 花费激增与余额骤降的时效性通知，搭配金币音效
 - iCloud 同步 —— 自动完成，零配置
 
 [隐私安全]
@@ -95,7 +95,7 @@ AI Pulse 的 iOS 版是 macOS 版的伴侶應用程式，僅以唯讀方式在�
 - 環形圖 —— 按 AI 工具和供應商統計費用分佈
 - 工具 & 儲存庫排行 —— 哪些專案和 AI 工具最燒錢
 - 訂閱額度 —— Claude 與 Copilot 用量及重置倒數
-- 推播通知 —— 花費提醒，搭配金幣音效
+- 花費告警 —— 花費激增與餘額驟降的時效性通知，搭配金幣音效
 - iCloud 同步 —— 自動完成，零設定
 
 [隱私安全]

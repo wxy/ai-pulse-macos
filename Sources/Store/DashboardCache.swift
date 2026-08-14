@@ -24,15 +24,20 @@ struct DashboardCache {
 
     static func read(timeRange: String, maxAge: TimeInterval = 30) async -> DashboardSnapshot? {
         do {
-            let row = try await AppDatabase.shared.read { db in
-                try Row.fetchOne(db, sql: """
+            let cached = try await AppDatabase.shared.read { db -> (json: String, updatedAt: Date)? in
+                guard let row = try Row.fetchOne(db, sql: """
                     SELECT json, updated_at FROM dashboard_cache WHERE time_range = ?
-                    """, arguments: [timeRange])
+                    """, arguments: [timeRange]),
+                      let json: String = row["json"],
+                      let updatedAt: Date = row["updated_at"]
+                else { return nil }
+                return (json, updatedAt)
             }
-            guard let row,
-                  let updatedAt: Date = row["updated_at"],
-                  -updatedAt.timeIntervalSinceNow < maxAge,
-                  let json: String = row["json"],
+            guard let cached,
+                  -cached.updatedAt.timeIntervalSinceNow < maxAge
+            else { return nil }
+            let json = cached.json
+            guard
                   let data = json.data(using: .utf8),
                   let snap = try? JSONDecoder().decode(DashboardSnapshot.self, from: data)
             else { return nil }

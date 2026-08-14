@@ -75,7 +75,7 @@ enum StatsService {
 
         do {
             // Cost per day
-            let costRows = try await AppDatabase.shared.read { db -> [Row] in
+            let costRows = try await AppDatabase.shared.read { db -> [(day: Int64, c: Double, cnt: Int, tok: Int64)] in
                 try Row.fetchAll(db, sql: """
                     SELECT (ts / 86400000) * 86400000 AS day_ts,
                            COALESCE(SUM(cost_usd), 0) AS c,
@@ -84,35 +84,37 @@ enum StatsService {
                     FROM usage_event
                     WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
                     GROUP BY day_ts ORDER BY day_ts
-                    """, arguments: [startMs, todayMs + 86_400_000])
+                    """, arguments: [startMs, todayMs + 86_400_000]).map { r in
+                    (day: r["day_ts"] as Int64? ?? 0,
+                     c: r["c"] as Double? ?? 0,
+                     cnt: r["cnt"] as Int? ?? 0,
+                     tok: r["tok"] as Int64? ?? 0)
+                }
             }
 
             // Net lines per day
-            let lineRows = try await AppDatabase.shared.read { db -> [Row] in
+            let lineRows = try await AppDatabase.shared.read { db -> [(day: Int64, nl: Int)] in
                 try Row.fetchAll(db, sql: """
                     SELECT (ts / 86400000) * 86400000 AS day_ts,
                            COALESCE(SUM(added - deleted), 0) AS nl
                     FROM code_change
                     WHERE is_merge = 0 AND ts >= ? AND ts < ?
                     GROUP BY day_ts ORDER BY day_ts
-                    """, arguments: [startMs, todayMs + 86_400_000])
+                    """, arguments: [startMs, todayMs + 86_400_000]).map { r in
+                    (day: r["day_ts"] as Int64? ?? 0, nl: r["nl"] as Int? ?? 0)
+                }
             }
 
             // Merge cost + lines by day
             var lineMap = [Int64: Int]()
-            for r in lineRows {
-                let day: Int64 = r["day_ts"]; let nl: Int = r["nl"]
-                lineMap[day] = nl
-            }
+            for r in lineRows { lineMap[r.day] = r.nl }
 
             var result = [DailyStat]()
             for r in costRows {
-                let day: Int64 = r["day_ts"]
-                let c: Double = r["c"]; let cnt: Int = r["cnt"]; let tok: Int64 = r["tok"]
-                let nl = lineMap[day] ?? 0
-                let cpl = nl > 0 ? c * 1000 / Double(nl) : 0  // per 1K lines
-                let date = Date(timeIntervalSince1970: Double(day) / 1000)
-                result.append(DailyStat(date: date, cost: c, calls: cnt, tokens: Int(tok), netLines: nl, costPerLine: cpl))
+                let nl = lineMap[r.day] ?? 0
+                let cpl = nl > 0 ? r.c * 1000 / Double(nl) : 0  // per 1K lines
+                let date = Date(timeIntervalSince1970: Double(r.day) / 1000)
+                result.append(DailyStat(date: date, cost: r.c, calls: r.cnt, tokens: Int(r.tok), netLines: nl, costPerLine: cpl))
             }
             AppHealthMonitor.shared.clearStatsError()
             return result
@@ -138,37 +140,36 @@ enum StatsService {
         let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
-            let costRows: [Row] = try await AppDatabase.shared.read { db in
+            let costRows = try await AppDatabase.shared.read { db -> [(p: String, s: String, c: Double)] in
                 try Row.fetchAll(db, sql: """
                     SELECT repo_path AS p, source AS s, COALESCE(SUM(cost_usd), 0) AS c
                     FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? AND ts < ?
                     GROUP BY p, s
-                    """, arguments: [startMs, todayMs + 86_400_000])
+                    """, arguments: [startMs, todayMs + 86_400_000]).map { r in
+                    (p: r["p"] ?? "", s: r["s"] ?? "unknown", c: r["c"] ?? 0)
+                }
             }
-            let lineRows: [Row] = try await AppDatabase.shared.read { db in
+            let lineRows = try await AppDatabase.shared.read { db -> [(p: String, a: Int, d: Int)] in
                 try Row.fetchAll(db, sql: """
                     SELECT repo_path AS p,
                            COALESCE(SUM(added), 0) AS a,
                            COALESCE(SUM(deleted), 0) AS d
                     FROM code_change WHERE is_merge = 0 AND ts >= ? AND ts < ?
                     GROUP BY p
-                    """, arguments: [startMs, todayMs + 86_400_000])
+                    """, arguments: [startMs, todayMs + 86_400_000]).map { r in
+                    (p: r["p"] ?? "", a: Int(r["a"] as Int64? ?? 0), d: Int(r["d"] as Int64? ?? 0))
+                }
             }
             var lineMap = [String: (added: Int, deleted: Int)]()
             for r in lineRows {
-                if let p: String = r["p"] {
-                    let a: Int64 = r["a"] ?? 0; let d: Int64 = r["d"] ?? 0
-                    lineMap[p] = (Int(a), Int(d))
-                }
+                lineMap[r.p] = (r.a, r.d)
             }
 
             // Build repo path → [(source, cost)] from per-source rows
             var costMap = [String: [(source: String, cost: Double)]]()
             for r in costRows {
-                guard let p: String = r["p"], !p.isEmpty else { continue }
-                let s: String = r["s"] ?? "unknown"
-                let c: Double = r["c"]
-                costMap[p, default: []].append((s, c))
+                guard !r.p.isEmpty else { continue }
+                costMap[r.p, default: []].append((r.s, r.c))
             }
 
             // Build repo path → subscription sources from certain editor detections
@@ -210,17 +211,17 @@ enum StatsService {
             // Latest event timestamp per repo — used for stable recency-based sorting
             var latestEventMs: [String: Int64] = [:]
             do {
-                let tsRows: [Row] = try await AppDatabase.shared.read { db in
+                let tsRows = try await AppDatabase.shared.read { db -> [(repoPath: String, latest: Int64)] in
                     try Row.fetchAll(db, sql: """
                         SELECT repo_path, MAX(ts) AS latest
                         FROM usage_event WHERE repo_path IS NOT NULL
                         GROUP BY repo_path
-                    """)
+                    """).map { r in
+                        (repoPath: r["repo_path"] ?? "", latest: r["latest"] ?? 0)
+                    }
                 }
                 for r in tsRows {
-                    if let path: String = r["repo_path"], let ts: Int64 = r["latest"] {
-                        latestEventMs[URL(fileURLWithPath: path).lastPathComponent] = ts
-                    }
+                    latestEventMs[URL(fileURLWithPath: r.repoPath).lastPathComponent] = r.latest
                 }
             } catch {
                 Logger.debug("StatsService.repoBreakdown: latestEventMs query failed, continuing without it")
@@ -355,22 +356,29 @@ enum StatsService {
         let todayMs = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
-            let rows = try await AppDatabase.shared.read { db -> [Row] in
-                try Row.fetchAll(db, sql: """
+            let rows = try await AppDatabase.shared.read { db -> [(providerId: String, ts: Int64, balance: Double, currency: String)] in
+                let fetched = try Row.fetchAll(db, sql: """
                     SELECT provider_id, ts, balance, currency FROM balance_snapshot
                     WHERE ts >= ? AND ts < ?
                     ORDER BY provider_id, ts
                     """, arguments: [startMs, todayMs + 86_400_000])
+                return fetched.map { r in
+                    let providerId: String = r["provider_id"] ?? ""
+                    let ts: Int64 = r["ts"] ?? 0
+                    let balance: Double = r["balance"] ?? 0
+                    let currency: String = r["currency"] ?? "USD"
+                    return (providerId: providerId, ts: ts, balance: balance, currency: currency)
+                }
             }
             // Group by provider_id and compute positive deltas, converting to USD
             var results: [(String, Date, Double)] = []
             var currentPid: String? = nil
             var prevBalance: Double? = nil
             for r in rows {
-                let pid: String = r["provider_id"] ?? ""
-                let ts: Int64 = r["ts"] ?? 0
-                let balance: Double = r["balance"] ?? 0
-                let currency: String = r["currency"] ?? "USD"
+                let pid = r.providerId
+                let ts = r.ts
+                let balance = r.balance
+                let currency = r.currency
 
                 if pid == currentPid, let prev = prevBalance, balance < prev {
                     // Balance decreased → spend occurred
@@ -441,8 +449,9 @@ enum StatsService {
     static func latestRemainingBalances(sinceMs: Int64) async throws -> [RemainingBalanceItem] {
         let balanceTrackedIds = Set(ProviderRegistry.all.filter { $0.canFetchBalance }.map { $0.id })
         guard !balanceTrackedIds.isEmpty else { return [] }
-        let rows = try await AppDatabase.shared.read { db -> [Row] in
-            try Row.fetchAll(db, sql: """
+        let names = Dictionary(uniqueKeysWithValues: IntegrationRegistry.all.map { ($0.id, $0.displayName) })
+        return try await AppDatabase.shared.read { db in
+            let rows = try Row.fetchAll(db, sql: """
                 SELECT bs.provider_id, bs.balance, bs.currency
                 FROM balance_snapshot bs
                 INNER JOIN (
@@ -452,26 +461,25 @@ enum StatsService {
                     GROUP BY provider_id
                 ) latest ON bs.provider_id = latest.provider_id AND bs.ts = latest.max_ts
                 """, arguments: [sinceMs])
-        }
-        let names = Dictionary(uniqueKeysWithValues: IntegrationRegistry.all.map { ($0.id, $0.displayName) })
-        return rows.compactMap { row in
-            guard let pid: String = row["provider_id"],
-                  let storedBal: Double = row["balance"],
-                  let cur: String = row["currency"],
-                  balanceTrackedIds.contains(pid),
-                  // Only show providers with a key configured — a provider
-                  // whose key was deleted/cleared must not show stale balance.
-                  ApiKeyManager.shared.get(pid) != nil
-            else { return nil }
-            let provider = ProviderRegistry.byId(pid)
-            let rawBalance = provider?.balanceType == .usage ? -storedBal : storedBal
-            let usdBalance = rawBalance * toUSD(currency: cur)
-            return RemainingBalanceItem(
-                providerId: pid,
-                displayName: names[pid] ?? pid,
-                balance: usdBalance,
-                currency: "USD"
-            )
+            return rows.compactMap { row in
+                guard let pid: String = row["provider_id"],
+                      let storedBal: Double = row["balance"],
+                      let cur: String = row["currency"],
+                      balanceTrackedIds.contains(pid),
+                      // Only show providers with a key configured — a provider
+                      // whose key was deleted/cleared must not show stale balance.
+                      ApiKeyManager.shared.get(pid) != nil
+                else { return nil }
+                let provider = ProviderRegistry.byId(pid)
+                let rawBalance = provider?.balanceType == .usage ? -storedBal : storedBal
+                let usdBalance = rawBalance * toUSD(currency: cur)
+                return RemainingBalanceItem(
+                    providerId: pid,
+                    displayName: names[pid] ?? pid,
+                    balance: usdBalance,
+                    currency: "USD"
+                )
+            }
         }
     }
 
@@ -510,8 +518,8 @@ enum StatsService {
         let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
-            let rows = try await AppDatabase.shared.read { db -> [Row] in
-                try Row.fetchAll(db, sql: """
+            let result: [ProviderDailyCost] = try await AppDatabase.shared.read { db in
+                let rows = try Row.fetchAll(db, sql: """
                     SELECT (ts / 86400000) * 86400000 AS day_ts,
                            COALESCE(provider_id, 'unknown') AS pid,
                            COALESCE(SUM(cost_usd), 0) AS c
@@ -519,14 +527,14 @@ enum StatsService {
                     WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
                     GROUP BY day_ts, pid ORDER BY day_ts, c DESC
                     """, arguments: [startMs, todayMs + 86_400_000])
-            }
-            let result: [ProviderDailyCost] = rows.compactMap { r in
-                guard let day: Int64 = r["day_ts"],
-                      let pid: String = r["pid"],
-                      let c: Double = r["c"],
-                      c > 0 else { return nil }
-                let date = Date(timeIntervalSince1970: Double(day) / 1000)
-                return ProviderDailyCost(date: date, providerId: pid, cost: c)
+                return rows.compactMap { r in
+                    guard let day: Int64 = r["day_ts"],
+                          let pid: String = r["pid"],
+                          let c: Double = r["c"],
+                          c > 0 else { return nil }
+                    let date = Date(timeIntervalSince1970: Double(day) / 1000)
+                    return ProviderDailyCost(date: date, providerId: pid, cost: c)
+                }
             }
             AppHealthMonitor.shared.clearStatsError()
             return result
@@ -548,8 +556,9 @@ enum StatsService {
         let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
-            let rows = try await AppDatabase.shared.read { db -> [Row] in
-                try Row.fetchAll(db, sql: """
+            AppHealthMonitor.shared.clearStatsError()
+            return try await AppDatabase.shared.read { db in
+                let rows = try Row.fetchAll(db, sql: """
                     SELECT (ts / 86400000) * 86400000 AS day_ts,
                            COALESCE(SUM(added), 0) AS a,
                            COALESCE(SUM(deleted), 0) AS d
@@ -557,14 +566,13 @@ enum StatsService {
                     WHERE is_merge = 0 AND ts >= ? AND ts < ?
                     GROUP BY day_ts ORDER BY day_ts
                     """, arguments: [startMs, todayMs + 86_400_000])
-            }
-            AppHealthMonitor.shared.clearStatsError()
-            return rows.compactMap { r in
-                guard let day: Int64 = r["day_ts"] else { return nil }
-                let a: Int64 = r["a"] ?? 0
-                let d: Int64 = r["d"] ?? 0
-                let date = Date(timeIntervalSince1970: Double(day) / 1000)
-                return DailyCodeChange(date: date, added: Int(a), deleted: Int(d))
+                return rows.compactMap { r in
+                    guard let day: Int64 = r["day_ts"] else { return nil }
+                    let a: Int64 = r["a"] ?? 0
+                    let d: Int64 = r["d"] ?? 0
+                    let date = Date(timeIntervalSince1970: Double(day) / 1000)
+                    return DailyCodeChange(date: date, added: Int(a), deleted: Int(d))
+                }
             }
         } catch {
             Logger.error("StatsService.dailyCodeChanges error: \(error)")
@@ -654,9 +662,11 @@ enum StatsService {
 
         // Tool costs from usage_event source aggregation
         let toolStartMs = rangeStartMs
-        let toolRows: [GRDB.Row] = await resultOrLog("toolCosts", []) {
+        let toolMap: [String: Double] = await resultOrLog("toolCosts", [:]) {
             try await AppDatabase.shared.read { db in
-                try GRDB.Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [toolStartMs])
+                try GRDB.Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [toolStartMs]).reduce(into: [String: Double]()) { map, r in
+                    if let s: String = r["s"], let c: Double = r["c"], c > 0 { map[s] = c }
+                }
             }
         }
         async let codexDetail = StatsService.toolDetail(source: "codex", sinceMs: toolStartMs)
@@ -664,10 +674,6 @@ enum StatsService {
         // Keep both entries even when a tool has no sessions — the iOS detail
         // sheet falls back to an empty state instead of a dead tap.
         let detailItems = [await codexDetail, await claudeDetail]
-        var toolMap: [String: Double] = [:]
-        for r in toolRows {
-            if let s: String = r["s"], let c: Double = r["c"], c > 0 { toolMap[s] = c }
-        }
         let toolTotal = toolMap.reduce(0.0) { $0 + $1.value }
         let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
             if case .apiKey(let pid) = cs.kind { return pid }; return nil

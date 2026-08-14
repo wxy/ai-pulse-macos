@@ -4,12 +4,16 @@ import UserNotifications
 
 /// Dock app. Shows Dashboard as the primary window. No menu bar icon.
 
-final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, @unchecked Sendable {
     private var securityScopedURLs: [URL] = []
     var menuBarController: MenuBarController?
     private var windowSubmenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Present foreground notifications with sound; without a delegate macOS
+        // may show the banner but silently drop the sound.
+        UNUserNotificationCenter.current().delegate = self
+
         // Single-instance: if another copy (same bundle id) is already running,
         // activate it and quit this one.
         if let bid = Bundle.main.bundleIdentifier {
@@ -23,7 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
 
         // Register defaults (fresh install values)
-        UserDefaults.standard.register(defaults: ["coin_sound_enabled": true])
+        UserDefaults.standard.register(defaults: [
+            "coin_sound_enabled": true,
+            SystemNotifications.enabledKey: true,
+        ])
 
         // Reset per-session demo suppression on each launch
         DemoData.isSuppressed = false
@@ -81,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
         // Check for anomalies periodically (separate from data refresh — longer cycle)
         Timer.scheduledTimer(withTimeInterval: 3660, repeats: true) { _ in
-            Task { await AnomalyDetector.shared.check() }
+            Task { await SpendAlertService.shared.check() }
         }
 
         // Build main menu bar (App, File, Window) — required for App Store compliance
@@ -104,6 +111,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         openDashboard()
         return true
+    }
+
+    // MARK: - UNUserNotificationCenterDelegate
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
     }
 
     // MARK: - Dock menu

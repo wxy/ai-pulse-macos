@@ -79,6 +79,7 @@ final class NotificationService: NSObject {
                 .requestAuthorization(options: [.alert, .badge, .sound])
             if granted {
                 await registerSubscription()
+                await registerSpendAlertSubscription()
             }
         } catch {
             print("[Notify] permission error: \(error)")
@@ -123,6 +124,8 @@ final class NotificationService: NSObject {
                 try? await UNUserNotificationCenter.current().add(
                     UNNotificationRequest(identifier: "cost-update", content: content, trigger: nil))
             }
+
+            await checkSpendAlert()
         }
     }
 
@@ -163,12 +166,84 @@ final class NotificationService: NSObject {
             print("[Notify] subscription failed: \(error)")
         }
     }
+
+    // MARK: - Spend alerts
+
+    private static let spendAlertSubscriptionRegisteredKey = "ck_spend_alert_subscription_registered_v1"
+    private static let lastAlertEventIdKey = "ck_spend_alert_last_event_id"
+
+    private func registerSpendAlertSubscription() async {
+        if UserDefaults.standard.bool(forKey: Self.spendAlertSubscriptionRegisteredKey) { return }
+        do {
+            try await CloudKitGate.shared.run("ck-spend-alert-subscription-register") {
+                let subs = try await self.database.allSubscriptions()
+                if subs.contains(where: { $0.subscriptionID == CKSchema.SpendAlert.Subscription.changes }) {
+                    UserDefaults.standard.set(true, forKey: Self.spendAlertSubscriptionRegisteredKey)
+                    return
+                }
+
+                let subscription = CKQuerySubscription(
+                    recordType: CKSchema.SpendAlert.recordType,
+                    predicate: NSPredicate(value: true),
+                    subscriptionID: CKSchema.SpendAlert.Subscription.changes,
+                    options: [.firesOnRecordCreation, .firesOnRecordUpdate]
+                )
+                let notification = CKSubscription.NotificationInfo()
+                notification.shouldSendContentAvailable = true
+                subscription.notificationInfo = notification
+
+                _ = try await self.database.save(subscription)
+                UserDefaults.standard.set(true, forKey: Self.spendAlertSubscriptionRegisteredKey)
+                print("[Notify] spend-alert subscription registered")
+            }
+        } catch {
+            print("[Notify] spend-alert subscription failed: \(error)")
+        }
+    }
+
+    private func checkSpendAlert() async {
+        do {
+            let recordID = CKRecord.ID(recordName: CKSchema.SpendAlert.recordName)
+            let record = try await database.record(for: recordID)
+            guard let json = record[CKSchema.SpendAlert.Field.json] as? String,
+                  let data = json.data(using: .utf8),
+                  let payload = try? JSONDecoder().decode(SpendAlertPayload.self, from: data)
+            else { return }
+
+            let lastEventId = UserDefaults.standard.string(forKey: Self.lastAlertEventIdKey)
+            guard payload.eventId != lastEventId else { return }
+            UserDefaults.standard.set(payload.eventId, forKey: Self.lastAlertEventIdKey)
+
+            let content = UNMutableNotificationContent()
+            content.title = I18n.t("alert.l\(payload.level).title")
+            content.body = alertBody(payload)
+            content.sound = .default
+            content.interruptionLevel = .timeSensitive
+
+            try? await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(
+                    identifier: "spend-alert-\(payload.eventId)",
+                    content: content,
+                    trigger: nil))
+        } catch {
+            Self.log.warning("checkSpendAlert failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func alertBody(_ payload: SpendAlertPayload) -> String {
+        let amount = String(format: "$%.2f", payload.amountUsd)
+        if let baseline = payload.baselineUsd {
+            return String(format: I18n.t("alert.spend_rate.body"),
+                          amount, String(format: "$%.2f", baseline))
+        }
+        return String(format: I18n.t("alert.balance_drop.body"), amount)
+    }
 }
 
 // MARK: - UNUserNotificationCenterDelegate
 extension NotificationService: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner]
+        [.banner, .sound]
     }
 }

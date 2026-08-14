@@ -233,15 +233,16 @@ final class MenuBarController: NSObject, @unchecked Sendable {
 
             // --- Submenu breakdowns (this week) ---
             // Repo added/deleted per repo
-            let raRows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(added),0) AS a, COALESCE(SUM(deleted),0) AS d FROM code_change WHERE is_merge = 0 AND ts >= ? GROUP BY repo_path", arguments: [weekStart])
-            }
-            var repoAddDel: [String: (Int, Int)] = [:]
-            for r in raRows {
-                let path: String = r["p"] ?? ""
-                let a: Int64 = r["a"] ?? 0
-                let d: Int64 = r["d"] ?? 0
-                repoAddDel[path] = (Int(a), Int(d))
+            let repoAddDel = try await AppDatabase.shared.read { db -> [String: (Int, Int)] in
+                let rows = try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(added),0) AS a, COALESCE(SUM(deleted),0) AS d FROM code_change WHERE is_merge = 0 AND ts >= ? GROUP BY repo_path", arguments: [weekStart])
+                var result: [String: (Int, Int)] = [:]
+                for r in rows {
+                    let path: String = r["p"] ?? ""
+                    let a: Int64 = r["a"] ?? 0
+                    let d: Int64 = r["d"] ?? 0
+                    result[path] = (Int(a), Int(d))
+                }
+                return result
             }
 
             // Per-provider spend this week from balance snapshots
@@ -266,11 +267,13 @@ final class MenuBarController: NSObject, @unchecked Sendable {
 
             // --- Repo breakdown: scaled API + subscription ---
             var cbr: [String: Double] = [:]
-            let rcRows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? GROUP BY repo_path", arguments: [weekStart])
+            let rcRows = try await AppDatabase.shared.read { db -> [(p: String, c: Double)] in
+                try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? GROUP BY repo_path", arguments: [weekStart]).map { r in
+                    (p: r["p"] ?? "", c: r["c"] ?? 0)
+                }
             }
             var logTotal: Double = 0
-            for r in rcRows { if let p: String = r["p"], !p.isEmpty, let c: Double = r["c"] { cbr[p] = c; logTotal += c } }
+            for r in rcRows { if !r.p.isEmpty { cbr[r.p] = r.c; logTotal += r.c } }
             let apiScale = logTotal > 0 ? apiSpend / logTotal : 1.0
             let subScale = logTotal > 0 ? weekSubTotal / logTotal : 0.0
 
@@ -283,17 +286,19 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             }
 
             // Per-tool cost: same unified scaling as repos (API + subscription from usage_event proportions)
-            let toolRows: [Row] = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [weekStart])
+            let toolRows = try await AppDatabase.shared.read { db -> [(s: String, c: Double)] in
+                try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [weekStart]).map { r in
+                    (s: r["s"] ?? "", c: r["c"] ?? 0)
+                }
             }
-            let toolAPITotal = toolRows.reduce(0.0) { $0 + ($1["c"] as Double? ?? 0) }
+            let toolAPITotal = toolRows.reduce(0.0) { $0 + $1.c }
             let toolApiScale = toolAPITotal > 0 ? apiSpend / toolAPITotal : 1.0
             let toolSubScale = toolAPITotal > 0 ? weekSubTotal / toolAPITotal : 0.0
 
             var toolCostMap: [String: Double] = [:]
             for r in toolRows {
-                if let s: String = r["s"], let c: Double = r["c"], c > 0 {
-                    toolCostMap[s] = c * toolApiScale + c * toolSubScale
+                if r.c > 0 {
+                    toolCostMap[r.s] = r.c * toolApiScale + r.c * toolSubScale
                 }
             }
             var toolCosts: [ToolCost] = toolCostMap.compactMap { (key, cost) in
