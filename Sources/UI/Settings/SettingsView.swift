@@ -184,6 +184,7 @@ struct IntegrationGroupedTab: View {
                                        onGrant: { runDetection() })
                     }
                 }
+                .padding(.trailing, 16)
             }
         }
         .onAppear {
@@ -257,125 +258,131 @@ struct GeneralTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-            Text(I18n.t("general.title")).font(.title3).fontWeight(.semibold)
-            Text(I18n.t("general.desc")).font(.caption).foregroundColor(.secondary)
+                Text(I18n.t("general.title")).font(.title3).fontWeight(.semibold)
+                Text(I18n.t("general.desc")).font(.caption).foregroundColor(.secondary)
 
-            HStack {
-                Text(I18n.t("general.language_label"))
-                    .frame(width: 140, alignment: .leading)
-                Picker("", selection: $lang) {
-                    ForEach(I18n.supportedLanguages, id: \.code) { lang in
-                        if lang.code == "auto" {
-                            Text(I18n.t("settings.language_auto")).tag("auto")
+                sectionHeader(I18n.t("general.group_general"))
+
+                HStack {
+                    Text(I18n.t("general.language_label"))
+                        .frame(width: 140, alignment: .leading)
+                    Picker("", selection: $lang) {
+                        ForEach(I18n.supportedLanguages, id: \.code) { lang in
+                            if lang.code == "auto" {
+                                Text(I18n.t("settings.language_auto")).tag("auto")
+                            } else {
+                                Text(lang.label).tag(lang.code)
+                            }
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 200)
+                }
+
+                Divider().padding(.vertical, 8)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(I18n.t("general.coin_sound")).font(.body)
+                        Text(I18n.t("general.coin_sound_desc"))
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $coinSoundEnabled)
+                        .toggleStyle(.switch)
+                        .onChange(of: coinSoundEnabled) { _, v in
+                            UserDefaults.standard.set(v, forKey: "coin_sound_enabled")
+                        }
+                }
+
+                Divider().padding(.vertical, 8)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(I18n.t("general.spend_alerts")).font(.body)
+                        Text(I18n.t("general.spend_alerts_desc"))
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $spendAlertsEnabled)
+                        .toggleStyle(.switch)
+                        .onChange(of: spendAlertsEnabled) { _, v in
+                            UserDefaults.standard.set(v, forKey: SpendAlertSettings.masterKey)
+                        }
+                }
+
+                sectionHeader(I18n.t("general.group_startup"))
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(I18n.t("general.launch_at_login")).font(.body)
+                        Text(I18n.t("general.launch_at_login_desc"))
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $launchAtLogin)
+                        .toggleStyle(.switch)
+                        .onChange(of: launchAtLogin) { _, v in
+                            do {
+                                if v { try SMAppService.mainApp.register() }
+                                else { try SMAppService.mainApp.unregister() }
+                            } catch {
+                                launchAtLogin = SMAppService.mainApp.status == .enabled
+                            }
+                        }
+                }
+
+                Divider().padding(.vertical, 8)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(demoActive ? I18n.t("demo.exit") : I18n.t("demo.enter"))
+                            .font(.body)
+                        Text(I18n.t("demo.onboarding_msg"))
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(demoActive ? I18n.t("demo.exit") : I18n.t("demo.enter")) {
+                        if DemoData.isActive {
+                            DemoData.isManual = false
+                            DemoData.isSuppressed = true
                         } else {
-                            Text(lang.label).tag(lang.code)
+                            DemoData.isSuppressed = false
+                            DemoData.isManual = true
                         }
+                        NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
+                        NotificationCenter.default.post(name: .dataDidChange, object: nil)
                     }
                 }
-                .pickerStyle(.menu)
-                .frame(width: 200)
-            }
 
-            Divider().padding(.vertical, 8)
+                Divider().padding(.vertical, 8)
 
-            // Coin sound toggle
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(I18n.t("general.coin_sound")).font(.body)
-                    Text(I18n.t("general.coin_sound_desc"))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                Spacer()
-                Toggle("", isOn: $coinSoundEnabled)
-                    .toggleStyle(.switch)
-                    .onChange(of: coinSoundEnabled) { _, v in
-                        UserDefaults.standard.set(v, forKey: "coin_sound_enabled")
-                    }
-            }
-
-            Divider().padding(.vertical, 8)
-
-            // Spend alerts
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(I18n.t("general.spend_alerts")).font(.body)
-                    Text(I18n.t("general.spend_alerts_desc"))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                Spacer()
-                Toggle("", isOn: $spendAlertsEnabled)
-                    .toggleStyle(.switch)
-                    .onChange(of: spendAlertsEnabled) { _, v in
-                        UserDefaults.standard.set(v, forKey: SpendAlertSettings.masterKey)
-                    }
-            }
-
-            Divider().padding(.vertical, 8)
-
-            // Launch at login
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(I18n.t("general.launch_at_login")).font(.body)
-                    Text(I18n.t("general.launch_at_login_desc"))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                Spacer()
-                Toggle("", isOn: $launchAtLogin)
-                    .toggleStyle(.switch)
-                    .onChange(of: launchAtLogin) { _, v in
-                        do {
-                            if v { try SMAppService.mainApp.register() }
-                            else { try SMAppService.mainApp.unregister() }
-                        } catch {
-                            launchAtLogin = SMAppService.mainApp.status == .enabled
-                        }
-                    }
-            }
-
-            Divider().padding(.vertical, 8)
-
-            // Demo mode toggle
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(demoActive ? I18n.t("demo.exit") : I18n.t("demo.enter"))
-                        .font(.body)
-                    Text(I18n.t("demo.onboarding_msg"))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                Spacer()
-                Button(demoActive ? I18n.t("demo.exit") : I18n.t("demo.enter")) {
-                    if DemoData.isActive {
-                        DemoData.isManual = false
-                        DemoData.isSuppressed = true
-                    } else {
-                        DemoData.isSuppressed = false
-                        DemoData.isManual = true
-                    }
-                    NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
-                    NotificationCenter.default.post(name: .dataDidChange, object: nil)
+                Text(I18n.t("general.rerun_welcome_desc"))
+                    .font(.caption).foregroundColor(.secondary)
+                Button(I18n.t("general.rerun_welcome")) {
+                    UserDefaults.standard.removeObject(forKey: "onboarding_completed")
+                    if let w = OnboardingWindowManager.shared.window { w.close() }
+                    let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+                                     styleMask: [.titled, .closable], backing: .buffered, defer: false)
+                    w.title = I18n.t("onboarding.window_title")
+                    w.contentView = NSHostingView(rootView: OnboardingView())
+                    w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
+                    OnboardingWindowManager.shared.window = w
                 }
             }
-
-            Divider().padding(.vertical, 8)
-
-            Text(I18n.t("general.rerun_welcome_desc"))
-                .font(.caption).foregroundColor(.secondary)
-            Button(I18n.t("general.rerun_welcome")) {
-                UserDefaults.standard.removeObject(forKey: "onboarding_completed")
-                // Re-open onboarding
-                if let w = OnboardingWindowManager.shared.window { w.close() }
-                let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
-                                 styleMask: [.titled, .closable], backing: .buffered, defer: false)
-                w.title = I18n.t("onboarding.window_title")
-                w.contentView = NSHostingView(rootView: OnboardingView())
-                w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
-                OnboardingWindowManager.shared.window = w
-                }
-            }
+            .padding(.trailing, 16)
         }
         .onReceive(NotificationCenter.default.publisher(for: .demoModeDidChange)) { _ in
             demoActive = DemoData.isActive
         }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption).fontWeight(.semibold)
+            .foregroundColor(.secondary)
+            .textCase(.uppercase)
+            .padding(.top, 4)
     }
 }
 
