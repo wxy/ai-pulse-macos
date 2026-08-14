@@ -1,6 +1,26 @@
 import AppKit
 import Foundation
 
+/// Injected phase-1 ingestion actions so tests can drive the coordinator
+/// without touching real log directories, repository scans, or status caches.
+struct IngestActions: Sendable {
+    var scanLogs: @Sendable () -> Void
+    var scanRepos: @Sendable () -> Int
+    var refreshClaudeStatus: @Sendable () -> Void
+
+    static let live = IngestActions(
+        scanLogs: { LogWatcher.shared.scan() },
+        scanRepos: { RepoDiscovery.scan() },
+        refreshClaudeStatus: { UsageMonitor.shared.refreshClaudeStatus() }
+    )
+
+    static let noop = IngestActions(
+        scanLogs: {},
+        scanRepos: { 0 },
+        refreshClaudeStatus: {}
+    )
+}
+
 /// Centralized scheduler that replaces scattered independent timers.
 ///
 /// Three ingestion phases run at staggered intervals:
@@ -14,6 +34,7 @@ import Foundation
 /// posts `.dataDidChange` to notify all UI consumers.
 nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     static let shared = DataRefreshCoordinator()
+    private let actions: IngestActions
 
     private var phase1Timer: DispatchSourceTimer?
     private var phase2Timer: DispatchSourceTimer?
@@ -25,6 +46,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     private let notifyQueue = DispatchQueue(label: "com.wxy.aipulse.coordinator", qos: .utility)
     private var screenSleepObserver: NSObjectProtocol?
     private var screenWakeObserver: NSObjectProtocol?
+    private var stopped = false
     /// Formatted today spend at the last sound-triggered notification.
     /// Compared against the current formatted value so the coin sound only
     /// plays when the dock badge label would actually change.
@@ -35,11 +57,14 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     /// multi-source writes from triggering a storm of notifications.
     private let minNotifyInterval: TimeInterval = 3.0
 
-    private init() {}
+    init(actions: IngestActions = .live) {
+        self.actions = actions
+    }
 
     // MARK: - Public
 
     func start() {
+        stopped = false
         // One-time session metadata backfill for logs that predate the
         // session_info table (runs once, guarded internally).
         SessionInfoBackfill.runIfNeeded()
@@ -71,6 +96,8 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         if let o = screenWakeObserver  { NSWorkspace.shared.notificationCenter.removeObserver(o) }
         screenSleepObserver = nil; screenWakeObserver = nil
         cancelAllTimers()
+        stopped = true
+        pendingPlaySound = false
         lastNotifyTime = .distantPast
         Logger.info("DataRefreshCoordinator: stopped")
     }
@@ -99,6 +126,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         phase3Timer?.cancel(); phase3Timer = nil
         phase4Timer?.cancel(); phase4Timer = nil
         pendingNotifyWorkItem?.cancel(); pendingNotifyWorkItem = nil
+        notifyTask?.cancel(); notifyTask = nil
     }
 
     private func recreateTimers() {
@@ -132,9 +160,9 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
 
     private func runPhase1() {
         let start = Date()
-        LogWatcher.shared.scan()
-        let discovered = RepoDiscovery.scan()
-        UsageMonitor.shared.refreshClaudeStatus()
+        actions.scanLogs()
+        let discovered = actions.scanRepos()
+        actions.refreshClaudeStatus()
         let elapsed = Date().timeIntervalSince(start)
         Logger.debug("Phase1 ingest completed in \(String(format: "%.3f", elapsed))s, discovered=\(discovered)")
         if discovered > 0 {
@@ -216,6 +244,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     private var notifyTask: Task<Void, Never>?
 
     private func scheduleUINotify(playSound: Bool = false) {
+        guard !stopped else { return }
         if playSound { pendingPlaySound = true }
         notifyTask?.cancel()
         let shouldPlay = pendingPlaySound

@@ -7,8 +7,7 @@ final class DataRefreshCoordinatorTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        coordinator = DataRefreshCoordinator.shared
-        coordinator.stop()
+        coordinator = DataRefreshCoordinator(actions: .noop)
     }
 
     override func tearDown() {

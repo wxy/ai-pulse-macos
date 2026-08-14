@@ -37,13 +37,10 @@ First-launch integration detection automatically finds your installed AI tools a
 - Full Chinese and English localization
 - Mac App Store sandbox compliant
 
-### What's New (Version 1.2.3)
+### What's New (Version 1.2.5)
 
-- Subscription quota tracking — Claude & Copilot usage with reset countdowns
-- Codex & OpenCode support — new parsers, integration, and pricing
-- Dashboard improvements — consistent donut placeholders, faster tab switching, relative balance bars, Claude detail hover costs
-- Unified main menu — Window and Dock menus now share the same live stats
-- Reliability fixes — background thread safety, audit fixes, faster repo scanning
+- Session-level tool details — click any tool to see its session list and per-session profile metrics: turn count, context occupancy, cache ratio, and compaction count
+- App & CloudKit version display — dashboard footer and About now show the software version alongside the CloudKit payload version for clearer sync compatibility
 
 ### Keywords
 
@@ -88,13 +85,10 @@ AI Pulse 通过四层数据采集发现你的 AI 支出：
 - 完整中英文双语支持
 - 符合 Mac App Store 沙盒规范
 
-### 本次更新（版本 1.2.3）
+### 本次更新（版本 1.2.5）
 
-- 订阅配额追踪——Claude 与 Copilot 用量及重置倒计时
-- 新增 OpenCode 支持——新解析器、集成与定价
-- 仪表盘改进——统一的占位圈、更快的选项卡切换、余额相对进度条、Claude 详情悬停费用
-- 主菜单统一——Window 与 Dock 菜单现在共用同一份实时统计
-- 稳定性修复——后台线程安全、审计修复、更快的仓库扫描
+- 会话级工具详情——点击任一工具即可查看会话列表与逐会话档案指标：轮次、上下文占用率、缓存比例与压缩次数
+- 应用与 CloudKit 版本显示——仪表盘底部与关于页现在同时显示软件版本与 CloudKit 载荷版本，同步兼容性一目了然
 
 ### 关键词
 
@@ -139,13 +133,10 @@ AI Pulse 透過四層資料收集發現你的 AI 支出：
 - 完整中英雙語支援
 - 符合 Mac App Store 沙盒規範
 
-### 本次更新（版本 1.2.3）
+### 本次更新（版本 1.2.5）
 
-- 訂閱額度追蹤——Claude 與 Copilot 用量及重置倒數
-- 新增 Codex 與 OpenCode 支援——新解析器、整合與定價
-- 儀表板改進——統一的佔位圖、更快的分頁切換、餘額相對進度條、Claude 詳情懸停費用
-- 主選單統一——Window 與 Dock 選單現在共用同一份即時統計
-- 穩定性修復——背景執行緒安全、稽核修復、更快的倉庫掃描
+- 工作階段級工具詳情——點擊任一工具即可查看工作階段清單與逐工作階段檔案指標：輪次、上下文佔用率、快取比例與壓縮次數
+- 應用程式與 CloudKit 版本顯示——儀表板底部與關於頁現在同時顯示軟體版本與 CloudKit 載荷版本，同步相容性一目了然
 
 ### 關鍵詞
 
