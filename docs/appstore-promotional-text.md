@@ -213,3 +213,97 @@ Smarter iCloud sync — if data was written by an older macOS version, AI Pulse 
 • 清晰的升級指引——應用程式會告知您需要升級 macOS 版還是 iOS 版，並附上 App Store 直達連結
 • 穩定性修復
 ```
+
+---
+
+## 1.2.5 — macOS
+
+### Promotional Text（推广文本）
+
+**English (en):**
+
+```
+Per-tool session details with profile metrics (turns, context, cache) and clear app & CloudKit version display.
+```
+
+**简体中文 (zh-Hans):**
+
+```
+按工具查看会话级详情与档案指标（轮次、上下文、缓存），并清晰显示应用与 CloudKit 版本。
+```
+
+**繁體中文 (zh-Hant):**
+
+```
+按工具檢視工作階段級詳情與檔案指標（輪次、上下文、快取），並清楚顯示應用程式與 CloudKit 版本。
+```
+
+### What's New（版本说明）
+
+**English (en):**
+
+```
+• Session-level tool details — click any tool to see its session list and per-session profile metrics: turn count, context occupancy, cache ratio, and compaction count
+• App & CloudKit version display — dashboard footer and About now show the software version alongside the CloudKit payload version for clearer sync compatibility
+```
+
+**简体中文 (zh-Hans):**
+
+```
+• 会话级工具详情——点击任一工具即可查看会话列表与逐会话档案指标：轮次、上下文占用率、缓存比例与压缩次数
+• 应用与 CloudKit 版本显示——仪表盘底部与关于页现在同时显示软件版本与 CloudKit 载荷版本，同步兼容性一目了然
+```
+
+**繁體中文 (zh-Hant):**
+
+```
+• 工作階段級工具詳情——點擊任一工具即可查看工作階段清單與逐工作階段檔案指標：輪次、上下文佔用率、快取比例與壓縮次數
+• 應用程式與 CloudKit 版本顯示——儀表板底部與關於頁現在同時顯示軟體版本與 CloudKit 載荷版本，同步相容性一目了然
+```
+
+---
+
+## 1.2.5 — iOS
+
+### Promotional Text（推广文本）
+
+**English (en):**
+
+```
+Tap any tool for session-level details and profile metrics; clear app & CloudKit version display for sync compatibility.
+```
+
+**简体中文 (zh-Hans):**
+
+```
+点击任一工具查看会话级详情与档案指标；清晰显示应用与 CloudKit 版本，同步兼容一目了然。
+```
+
+**繁體中文 (zh-Hant):**
+
+```
+點擊任一工具查看工作階段級詳情與檔案指標；清楚顯示應用程式與 CloudKit 版本，同步相容一目了然。
+```
+
+### What's New（版本说明）
+
+**English (en):**
+
+```
+• Tool detail sheet — tap any tool to see a session-level overview with profile cards (turns, context occupancy, cache ratio, compaction count)
+• App & CloudKit version display — dashboard footer shows the software version alongside the CloudKit payload version
+```
+
+**简体中文 (zh-Hans):**
+
+```
+• 工具详情页——点击任一工具查看会话级概览与档案卡（轮次、上下文占用率、缓存比例、压缩次数）
+• 应用与 CloudKit 版本显示——仪表盘底部同时显示软件版本与 CloudKit 载荷版本
+```
+
+**繁體中文 (zh-Hant):**
+
+```
+• 工具詳情頁——點擊任一工具查看工作階段級概覽與檔案卡（輪次、上下文佔用率、快取比例、壓縮次數）
+• 應用程式與 CloudKit 版本顯示——儀表板底部同時顯示軟體版本與 CloudKit 載荷版本
+```
