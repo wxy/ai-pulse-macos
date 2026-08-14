@@ -87,7 +87,13 @@ final class PricingManager: @unchecked Sendable {
 
     func costUSD(model: String?, inTokens: Int, outTokens: Int, cacheTokens: Int) -> Double? {
         guard let p = pricing(for: model) else { return nil }
-        let inCost = Double(inTokens) / 1_000_000 * p.inPricePerMtok
+        // Cache tokens are a *subset* of input tokens for every parser we feed
+        // (Codex `cached_input_tokens`, Claude `cache_read_input_tokens`,
+        // Qwen `cached`). The cache portion must not also be billed at the full
+        // input price, otherwise context-heavy sessions get ~100x overcharged
+        // for providers like DeepSeek where cache price ≪ input price.
+        let nonCachedIn = max(0, inTokens - cacheTokens)
+        let inCost = Double(nonCachedIn) / 1_000_000 * p.inPricePerMtok
         let outCost = Double(outTokens) / 1_000_000 * p.outPricePerMtok
         let cacheCost = Double(cacheTokens) / 1_000_000 * p.cachePricePerMtok
         return inCost + outCost + cacheCost
