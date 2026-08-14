@@ -378,11 +378,13 @@ struct GeneralTab: View {
     }
 
     private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.caption).fontWeight(.semibold)
-            .foregroundColor(.secondary)
-            .textCase(.uppercase)
-            .padding(.top, 4)
+        VStack(alignment: .leading, spacing: 6) {
+            Divider()
+            Text(title)
+                .font(.headline)
+                .foregroundColor(.primary)
+        }
+        .padding(.top, 12)
     }
 }
 
