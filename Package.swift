@@ -20,7 +20,7 @@ let package = Package(
     name: "AIPulse",
     platforms: [.macOS(.v14)],
     dependencies: [
-        .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
     ],
     targets: [
         .systemLibrary(

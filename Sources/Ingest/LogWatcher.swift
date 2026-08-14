@@ -37,14 +37,15 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
     private func loadPositionsFromDB() async {
         do {
-            let rows = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT file_path, byte_offset FROM logwatcher_position")
-            }
-            var map = [String: UInt64]()
-            for r in rows {
-                if let path: String = r["file_path"], let offset: Int64 = r["byte_offset"] {
-                    map[path] = UInt64(offset)
+            let map = try await AppDatabase.shared.read { db -> [String: UInt64] in
+                let rows = try Row.fetchAll(db, sql: "SELECT file_path, byte_offset FROM logwatcher_position")
+                var result = [String: UInt64]()
+                for r in rows {
+                    if let path: String = r["file_path"], let offset: Int64 = r["byte_offset"] {
+                        result[path] = UInt64(offset)
+                    }
                 }
+                return result
             }
             if !map.isEmpty {
                 filePositions = map

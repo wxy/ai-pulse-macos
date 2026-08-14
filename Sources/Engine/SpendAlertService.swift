@@ -145,22 +145,26 @@ final class SpendAlertService: @unchecked Sendable {
         let startMs = Int64(now.timeIntervalSince1970 * 1000) - dayMs
 
         do {
-            let rows = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: """
+            let rows = try await AppDatabase.shared.read { db -> [(providerId: String, ts: Int64, balance: Double, currency: String)] in
+                let fetched = try Row.fetchAll(db, sql: """
                     SELECT provider_id, ts, balance, currency
                     FROM balance_snapshot
                     WHERE ts >= ?
                     ORDER BY provider_id, ts
                     """, arguments: [startMs])
+                return fetched.map { row in
+                    let providerId: String = row["provider_id"] ?? ""
+                    let ts: Int64 = row["ts"] ?? 0
+                    let balance: Double = row["balance"] ?? 0
+                    let currency: String = row["currency"] ?? "USD"
+                    return (providerId: providerId, ts: ts, balance: balance, currency: currency)
+                }
             }
 
             var byProvider: [String: [(ts: Int64, balance: Double, currency: String)]] = [:]
             for row in rows {
-                guard let pid: String = row["provider_id"] else { continue }
-                let ts: Int64 = row["ts"]
-                let balance: Double = row["balance"]
-                let currency: String = row["currency"] ?? "USD"
-                byProvider[pid, default: []].append((ts, balance, currency))
+                let pid = row.providerId
+                byProvider[pid, default: []].append((row.ts, row.balance, row.currency))
             }
 
             var candidates: [SpendAlertPayload] = []

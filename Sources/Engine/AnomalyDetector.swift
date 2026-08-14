@@ -19,24 +19,26 @@ final class AnomalyDetector: @unchecked Sendable {
             let weekAgo = cal.date(byAdding: .day, value: -7, to: now)!
             let startMs = Int64(weekAgo.timeIntervalSince1970 * 1000)
 
-            let rows: [Row] = try await AppDatabase.shared.read { db in
+            let rows = try await AppDatabase.shared.read { db -> [(hr: Int64, cost: Double)] in
                 try Row.fetchAll(db, sql: """
                     SELECT (ts / 3600000) AS hr,
                            COALESCE(SUM(cost_usd), 0) AS c
                     FROM usage_event
                     WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
                     GROUP BY hr ORDER BY hr DESC
-                    """, arguments: [startMs])
+                    """, arguments: [startMs]).map { row in
+                    (hr: row["hr"] as Int64? ?? 0, cost: row["c"] as Double? ?? 0)
+                }
             }
 
             guard rows.count >= 2 else { return }
 
             // Latest hour (just completed, or current partial)
             let latestRow = rows[0]
-            let latestCost: Double = latestRow["c"]
+            let latestCost: Double = latestRow.cost
 
             // Baseline: average of all hours EXCEPT the latest
-            let totalCost = rows.reduce(0.0) { $0 + ($1["c"] as Double? ?? 0) }
+            let totalCost = rows.reduce(0.0) { $0 + $1.cost }
             let baseline = (totalCost - latestCost) / Double(rows.count - 1)
             let threshold = baseline * 3.0
 
@@ -46,7 +48,7 @@ final class AnomalyDetector: @unchecked Sendable {
                 return
             }
 
-            let latestHrInt: Int64 = latestRow["hr"]
+            let latestHrInt: Int64 = latestRow.hr
             let hourKey = Int(latestHrInt)
             if notifiedHours.contains(hourKey) { return }
             notifiedHours.insert(hourKey)

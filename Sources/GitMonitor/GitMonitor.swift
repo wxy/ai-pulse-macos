@@ -44,16 +44,17 @@ nonisolated final class GitMonitor: @unchecked Sendable {
 
     private func loadFromDB() async {
         do {
-            let rows = try await AppDatabase.shared.read { db in
-                try Row.fetchAll(db, sql: "SELECT repo_path, last_commit FROM gitmonitor_state")
-            }
-            var seen = [String: String]()
-            var watched = Set<String>()
-            for r in rows {
-                if let path: String = r["repo_path"] {
-                    watched.insert(path)
-                    if let hash: String = r["last_commit"] { seen[path] = hash }
+            let (seen, watched) = try await AppDatabase.shared.read { db -> (seen: [String: String], watched: Set<String>) in
+                let rows = try Row.fetchAll(db, sql: "SELECT repo_path, last_commit FROM gitmonitor_state")
+                var seen = [String: String]()
+                var watched = Set<String>()
+                for r in rows {
+                    if let path: String = r["repo_path"] {
+                        watched.insert(path)
+                        if let hash: String = r["last_commit"] { seen[path] = hash }
+                    }
                 }
+                return (seen, watched)
             }
             lock.withLock {
                 if !watched.isEmpty { watchedRepos = watched }
