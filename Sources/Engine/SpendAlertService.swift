@@ -238,6 +238,23 @@ final class SpendAlertService: @unchecked Sendable {
         postLocalNotification(payload)
     }
 
+    // MARK: - Simulation (debug)
+
+    /// Synthesizes a sample warning and delivers it through the real
+    /// CloudKit + local-notification path, bypassing detection and cooldown.
+    func simulate() async {
+        let payload = SpendAlertPayload(
+            eventId: UUID().uuidString,
+            level: SpendAlertLevel.warning.rawValue,
+            kind: SpendAlertKind.balanceDrop.rawValue,
+            source: "simulation",
+            amountUsd: 123.45,
+            baselineUsd: nil,
+            occurredAt: Date()
+        )
+        await deliver(payload)
+    }
+
     private func postLocalNotification(_ payload: SpendAlertPayload) {
         guard Bundle.main.bundleIdentifier != nil else { return }
         let content = UNMutableNotificationContent()
