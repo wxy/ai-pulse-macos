@@ -311,22 +311,6 @@ struct GeneralTab: View {
                         }
                 }
 
-                #if DEBUG
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(I18n.t("general.simulate_alert")).font(.body)
-                        Text(I18n.t("general.simulate_alert_desc"))
-                            .font(.caption2).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Button(I18n.t("general.simulate_alert")) {
-                        Task { await SpendAlertService.shared.simulate() }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-                #endif
-
                 sectionHeader(I18n.t("general.group_startup"))
 
                 HStack {
