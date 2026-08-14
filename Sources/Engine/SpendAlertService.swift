@@ -244,6 +244,7 @@ final class SpendAlertService: @unchecked Sendable {
 
     private func postLocalNotification(_ payload: SpendAlertPayload) {
         guard Bundle.main.bundleIdentifier != nil else { return }
+        guard SystemNotifications.isEnabled else { return }
         let content = UNMutableNotificationContent()
         content.title = I18n.t("alert.l\(payload.level).title")
         content.body = alertBody(payload)

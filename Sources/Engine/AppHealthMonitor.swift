@@ -161,6 +161,7 @@ final class AppHealthMonitor: @unchecked Sendable {
 
     private func sendCriticalNotification(message: String) {
         guard Bundle.main.bundleIdentifier != nil else { return }
+        guard SystemNotifications.isEnabled else { return }
         let content = UNMutableNotificationContent()
         content.title = I18n.t("app.name")
         content.body = message

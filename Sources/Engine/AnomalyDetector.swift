@@ -62,6 +62,7 @@ final class AnomalyDetector: @unchecked Sendable {
 
     private func sendNotification(hour: Int, cost: Double, baseline: Double) async {
         guard Bundle.main.bundleIdentifier != nil else { return }
+        guard SystemNotifications.isEnabled else { return }
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
         guard settings.alertSetting == .enabled else { return }

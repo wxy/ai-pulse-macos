@@ -27,7 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         // Register defaults (fresh install values)
-        UserDefaults.standard.register(defaults: ["coin_sound_enabled": true])
+        UserDefaults.standard.register(defaults: [
+            "coin_sound_enabled": true,
+            SystemNotifications.enabledKey: true,
+        ])
 
         // Reset per-session demo suppression on each launch
         DemoData.isSuppressed = false
