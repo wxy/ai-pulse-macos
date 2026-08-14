@@ -81,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
         // Check for anomalies periodically (separate from data refresh — longer cycle)
         Timer.scheduledTimer(withTimeInterval: 3660, repeats: true) { _ in
-            Task { await AnomalyDetector.shared.check() }
+            Task { await SpendAlertService.shared.check() }
         }
 
         // Build main menu bar (App, File, Window) — required for App Store compliance

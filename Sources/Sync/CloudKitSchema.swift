@@ -28,4 +28,14 @@ enum CKSchema {
         static let json      = "json"
         static let updatedAt = "updatedAt"
     }
+
+    enum SpendAlert {
+        static let recordType = "SpendAlert_v1"
+        static let recordName = "alert-latest"
+
+        enum Field {
+            static let json      = "json"
+            static let updatedAt = "updatedAt"
+        }
+    }
 }

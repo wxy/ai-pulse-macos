@@ -68,4 +68,36 @@ final class CloudSyncService {
             }
         }
     }
+
+    /// Upsert the latest spend-surge / balance-drop alert for iOS readers.
+    func writeSpendAlert(_ payload: SpendAlertPayload) async {
+        guard let data = try? JSONEncoder().encode(payload),
+              let json = String(data: data, encoding: .utf8) else {
+            Logger.error("CloudSync: spend alert encode failed")
+            return
+        }
+
+        let record = CKRecord(
+            recordType: CKSchema.SpendAlert.recordType,
+            recordID: CKRecord.ID(recordName: CKSchema.SpendAlert.recordName)
+        )
+        record[CKSchema.SpendAlert.Field.json] = json
+        record[CKSchema.SpendAlert.Field.updatedAt] = payload.occurredAt
+
+        do {
+            let (_, results) = try await database.modifyRecords(
+                saving: [record], deleting: [], savePolicy: .allKeys)
+            let failed = results.contains { _, result in
+                if case .failure = result { return true }
+                return false
+            }
+            if failed {
+                Logger.error("CloudSync: spend alert save failed")
+            } else {
+                Logger.info("CloudSync: wrote spend alert \(payload.kind) L\(payload.level)")
+            }
+        } catch {
+            Logger.error("CloudSync: spend alert save failed: \(error)")
+        }
+    }
 }
