@@ -252,7 +252,7 @@ final class SpendAlertService: @unchecked Sendable {
     private func postLocalNotification(_ payload: SpendAlertPayload) {
         guard Bundle.main.bundleIdentifier != nil else { return }
         let content = UNMutableNotificationContent()
-        content.title = I18n.t("alert.\(payload.kind).l\(payload.level).title")
+        content.title = I18n.t("alert.l\(payload.level).title")
         content.body = alertBody(payload)
         content.sound = .default
         content.interruptionLevel = .timeSensitive
@@ -268,9 +268,9 @@ final class SpendAlertService: @unchecked Sendable {
     private func alertBody(_ payload: SpendAlertPayload) -> String {
         let amount = String(format: "$%.2f", payload.amountUsd)
         if let baseline = payload.baselineUsd {
-            return String(format: I18n.t("alert.\(payload.kind).l\(payload.level).body"),
+            return String(format: I18n.t("alert.spend_rate.body"),
                           amount, String(format: "$%.2f", baseline))
         }
-        return String(format: I18n.t("alert.\(payload.kind).l\(payload.level).body"), amount)
+        return String(format: I18n.t("alert.balance_drop.body"), amount)
     }
 }

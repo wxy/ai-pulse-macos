@@ -252,6 +252,9 @@ struct GeneralTab: View {
     @State private var coinSoundEnabled = UserDefaults.standard.bool(forKey: "coin_sound_enabled")
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var demoActive = DemoData.isActive
+    @State private var spendAlertsEnabled = SpendAlertSettings.current().master
+    @State private var balanceDropAlertsEnabled = SpendAlertSettings.current().balanceDrop
+    @State private var spendRateAlertsEnabled = SpendAlertSettings.current().spendRate
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -288,6 +291,53 @@ struct GeneralTab: View {
                     .toggleStyle(.switch)
                     .onChange(of: coinSoundEnabled) { _, v in
                         UserDefaults.standard.set(v, forKey: "coin_sound_enabled")
+                    }
+            }
+
+            Divider().padding(.vertical, 8)
+
+            // Spend alerts
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(I18n.t("general.spend_alerts")).font(.body)
+                    Text(I18n.t("general.spend_alerts_desc"))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $spendAlertsEnabled)
+                    .toggleStyle(.switch)
+                    .onChange(of: spendAlertsEnabled) { _, v in
+                        UserDefaults.standard.set(v, forKey: SpendAlertSettings.masterKey)
+                    }
+            }
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(I18n.t("general.balance_drop_alerts")).font(.body)
+                    Text(I18n.t("general.balance_drop_alerts_desc"))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $balanceDropAlertsEnabled)
+                    .toggleStyle(.switch)
+                    .disabled(!spendAlertsEnabled)
+                    .onChange(of: balanceDropAlertsEnabled) { _, v in
+                        UserDefaults.standard.set(v, forKey: SpendAlertSettings.balanceKey)
+                    }
+            }
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(I18n.t("general.spend_rate_alerts")).font(.body)
+                    Text(I18n.t("general.spend_rate_alerts_desc"))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: $spendRateAlertsEnabled)
+                    .toggleStyle(.switch)
+                    .disabled(!spendAlertsEnabled)
+                    .onChange(of: spendRateAlertsEnabled) { _, v in
+                        UserDefaults.standard.set(v, forKey: SpendAlertSettings.rateKey)
                     }
             }
 
