@@ -3,6 +3,7 @@ import GRDB
 import AppKit
 import ServiceManagement
 import UserNotifications
+import CloudKit
 
 // MARK: - Main Settings
 
@@ -646,6 +647,7 @@ struct ReposTab: View {
 
 struct AboutTab: View {
     @State private var showAcknowledgments = false
+    @State private var companionMissing = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -655,6 +657,35 @@ struct AboutTab: View {
             Text("CloudKit \(CKSchema.payloadVersion)")
                 .font(.caption).foregroundColor(.secondary)
             Text(I18n.t("about.desc")).multilineTextAlignment(.center)
+
+            if companionMissing {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "iphone.and.arrow.forward")
+                        .font(.title3).foregroundColor(.accentColor)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(I18n.t("about.companion_missing")).font(.body).fontWeight(.medium)
+                        Text(I18n.t("about.companion_missing_desc"))
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(I18n.t("about.companion_appstore")) {
+                        openCompanionAppStore()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(12)
+                .frame(maxWidth: 460)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.accentColor.opacity(0.25), lineWidth: 1)
+                )
+            }
+
             Text(I18n.t("about.privacy")).font(.caption2).foregroundColor(.secondary)
             HStack(spacing: 16) {
                 Button(I18n.t("about.privacy_link")) {
@@ -686,8 +717,34 @@ struct AboutTab: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            checkCompanionApps()
+        }
         .sheet(isPresented: $showAcknowledgments) {
             AcknowledgmentsView(isPresented: $showAcknowledgments)
         }
+    }
+
+    private func checkCompanionApps() {
+        Task {
+            do {
+                let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
+                let subscriptions = try await database.allSubscriptions()
+                let hasCompanion = subscriptions.contains { subscription in
+                    subscription.subscriptionID == CKSchema.Subscription.dashboardChanges
+                        || subscription.subscriptionID == CKSchema.Subscription.spendAlertChanges
+                }
+                companionMissing = !hasCompanion
+            } catch {
+                // If CloudKit is unavailable we don't know the answer yet, so
+                // don't show a potentially wrong download prompt.
+                companionMissing = false
+            }
+        }
+    }
+
+    private func openCompanionAppStore() {
+        guard let url = URL(string: "https://apps.apple.com/app/id6786290416") else { return }
+        NSWorkspace.shared.open(url)
     }
 }

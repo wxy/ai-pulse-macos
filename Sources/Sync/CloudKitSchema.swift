@@ -29,6 +29,11 @@ enum CKSchema {
         static let updatedAt = "updatedAt"
     }
 
+    enum Subscription {
+        static let dashboardChanges = "dashboard-changes"
+        static let spendAlertChanges = "spend-alert-changes"
+    }
+
     enum SpendAlert {
         static let recordType = "SpendAlert_v1"
         static let recordName = "alert-latest"
