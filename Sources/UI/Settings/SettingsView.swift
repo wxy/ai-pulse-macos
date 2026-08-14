@@ -264,6 +264,25 @@ struct GeneralTab: View {
                 Text(I18n.t("general.title")).font(.title3).fontWeight(.semibold)
                 Text(I18n.t("general.desc")).font(.caption).foregroundColor(.secondary)
 
+                settingsGroup(I18n.t("general.group_general")) {
+                    HStack {
+                        Text(I18n.t("general.language_label"))
+                            .frame(width: 140, alignment: .leading)
+                        Picker("", selection: $lang) {
+                            ForEach(I18n.supportedLanguages, id: \.code) { lang in
+                                if lang.code == "auto" {
+                                    Text(I18n.t("settings.language_auto")).tag("auto")
+                                } else {
+                                    Text(lang.label).tag(lang.code)
+                                }
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 200)
+                        Spacer()
+                    }
+                }
+
                 settingsGroup(I18n.t("general.group_notifications")) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -378,24 +397,6 @@ struct GeneralTab: View {
                     }
                 }
 
-                settingsGroup(I18n.t("general.group_general")) {
-                    HStack {
-                        Text(I18n.t("general.language_label"))
-                            .frame(width: 140, alignment: .leading)
-                        Picker("", selection: $lang) {
-                            ForEach(I18n.supportedLanguages, id: \.code) { lang in
-                                if lang.code == "auto" {
-                                    Text(I18n.t("settings.language_auto")).tag("auto")
-                                } else {
-                                    Text(lang.label).tag(lang.code)
-                                }
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 200)
-                        Spacer()
-                    }
-                }
             }
             .padding(.trailing, 16)
         }
