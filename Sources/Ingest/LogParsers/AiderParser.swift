@@ -50,9 +50,9 @@ struct AiderParser {
 
     /// Extract model name from aider markdown line.
     /// Format: `Model: deepseek/deepseek-chat with diff edit format, prompt cache, infinite output`
-    private static let modelLineRegex = try! NSRegularExpression(
+    private static let modelLineRegex = try? NSRegularExpression(
         pattern: #"^Model:\s*([^\s]+)"#, options: [])
-    private static let tokenLineRegex = try! NSRegularExpression(
+    private static let tokenLineRegex = try? NSRegularExpression(
         pattern: #"([\d.]+k?)\s*sent\w*\s*,\s*([\d.]+k?)\s*received"#,
         options: [])
     private static nonisolated(unsafe) let iso8601Frac = {
@@ -67,9 +67,10 @@ struct AiderParser {
     }()
 
     static func parseModelLine(_ line: String) -> String? {
-        guard line.hasPrefix("Model: ") else { return nil }
-        guard let match = modelLineRegex.firstMatch(
-            in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
+        guard line.hasPrefix("Model: "),
+              let regex = modelLineRegex,
+              let match = regex.firstMatch(
+                  in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
         return (line as NSString).substring(with: match.range(at: 1))
     }
 
@@ -84,8 +85,9 @@ struct AiderParser {
         guard line.hasPrefix("> Tokens:") || line.hasPrefix("> Tokens: ") else { return nil }
 
         // Extract numbers using regex: e.g. "12k sent, 47 received"
-        guard let match = tokenLineRegex.firstMatch(
-            in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
+        guard let regex = tokenLineRegex,
+              let match = regex.firstMatch(
+                  in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
 
         let inStr = (line as NSString).substring(with: match.range(at: 1))
         let outStr = (line as NSString).substring(with: match.range(at: 2))
