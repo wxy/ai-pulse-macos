@@ -39,8 +39,11 @@ First-launch integration detection automatically finds your installed AI tools a
 
 ### What's New (Version 1.2.5)
 
+- Spend-surge & balance-drop alerts — opt-out warnings when spending accelerates or a balance drops sharply, delivered on Mac, iPhone, and Apple Watch
 - Session-level tool details — click any tool to see its session list and per-session profile metrics: turn count, context occupancy, cache ratio, and compaction count
 - App & CloudKit version display — dashboard footer and About now show the software version alongside the CloudKit payload version for clearer sync compatibility
+- Notification controls — a dedicated notification group in Settings with a master switch, alert toggle, sound toggle, and permission status
+- Companion-app reminder — the About page links to the iPhone companion when it isn't installed yet
 
 ### Keywords
 
@@ -87,8 +90,11 @@ AI Pulse 通过四层数据采集发现你的 AI 支出：
 
 ### 本次更新（版本 1.2.5）
 
+- 花费激增与余额骤降告警——可选接收，花费加速或余额骤降时在 Mac、iPhone、Apple Watch 上提醒
 - 会话级工具详情——点击任一工具即可查看会话列表与逐会话档案指标：轮次、上下文占用率、缓存比例与压缩次数
 - 应用与 CloudKit 版本显示——仪表盘底部与关于页现在同时显示软件版本与 CloudKit 载荷版本，同步兼容性一目了然
+- 通知设置——设置页新增通知分组，可分别控制系统通知、花费告警与音效，并显示权限状态
+- 伴侣应用提醒——关于页会在未安装 iPhone 伴侣应用时提示下载
 
 ### 关键词
 
@@ -135,8 +141,11 @@ AI Pulse 透過四層資料收集發現你的 AI 支出：
 
 ### 本次更新（版本 1.2.5）
 
+- 花費激增與餘額驟降告警——可選接收，花費加速或餘額驟降時在 Mac、iPhone、Apple Watch 上提醒
 - 工作階段級工具詳情——點擊任一工具即可查看工作階段清單與逐工作階段檔案指標：輪次、上下文佔用率、快取比例與壓縮次數
 - 應用程式與 CloudKit 版本顯示——儀表板底部與關於頁現在同時顯示軟體版本與 CloudKit 載荷版本，同步相容性一目了然
+- 通知設定——設定頁新增通知分組，可分別控制系統通知、花費告警與音效，並顯示權限狀態
+- 伴侶應用程式提醒——關於頁會在未安裝 iPhone 伴侶應用程式時提示下載
 
 ### 關鍵詞
 
