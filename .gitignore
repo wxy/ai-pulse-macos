@@ -13,6 +13,7 @@ dist/
 
 # Local credentials (do not commit)
 .env
+.claude/
 
 # OS
 .DS_Store
