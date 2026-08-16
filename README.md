@@ -70,6 +70,8 @@
     > **实时统计** — 净增代码行、增/删行数、请求次数、Token 用量
 - **Balances & quotas** — remaining API balance and subscription utilization (e.g. Claude, Copilot) on the Today tab
     > **余额 & 额度** — 今日页签显示 API 余额与订阅用量（如 Claude、Copilot）
+- **Spend & balance alerts** — opt-out notifications when spending accelerates or a provider balance drops sharply, delivered on macOS, iOS, and watchOS
+    > **花费 & 余额告警** — 可选接收花费加速或服务商余额骤降提醒，覆盖 macOS、iOS 和 watchOS
 
 **Dock** — the Dock icon is a living gauge for your spending.
 
