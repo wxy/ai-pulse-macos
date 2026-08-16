@@ -1,4 +1,4 @@
-.PHONY: build test run restart hup clean
+.PHONY: build test run restart hup clean release release-notarize publish-release
 
 LIBGIT2_LIB := $(PWD)/Libraries/libgit2/lib
 
@@ -36,6 +36,12 @@ release:
 # Build signed DMG + notarize (requires APPLE_ID / APPLE_APP_PASSWORD env vars).
 release-notarize:
 	NOTARIZE=1 bash scripts/release.sh
+
+# Promote a draft GitHub Release to public after App Store approval.
+# Usage: make publish-release VERSION=1.2.6
+publish-release:
+	@test -n "$(VERSION)" || (echo "Usage: make publish-release VERSION=1.2.6"; exit 1)
+	gh release edit "v$(VERSION)" --draft=false
 
 clean:
 	rm -rf .build
