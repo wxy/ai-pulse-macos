@@ -1,20 +1,11 @@
 import Foundation
 import GRDB
 import UserNotifications
+import AIPulseShared
 
 enum SpendAlertKind: String, Sendable {
     case spendRate = "spend_rate"
     case balanceDrop = "balance_drop"
-}
-
-struct SpendAlertPayload: Codable, Sendable {
-    var eventId: String
-    var level: Int
-    var kind: String
-    var source: String
-    var amountUsd: Double
-    var baselineUsd: Double?
-    var occurredAt: Date
 }
 
 struct SpendAlertSettings {

@@ -20,6 +20,7 @@ let package = Package(
     name: "AIPulse",
     platforms: [.macOS(.v14)],
     dependencies: [
+        .package(path: "Packages/AIPulseShared"),
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
     ],
     targets: [
@@ -31,6 +32,7 @@ let package = Package(
             name: "AIPulse",
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "AIPulseShared", package: "AIPulseShared"),
                 "Clibgit2",
             ],
             path: "Sources",
@@ -40,7 +42,11 @@ let package = Package(
         ),
         .testTarget(
             name: "AIPulseTests",
-            dependencies: ["AIPulse", .product(name: "GRDB", package: "GRDB.swift")],
+            dependencies: [
+                "AIPulse",
+                .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "AIPulseShared", package: "AIPulseShared"),
+            ],
             path: "Tests",
             linkerSettings: libgit2LinkerSettings
         ),

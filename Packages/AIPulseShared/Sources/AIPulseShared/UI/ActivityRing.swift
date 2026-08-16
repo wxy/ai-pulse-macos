@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Activity-style ring used by watchOS and iOS Widget.
-/// Pure SwiftUI — cross-platform compatible.
+/// Activity-style ring shared by watchOS, the iOS widget, and any future
+/// macOS visual. Pure SwiftUI — cross-platform compatible.
 public struct ActivityRing: View {
     public let progress: Double
     public let thickness: CGFloat
@@ -28,6 +28,8 @@ public struct ActivityRing: View {
 
 public extension Color {
     static let marsGreen = Color(red: 44/255, green: 91/255, blue: 72/255)
+    static let marsGreen2 = Color(red: 61/255, green: 122/255, blue: 96/255)
     static let marsGreenLight = Color(red: 140/255, green: 196/255, blue: 170/255)
     static let deepRed = Color(red: 173/255, green: 46/255, blue: 35/255)
+    static let deepRed2 = Color(red: 196/255, green: 74/255, blue: 63/255)
 }

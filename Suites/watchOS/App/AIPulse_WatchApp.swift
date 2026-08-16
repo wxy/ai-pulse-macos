@@ -1,5 +1,6 @@
 import SwiftUI
 import WatchKit
+import AIPulseShared
 
 @main
 struct AIPulse_WatchApp: App {

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		542A515D2D6803121DB17A0E2A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 542A515D2D6803121DB17A0E /* Assets.xcassets */; };
+		3CB70A568A364D7C9EADE9B4 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = 82B0FDA2394E4743BADFE6AB /* AIPulseShared */; };
 		C0843E2E2FF5561900E3F6C4 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C0843E2D2FF5561900E3F6C4 /* GRDB */; };
 		C0843EA22FF5561900E3F6C4 /* libgit2.1.9.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C0843EB52FF5561900E3F6C4 /* AIPulse.png in Resources */ = {isa = PBXBuildFile; fileRef = C0843EB22FF5561900E3F6C4 /* AIPulse.png */; };
@@ -54,6 +55,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C0843E2E2FF5561900E3F6C4 /* GRDB in Frameworks */,
+				3CB70A568A364D7C9EADE9B4 /* AIPulseShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +114,7 @@
 			name = "AI Pulse";
 			packageProductDependencies = (
 				C0843E2D2FF5561900E3F6C4 /* GRDB */,
+				82B0FDA2394E4743BADFE6AB /* AIPulseShared */,
 			);
 			productName = AIPulse;
 			productReference = C0843E1D2FF555ED00E3F6C4 /* AI Pulse.app */;
@@ -143,6 +146,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				C0843E2C2FF5561900E3F6C4 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				A1DAEB147AA645D7889AF744 /* XCLocalSwiftPackageReference "AIPulseShared" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C0843E1E2FF555ED00E3F6C4 /* Products */;
@@ -415,6 +419,21 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A1DAEB147AA645D7889AF744 /* XCLocalSwiftPackageReference "AIPulseShared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../Packages/AIPulseShared";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		82B0FDA2394E4743BADFE6AB /* AIPulseShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1DAEB147AA645D7889AF744 /* XCLocalSwiftPackageReference "AIPulseShared" */;
+			productName = AIPulseShared;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		C0843E2C2FF5561900E3F6C4 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {

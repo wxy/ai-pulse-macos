@@ -3,6 +3,7 @@ import Combine
 import Foundation
 import os
 import WidgetKit
+import AIPulseShared
 
 enum CloudError: Error {
     case noData
@@ -19,25 +20,6 @@ enum CloudError: Error {
 struct SnapshotEnvelope: Codable {
     var payloadVersion: String?
     var writerAppVersion: String?
-}
-
-enum PayloadVersion {
-    /// Compares two "X.Y.Z" version strings numerically; returns -1 / 0 / 1.
-    static func compare(_ a: String?, _ b: String?) -> Int {
-        let pa = parts(a ?? "")
-        let pb = parts(b ?? "")
-        for i in 0..<3 {
-            if pa[i] != pb[i] { return pa[i] < pb[i] ? -1 : 1 }
-        }
-        return 0
-    }
-
-    private static func parts(_ s: String) -> [Int] {
-        let comps = s.split(separator: ".").prefix(3).map { Int($0) ?? 0 }
-        return [comps.count > 0 ? comps[0] : 0,
-                comps.count > 1 ? comps[1] : 0,
-                comps.count > 2 ? comps[2] : 0]
-    }
 }
 
 /// Reads the DashboardCache_v1 record synced by macOS.

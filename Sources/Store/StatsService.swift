@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import AIPulseShared
 
 /// Daily-aggregated stats for the Dashboard charts.
 struct DailyStat: Identifiable {
@@ -703,7 +704,7 @@ enum StatsService {
 
         // Daily/balance trend points
         let fmt = ISO8601DateFormatter(); fmt.formatOptions = [.withFullDate]
-        let dailyPts = st.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: $0.calls, tokens: $0.tokens, netLines: $0.netLines) }
+        let dailyPts = st.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: Int64($0.calls), tokens: Int64($0.tokens), netLines: $0.netLines) }
         let codePts = cd.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: Double($0.added), calls: 0, tokens: 0, netLines: $0.added - $0.deleted, added: $0.added, deleted: $0.deleted) }
         let balPts = Dictionary(grouping: bl, by: { $0.date }).compactMap { d, v in TrendPoint(ts: d.timeIntervalSince1970, value: v.reduce(0) { $0 + $1.spend }, calls: 0, tokens: 0, netLines: 0) }
         let todayCall = Int64(st.reduce(0) { $0 + $1.calls })

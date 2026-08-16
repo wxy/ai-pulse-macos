@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import AIPulseShared
 
 /// Full-window overlay exploring one tool's sessions: sessions grouped by repo,
 /// each row expandable to show the per-turn context-window trend chart.

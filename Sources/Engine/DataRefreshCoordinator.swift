@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import AIPulseShared
 
 /// Injected phase-1 ingestion actions so tests can drive the coordinator
 /// without touching real log directories, repository scans, or status caches.

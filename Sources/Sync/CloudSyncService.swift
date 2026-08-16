@@ -1,5 +1,6 @@
 import CloudKit
 import Foundation
+import AIPulseShared
 
 /// Syncs the cached dashboard snapshots from GRDB to iCloud.
 /// iOS/watchOS read per-range snapshots to display correct data per tab.

@@ -1,4 +1,5 @@
 import SwiftUI
+import AIPulseShared
 
 /// Shown when the iCloud record's payload version does not match this
 /// client's expected version — distinct from "no data" and from iCloud being

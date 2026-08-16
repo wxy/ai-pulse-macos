@@ -1,12 +1,13 @@
 import SwiftUI
 import Charts
+import AIPulseShared
 
-// Additional color palette variants (base colors in Shared/Views/ActivityRing.swift)
+// Additional iOS-only color palette variants. Base colors now come from
+// AIPulseShared.
 extension Color {
     // Dark mode: use lighter variants for better contrast
     static let marsGreenBar   = Color(light: .marsGreen, dark: .marsGreenLight)
     static let deepRedBar     = Color(light: .deepRed, dark: Color(red: 235/255, green: 100/255, blue: 90/255))
-    static let deepRed2       = Color(red: 196/255, green: 74/255, blue: 63/255)
 
     init(light: Color, dark: Color) {
         self.init(UIColor { $0.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light) })

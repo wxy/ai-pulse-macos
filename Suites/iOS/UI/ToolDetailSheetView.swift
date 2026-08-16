@@ -1,4 +1,5 @@
 import SwiftUI
+import AIPulseShared
 
 /// Tool detail sheet: three-line conclusion summary + session list.
 /// Sessions expand to a profile card (no per-turn chart — macOS only).
