@@ -30,6 +30,16 @@
 
 ## Store Copy Handoff
 
+- languages: en, zh-Hans, zh-Hant-TW, zh-Hant-HK, ja, ko, de, fr, es, pt-BR
+- store_copy_contract:
+  - promotional_text_max_chars: 170
+  - description_max_chars: 4000
+  - what_s_new_max_chars: 4000
+  - keywords_max_chars: 100
+  - plain_text_only: true
+  - allowed_formatting: simple bullets and section separators only
+  - promotional_text_before_description: true
+  - separator_between_promotional_and_description: false
 - version: 1.2.6
 - tag: v1.2.6
 - platforms: macOS, iOS, watchOS
