@@ -159,8 +159,8 @@ struct ToolSessionItem: Codable {
     var sessionId: String?
     var title: String?
     var repo: String?
-    var firstTs: Int
-    var lastTs: Int
+    var firstTs: Int64
+    var lastTs: Int64
     var cost: Double
     var windowTokens: Int?
     var lastInput: Int
