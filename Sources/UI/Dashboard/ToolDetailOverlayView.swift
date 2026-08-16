@@ -384,7 +384,8 @@ struct ToolDetailOverlayView: View {
     }()
 
     private func occupancyText(_ occ: Double) -> String {
-        return String(format: I18n.t("panel.occupancy"), Int(occ * 100))
+        let pct = occ.formatted(.percent.precision(.fractionLength(0)))
+        return String(format: I18n.t("panel.occupancy"), pct)
     }
 
     private func occColor(_ occ: Double) -> Color {

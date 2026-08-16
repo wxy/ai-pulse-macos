@@ -4,48 +4,12 @@
     "" : {
       "shouldTranslate" : false
     },
-    "  %@: $%@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "  %@: $%@"
-          }
-        }
-      },
-      "shouldTranslate" : false
-    },
-    "--" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "--"
-          }
-        }
-      },
-      "shouldTranslate" : false
-    },
     "· %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "· %@"
-          }
-        }
-      },
-      "shouldTranslate" : false
-    },
-    "(%lld)" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(%lld)"
           }
         }
       },
@@ -119,21 +83,6 @@
         }
       },
       "shouldTranslate" : false
-    },
-    "%lld sessions · avg %@ · top %@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld sessions · avg %@ · top %@"
-          }
-        }
-      },
-      "shouldTranslate" : false
-    },
-    "%lld%%" : {
-
     },
     "%lld×" : {
       "localizations" : {
@@ -457,6 +406,96 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "金幣音效來自 pixabay.com"
+          }
+        }
+      }
+    },
+    "about.companion_appstore" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View Companion App"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看伴侣应用"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看伴侶應用程式"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看伴侶應用程式"
+          }
+        }
+      }
+    },
+    "about.companion_missing" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone / Apple Watch companion not installed yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未安装 iPhone / Apple Watch 伴侣应用"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未安裝 iPhone / Apple Watch 伴侶應用程式"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未安裝 iPhone / Apple Watch 伴侶應用程式"
+          }
+        }
+      }
+    },
+    "about.companion_missing_desc" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install the companion app to check spending on the go and receive spend-surge alerts."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装伴侣应用后，可在手机上随时查看花费并接收花费激增提醒。"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝伴侶應用程式後，可隨時在手機上查看花費並接收花費激增提醒。"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝伴侶應用程式後，可隨時在手機上查看花費並接收花費激增提醒。"
           }
         }
       }
@@ -1114,96 +1153,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "網站"
-          }
-        }
-      }
-    },
-    "about.companion_missing" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iPhone / Apple Watch companion not installed yet"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未安装 iPhone / Apple Watch 伴侣应用"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未安裝 iPhone / Apple Watch 伴侶應用程式"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未安裝 iPhone / Apple Watch 伴侶應用程式"
-          }
-        }
-      }
-    },
-    "about.companion_missing_desc" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Install the companion app to check spending on the go and receive spend-surge alerts."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "安装伴侣应用后，可在手机上随时查看花费并接收花费激增提醒。"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "安裝伴侶應用程式後，可隨時在手機上查看花費並接收花費激增提醒。"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "安裝伴侶應用程式後，可隨時在手機上查看花費並接收花費激增提醒。"
-          }
-        }
-      }
-    },
-    "about.companion_appstore" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "View Companion App"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查看伴侣应用"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查看伴侶應用程式"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查看伴侶應用程式"
           }
         }
       }
@@ -3249,61 +3198,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@%% günstiger als das andere Tool"
+            "value" : "%@ günstiger als das andere Tool"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@%% cheaper than the other tool"
+            "value" : "%@ cheaper than the other tool"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@%% más barato que la otra herramienta"
+            "value" : "%@ más barato que la otra herramienta"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@%% moins cher que l'autre outil"
+            "value" : "%@ moins cher que l'autre outil"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "他のツールより %@%% 安い"
+            "value" : "他のツールより %@ 安い"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다른 도구보다 %@%% 저렴"
+            "value" : "다른 도구보다 %@ 저렴"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@%% mais barato que a outra ferramenta"
+            "value" : "%@ mais barato que a outra ferramenta"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "较另一工具便宜 %@%%"
+            "value" : "较另一工具便宜 %@"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "比另一工具便宜 %@%%"
+            "value" : "比另一工具便宜 %@"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "比另一工具便宜 %@%%"
+            "value" : "比另一工具便宜 %@"
           }
         }
       }
@@ -3314,61 +3263,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@%% teurer als das andere Tool"
+            "value" : "%@ teurer als das andere Tool"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@%% more expensive than the other tool"
+            "value" : "%@ more expensive than the other tool"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@%% más caro que la otra herramienta"
+            "value" : "%@ más caro que la otra herramienta"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@%% plus cher que l'autre outil"
+            "value" : "%@ plus cher que l'autre outil"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "他のツールより %@%% 高い"
+            "value" : "他のツールより %@ 高い"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다른 도구보다 %@%% 비쌈"
+            "value" : "다른 도구보다 %@ 비쌈"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@%% mais caro que a outra ferramenta"
+            "value" : "%@ mais caro que a outra ferramenta"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "较另一工具贵 %@%%"
+            "value" : "较另一工具贵 %@"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "比另一工具貴 %@%%"
+            "value" : "比另一工具貴 %@"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "比另一工具貴 %@%%"
+            "value" : "比另一工具貴 %@"
           }
         }
       }
@@ -6255,61 +6204,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@% verbraucht · %2$@"
+            "value" : "%1$@ verbraucht · %2$@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@% used · %2$@"
+            "value" : "%1$@ used · %2$@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@% usado · %2$@"
+            "value" : "%1$@ usado · %2$@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@% utilisé · %2$@"
+            "value" : "%1$@ utilisé · %2$@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@% 使用済み · %2$@"
+            "value" : "%1$@ 使用済み · %2$@"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@% 사용 · %2$@"
+            "value" : "%1$@ 사용 · %2$@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@% usado · %2$@"
+            "value" : "%1$@ usado · %2$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@% 已用 · %2$@"
+            "value" : "%1$@ 已用 · %2$@"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@% 已用 · %2$@"
+            "value" : "%1$@ 已用 · %2$@"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@% 已用 · %2$@"
+            "value" : "%1$@ 已用 · %2$@"
           }
         }
       }
@@ -7964,43 +7913,43 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Monatliche Nutzung %"
+            "value" : "Monatliche Nutzung"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Monthly usage %"
+            "value" : "Monthly usage"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uso mensual %"
+            "value" : "Uso mensual"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Utilisation mensuelle %"
+            "value" : "Utilisation mensuelle"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "月間使用率 %"
+            "value" : "月間使用率"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "월간 사용량 %"
+            "value" : "월간 사용량"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uso mensal %"
+            "value" : "Uso mensal"
           }
         },
         "zh-Hans" : {
@@ -8012,13 +7961,13 @@
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每月用量 %"
+            "value" : "每月用量"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每月用量 %"
+            "value" : "每月用量"
           }
         }
       }
@@ -10209,6 +10158,96 @@
         }
       }
     },
+    "general.group_general" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "General"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常规"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一般"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一般"
+          }
+        }
+      }
+    },
+    "general.group_notifications" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知"
+          }
+        }
+      }
+    },
+    "general.group_startup" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startup & Reset"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动与重置"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟動與重置"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟動與重置"
+          }
+        }
+      }
+    },
     "general.language_label" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -10401,6 +10440,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登入 Mac 時自動開啟 AI Pulse"
+          }
+        }
+      }
+    },
+    "general.notification_status_authorized" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications allowed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知已允许"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知已允許"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知已允許"
+          }
+        }
+      }
+    },
+    "general.notification_status_denied" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications are disabled in System Settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统设置中通知未授权"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統設定中通知未授權"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統設定中通知未授權"
+          }
+        }
+      }
+    },
+    "general.notification_status_not_determined" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notification permission not requested yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未请求通知权限"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未請求通知權限"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未請求通知權限"
+          }
+        }
+      }
+    },
+    "general.open_notification_settings" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open System Settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开系统设置"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟系統設定"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟系統設定"
           }
         }
       }
@@ -10736,6 +10895,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "當花費遠超近期基線時提醒。"
+          }
+        }
+      }
+    },
+    "general.system_notifications" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Notifications"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接收系统通知"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接收系統通知"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接收系統通知"
+          }
+        }
+      }
+    },
+    "general.system_notifications_desc" : {
+      "comment" : "Keep translation short — UI label, avoid layout overflow",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn off to stop all system notifications, including spend-surge and anomaly alerts."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭后将不再发送任何系统通知，包括花费激增与异常提醒。"
+          }
+        },
+        "zh-Hant-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉後將不再傳送任何系統通知，包括花費激增與異常提醒。"
+          }
+        },
+        "zh-Hant-TW" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉後將不再傳送任何系統通知，包括花費激增與異常提醒。"
           }
         }
       }
@@ -12323,18 +12542,6 @@
           }
         }
       }
-    },
-    "Lines" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lines"
-          }
-        }
-      },
-      "shouldTranslate" : false
     },
     "menu.approx_zero" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
@@ -16160,61 +16367,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kontext %d%%"
+            "value" : "Kontext %@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "context %d%%"
+            "value" : "context %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "contexto %d%%"
+            "value" : "contexto %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "contexte %d%%"
+            "value" : "contexte %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "占有 %d%%"
+            "value" : "占有 %@"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "점유 %d%%"
+            "value" : "점유 %@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "contexto %d%%"
+            "value" : "contexto %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上下文占用 %d%%"
+            "value" : "上下文占用 %@"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "佔用 %d%%"
+            "value" : "佔用 %@"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "佔用 %d%%"
+            "value" : "佔用 %@"
           }
         }
       }
@@ -18277,18 +18484,6 @@
         }
       }
     },
-    "Source" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Source"
-          }
-        }
-      },
-      "shouldTranslate" : false
-    },
     "Spend" : {
       "localizations" : {
         "en" : {
@@ -19376,288 +19571,6 @@
         }
       },
       "shouldTranslate" : false
-    },
-    "v%@ (%@)" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "v%@ (%@)"
-          }
-        }
-      },
-      "shouldTranslate" : false
-    },
-    "general.group_general" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "General"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "常规"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一般"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一般"
-          }
-        }
-      }
-    },
-    "general.group_startup" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Startup & Reset"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动与重置"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "啟動與重置"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "啟動與重置"
-          }
-        }
-      }
-    },
-    "general.group_notifications" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notifications"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通知"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通知"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通知"
-          }
-        }
-      }
-    },
-    "general.system_notifications" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "System Notifications"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接收系统通知"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接收系統通知"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接收系統通知"
-          }
-        }
-      }
-    },
-    "general.system_notifications_desc" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn off to stop all system notifications, including spend-surge and anomaly alerts."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭后将不再发送任何系统通知，包括花费激增与异常提醒。"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉後將不再傳送任何系統通知，包括花費激增與異常提醒。"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉後將不再傳送任何系統通知，包括花費激增與異常提醒。"
-          }
-        }
-      }
-    },
-    "general.notification_status_authorized" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notifications allowed"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通知已允许"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通知已允許"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通知已允許"
-          }
-        }
-      }
-    },
-    "general.notification_status_denied" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notifications are disabled in System Settings"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系统设置中通知未授权"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系統設定中通知未授權"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系統設定中通知未授權"
-          }
-        }
-      }
-    },
-    "general.notification_status_not_determined" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Notification permission not requested yet"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未请求通知权限"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未請求通知權限"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未請求通知權限"
-          }
-        }
-      }
-    },
-    "general.open_notification_settings" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open System Settings"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开系统设置"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟系統設定"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟系統設定"
-          }
-        }
-      }
     },
     "Value" : {
       "localizations" : {
