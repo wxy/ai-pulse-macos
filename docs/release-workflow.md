@@ -27,19 +27,16 @@ git push origin v1.2.6
 The `.github/workflows/release.yml` workflow will create a **draft** GitHub
 Release, not a public release.
 
-Edit the draft release notes using the `ai-pulse-release-announcement`
-standard: bilingual English + Simplified Chinese, `What's New`, `Fixes &
-Engineering`, `Deployment Notes`, and `Verification`.
+Edit the draft release notes using the global
+`github-release-announcement` standard. It produces release notes and a
+structured `Store Copy Handoff` section, but does not write final App Store
+copy.
 
 ## 3. Generate App Store submission copy
 
-Use the approved draft release as the source of truth to update:
-
-- `docs/appstore-promotional-text.md`
-- `docs/appstore-description.md`
-- `docs/appstore-description-ios.md`
-
-Then submit the macOS and iOS builds to App Store Connect.
+Use the approved draft release's `Store Copy Handoff` metadata as input for
+`appilot`, then use appilot's output to update the App Store copy. After that,
+submit the macOS and iOS builds to App Store Connect.
 
 ## 4. Promote the draft after App Store approval
 
