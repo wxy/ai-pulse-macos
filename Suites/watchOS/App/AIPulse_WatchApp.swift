@@ -34,57 +34,46 @@ struct SpendView: View {
     private var yesterdayDelta: Double {
         snap.yesterdaySpend > 0.001 ? (snap.todayCost - snap.yesterdaySpend) / snap.yesterdaySpend : 0
     }
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    }
+    private var payloadVersion: String { CKSchema.payloadVersion }
 
     var body: some View {
         NavigationStack {
-            GeometryReader { geo in
             ZStack {
-                // Anchor frame with corner labels (overlays BEFORE position)
-                Rectangle().fill(.clear).frame(width: 168, height: 168)
-                    .overlay(alignment: .topLeading) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(I18n.t("time.today")).font(.system(size: 10)).foregroundColor(.secondary)
-                            Text(formatUSD(snap.todayCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
-                        }.offset(x: -8, y: -8)
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        VStack(alignment: .trailing, spacing: 0) {
-                            Text(I18n.t("time.week")).font(.system(size: 10)).foregroundColor(.secondary)
-                            Text(formatUSD(snap.weekCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreen)
-                        }.offset(x: 8, y: -8)
-                    }
-                    .overlay(alignment: .bottomLeading) {
-                        if snap.yesterdaySpend > 0.001 {
-                            let badge = yesterdayDelta > 0 ? "↑" + Int(yesterdayDelta * 100).formatted(.percent) : "↓" + Int(-yesterdayDelta * 100).formatted(.percent)
-                            Text(verbatim: badge)
-                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen).offset(x: -8, y: 8)
-                        }
-                    }
-                    .overlay(alignment: .bottomTrailing) {
-                        VStack(alignment: .trailing, spacing: 0) {
-                            Text(I18n.t("time.30d")).font(.system(size: 10)).foregroundColor(.secondary)
-                            Text(formatUSD(snap.monthCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreenLight)
-                        }.offset(x: 8, y: 8)
-                    }
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
-
-                // Rings + center, positioned at geometry center
+                // Center: rings + today cost + last-updated time.
                 ZStack {
-                    ActivityRing(progress: monthPct, thickness: 5, color: .marsGreenLight).frame(width: 160, height: 160)
-                    ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .marsGreen).frame(width: 144, height: 144)
-                    ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .deepRed).frame(width: 128, height: 128)
+                    ActivityRing(progress: monthPct, thickness: 5, color: .marsGreenLight)
+                        .frame(width: 160, height: 160)
+                    ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .marsGreen)
+                        .frame(width: 144, height: 144)
+                    ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1), thickness: 5, color: .deepRed)
+                        .frame(width: 128, height: 128)
                     VStack(spacing: 1) {
                         Text("\(todayLaps)×")
                             .font(.system(size: 12, weight: .medium, design: .rounded))
                             .foregroundColor(.secondary)
-                        Text(formatUSD(snap.todayCost)).font(.system(size: 32, weight: .bold, design: .rounded)).minimumScaleFactor(0.5).lineLimit(1)
-                        if let updated = cloudData.lastUpdated { Text(updated, format: .dateTime.hour().minute()).font(.system(size: 10)).foregroundColor(.secondary) }
+                        Text(formatUSD(snap.todayCost))
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .minimumScaleFactor(0.5).lineLimit(1)
+                        if let updated = cloudData.lastUpdated {
+                            Text(updated, format: .dateTime.hour().minute())
+                                .font(.system(size: 10)).foregroundColor(.secondary)
+                        }
                     }
                 }
-                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .offset(y: 12)
             }
-            }
+            // Anchor labels to the real screen corners (the watch display is a
+            // taller rectangle, not a square) and put the version line at the
+            // very bottom, below the bottom-corner labels.
+            .overlay(alignment: .topLeading) { todayLabel.padding(.leading, 10).padding(.top, 14) }
+            .overlay(alignment: .topTrailing) { weekLabel.padding(.trailing, 10).padding(.top, 14) }
+            .overlay(alignment: .bottomLeading) { deltaLabel.padding(.leading, 10).padding(.bottom, 14) }
+            .overlay(alignment: .bottomTrailing) { monthLabel.padding(.trailing, 10).padding(.bottom, 14) }
+            .overlay(alignment: .bottom) { versionLabel.padding(.bottom, 2) }
             .ignoresSafeArea(.all)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Spacer().frame(width: 0) }
@@ -98,6 +87,44 @@ struct SpendView: View {
             refreshTrigger += 1
             Task { await cloudData.refresh() }
         }
+    }
+
+    private var todayLabel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(I18n.t("time.today")).font(.system(size: 10)).foregroundColor(.secondary)
+            Text(formatUSD(snap.todayCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
+        }
+    }
+
+    private var weekLabel: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            Text(I18n.t("time.week")).font(.system(size: 10)).foregroundColor(.secondary)
+            Text(formatUSD(snap.weekCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreen)
+        }
+    }
+
+    @ViewBuilder
+    private var deltaLabel: some View {
+        if snap.yesterdaySpend > 0.001 {
+            let badge = yesterdayDelta > 0 ? "↑" + Int(yesterdayDelta * 100).formatted(.percent) : "↓" + Int(-yesterdayDelta * 100).formatted(.percent)
+            Text(verbatim: badge)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen)
+        }
+    }
+
+    private var monthLabel: some View {
+        VStack(alignment: .trailing, spacing: 0) {
+            Text(I18n.t("time.30d")).font(.system(size: 10)).foregroundColor(.secondary)
+            Text(formatUSD(snap.monthCost)).font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundColor(.marsGreenLight)
+        }
+    }
+
+    private var versionLabel: some View {
+        Text(verbatim: "v\(appVersion) CloudKit \(payloadVersion)")
+            .font(.system(size: 9, weight: .medium, design: .rounded))
+            .foregroundColor(.secondary.opacity(0.7))
+            .lineLimit(1)
     }
 
     private static let usdFormatter: NumberFormatter = {
