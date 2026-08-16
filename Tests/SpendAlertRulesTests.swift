@@ -1,5 +1,5 @@
 import XCTest
-@testable import AIPulse
+import AIPulseShared
 
 final class SpendAlertRulesTests: XCTestCase {
     private let thresholds = SpendAlertThresholds.standard

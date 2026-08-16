@@ -6,9 +6,6 @@
 **/xcuserdata/
 DerivedData/
 
-# SPM
-Packages/
-
 # Distribution artifacts
 dist/
 

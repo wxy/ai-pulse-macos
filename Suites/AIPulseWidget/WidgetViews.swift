@@ -1,5 +1,6 @@
 import SwiftUI
 import WidgetKit
+import AIPulseShared
 
 struct AIPulseWidgetEntryView: View {
     var entry: WidgetEntry

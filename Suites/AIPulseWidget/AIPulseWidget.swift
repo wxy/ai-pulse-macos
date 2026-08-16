@@ -1,6 +1,7 @@
 import WidgetKit
 import SwiftUI
 import Foundation
+import AIPulseShared
 
 // MARK: - Timeline Provider
 

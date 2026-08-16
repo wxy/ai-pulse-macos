@@ -1,34 +1,56 @@
 import Foundation
 
 /// Severity levels for spend surge / balance-drop alerts, lowest to highest.
-enum SpendAlertLevel: Int, CaseIterable, Comparable, Sendable {
+public enum SpendAlertLevel: Int, CaseIterable, Comparable, Sendable {
     case reminder = 1
     case warning = 2
     case critical = 3
 
-    static func < (lhs: SpendAlertLevel, rhs: SpendAlertLevel) -> Bool {
+    public static func < (lhs: SpendAlertLevel, rhs: SpendAlertLevel) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
 }
 
 /// Initial, tunable thresholds. Amounts are in USD.
-struct SpendAlertThresholds: Equatable, Sendable {
-    var rateMultiplierL1: Double = 2
-    var rateMultiplierL2: Double = 5
-    var rateMultiplierL3: Double = 10
-    var rateFloorL1: Double = 1
-    var rateFloorL2: Double = 5
-    var rateFloorL3: Double = 10
-    var balanceDropL1: Double = 20
-    var balanceDropL2: Double = 50
-    var balanceDropL3: Double = 200
+public struct SpendAlertThresholds: Equatable, Sendable {
+    public var rateMultiplierL1: Double = 2
+    public var rateMultiplierL2: Double = 5
+    public var rateMultiplierL3: Double = 10
+    public var rateFloorL1: Double = 1
+    public var rateFloorL2: Double = 5
+    public var rateFloorL3: Double = 10
+    public var balanceDropL1: Double = 20
+    public var balanceDropL2: Double = 50
+    public var balanceDropL3: Double = 200
 
-    static let standard = SpendAlertThresholds()
+    public static let standard = SpendAlertThresholds()
+
+    public init(
+        rateMultiplierL1: Double = 2,
+        rateMultiplierL2: Double = 5,
+        rateMultiplierL3: Double = 10,
+        rateFloorL1: Double = 1,
+        rateFloorL2: Double = 5,
+        rateFloorL3: Double = 10,
+        balanceDropL1: Double = 20,
+        balanceDropL2: Double = 50,
+        balanceDropL3: Double = 200
+    ) {
+        self.rateMultiplierL1 = rateMultiplierL1
+        self.rateMultiplierL2 = rateMultiplierL2
+        self.rateMultiplierL3 = rateMultiplierL3
+        self.rateFloorL1 = rateFloorL1
+        self.rateFloorL2 = rateFloorL2
+        self.rateFloorL3 = rateFloorL3
+        self.balanceDropL1 = balanceDropL1
+        self.balanceDropL2 = balanceDropL2
+        self.balanceDropL3 = balanceDropL3
+    }
 }
 
 /// Pure, side-effect-free alert decision rules.
-enum SpendAlertRules {
-    nonisolated static func median(_ values: [Double]) -> Double {
+public enum SpendAlertRules {
+    public nonisolated static func median(_ values: [Double]) -> Double {
         guard !values.isEmpty else { return 0 }
         let sorted = values.sorted()
         let mid = sorted.count / 2
@@ -38,7 +60,7 @@ enum SpendAlertRules {
         return (sorted[mid - 1] + sorted[mid]) / 2
     }
 
-    nonisolated static func levelForSpendRate(
+    public nonisolated static func levelForSpendRate(
         current: Double,
         baseline: Double,
         thresholds: SpendAlertThresholds
@@ -56,7 +78,7 @@ enum SpendAlertRules {
         return nil
     }
 
-    nonisolated static func levelForBalanceDrop(
+    public nonisolated static func levelForBalanceDrop(
         dropUSD: Double,
         thresholds: SpendAlertThresholds
     ) -> SpendAlertLevel? {
@@ -66,7 +88,7 @@ enum SpendAlertRules {
         return nil
     }
 
-    nonisolated static func shouldFire(
+    public nonisolated static func shouldFire(
         lastFiredAt: Date?,
         cooldown: TimeInterval,
         now: Date

@@ -4,6 +4,7 @@ import AppKit
 import ServiceManagement
 import UserNotifications
 import CloudKit
+import AIPulseShared
 
 // MARK: - Main Settings
 

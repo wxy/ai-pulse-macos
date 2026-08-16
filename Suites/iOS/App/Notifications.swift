@@ -2,6 +2,7 @@ import CloudKit
 import UserNotifications
 import AVFoundation
 import os
+import AIPulseShared
 
 /// Manages CloudKit subscription push + local notifications.
 @MainActor

@@ -1,15 +1,7 @@
 import SwiftUI
 import Charts
 import GRDB
-
-// MARK: - Color palette (#2C5B48 green / #AD2E23 red)
-extension Color {
-    static let marsGreen  = Color(red: 44/255, green: 91/255, blue: 72/255)   // #2C5B48
-    static let marsGreen2 = Color(red: 61/255, green: 122/255, blue: 96/255)  // #3D7A60
-    static let marsGreenLight = Color(red: 140/255, green: 196/255, blue: 170/255)  // #8CC4AA — subscription bars
-    static let deepRed    = Color(red: 173/255, green: 46/255, blue: 35/255)  // #AD2E23
-    static let deepRed2   = Color(red: 196/255, green: 74/255, blue: 63/255)  // #C44A3F
-}
+import AIPulseShared
 
 enum TimeRange: Hashable {
     case today
@@ -1638,7 +1630,7 @@ struct DashboardView: View {
             map[Date(timeIntervalSince1970: p.ts)] = p.value
         }
         dailyStats = snap.dailyStats.map { p in
-            DailyStat(date: Date(timeIntervalSince1970: p.ts), cost: p.value, calls: p.calls, tokens: p.tokens, netLines: p.netLines, costPerLine: 0)
+            DailyStat(date: Date(timeIntervalSince1970: p.ts), cost: p.value, calls: Int(p.calls), tokens: Int(p.tokens), netLines: p.netLines, costPerLine: 0)
         }
         codeChanges = snap.codeChanges.map { p in
             DailyCodeChange(date: Date(timeIntervalSince1970: p.ts), added: p.added, deleted: p.deleted)
