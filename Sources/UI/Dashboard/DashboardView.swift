@@ -745,7 +745,8 @@ struct DashboardView: View {
             }
         }
         .help(String(format: I18n.t("dashboard.quota_help"),
-                     "\(Int(data.percent))", data.limitStatus))
+                     (data.percent / 100).formatted(.percent.precision(.fractionLength(0))),
+                     data.limitStatus))
     }
 
     private func toolDisplayName(_ toolId: String) -> String {
@@ -1402,7 +1403,7 @@ struct DashboardView: View {
 
     private func crossText(_ c: ToolConclusion) -> String {
         guard let d = c.crossToolDeltaPct else { return "—" }
-        let pct = String(format: "%.0f", abs(d))
+        let pct = (abs(d) / 100).formatted(.percent.precision(.fractionLength(0)))
         return d >= 0
             ? String(format: I18n.t("card.cross_more"), pct)
             : String(format: I18n.t("card.cross_less"), pct)
