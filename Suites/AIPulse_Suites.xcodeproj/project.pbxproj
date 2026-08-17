@@ -7,16 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		C096E2EF300E5D3D004D0062 /* AIPulse_watchOS.app in CopyFiles */ = {isa = PBXBuildFile; fileRef = C0D7703030090F0600BC1E54 /* AIPulse_watchOS.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		CE2D79B34B28423D9734A713 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = 6B4AC1157397447497F084ED /* AIPulseShared */; };
-		E0EB9D6835BE46DB830B8074 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = A22C196E89294272AAC893E2 /* AIPulseShared */; };
 		AD4082F6DF06482AAF6F1D76 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = 1EE7FF464FB6468B8969F3C6 /* AIPulseShared */; };
+		C096E2EF300E5D3D004D0062 /* AIPulse_watchOS.app in CopyFiles */ = {isa = PBXBuildFile; fileRef = C0D7703030090F0600BC1E54 /* AIPulse_watchOS.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C096EA863014F1C5004D0062 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C096EA853014F1C5004D0062 /* WidgetKit.framework */; };
 		C096EA883014F1C5004D0062 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C096EA873014F1C5004D0062 /* SwiftUI.framework */; };
 		C096EA993014F1C7004D0062 /* AIPulseWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C096EA843014F1C5004D0062 /* AIPulseWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C096F525301CAC1D004D0062 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C096F524301CAC1D004D0062 /* Localizable.xcstrings */; };
 		C096F526301CAC1D004D0062 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C096F524301CAC1D004D0062 /* Localizable.xcstrings */; };
 		C096F527301CAC1D004D0062 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C096F524301CAC1D004D0062 /* Localizable.xcstrings */; };
+		CE2D79B34B28423D9734A713 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = 6B4AC1157397447497F084ED /* AIPulseShared */; };
+		E0EB9D6835BE46DB830B8074 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = A22C196E89294272AAC893E2 /* AIPulseShared */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -302,7 +302,7 @@
 			mainGroup = C0D7701230090D2E00BC1E54;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "AIPulseShared" */,
+				B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "../Packages/AIPulseShared" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C0D7701C30090D2E00BC1E54 /* Products */;
@@ -389,7 +389,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = AIPulseWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 29;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AIPulseWidget/Info.plist;
@@ -401,7 +401,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.5;
+				MARKETING_VERSION = 1.2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse.Widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -422,7 +422,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = AIPulseWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 29;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AIPulseWidget/Info.plist;
@@ -434,7 +434,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.5;
+				MARKETING_VERSION = 1.2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse.Widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -577,7 +577,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AIPulse_iOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 29;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -594,7 +594,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.5;
+				MARKETING_VERSION = 1.2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = NO;
@@ -619,7 +619,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AIPulse_iOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 29;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -636,7 +636,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.5;
+				MARKETING_VERSION = 1.2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = NO;
@@ -661,7 +661,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AIPulse_watchOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 29;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -677,7 +677,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.5;
+				MARKETING_VERSION = 1.2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -703,7 +703,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AIPulse_watchOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 27;
+				CURRENT_PROJECT_VERSION = 29;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -719,7 +719,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2.5;
+				MARKETING_VERSION = 1.2.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -780,26 +780,26 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "AIPulseShared" */ = {
+		B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "../Packages/AIPulseShared" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../Packages/AIPulseShared";
+			relativePath = ../Packages/AIPulseShared;
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		1EE7FF464FB6468B8969F3C6 /* AIPulseShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "../Packages/AIPulseShared" */;
+			productName = AIPulseShared;
+		};
 		6B4AC1157397447497F084ED /* AIPulseShared */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "AIPulseShared" */;
+			package = B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "../Packages/AIPulseShared" */;
 			productName = AIPulseShared;
 		};
 		A22C196E89294272AAC893E2 /* AIPulseShared */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "AIPulseShared" */;
-			productName = AIPulseShared;
-		};
-		1EE7FF464FB6468B8969F3C6 /* AIPulseShared */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "AIPulseShared" */;
+			package = B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "../Packages/AIPulseShared" */;
 			productName = AIPulseShared;
 		};
 /* End XCSwiftPackageProductDependency section */
