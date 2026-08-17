@@ -237,7 +237,14 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     }
 
     /// Called by ApiPoller after a balance_snapshot row is inserted.
+    ///
+    /// Balance deltas feed API spend in every dashboard range, but the cached
+    /// snapshots refresh at different rates (today=5min, week=1h, 30d=12h).
+    /// Without invalidation a new API delta would appear on Today within
+    /// minutes while This Week keeps showing the pre-poll snapshot for up to
+    /// an hour. Drop the caches so the next load recomputes from the new row.
     func notifyPhaseBalance() {
+        Task { await DashboardCache.invalidateAll() }
         DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify(playSound: true) } }
     }
 

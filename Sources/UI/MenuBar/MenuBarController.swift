@@ -245,9 +245,16 @@ final class MenuBarController: NSObject, @unchecked Sendable {
                 return result
             }
 
-            // Per-provider spend this week from balance snapshots
+            // Per-provider spend this week from balance snapshots. Query 14
+            // days before Monday (same lookback as combinedSpend) so the first
+            // delta at the week boundary is measured against a prior snapshot
+            // instead of being silently dropped for the whole week.
             let weekDays = Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: Calendar.current.startOfDay(for: Date())).day! + 1
-            let rawSpend = (try? await StatsService.balanceDailySpend(days: weekDays, sinceMs: Int64(weekStart))) ?? []
+            let monday = Calendar.mondayOfWeek()
+            let lookbackStart = cal.date(byAdding: .day, value: -14, to: monday) ?? monday
+            let lookbackStartMs = Int64(lookbackStart.timeIntervalSince1970 * 1000)
+            let rawSpend = ((try? await StatsService.balanceDailySpend(days: 1, sinceMs: lookbackStartMs)) ?? [])
+                .filter { $0.date.timeIntervalSince1970 >= monday.timeIntervalSince1970 }
             // --- Unified cost computation ---
             // API total: from balance deltas, filtered to active providers
             var spendByProvider: [String: Double] = [:]

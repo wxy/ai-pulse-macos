@@ -23,6 +23,23 @@ struct DashboardCache {
         }
     }
 
+    /// Removes all cached snapshots.
+    ///
+    /// Called when a new balance snapshot lands — API spend feeds every
+    /// dashboard range, and the per-range caches refresh at different rates
+    /// (today=5min, week=1h, 30d=12h). Without invalidation a fresh balance
+    /// delta shows up on Today within minutes while This Week keeps serving
+    /// the pre-poll snapshot for up to an hour.
+    static func invalidateAll() async {
+        do {
+            try await AppDatabase.shared.write { db in
+                try db.execute(sql: "DELETE FROM dashboard_cache")
+            }
+        } catch {
+            Logger.warning("Dashboard: cache invalidation failed — \(error.localizedDescription)")
+        }
+    }
+
     static func read(timeRange: String, maxAge: TimeInterval = 30) async -> DashboardSnapshot? {
         do {
             let cached = try await AppDatabase.shared.read { db -> (json: String, updatedAt: Date)? in
