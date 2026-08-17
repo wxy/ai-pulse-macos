@@ -56,7 +56,7 @@ struct ToolDetailSheetView: View {
                 Spacer()
                 HStack(spacing: 3) {
                     Image(systemName: delta > 0 ? "arrow.up.right" : (delta < 0 ? "arrow.down.right" : "minus"))
-                    Text(String(format: "%+.1f%%", delta))
+                    Text((delta / 100).formatted(.percent.precision(.fractionLength(1)).sign(strategy: .always(includingZero: true))))
                 }
                 .font(.caption2).fontWeight(.semibold).monospacedDigit()
                 .foregroundColor(delta > 0 ? Color.deepRed : Color.marsGreen)
@@ -220,10 +220,10 @@ struct ToolDetailSheetView: View {
             }
             HStack(spacing: 14) {
                 metric(I18n.t("tool.detail.avg_cache_label"),
-                       row.avgCacheRatio.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
+                       row.avgCacheRatio.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—")
                 Spacer()
                 metric(I18n.t("tool.detail.avg_occupancy_label"),
-                       row.avgOccupancy.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
+                       row.avgOccupancy.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? "—")
             }
             Divider()
             Label(I18n.t("tool.detail.macos_note"), systemImage: "macwindow")
