@@ -327,7 +327,7 @@ struct DashboardView: View {
                         Text(toolDisplayName(q.toolId))
                             .font(.caption).foregroundColor(.secondary)
                         Spacer()
-                        Text("\(Int(q.utilization))%")
+                        Text((q.utilization / 100).formatted(.percent.precision(.fractionLength(0))))
                             .font(.caption).monospacedDigit().foregroundColor(quotaColor(q.utilization))
                         if q.resetAt > 0 {
                             Text(quotaCountdownText(q.resetAt))
