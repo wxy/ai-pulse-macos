@@ -1134,34 +1134,41 @@ struct DashboardView: View {
                 .overlay(alignment: .topLeading) {
                     if let hd = trendHoverDate,
                        let stat = padStats.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
-                       let code = padCode.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
-                       stat.cost > 0 || code.added > 0 || code.deleted > 0 {
+                       let code = padCode.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }) {
+                        // Tooltip must mirror the bars: the API bar height is
+                        // balance-derived spend (dailyBalanceSpend), not
+                        // usage_event cost — the two can differ by an order
+                        // of magnitude (e.g. Codex events often carry no
+                        // cost_usd yet).
+                        let apiCost = dailyBalanceSpend[Calendar.current.startOfDay(for: stat.date)] ?? 0
                         let subCost = hd <= now ? subDaily : 0
-                        // Try right of cursor; flip left only if the tooltip would overflow.
-                        let tipW: CGFloat = 110
-                        let tipH: CGFloat = 68
-                        let gap: CGFloat = 8
-                        let pw = trendPlotFrame.width
-                        let ph = trendPlotFrame.height
-                        let fitsRight = (trendHoverX + gap + tipW <= pw)
-                        let rawX = fitsRight
-                            ? trendHoverX + gap
-                            : trendHoverX - tipW - gap
-                        let fitsAbove = (trendHoverY - tipH - gap >= 0)
-                        let rawY = fitsAbove
-                            ? trendHoverY - tipH - gap
-                            : trendHoverY + gap
-                        let tipX = trendPlotFrame.origin.x + max(0, min(rawX, pw - tipW))
-                        let tipY = trendPlotFrame.origin.y + max(0, min(rawY, ph - tipH))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(hd, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
-                            Text(String(format: I18n.t("dashboard.tooltip_api"), String(format: "%.2f", stat.cost))).font(.caption2).monospacedDigit()
-                            Text(String(format: I18n.t("dashboard.tooltip_sub"), String(format: "%.2f", subCost))).font(.caption2).monospacedDigit()
-                            Text(String(format: I18n.t("dashboard.tooltip_added"), code.added)).font(.caption2).monospacedDigit()
-                            Text(String(format: I18n.t("dashboard.tooltip_deleted"), code.deleted)).font(.caption2).monospacedDigit()
+                        if apiCost > 0 || code.added > 0 || code.deleted > 0 {
+                            // Try right of cursor; flip left only if the tooltip would overflow.
+                            let tipW: CGFloat = 110
+                            let tipH: CGFloat = 68
+                            let gap: CGFloat = 8
+                            let pw = trendPlotFrame.width
+                            let ph = trendPlotFrame.height
+                            let fitsRight = (trendHoverX + gap + tipW <= pw)
+                            let rawX = fitsRight
+                                ? trendHoverX + gap
+                                : trendHoverX - tipW - gap
+                            let fitsAbove = (trendHoverY - tipH - gap >= 0)
+                            let rawY = fitsAbove
+                                ? trendHoverY - tipH - gap
+                                : trendHoverY + gap
+                            let tipX = trendPlotFrame.origin.x + max(0, min(rawX, pw - tipW))
+                            let tipY = trendPlotFrame.origin.y + max(0, min(rawY, ph - tipH))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(hd, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
+                                Text(String(format: I18n.t("dashboard.tooltip_api"), String(format: "%.2f", apiCost))).font(.caption2).monospacedDigit()
+                                Text(String(format: I18n.t("dashboard.tooltip_sub"), String(format: "%.2f", subCost))).font(.caption2).monospacedDigit()
+                                Text(String(format: I18n.t("dashboard.tooltip_added"), code.added)).font(.caption2).monospacedDigit()
+                                Text(String(format: I18n.t("dashboard.tooltip_deleted"), code.deleted)).font(.caption2).monospacedDigit()
+                            }
+                            .padding(6).background(.regularMaterial).cornerRadius(6)
+                            .offset(x: max(0, tipX), y: max(0, tipY))
                         }
-                        .padding(6).background(.regularMaterial).cornerRadius(6)
-                        .offset(x: max(0, tipX), y: max(0, tipY))
                     }
                 }
 
