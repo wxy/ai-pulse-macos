@@ -1139,6 +1139,7 @@ struct DashboardView: View {
                         AxisValueLabel(format: dateLabelFormat, orientation: .horizontal)
                     }
                 }
+                .chartXScale(domain: Self.chartXDomain(start: chartStart, days: chartDays))
                 .chartYScale(domain: 0...leftMax)
                 .chartYAxis {
                     AxisMarks(position: .leading, values: leftValues) { value in
@@ -1315,6 +1316,18 @@ struct DashboardView: View {
             return Calendar.mondayOfWeek()
         }
         return cal.date(byAdding: .day, value: -(timeRange.days - 1), to: cal.startOfDay(for: Date()))!
+    }
+
+    /// Charts' inferred date domain becomes degenerate when every mark uses the
+    /// same calendar day (Today). Give it an explicit half-open day span so the
+    /// framework always receives a finite interval with positive width.
+    static func chartXDomain(start: Date, days: Int) -> ClosedRange<Date> {
+        let calendar = Calendar.current
+        let safeDays = max(days, 1)
+        let safeStart = calendar.startOfDay(for: start)
+        let end = calendar.date(byAdding: .day, value: safeDays, to: safeStart)
+            ?? safeStart.addingTimeInterval(Double(safeDays) * 86_400)
+        return safeStart...end
     }
 
     func padStats(_ raw: [DailyStat], days queryDays: Int) -> [DailyStat] {

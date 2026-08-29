@@ -2,6 +2,19 @@ import XCTest
 @testable import AIPulse
 
 final class ChartMathTests: XCTestCase {
+    @MainActor
+    func testChartXDomainProvidesExplicitSpanForSingleDate() {
+        let start = Calendar.current.startOfDay(for: Date())
+
+        let domain = DashboardView.chartXDomain(start: start, days: 1)
+
+        XCTAssertEqual(domain.lowerBound, start)
+        XCTAssertEqual(
+            Calendar.current.dateComponents([.day], from: start, to: domain.upperBound).day,
+            1
+        )
+    }
+
     func testFiniteUsesFallbackForNonFiniteValues() {
         XCTAssertEqual(ChartMath.finite(.nan, fallback: 7), 7)
         XCTAssertEqual(ChartMath.finite(.infinity, fallback: 7), 7)
