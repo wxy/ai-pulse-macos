@@ -627,37 +627,43 @@ struct DashboardView: View {
         return ""
     }
 
-    /// Vertical stat cards between the two donut charts ("nose" of the robot face).
+    /// Nose: vertical overlapping bars. Added runs top-down, deleted runs
+    /// bottom-up; the overlap is the net line change. Max height is the larger
+    /// of the two, labels sit at top/bottom, net number in the middle.
     @ViewBuilder var noseStatCards: some View {
         let added = codeChanges.reduce(0) { $0 + $1.added }
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
         let netLines = added - deleted
         let maxVal = Double(max(added, deleted, 1))
-        // Overlapping bars: added (solid) and deleted (translucent) share the
-        // same origin, so the visible difference is the net line change.
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
+            Text("+\(added)")
+                .font(.caption).foregroundColor(.marsGreen).monospacedDigit()
             GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.marsGreen.opacity(0.85))
-                        .frame(width: geo.size.width * Double(added) / maxVal)
-                    Capsule()
-                        .fill(Color.deepRed.opacity(0.55))
-                        .frame(width: geo.size.width * Double(deleted) / maxVal)
+                ZStack {
+                    VStack {
+                        Spacer()
+                        Capsule()
+                            .fill(Color.deepRed.opacity(0.55))
+                            .frame(width: 22, height: geo.size.height * Double(deleted) / maxVal)
+                    }
+                    VStack {
+                        Capsule()
+                            .fill(Color.marsGreen.opacity(0.85))
+                            .frame(width: 22, height: geo.size.height * Double(added) / maxVal)
+                        Spacer()
+                    }
+                    Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
+                        .font(.system(size: 11, weight: .bold)).monospacedDigit()
+                        .foregroundColor(netLines >= 0 ? .marsGreen : .deepRed)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
                 }
             }
-            .frame(height: 14)
-            HStack(spacing: 4) {
-                Text("+\(added)")
-                    .font(.caption2).foregroundColor(.marsGreen).monospacedDigit()
-                Text("-\(deleted)")
-                    .font(.caption2).foregroundColor(.red).monospacedDigit()
-                Spacer()
-                Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
-                    .font(.caption).fontWeight(.semibold).monospacedDigit()
-                    .foregroundColor(netLines >= 0 ? .marsGreen : .deepRed)
-            }
+            .frame(height: 56)
+            Text("-\(deleted)")
+                .font(.caption).foregroundColor(.red).monospacedDigit()
         }
+        .frame(width: 90)
     }
 
     // MARK: - Head overview (forehead usage · eyes expense/output · nose lines)
@@ -720,20 +726,18 @@ struct DashboardView: View {
         // Subscription participates as a fixed-cycle share (like a balance
         // delta) so the cost composition has both factual expense kinds.
         let subscriptionSegment: [DonutItem] = subMonthly > 0.001
-            ? [DonutItem(label: I18n.t("dashboard.sub_label"), cost: subMonthly, pct: 0, color: .marsGreenLight)]
+            ? [DonutItem(label: I18n.t("dashboard.sub_label"), cost: subMonthly, pct: 0, color: .secondary)]
             : []
-        let rawSegments = balanceSpend.enumerated().map { (i, item) in
-            DonutItem(
-                label: item.name,
-                cost: item.spend,
-                pct: 0,
-                color: Self.providerDonutColors[i % Self.providerDonutColors.count])
+        let rawSegments = balanceSpend.map {
+            DonutItem(label: $0.name, cost: $0.spend, pct: 0, color: .secondary)
         } + subscriptionSegment
         let totalCost = actualSpend + subMonthly
-        let segments = Self.renderableDonutSegments(rawSegments).map {
-            DonutItem(label: $0.label, cost: $0.cost,
-                      pct: totalCost > 0 ? $0.cost / totalCost * 100 : 0,
-                      color: $0.color)
+        let segments = Self.topSegments(
+            Self.renderableDonutSegments(rawSegments)
+        ).enumerated().map { i, s in
+            DonutItem(label: s.label, cost: s.cost,
+                      pct: totalCost > 0 ? s.cost / totalCost * 100 : 0,
+                      color: Self.donutPalette[i % Self.donutPalette.count])
         }
         let subLabel = subMonthly > 0.001
             ? " · +\(I18n.t("dashboard.sub_label")) \(String(format: "$%.0f", subMonthly))/\(I18n.t("dashboard.month"))"
@@ -783,20 +787,15 @@ struct DashboardView: View {
     /// split than tool. Center shows the attributed token total.
     @ViewBuilder
     func repoTokenDonut() -> some View {
-        let colors: [Color] = [.marsGreen, .marsGreen2, .deepRed2, .deepRed, .marsGreenLight]
-        let items = repoTokens.enumerated().compactMap { (i, kv) -> DonutItem? in
-            guard kv.value > 0 else { return nil }
-            return DonutItem(
-                label: kv.key,
-                cost: Double(kv.value),
-                pct: 0,
-                color: colors[i % colors.count])
+        let items = repoTokens.compactMap { (name, tokens) -> DonutItem? in
+            guard tokens > 0 else { return nil }
+            return DonutItem(label: name, cost: Double(tokens), pct: 0, color: .secondary)
         }
         let totalTokens = items.reduce(0.0) { $0 + $1.cost }
-        let segments = items.map {
-            DonutItem(label: $0.label, cost: $0.cost,
-                      pct: totalTokens > 0 ? $0.cost / totalTokens * 100 : 0,
-                      color: $0.color)
+        let segments = Self.topSegments(items).enumerated().map { i, s in
+            DonutItem(label: s.label, cost: s.cost,
+                      pct: totalTokens > 0 ? s.cost / totalTokens * 100 : 0,
+                      color: Self.donutPalette[i % Self.donutPalette.count])
         }
         let centerText = tokenShort(Int(clamping: Int64(totalTokens)))
         VStack(spacing: 6) {
@@ -836,9 +835,22 @@ struct DashboardView: View {
         .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.2), value: barProgress)
     }
 
-    private static let providerDonutColors: [Color] = [
-        .deepRed, .marsGreen, .deepRed2, .marsGreen2, .deepRed, .marsGreen,
+    /// Canonical four-color donut palette (deepRed / marsGreen / deepRed2 /
+    /// marsGreen2). Segments beyond the third collapse into "Other" with the
+    /// fourth color, so charts never exceed four slices.
+    private static let donutPalette: [Color] = [
+        .deepRed, .marsGreen, .deepRed2, .marsGreen2,
     ]
+
+    /// Keeps at most `limit` largest segments and folds the rest into an
+    /// "Other" slice so donut legends stay readable.
+    static func topSegments(_ items: [DonutItem], limit: Int = 3) -> [DonutItem] {
+        let sorted = items.sorted { $0.cost > $1.cost }
+        guard sorted.count > limit else { return sorted }
+        let top = Array(sorted.prefix(limit))
+        let otherCost = sorted.dropFirst(limit).reduce(0.0) { $0 + $1.cost }
+        return top + [DonutItem(label: I18n.t("dashboard.other"), cost: otherCost, pct: 0, color: .secondary)]
+    }
 
     /// Reverse lookup from a donut label back to a provider id.
     private func providerId(for label: String) -> String {
@@ -1137,6 +1149,10 @@ struct DashboardView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.separator.opacity(0.15), lineWidth: 0.5))
         }
     }
 
@@ -1477,10 +1493,7 @@ struct DashboardView: View {
                     }
                 }
         }
-        .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.05), radius: 12, y: 3))
+        )
     }
 
     // MARK: - Axis helpers
