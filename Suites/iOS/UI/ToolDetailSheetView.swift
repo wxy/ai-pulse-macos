@@ -46,7 +46,7 @@ struct ToolDetailSheetView: View {
 
     private var conclusionCard: some View {
         let c = detail.conclusion
-        let delta = c.deltaPct
+        let delta = c.deltaPct.isFinite ? c.deltaPct : 0
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: detail.source == "codex" ? "sparkles" : "bubble.left.and.bubble.right")
@@ -205,7 +205,7 @@ struct ToolDetailSheetView: View {
         return ZStack(alignment: .leading) {
             Capsule().fill(Color.primary.opacity(0.1)).frame(width: 40, height: 5)
             Capsule().fill(occ.map { $0 > 0.8 ? Color.orange : ($0 > 0.5 ? Color.yellow : Color.marsGreen) } ?? Color.primary.opacity(0.2))
-                .frame(width: 40 * CGFloat(min(occ ?? 0, 1)), height: 5)
+                .frame(width: 40 * CGFloat(ChartMath.unit(occ ?? 0)), height: 5)
         }
     }
 

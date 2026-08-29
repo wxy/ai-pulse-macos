@@ -215,16 +215,16 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var subVsApiDonut: some View {
-        let t = apiSpend + subTotal
+        let t = ChartMath.finite(apiSpend + subTotal, fallback: 0)
         VStack(spacing: 2) {
             ZStack {
                 if t > 0.001 {
                     Chart {
-                        if apiSpend > 0.001 {
+                        if ChartMath.finite(apiSpend, fallback: 0) > 0.001 {
                             SectorMark(angle: .value("API", apiSpend), innerRadius: .ratio(0.5))
                                 .foregroundStyle(Color.deepRed)
                         }
-                        if subTotal > 0.001 {
+                        if ChartMath.finite(subTotal, fallback: 0) > 0.001 {
                             SectorMark(angle: .value("Sub", subTotal), innerRadius: .ratio(0.5))
                                 .foregroundStyle(Color.marsGreen)
                         }
@@ -237,8 +237,10 @@ struct DashboardView: View {
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
             VStack(spacing: 2) {
-                if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(Color.deepRed).frame(width: 6, height: 6); (Text(I18n.t("stat.api")) + Text(verbatim: " " + Int(apiSpend / max(t, 0.01) * 100).formatted(.percent))).font(.caption2) } }
-                if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(Color.marsGreen).frame(width: 6, height: 6); (Text(I18n.t("stat.sub")) + Text(verbatim: " " + Int(subTotal / max(t, 0.01) * 100).formatted(.percent))).font(.caption2) } }
+                let apiPct = ChartMath.safeInt(ChartMath.ratio(apiSpend, denominator: t, fallback: 0) * 100)
+                let subPct = ChartMath.safeInt(ChartMath.ratio(subTotal, denominator: t, fallback: 0) * 100)
+                if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(Color.deepRed).frame(width: 6, height: 6); (Text(I18n.t("stat.api")) + Text(verbatim: " " + apiPct.formatted(.percent))).font(.caption2) } }
+                if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(Color.marsGreen).frame(width: 6, height: 6); (Text(I18n.t("stat.sub")) + Text(verbatim: " " + subPct.formatted(.percent))).font(.caption2) } }
             }
         }
         .frame(width: 90)
@@ -246,17 +248,20 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var providerDonut: some View {
+        // SectorMark cannot safely render a zero/NaN angle set; keep only
+        // finite positive segments in chart geometry.
+        let segments = snap.providerBreakdown.filter { $0.cost.isFinite && $0.cost > 0.001 }
         VStack(spacing: 2) {
             ZStack {
-                if !snap.providerBreakdown.isEmpty {
+                if !segments.isEmpty {
                     Chart {
-                        ForEach(snap.providerBreakdown, id: \.providerId) { p in
+                        ForEach(segments, id: \.providerId) { p in
                             SectorMark(angle: .value("Cost", p.cost), innerRadius: .ratio(0.5))
                                 .foregroundStyle(by: .value("Name", p.name))
                         }
                     }
                     .chartLegend(.hidden).frame(width: 80, height: 80)
-                    .chartForegroundStyleScale(domain: snap.providerBreakdown.map(\.name),
+                    .chartForegroundStyleScale(domain: segments.map(\.name),
                         range: [Color.deepRed, .marsGreen, Color.deepRed2])
                 } else {
                     Circle().stroke(.secondary.opacity(0.15), lineWidth: 10).frame(width: 80, height: 80)
@@ -264,10 +269,10 @@ struct DashboardView: View {
                 Text(usd(apiSpend))
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
             }
-            ForEach(snap.providerBreakdown.prefix(3), id: \.providerId) { p in
+            ForEach(segments.prefix(3), id: \.providerId) { p in
                 HStack(spacing: 2) {
                     Circle().fill(Color.deepRed).frame(width: 6, height: 6)
-                    let pctStr = Int(p.cost / max(apiSpend, 0.01) * 100).formatted(.percent)
+                    let pctStr = ChartMath.safeInt(ChartMath.ratio(p.cost, denominator: apiSpend, fallback: 0) * 100).formatted(.percent)
                     Text(verbatim: "\(p.name) \(pctStr)")
                         .font(.caption2).foregroundColor(.secondary)
                 }
@@ -392,7 +397,7 @@ struct DashboardView: View {
     private var toolBars: some View {
         let all = snap.toolBreakdown
         let shown = toolsExpanded ? all : Array(all.prefix(3))
-        let maxCost = all.map(\.cost).max() ?? 1
+        let maxCost = all.compactMap { $0.cost.isFinite && $0.cost >= 0 ? $0.cost : nil }.max() ?? 1
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
             ForEach(shown, id: \.name) { tool in
@@ -403,7 +408,7 @@ struct DashboardView: View {
                         Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
                         GeometryReader { geo in
                             RoundedRectangle(cornerRadius: 3).fill(Color.marsGreenBar)
-                                .frame(width: max(geo.size.width * CGFloat(tool.cost / maxCost), 2))
+                                .frame(width: max(geo.size.width * CGFloat(ChartMath.ratio(tool.cost, denominator: maxCost, fallback: 0)), 2))
                         }.frame(height: 8)
                         Spacer()
                         Text(usd(tool.cost)).font(.caption2).monospacedDigit()
@@ -426,10 +431,10 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var repoList: some View {
-        let all = snap.topRepos.filter { $0.added + $0.deleted > 0 }
+        let all = snap.topRepos.filter { $0.added > 0 || $0.deleted > 0 }
         let shown = reposExpanded ? all : Array(all.prefix(3))
-        let maxCost = all.map(\.cost).max() ?? 1
-        let maxCPL = all.compactMap { $0.cpl > 0 ? $0.cpl : nil }.max() ?? 1
+        let maxCost = all.compactMap { $0.cost.isFinite && $0.cost >= 0 ? $0.cost : nil }.max() ?? 1
+        let maxCPL = all.compactMap { $0.cpl.isFinite && $0.cpl > 0 ? $0.cpl : nil }.max() ?? 1
         VStack(alignment: .leading, spacing: 6) {
             Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
             ForEach(shown, id: \.name) { repo in
@@ -442,14 +447,14 @@ struct DashboardView: View {
                     Text(usd(repo.cost)).font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 2).fill(Color.marsGreenBar)
-                            .frame(width: max(geo.size.width * CGFloat(repo.cost / maxCost), 2))
+                            .frame(width: max(geo.size.width * CGFloat(ChartMath.ratio(repo.cost, denominator: maxCost, fallback: 0)), 2))
                     }.frame(height: 4)
                 }
                 HStack(spacing: 4) {
                     Text("CPL \(usd(repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
                     GeometryReader { geo in
                         RoundedRectangle(cornerRadius: 2).fill(Color.deepRedBar.opacity(0.5))
-                            .frame(width: max(geo.size.width * CGFloat(repo.cpl / maxCPL), 2))
+                            .frame(width: max(geo.size.width * CGFloat(ChartMath.ratio(repo.cpl, denominator: maxCPL, fallback: 0)), 2))
                     }.frame(height: 4)
                 }
             }
@@ -481,19 +486,22 @@ struct DashboardView: View {
         let paddedStats = padResult.stats
         let paddedCode = padResult.code
 
-        let rawCostMax = paddedStats.map { s -> Double in
+        let rawCostMax = ChartMath.axisMax(paddedStats.map { s -> Double in
             let api = snap.balanceDaily.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: Date(timeIntervalSince1970: s.ts)) })?.value ?? 0
-            return api + snap.subDaily
-        }.max() ?? 5
-        let cStep = niceStep(rawCostMax / 4)
-        let cMax = ceil(rawCostMax / cStep) * cStep
+            return ChartMath.finite(api + snap.subDaily, fallback: 0)
+        }.max() ?? 5, fallback: 5)
+        let cStep = ChartMath.niceStep(rawCostMax / 4)
+        let cMax = ChartMath.axisMax(ceil(rawCostMax / cStep) * cStep, fallback: cStep)
 
-        let rawCodeMax = Double(paddedCode.map { $0.added + $0.deleted }.max() ?? 1)
+        let rawCodeMax = paddedCode.compactMap { c -> Double? in
+            let total = Int64(c.added) + Int64(c.deleted)
+            return total > 0 ? Double(total) : nil
+        }.max() ?? 1
         let sec = cMax / cStep
-        var cdStep = niceStep(rawCodeMax / sec)
-        while cdStep * sec < rawCodeMax { cdStep = nextNiceStep(cdStep) }
+        var cdStep = ChartMath.niceStep(rawCodeMax / sec)
+        while cdStep * sec < rawCodeMax { cdStep = ChartMath.nextNiceStep(cdStep) }
         let cdMax = cdStep * sec
-        let sc = cMax / cdMax
+        let sc = cdMax > 0 ? cMax / cdMax : 1
         return (cMax, cdMax, sc, cStep)
     }
 
@@ -506,10 +514,14 @@ struct DashboardView: View {
         let chartStart: Date = {
             if case .week = timeRange {
                 var mc = cal; mc.firstWeekday = 2
-                return mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
+                return mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))
+                    ?? mc.startOfDay(for: Date())
             }
-            return cal.date(byAdding: .day, value: -(chartDays - 1), to: cal.startOfDay(for: Date()))!
+            return cal.date(byAdding: .day, value: -(chartDays - 1), to: cal.startOfDay(for: Date()))
+                ?? cal.startOfDay(for: Date())
         }()
+        let chartXEnd = cal.date(byAdding: .day, value: chartDays, to: cal.startOfDay(for: chartStart))
+            ?? cal.startOfDay(for: chartStart).addingTimeInterval(Double(chartDays) * 86_400)
         let axis = trendAxis(cal: cal, chartStart: chartStart, chartDays: chartDays)
         if axis.costMax == 0 { EmptyView() }
         
@@ -525,25 +537,26 @@ struct DashboardView: View {
                 ForEach(paddedStats, id: \.ts) { s in
                     let d = Date(timeIntervalSince1970: s.ts)
                     let api = snap.balanceDaily.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: d) })?.value ?? 0
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", api * barProgress))
+                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", ChartMath.barValue(base: api, progress: Double(barProgress))))
                         .foregroundStyle(Color.marsGreen).position(by: .value("Series", "Cost"))
                 }
                 ForEach(paddedStats.filter { $0.ts <= Date().timeIntervalSince1970 }, id: \.ts) { s in
                     let d = Date(timeIntervalSince1970: s.ts)
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", snap.subDaily * barProgress))
+                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", ChartMath.barValue(base: snap.subDaily, progress: Double(barProgress))))
                         .foregroundStyle(Color.marsGreenLight).position(by: .value("Series", "Cost"))
                 }
                 ForEach(paddedCode, id: \.ts) { c in
                     let d = Date(timeIntervalSince1970: c.ts)
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", Double(c.added) * scale * barProgress))
+                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", ChartMath.barValue(base: Double(c.added), progress: Double(barProgress), scale: scale)))
                         .foregroundStyle(Color.deepRed2).position(by: .value("Series", "Code"))
                 }
                 ForEach(paddedCode, id: \.ts) { c in
                     let d = Date(timeIntervalSince1970: c.ts)
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", Double(c.deleted) * scale * barProgress))
+                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", ChartMath.barValue(base: Double(c.deleted), progress: Double(barProgress), scale: scale)))
                         .foregroundStyle(Color.deepRed.opacity(0.35)).position(by: .value("Series", "Code"))
                 }
             }
+            .chartXScale(domain: chartStart...chartXEnd)
             .chartYScale(domain: 0...costMax)
             .chartYAxis {
                 AxisMarks(position: .leading, values: .automatic) { v in
@@ -552,7 +565,7 @@ struct DashboardView: View {
                 }
                 AxisMarks(position: .trailing, values: .automatic) { v in
                     AxisGridLine().foregroundStyle(.gray.opacity(0.1))
-                    if let d = v.as(Double.self) { AxisValueLabel(shortNum(Int(d / scale))) }
+                    if let d = v.as(Double.self) { AxisValueLabel(shortNum(ChartMath.safeInt(d / scale))) }
                 }
             }
             .frame(height: 200)
@@ -580,20 +593,20 @@ struct DashboardView: View {
 
     @ViewBuilder
     private func comparisonBadge(current: Double, previous: Double) -> some View {
-        let pct = (current - previous) / previous * 100
+        let pct = ChartMath.percentageDelta(current: current, previous: previous, fallback: 0)
         if abs(pct) < 1 {
             Text("→")
                 .font(.caption2).foregroundColor(.secondary)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
         } else if pct > 0 {
-            let badge = "↑" + Int(round(pct)).formatted(.percent)
+            let badge = "↑" + ChartMath.safeInt(round(pct)).formatted(.percent)
             Text(verbatim: badge)
                 .font(.caption2).foregroundColor(.deepRed)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.deepRed.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
         } else {
-            let badge = "↓" + Int(round(-pct)).formatted(.percent)
+            let badge = "↓" + ChartMath.safeInt(round(-pct)).formatted(.percent)
             Text(verbatim: badge)
                 .font(.caption2).foregroundColor(.marsGreen)
                 .padding(.horizontal, 5).padding(.vertical, 1)
@@ -639,26 +652,14 @@ enum TimeRange: Hashable {
         case .today: return 1
         case .week:
             let cal = Calendar.current; var mc = cal; mc.firstWeekday = 2
-            let mon = mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))!
-            return cal.dateComponents([.day], from: mon, to: cal.startOfDay(for: Date())).day! + 1
+            let mon = mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))
+                ?? mc.startOfDay(for: Date())
+            let days = cal.dateComponents([.day], from: mon, to: cal.startOfDay(for: Date())).day ?? 0
+            return max(days + 1, 1)
         case .days30: return 30
         }
     }
     var label: String { switch self { case .today: I18n.t("time.today"); case .week: I18n.t("time.week"); case .days30: I18n.t("time.30d") } }
     var chartDays: Int { switch self { case .week: 7; default: days } }
     var cacheKey: String { switch self { case .today: "today"; case .week: "week"; case .days30: "30d" } }
-}
-
-private func niceStep(_ x: Double) -> Double {
-    let e = pow(10, floor(log10(max(x, 0.001))))
-    let m = x / e
-    if m <= 1.5 { return e }
-    if m <= 3 { return 2 * e }
-    if m <= 7 { return 5 * e }
-    return 10 * e
-}
-private func nextNiceStep(_ s: Double) -> Double {
-    if s <= 1.5 { return 2 }
-    if s <= 2.5 { return 5 }
-    return s * 2
 }
