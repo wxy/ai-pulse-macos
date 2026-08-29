@@ -1045,42 +1045,25 @@ struct DashboardView: View {
             let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
             VStack(alignment: .leading, spacing: 6) {
                 Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-                Grid(alignment: .trailing, horizontalSpacing: 0, verticalSpacing: 0) {
-                    GridRow {
-                        Text(I18n.t("dashboard.repo"))
-                            .font(.caption2).bold().foregroundColor(.secondary)
-                            .tableCell(alignment: .leading)
-                        Text("Token")
-                            .font(.caption2).bold().foregroundColor(.secondary)
-                            .tableCell()
-                        Text(I18n.t("dashboard.code_added"))
-                            .font(.caption2).bold().foregroundColor(.secondary)
-                            .tableCell()
-                        Text(I18n.t("dashboard.code_deleted"))
-                            .font(.caption2).bold().foregroundColor(.secondary)
-                            .tableCell()
+                Table(shown) {
+                    TableColumn(I18n.t("dashboard.repo")) { r in
+                        Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
                     }
-                    .padding(.vertical, 5)
-                    .background(Color.secondary.opacity(0.08))
-                    ForEach(Array(shown.enumerated()), id: \.element.id) { idx, r in
-                        GridRow {
-                            Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
-                                .tableCell(alignment: .leading)
-                            Text(tokenShort(Int(clamping: repoTokens[r.repo] ?? 0)))
-                                .font(.caption).monospacedDigit()
-                                .tableCell()
-                            Text("+\(r.added)")
-                                .font(.caption).monospacedDigit().foregroundColor(.marsGreen)
-                                .tableCell()
-                            Text("-\(r.deleted)")
-                                .font(.caption).monospacedDigit().foregroundColor(.red)
-                                .tableCell()
-                        }
-                        .padding(.vertical, 4)
-                        .background(idx % 2 == 0 ? Color.clear : Color.secondary.opacity(0.04))
+                    TableColumn("Token") { r in
+                        Text(tokenShort(Int(clamping: repoTokens[r.repo] ?? 0)))
+                            .font(.caption).monospacedDigit()
+                    }
+                    TableColumn(I18n.t("dashboard.code_added")) { r in
+                        Text("+\(r.added)")
+                            .font(.caption).monospacedDigit().foregroundColor(.marsGreen)
+                    }
+                    TableColumn(I18n.t("dashboard.code_deleted")) { r in
+                        Text("-\(r.deleted)")
+                            .font(.caption).monospacedDigit().foregroundColor(.red)
                     }
                 }
-                .frame(maxWidth: .infinity)
+                .alternatingRowBackgrounds()
+                .frame(height: 36 + CGFloat(shown.count) * 24)
                 if shownRepos.count > 5 {
                     Button(reposExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
                         withAnimation { reposExpanded.toggle() }
