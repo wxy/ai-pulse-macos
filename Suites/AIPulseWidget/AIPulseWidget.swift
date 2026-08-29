@@ -46,17 +46,18 @@ struct Provider: TimelineProvider {
             return fallbackEntry()
         }
 
-        let dailyRate = max(snap.prediction?.dailyRate ?? 20, 0.01)
+        let safe = snap.sanitized()
+        let dailyRate = max(safe.prediction?.dailyRate ?? 20, 0.01)
         return WidgetEntry(
-            todayCost: snap.todayCost,
-            weekCost: snap.weekCost,
-            monthCost: snap.monthCost,
-            yesterdaySpend: snap.yesterdaySpend,
+            todayCost: safe.todayCost,
+            weekCost: safe.weekCost,
+            monthCost: safe.monthCost,
+            yesterdaySpend: safe.yesterdaySpend,
             dailyRate: dailyRate,
             weeklyAvg: dailyRate * 7,
-            monthProjected: snap.prediction?.monthProjected ?? 600,
-            monthSoFar: snap.prediction?.monthSoFar ?? 0,
-            updatedAt: snap.updatedAt
+            monthProjected: safe.prediction?.monthProjected ?? 600,
+            monthSoFar: safe.prediction?.monthSoFar ?? 0,
+            updatedAt: safe.updatedAt
         )
     }
 
