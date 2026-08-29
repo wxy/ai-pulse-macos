@@ -19,6 +19,7 @@ struct ToolDetailOverlayView: View {
     @State private var hoveredSessionId: String? = nil
     @State private var selectedTurnIndex: Int? = nil
     @State private var trendSessionId: String? = nil
+    @State private var conclusion: ToolConclusion? = nil
 
     // Chart axis labels as runtime values so Xcode's string catalog does not
     // auto-extract them as translatable keys.
@@ -32,17 +33,21 @@ struct ToolDetailOverlayView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if groups.isEmpty {
-                emptyState
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+            if (conclusion?.sessionCount ?? 0) > 0 {
+                conclusionSummary
+                Divider()
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    if groups.isEmpty {
+                        emptyState
+                    } else {
                         ForEach(groups) { group in
                             groupSection(group)
                         }
                     }
-                    .padding(16)
                 }
+                .padding(16)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -372,8 +377,64 @@ struct ToolDetailOverlayView: View {
 
     private func load() async {
         let source = toolId == "codex" ? "codex" : "claude-code"
+        async let conclusion = StatsService.toolConclusion(source: source, sinceMs: sinceMs)
         let rows = await StatsService.sessionRows(source: source, sinceMs: sinceMs)
-        await MainActor.run { groups = SessionStats.groupSessions(rows) }
+        let c = await conclusion
+        await MainActor.run {
+            groups = SessionStats.groupSessions(rows)
+            self.conclusion = c
+        }
+    }
+
+    /// Tool summary block (spend, output, worth) shown above the session list.
+    @ViewBuilder
+    private var conclusionSummary: some View {
+        if let c = conclusion, c.sessionCount > 0 {
+            let money = String(format: "$%.2f", c.spend)
+            let projected = String(format: "$%.2f", c.projectedMonth)
+            let progress = ChartMath.unit(c.projectedMonth > 0 ? c.spend / c.projectedMonth : 0)
+            let safeDelta = c.deltaPct.isFinite ? c.deltaPct : 0
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(money).font(.caption).fontWeight(.semibold).monospacedDigit()
+                    Text((safeDelta >= 0 ? "↑" : "↓") + String(format: "%.0f", abs(safeDelta)) + "%")
+                        .font(.caption2).fontWeight(.medium).monospacedDigit()
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background((safeDelta >= 0 ? Color.deepRed : Color.marsGreen).opacity(0.12), in: Capsule())
+                        .foregroundColor(safeDelta >= 0 ? .deepRed : .marsGreen)
+                    Spacer()
+                    Text(String(format: I18n.t("card.spend"), projected))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.secondary.opacity(0.15))
+                        Capsule().fill(Color.marsGreen)
+                            .frame(width: max(geo.size.width * CGFloat(progress), 2))
+                    }
+                }
+                .frame(height: 4)
+                Text(String(format: I18n.t("card.output"),
+                            c.sessionCount, c.commitCount, c.addedLines, c.deletedLines))
+                Text(String(format: I18n.t("card.worth"),
+                            String(format: "$%.2f", c.avgCostPerSession),
+                            String(format: "$%.2f", c.cpl),
+                            crossToolText(c)))
+            }
+            .font(.caption2).foregroundColor(.secondary)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 16).padding(.top, 10)
+        }
+    }
+
+    private func crossToolText(_ c: ToolConclusion) -> String {
+        guard let d = c.crossToolDeltaPct, d.isFinite else { return "—" }
+        let pct = (abs(d) / 100).formatted(.percent.precision(.fractionLength(0)))
+        return d >= 0
+            ? String(format: I18n.t("card.cross_more"), pct)
+            : String(format: I18n.t("card.cross_less"), pct)
     }
 
     private func toggleCollapse(_ repo: String) {

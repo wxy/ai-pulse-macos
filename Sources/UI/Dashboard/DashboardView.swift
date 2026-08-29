@@ -101,11 +101,7 @@ struct DashboardView: View {
     @State private var remainingBalances: [RemainingBalanceItem] = []
     @State private var isDemoMode = false
     @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
-    @State private var claudeDetailExpanded = false
-    @State private var codexDetailExpanded = false
     @State private var selectedToolForOverlay: String? = nil
-    @State private var claudeConclusion: ToolConclusion?
-    @State private var codexConclusion: ToolConclusion?
     @State private var reposExpanded = false
 
     var hasActiveCostSources: Bool {
@@ -302,8 +298,6 @@ struct DashboardView: View {
             ])
             barProgress = 0
             Task { await load() }
-            if claudeDetailExpanded { Task { await loadClaudeStats() } }
-            if codexDetailExpanded { Task { await loadCodexStats() } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             // Manual refresh / forceRefresh — immediate, no throttle
@@ -961,14 +955,20 @@ struct DashboardView: View {
             // ── Tool × model matrix ("mouth") ──
             if !matrixRows.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(I18n.t("dashboard.by_tool_model")).font(.caption).foregroundColor(.secondary)
-                    Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 0) {
+                    Grid(alignment: .trailing, horizontalSpacing: 0, verticalSpacing: 0) {
                         GridRow {
-                            Text("").gridCellUnsizedAxes([.horizontal])
+                            Text(I18n.t("dashboard.by_tool_model"))
+                                .font(.caption2).bold().foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .overlay(alignment: .trailing) { Divider() }
                             ForEach(toolIds, id: \.self) { t in
                                 Text(toolIdToDisplay(t) ?? t)
                                     .font(.caption2).bold().foregroundColor(.secondary).lineLimit(1)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { selectedToolForOverlay = t }
+                                    .pointingHandCursor()
+                                    .overlay(alignment: .trailing) { Divider() }
                             }
                             Text(I18n.t("dashboard.total"))
                                 .font(.caption2).bold().foregroundColor(.secondary)
@@ -988,10 +988,12 @@ struct DashboardView: View {
                                         }
                                     }
                                     .pointingHandCursor()
+                                    .overlay(alignment: .trailing) { Divider() }
                                 ForEach(toolIds, id: \.self) { t in
                                     Text(tokenShort(Int(clamping: cellTokens(m, t))))
                                         .font(.caption).monospacedDigit()
                                         .frame(maxWidth: .infinity, alignment: .trailing)
+                                        .overlay(alignment: .trailing) { Divider() }
                                 }
                                 Text(tokenShort(Int(clamping: modelTokens(m))))
                                     .font(.caption).bold().monospacedDigit()
@@ -1005,10 +1007,12 @@ struct DashboardView: View {
                             Text(I18n.t("dashboard.total"))
                                 .font(.caption).bold()
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .overlay(alignment: .trailing) { Divider() }
                             ForEach(toolIds, id: \.self) { t in
                                 Text(tokenShort(Int(clamping: toolTokens(t))))
                                     .font(.caption).bold().monospacedDigit()
                                     .frame(maxWidth: .infinity, alignment: .trailing)
+                                    .overlay(alignment: .trailing) { Divider() }
                             }
                             Text(tokenShort(Int(clamping: grandTotal)))
                                 .font(.caption).bold().monospacedDigit()
@@ -1022,32 +1026,6 @@ struct DashboardView: View {
                 }
                 .padding(12)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-            }
-
-            // ── Tool summary entries (Claude Code / ChatGPT conclusion) ──
-            HStack(spacing: 12) {
-                summaryButton(
-                    title: "Claude Code",
-                    expanded: claudeDetailExpanded,
-                    action: {
-                        claudeDetailExpanded.toggle()
-                        if claudeDetailExpanded { Task { await loadClaudeStats() } }
-                    })
-                summaryButton(
-                    title: "ChatGPT",
-                    expanded: codexDetailExpanded,
-                    action: {
-                        codexDetailExpanded.toggle()
-                        if codexDetailExpanded { Task { await loadCodexStats() } }
-                    })
-            }
-            if claudeDetailExpanded {
-                claudeDetailCard
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-            if codexDetailExpanded {
-                codexDetailCard
-                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             // ── Mouth line — short horizontal connector ──
@@ -1065,20 +1043,6 @@ struct DashboardView: View {
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
-    private func summaryButton(title: String, expanded: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                    .font(.caption2)
-                Text(title).font(.caption)
-            }
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.separator.opacity(0.15), lineWidth: 0.5))
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Body sections
 
     /// Repo list in the body: per-repo output (Git facts) + token usage
@@ -1090,17 +1054,20 @@ struct DashboardView: View {
             let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
             VStack(alignment: .leading, spacing: 6) {
                 Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-                Grid(alignment: .trailing, horizontalSpacing: 16, verticalSpacing: 0) {
+                Grid(alignment: .trailing, horizontalSpacing: 0, verticalSpacing: 0) {
                     GridRow {
                         Text(I18n.t("dashboard.repo"))
                             .font(.caption2).bold().foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .overlay(alignment: .trailing) { Divider() }
                         Text("Token")
                             .font(.caption2).bold().foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
+                            .overlay(alignment: .trailing) { Divider() }
                         Text(I18n.t("dashboard.code_added"))
                             .font(.caption2).bold().foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
+                            .overlay(alignment: .trailing) { Divider() }
                         Text(I18n.t("dashboard.code_deleted"))
                             .font(.caption2).bold().foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -1112,12 +1079,15 @@ struct DashboardView: View {
                         GridRow {
                             Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .overlay(alignment: .trailing) { Divider() }
                             Text(tokenShort(Int(clamping: repoTokens[r.repo] ?? 0)))
                                 .font(.caption).monospacedDigit()
                                 .frame(maxWidth: .infinity, alignment: .trailing)
+                                .overlay(alignment: .trailing) { Divider() }
                             Text("+\(r.added)")
                                 .font(.caption).monospacedDigit().foregroundColor(.marsGreen)
                                 .frame(maxWidth: .infinity, alignment: .trailing)
+                                .overlay(alignment: .trailing) { Divider() }
                             Text("-\(r.deleted)")
                                 .font(.caption).monospacedDigit().foregroundColor(.red)
                                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -1605,18 +1575,6 @@ struct DashboardView: View {
         return "\(tokens)"
     }
 
-    func loadClaudeStats() async {
-        let sinceMs = rangeSinceMs()
-        let conclusion = await StatsService.toolConclusion(source: "claude-code", sinceMs: sinceMs)
-        await MainActor.run { claudeConclusion = conclusion }
-    }
-
-    func loadCodexStats() async {
-        let sinceMs = rangeSinceMs()
-        let conclusion = await StatsService.toolConclusion(source: "codex", sinceMs: sinceMs)
-        await MainActor.run { codexConclusion = conclusion }
-    }
-
     private func rangeSinceMs() -> Int64 {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
@@ -1629,84 +1587,6 @@ struct DashboardView: View {
             let start = cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
             return Int64(start.timeIntervalSince1970 * 1000)
         }
-    }
-
-    @ViewBuilder
-    var claudeDetailCard: some View {
-        conclusionCard(
-            conclusion: claudeConclusion,
-            onOpen: { selectedToolForOverlay = "claude-code" })
-    }
-
-    @ViewBuilder
-    var codexDetailCard: some View {
-        conclusionCard(
-            conclusion: codexConclusion,
-            onOpen: { selectedToolForOverlay = "codex" })
-    }
-
-    /// Three-line conclusion card: spend, output, worth. Tapping it opens the
-    /// full-window session explorer overlay.
-    @ViewBuilder
-    private func conclusionCard(
-        conclusion: ToolConclusion?,
-        onOpen: @escaping () -> Void
-    ) -> some View {
-        if let c = conclusion, c.sessionCount > 0 {
-            let money = String(format: "$%.2f", c.spend)
-            let projected = String(format: "$%.2f", c.projectedMonth)
-            let progress = ChartMath.unit(c.projectedMonth > 0 ? c.spend / c.projectedMonth : 0)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(money).font(.caption).fontWeight(.semibold).monospacedDigit()
-                    deltaBadge(c)
-                    Spacer()
-                    Text(String(format: I18n.t("card.spend"), projected))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.secondary.opacity(0.15))
-                        Capsule().fill(Color.marsGreen)
-                            .frame(width: max(geo.size.width * CGFloat(progress), 2))
-                    }
-                }
-                .frame(height: 4)
-                Text(String(format: I18n.t("card.output"),
-                            c.sessionCount, c.commitCount, c.addedLines, c.deletedLines))
-                Text(String(format: I18n.t("card.worth"),
-                            String(format: "$%.2f", c.avgCostPerSession),
-                            String(format: "$%.2f", c.cpl),
-                            crossText(c)))
-            }
-            .font(.caption2).foregroundColor(.secondary)
-            .padding(10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-            .padding(.leading, 28)
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onOpen)
-            .pointingHandCursor()
-        }
-    }
-
-    /// Colored pill showing this period's spend change vs the previous period.
-    private func deltaBadge(_ c: ToolConclusion) -> some View {
-        let safeDelta = c.deltaPct.isFinite ? c.deltaPct : 0
-        let up = safeDelta >= 0
-        let pct = String(format: "%.0f", abs(safeDelta))
-        return Text((up ? "↑" : "↓") + pct + "%")
-            .font(.caption2).fontWeight(.medium).monospacedDigit()
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background((up ? Color.deepRed : Color.marsGreen).opacity(0.12), in: Capsule())
-            .foregroundColor(up ? .deepRed : .marsGreen)
-    }
-
-    private func crossText(_ c: ToolConclusion) -> String {
-        guard let d = c.crossToolDeltaPct, d.isFinite else { return "—" }
-        let pct = (abs(d) / 100).formatted(.percent.precision(.fractionLength(0)))
-        return d >= 0
-            ? String(format: I18n.t("card.cross_more"), pct)
-            : String(format: I18n.t("card.cross_less"), pct)
     }
 
     func balanceString(_ v: Double, currency: String) -> String {
