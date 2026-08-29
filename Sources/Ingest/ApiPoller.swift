@@ -165,20 +165,20 @@ nonisolated final class ApiPoller: @unchecked Sendable {
     /// Uses availableBalance (CNY) as the usable total.
     private nonisolated func zhipuParser(_ json: [String: Any]) -> [BalanceEntry] {
         let balance = json["balance"] as? [String: Any] ?? json["data"] as? [String: Any] ?? [:]
-        let available = parseDouble(balance["availableBalance"]) ?? parseDouble(balance["balance"]) ?? 0
+        let available = Self.parseDouble(balance["availableBalance"]) ?? Self.parseDouble(balance["balance"]) ?? 0
         return [BalanceEntry(currency: "CNY", totalBalance: available, grantedBalance: 0, toppedUpBalance: 0)]
     }
 
     private nonisolated func simpleParser(for providerId: String) -> @Sendable ([String: Any]) -> [BalanceEntry] {
         switch providerId {
         case "deepseek":
-            return { [parseDouble] json in
+            return { json in
                 (json["balance_infos"] as? [[String: Any]] ?? []).map { b in
                     BalanceEntry(
                         currency: b["currency"] as? String ?? "CNY",
-                        totalBalance: parseDouble(b["total_balance"]) ?? 0,
-                        grantedBalance: parseDouble(b["granted_balance"]) ?? 0,
-                        toppedUpBalance: parseDouble(b["topped_up_balance"]) ?? 0
+                        totalBalance: Self.parseDouble(b["total_balance"]) ?? 0,
+                        grantedBalance: Self.parseDouble(b["granted_balance"]) ?? 0,
+                        toppedUpBalance: Self.parseDouble(b["topped_up_balance"]) ?? 0
                     )
                 }
             }
@@ -186,7 +186,7 @@ nonisolated final class ApiPoller: @unchecked Sendable {
             return { json in
                 let data = json["data"] as? [String: Any] ?? json
                 // Moonshot API returns { "available_balance": 14.7286 } — numeric, not string.
-                let bal = self.parseDouble(data["available_balance"]) ?? self.parseDouble(data["balance"]) ?? 0
+                let bal = Self.parseDouble(data["available_balance"]) ?? Self.parseDouble(data["balance"]) ?? 0
                 return [BalanceEntry(currency: "CNY", totalBalance: bal, grantedBalance: 0, toppedUpBalance: 0)]
             }
         default:
@@ -195,17 +195,32 @@ nonisolated final class ApiPoller: @unchecked Sendable {
     }
 
     /// Parse a Double from either String or Number JSON values.
-    private nonisolated func parseDouble(_ value: Any?) -> Double? {
+    static nonisolated func parseDouble(_ value: Any?) -> Double? {
         guard let value else { return nil }
-        if let s = value as? String { return Double(s) }
-        if let n = value as? Double { return n }
-        if let n = value as? NSNumber { return n.doubleValue }
-        return nil
+        let parsed: Double?
+        if let s = value as? String { parsed = Double(s) }
+        else if let n = value as? Double { parsed = n }
+        else if let n = value as? NSNumber { parsed = n.doubleValue }
+        else { parsed = nil }
+        guard let parsed, parsed.isFinite else { return nil }
+        return parsed
     }
 
     // MARK: - Caching
 
     private func cacheBalance(pid: String, entries: [BalanceEntry]) {
+        // Reject non-finite or negative balances at the ingestion boundary.
+        // SQLite stores NaN as NULL, which later reads as 0 and fabricates a
+        // bogus "balance wiped" spend delta. A negative balance is also not a
+        // valid snapshot for either billing mode.
+        let safeEntries = entries.filter { $0.totalBalance.isFinite && $0.totalBalance >= 0 }
+        if !entries.isEmpty && safeEntries.isEmpty {
+            DiagnosticJournal.log("api_balance_rejected", [
+                "provider_id": .string(pid),
+                "entry_count": .int(entries.count),
+            ])
+            return
+        }
         var cache = balanceCache()
         let now = Int(Date().timeIntervalSince1970 * 1000)
 
@@ -214,18 +229,18 @@ nonisolated final class ApiPoller: @unchecked Sendable {
         let provider = ProviderRegistry.byId(pid)
         let isUsageType = provider?.balanceType == .usage
 
-        cache[pid] = CachedBalance(balances: entries, lastFetchTimestamp: now, error: nil)
+        cache[pid] = CachedBalance(balances: safeEntries, lastFetchTimestamp: now, error: nil)
         saveBalanceCache(cache)
         DiagnosticJournal.log("api_balance", [
             "provider_id": .string(pid),
-            "entry_count": .int(entries.count),
-            "balances": .array(entries.map { .double($0.totalBalance) }),
+            "entry_count": .int(safeEntries.count),
+            "balances": .array(safeEntries.map { .double($0.totalBalance) }),
             "previous_balance": prevBalance.map { .double($0) } ?? .string("missing"),
             "usage_type": .bool(isUsageType),
         ])
 
         // Play coin sound for detected spend
-        for entry in entries {
+        for entry in safeEntries {
             let detected: Bool = if isUsageType {
                 (prevBalance.map { entry.totalBalance > $0 } ?? false)
             } else {
@@ -240,12 +255,13 @@ nonisolated final class ApiPoller: @unchecked Sendable {
         // Record balance snapshot for daily spend calculation.
         // For usage-type providers (OpenAI), cumulative spend grows over time —
         // store as negative so that "balance decreases" correctly represents spend.
-        for entry in entries {
+        for entry in safeEntries {
             Task {
                 do {
                     try await AppDatabase.shared.write { db in
                         let csId = "api-key:\(pid)"
                         let storedBalance = isUsageType ? -entry.totalBalance : entry.totalBalance
+                        guard storedBalance.isFinite else { return }
                         try db.execute(sql: """
                             INSERT INTO balance_snapshot (ts, provider_id, balance, currency, cost_source_id)
                             VALUES (?, ?, ?, ?, ?)
@@ -257,7 +273,7 @@ nonisolated final class ApiPoller: @unchecked Sendable {
                 }
             }
         }
-        Logger.info("ApiPoller[\(pid)]: ok — \(entries.map { "\($0.currency) \($0.totalBalance)" }.joined(separator: ", "))")
+        Logger.info("ApiPoller[\(pid)]: ok — \(safeEntries.map { "\($0.currency) \($0.totalBalance)" }.joined(separator: ", "))")
         AppHealthMonitor.shared.clearAPIError(providerId: pid)
         notifyBalanceUpdated(pid: pid)
     }
