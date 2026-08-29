@@ -55,6 +55,7 @@ struct DashboardView: View {
     @State private var lastSnapshotTS: Date? = nil
     @State private var lastDataChangeLoad: Date = .distantPast
     private let dataChangeThrottle: TimeInterval = 15  // min interval for data-change-driven reloads
+    @State private var lastChartJournalKey: String = ""
 
     init(initialTimeRange: TimeRange = .today) {
         self.initialTimeRange = initialTimeRange
@@ -281,7 +282,10 @@ struct DashboardView: View {
             ApiPoller.shared.pollAll()
             triggerCloudSync()
         }
-        .onChange(of: timeRange) { _, _ in
+        .onChange(of: timeRange) { _, newValue in
+            DiagnosticJournal.log("range_change", [
+                "to": .string(newValue.cacheKey),
+            ])
             barProgress = 0
             Task { await load() }
             if claudeDetailExpanded { Task { await loadClaudeStats() } }
@@ -1062,6 +1066,13 @@ struct DashboardView: View {
         let rightMax = ChartMath.axisMax(trendCodeAxis.max, fallback: 10)
         let dataReady = loadedTimeRange == timeRange
         let prog = ChartMath.progress(Double(dataReady ? barProgress : 0))
+        let chartJournalKey = [
+            timeRange.cacheKey,
+            String(padStats.count),
+            String(padCode.count),
+            String(Int((lastUpdated?.timeIntervalSince1970 ?? 0) * 1000)),
+            String(leftMax),
+        ].joined(separator: "|")
 
         // Hide entirely when no data — don't show an empty chart shell
         if noData { return AnyView(EmptyView()) }
@@ -1153,6 +1164,22 @@ struct DashboardView: View {
                     }
                 }
                 .frame(height: 180)
+                .task(id: chartJournalKey) {
+                    guard dataReady, lastChartJournalKey != chartJournalKey else { return }
+                    lastChartJournalKey = chartJournalKey
+                    DiagnosticJournal.log("chart_render", [
+                        "range": .string(timeRange.cacheKey),
+                        "daily_count": .int(padStats.count),
+                        "code_count": .int(padCode.count),
+                        "spend_axis_max": .double(leftMax),
+                        "code_axis_max": .double(rightMax),
+                        "progress": .double(prog),
+                        "all_finite": .bool(
+                            leftMax.isFinite && rightMax.isFinite
+                                && scale.isFinite && prog.isFinite
+                        ),
+                    ])
+                }
                 .overlay(alignment: .topLeading) {
                     if let hd = trendHoverDate,
                        let stat = padStats.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
@@ -1666,6 +1693,24 @@ struct DashboardView: View {
         paddedChanges = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
         isDemoMode = false
         loadedTimeRange = range
+
+        let scalarValues = [
+            snap.todayCost, snap.weekCost, snap.monthCost,
+            snap.yesterdaySpend, snap.previousPeriodSpend,
+        ]
+        let trendValues = (snap.dailyStats + snap.balanceDaily).map(\.value)
+        let allFinite = scalarValues.allSatisfy(\.isFinite)
+            && trendValues.allSatisfy(\.isFinite)
+            && snap.balanceDaily.allSatisfy { $0.ts.isFinite }
+            && snap.dailyStats.allSatisfy { $0.ts.isFinite }
+        DiagnosticJournal.log("apply_snapshot", [
+            "loaded_range": .string(range.cacheKey),
+            "daily_count": .int(snap.dailyStats.count),
+            "balance_day_count": .int(snap.balanceDaily.count),
+            "code_count": .int(snap.codeChanges.count),
+            "provider_count": .int(snap.providerBreakdown.count),
+            "all_finite": .bool(allFinite),
+        ])
 
         // Same entry animation as the full load path
         animateBarIfNeeded()

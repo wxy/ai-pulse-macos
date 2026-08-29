@@ -216,6 +216,13 @@ nonisolated final class ApiPoller: @unchecked Sendable {
 
         cache[pid] = CachedBalance(balances: entries, lastFetchTimestamp: now, error: nil)
         saveBalanceCache(cache)
+        DiagnosticJournal.log("api_balance", [
+            "provider_id": .string(pid),
+            "entry_count": .int(entries.count),
+            "balances": .array(entries.map { .double($0.totalBalance) }),
+            "previous_balance": prevBalance.map { .double($0) } ?? .string("missing"),
+            "usage_type": .bool(isUsageType),
+        ])
 
         // Play coin sound for detected spend
         for entry in entries {
@@ -260,6 +267,10 @@ nonisolated final class ApiPoller: @unchecked Sendable {
         cache[pid] = CachedBalance(balances: [], lastFetchTimestamp: Int(Date().timeIntervalSince1970 * 1000), error: msg)
         saveBalanceCache(cache)
         Logger.warning("ApiPoller[\(pid)]: \(msg)")
+        DiagnosticJournal.log("api_error", [
+            "provider_id": .string(pid),
+            "outcome": .string(Self.diagnosticOutcome(for: msg)),
+        ])
         AppHealthMonitor.shared.reportAPIError(providerId: pid, message: "\(pid): \(msg)")
         notifyBalanceUpdated(pid: pid)
     }
@@ -269,6 +280,16 @@ nonisolated final class ApiPoller: @unchecked Sendable {
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: .apiBalanceDidUpdate, object: nil, userInfo: ["providerId": pid])
         }
+    }
+
+    private static func diagnosticOutcome(for message: String) -> String {
+        let stableMessages: Set<String> = [
+            "No response", "Invalid JSON", "API error",
+        ]
+        if message.hasPrefix("HTTP ") || stableMessages.contains(message) {
+            return message
+        }
+        return "provider_error"
     }
 
     private func balanceCache() -> [String: CachedBalance] {
