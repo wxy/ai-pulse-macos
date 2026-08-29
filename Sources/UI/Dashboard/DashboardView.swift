@@ -797,6 +797,14 @@ struct DashboardView: View {
     }
 
     struct DonutItem: Identifiable { let id = UUID(); let label: String; let cost: Double; let pct: Double; let color: Color }
+
+    /// SectorMark cannot safely render an all-zero angle set (for example, a
+    /// provider that is configured but currently reporting an error). Keep such
+    /// entries out of chart geometry and show a placeholder at the call site.
+    static func renderableDonutSegments(_ segments: [DonutItem]) -> [DonutItem] {
+        segments.filter { $0.cost.isFinite && $0.cost > 0.001 }
+    }
+
     func apiDonutData() -> [DonutItem] {
         var map: [String: Double] = [:]
         for (pid, _, spend) in balanceSpend where spend > 0.001 {
@@ -1524,32 +1532,40 @@ struct DashboardView: View {
     }
 
     /// Subscription-vs-API donut chart.
+    @ViewBuilder
     func subVsApiDonut(data: (segments: [DonutItem], total: Double)) -> some View {
         let dataReady = loadedTimeRange == timeRange
-        return VStack(spacing: 6) {
-            Text(I18n.t("dashboard.sub_api_ratio")).font(.caption).foregroundColor(.secondary)
-            ZStack {
-                Chart(data.segments) { item in
-                    SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
-                        .foregroundStyle(by: .value("Type", item.label))
-                }
-                .chartLegend(.hidden)
-                .chartForegroundStyleScale(domain: data.segments.map(\.label),
-                                           range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
-                .frame(width: 120, height: 120)
-                Text("$\(String(format: "%.2f", data.total))")
-                    .font(.system(size: Self.donutCenterFontSize(for: data.total), weight: .semibold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(Color.deepRed)
-            }
-            .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
-            .opacity(dataReady ? barProgress : 0)
-            VStack(spacing: 2) {
-                ForEach(data.segments) { item in
-                    HStack(spacing: 4) {
-                        Circle().fill(item.color).frame(width: 6, height: 6)
-                        Text(item.label).font(.caption2).foregroundColor(.secondary)
-                        Spacer()
-                        Text(verbatim: Int(item.pct).formatted(.percent)).font(.caption2).monospacedDigit().foregroundColor(.secondary)
+        let segments = Self.renderableDonutSegments(data.segments)
+        Group {
+            if segments.isEmpty {
+                emptyDonut(title: I18n.t("dashboard.sub_api_ratio"))
+            } else {
+                VStack(spacing: 6) {
+                    Text(I18n.t("dashboard.sub_api_ratio")).font(.caption).foregroundColor(.secondary)
+                    ZStack {
+                        Chart(segments) { item in
+                            SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                                .foregroundStyle(by: .value("Type", item.label))
+                        }
+                        .chartLegend(.hidden)
+                        .chartForegroundStyleScale(domain: segments.map(\.label),
+                                                   range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
+                        .frame(width: 120, height: 120)
+                        Text("$\(String(format: "%.2f", data.total))")
+                            .font(.system(size: Self.donutCenterFontSize(for: data.total), weight: .semibold, design: .rounded)).monospacedDigit()
+                            .foregroundStyle(Color.deepRed)
+                    }
+                    .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
+                    .opacity(dataReady ? barProgress : 0)
+                    VStack(spacing: 2) {
+                        ForEach(segments) { item in
+                            HStack(spacing: 4) {
+                                Circle().fill(item.color).frame(width: 6, height: 6)
+                                Text(item.label).font(.caption2).foregroundColor(.secondary)
+                                Spacer()
+                                Text(verbatim: Int(item.pct).formatted(.percent)).font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                            }
+                        }
                     }
                 }
             }
@@ -1559,31 +1575,39 @@ struct DashboardView: View {
     }
 
     /// API provider donut chart.
+    @ViewBuilder
     func apiProviderDonut(data: [DonutItem], apiSpend: Double) -> some View {
         let dataReady = loadedTimeRange == timeRange
-        return VStack(spacing: 6) {
-            Text(I18n.t("dashboard.by_provider")).font(.caption).foregroundColor(.secondary)
-            ZStack {
-                Chart(data) { item in
-                    SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
-                        .foregroundStyle(by: .value("Provider", item.label))
-                }
-                .chartLegend(.hidden)
-                .chartForegroundStyleScale(domain: data.map(\.label), range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
-                .frame(width: 120, height: 120)
-                Text("$\(String(format: "%.2f", apiSpend))")
-                    .font(.system(size: Self.donutCenterFontSize(for: apiSpend), weight: .semibold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(Color.deepRed)
-            }
-            .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
-            .opacity(dataReady ? barProgress : 0)
-            VStack(spacing: 2) {
-                ForEach(data) { item in
-                    HStack(spacing: 4) {
-                        Circle().fill(item.color).frame(width: 6, height: 6)
-                        Text(item.label).font(.caption2).foregroundColor(.secondary)
-                        Spacer()
-                        Text(verbatim: Int(item.pct).formatted(.percent)).font(.caption2).monospacedDigit().foregroundColor(.secondary)
+        let segments = Self.renderableDonutSegments(data)
+        Group {
+            if segments.isEmpty {
+                emptyDonut(title: I18n.t("dashboard.by_provider"))
+            } else {
+                VStack(spacing: 6) {
+                    Text(I18n.t("dashboard.by_provider")).font(.caption).foregroundColor(.secondary)
+                    ZStack {
+                        Chart(segments) { item in
+                            SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                                .foregroundStyle(by: .value("Provider", item.label))
+                        }
+                        .chartLegend(.hidden)
+                        .chartForegroundStyleScale(domain: segments.map(\.label), range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
+                        .frame(width: 120, height: 120)
+                        Text("$\(String(format: "%.2f", apiSpend))")
+                            .font(.system(size: Self.donutCenterFontSize(for: apiSpend), weight: .semibold, design: .rounded)).monospacedDigit()
+                            .foregroundStyle(Color.deepRed)
+                    }
+                    .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
+                    .opacity(dataReady ? barProgress : 0)
+                    VStack(spacing: 2) {
+                        ForEach(segments) { item in
+                            HStack(spacing: 4) {
+                                Circle().fill(item.color).frame(width: 6, height: 6)
+                                Text(item.label).font(.caption2).foregroundColor(.secondary)
+                                Spacer()
+                                Text(verbatim: Int(item.pct).formatted(.percent)).font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                            }
+                        }
                     }
                 }
             }

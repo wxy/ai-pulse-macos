@@ -60,4 +60,18 @@ final class ChartMathTests: XCTestCase {
         XCTAssertEqual(ChartMath.tokenAxisMax(context: 100, window: nil), 115)
         XCTAssertEqual(ChartMath.tokenAxisMax(context: 100, window: 200), 200)
     }
+
+    @MainActor
+    func testRenderableDonutSegmentsExcludesZeroAndInvalidCosts() {
+        let segments = [
+            DashboardView.DonutItem(label: "error", cost: 0, pct: 0, color: .gray),
+            DashboardView.DonutItem(label: "invalid", cost: .nan, pct: 0, color: .gray),
+            DashboardView.DonutItem(label: "negative", cost: -1, pct: 0, color: .gray),
+            DashboardView.DonutItem(label: "valid", cost: 2, pct: 100, color: .gray),
+        ]
+
+        let result = DashboardView.renderableDonutSegments(segments)
+
+        XCTAssertEqual(result.map(\.label), ["valid"])
+    }
 }
