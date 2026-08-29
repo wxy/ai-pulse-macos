@@ -18,3 +18,5 @@ dist/
 
 # Xcode per-target build dir (xcodebuild default output)
 AIPulse/build/
+Packages/*/build/
+Suites/build/
