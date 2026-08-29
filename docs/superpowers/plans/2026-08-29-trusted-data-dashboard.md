@@ -38,7 +38,7 @@
   `ProviderItem.sourceKind`、`NameCostItem.tokens`、`RepoItem.tokens`；
   `sanitized()` 覆盖全部新字段。
 
-- [ ] **Step 1: 写失败测试**（SnapshotSanitizeTests 增加新字段消毒断言）
+- [x] **Step 1: 写失败测试**（SnapshotSanitizeTests 增加新字段消毒断言）
 
 ```swift
 func testSanitizesNewTrustedDataFields() {
@@ -68,13 +68,13 @@ func testSanitizesNewTrustedDataFields() {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**（新字段/init 参数缺失导致编译错误）
-- [ ] **Step 3: 实现**：新增三个 public 结构；给 ProviderItem/NameCostItem/RepoItem
+- [x] **Step 2: 运行测试确认失败**（新字段/init 参数缺失导致编译错误）
+- [x] **Step 3: 实现**：新增三个 public 结构；给 ProviderItem/NameCostItem/RepoItem
   增加带默认值 `nil` 的字段与 init 参数；DashboardSnapshot 加新字段；
   `sanitized()` 对 tokens/calls/cost/ts/periodDays 做非负/有限处理
   （periodDays 非法时回退 30）。
-- [ ] **Step 4: 运行测试确认通过**
-- [ ] **Step 5: 提交** `feat: add trusted-data fields to dashboard snapshot`
+- [x] **Step 4: 运行测试确认通过**
+- [x] **Step 5: 提交** `feat: add trusted-data fields to dashboard snapshot`
 
 ---
 
@@ -89,7 +89,7 @@ func testSanitizesNewTrustedDataFields() {
   `subscriptionProgress(start:periodDays:now:)`；dashboardSnapshot 组装
   `modelBreakdown/rateSeries/sourceKind/subscriptionStart/periodDays/topRepos.tokens`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```swift
 func testModelBreakdownSanitizesRows() {
@@ -123,8 +123,8 @@ func testSubscriptionProgress() {
 }
 ```
 
-- [ ] **Step 2: 运行确认失败**（函数不存在）
-- [ ] **Step 3: 实现**
+- [x] **Step 2: 运行确认失败**（函数不存在）
+- [x] **Step 3: 实现**
   - `modelBreakdown(rows:)`：sanitize tokens/calls/cost，cost 非有限 → nil。
   - `exclusiveProviders(usageByTool:)`：provider 出现在且仅出现在一个 tool 的集合中。
   - `subscriptionProgress(start:periodDays:now:)`：elapsed=clamp(0...total)，nextReset=start+total。
@@ -135,8 +135,8 @@ func testSubscriptionProgress() {
     4. 对每个独占 (tool, provider)：balanceDailySpend 按 provider 的每日差值 +
        usage_event 按 tool 的每日 token，组装 RateSeriesItem；
     5. 从 UserDefaults 读 `subscription_start` / `subscription_period_days` 填入快照。
-- [ ] **Step 4: 运行测试**
-- [ ] **Step 5: 提交** `feat: assemble trusted usage, attribution and subscription data`
+- [x] **Step 4: 运行测试**
+- [x] **Step 5: 提交** `feat: assemble trusted usage, attribution and subscription data`
 
 ---
 
@@ -149,15 +149,15 @@ func testSubscriptionProgress() {
 - Consumes: `snap.todayTokens/todayCalls`、`providerBreakdown[].sourceKind/cost`、
   `topRepos`、`codeChanges`、`subscriptionStart/PeriodDays/subDaily`。
 
-- [ ] **Step 1: 实现头部**
+- [x] **Step 1: 实现头部**
   - 额头：当前范围 Token 总量大数字 + `calls · sessions` 副行，角标 `来源：日志`。
   - 左眼：眉标签 `实际支出 $X · +订阅 $Y/月`；donut 按供应商余额差值
     （`sourceKind == "balance"` 实心，`usage` 描边扇区只计 token 占比不显示金额）。
   - 右眼：眉标签 `代码产出 +A/-D`；donut 按仓库净行占比，中心总净行。
   - 鼻子：+A / -D / 净增 三个 stat card。
   - 删除旧的混合大金额、订阅-vs-API donut、按供应商金额 donut、CPL 卡。
-- [ ] **Step 2: `swift build` + 现有测试通过**
-- [ ] **Step 3: 提交** `feat: rework dashboard head to usage/expense/output`
+- [x] **Step 2: `swift build` + 现有测试通过**
+- [x] **Step 3: 提交** `feat: rework dashboard head to usage/expense/output`
 
 ---
 
@@ -166,13 +166,13 @@ func testSubscriptionProgress() {
 **Files:**
 - Modify: `Sources/UI/Dashboard/DashboardView.swift`
 
-- [ ] **Step 1: 实现工具行**：`name · T tokens · N calls`；独占余额工具追加
+- [x] **Step 1: 实现工具行**：`name · T tokens · N calls`；独占余额工具追加
   `$X`（实心事实）；共享工具不显示金额；行尾展开该工具模型明细。
-- [ ] **Step 2: 实现模型区块**：`modelBreakdown` 列表，
+- [x] **Step 2: 实现模型区块**：`modelBreakdown` 列表，
   `model · T tokens · N calls`，可归因时显示金额；costIsEstimate 为 true 时
   金额旁加灰字"？"；空数据显示"等待 macOS 更新"占位。
-- [ ] **Step 3: `swift build` + 测试**
-- [ ] **Step 4: 提交** `feat: tool rows show tokens and model breakdown`
+- [x] **Step 3: `swift build` + 测试**
+- [x] **Step 4: 提交** `feat: tool rows show tokens and model breakdown`
 
 ---
 
@@ -181,15 +181,15 @@ func testSubscriptionProgress() {
 **Files:**
 - Modify: `Sources/UI/Dashboard/DashboardView.swift`
 
-- [ ] **Step 1: 仓库列表**：每行 `repo · +A/-D · T tokens`（移除估算费用与 CPL）。
-- [ ] **Step 2: 趋势图（本周/30日）**：逐日余额差值柱 + 净行线 + token 线（右轴）；
+- [x] **Step 1: 仓库列表**：每行 `repo · +A/-D · T tokens`（移除估算费用与 CPL）。
+- [x] **Step 2: 趋势图（本周/30日）**：逐日余额差值柱 + 净行线 + token 线（右轴）；
   移除订阅曲线；图例注明来源。
-- [ ] **Step 3: 今日余额列表**：供应商最新余额 + 配额 + 订阅进度
+- [x] **Step 3: 今日余额列表**：供应商最新余额 + 配额 + 订阅进度
   `Claude Pro $20/月 · 已过 15/30 天 · 9/13 重置`（用 subscriptionProgress 结果）。
-- [ ] **Step 4: 有效单价图**：`rateSeries` 折线（X=时间，Y=$/M tokens）；
+- [x] **Step 4: 有效单价图**：`rateSeries` 折线（X=时间，Y=$/M tokens）；
   无 rateSeries 时显示"余额来源不可归因，无法绘制"文字说明。
-- [ ] **Step 5: `swift build` + 测试**
-- [ ] **Step 6: 提交** `feat: repos, trend, balance and effective-rate charts`
+- [x] **Step 5: `swift build` + 测试**
+- [x] **Step 6: 提交** `feat: repos, trend, balance and effective-rate charts`
 
 ---
 
@@ -198,16 +198,16 @@ func testSubscriptionProgress() {
 **Files:**
 - Modify: `Sources/UI/Settings/SettingsView.swift`
 
-- [ ] **Step 1: 实现**：订阅区块加周期选择（30/90/365 天）与开始日期 DatePicker，
+- [x] **Step 1: 实现**：订阅区块加周期选择（30/90/365 天）与开始日期 DatePicker，
   写入 UserDefaults `subscription_start` / `subscription_period_days`。
-- [ ] **Step 2: `swift build`**
-- [ ] **Step 3: 提交** `feat: subscription cycle start input in settings`
+- [x] **Step 2: `swift build`**
+- [x] **Step 3: 提交** `feat: subscription cycle start input in settings`
 
 ---
 
 ### Task 7: 全量验证与交接
 
-- [ ] `make test` 全量通过
-- [ ] `git diff --check` 通过
-- [ ] Suites 三端 `swift build` 不受影响（xcodebuild AIPulseShared 目标）
-- [ ] 交由用户运行验证：三视图、余额、模型区块、有效单价图、订阅周期
+- [x] `make test` 全量通过
+- [x] `git diff --check` 通过
+- [x] Suites 三端 `swift build` 不受影响（xcodebuild AIPulseShared 目标）
+- [x] 交由用户运行验证：三视图、余额、模型区块、有效单价图、订阅周期
