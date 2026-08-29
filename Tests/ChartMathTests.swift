@@ -1,0 +1,63 @@
+import XCTest
+@testable import AIPulse
+
+final class ChartMathTests: XCTestCase {
+    func testFiniteUsesFallbackForNonFiniteValues() {
+        XCTAssertEqual(ChartMath.finite(.nan, fallback: 7), 7)
+        XCTAssertEqual(ChartMath.finite(.infinity, fallback: 7), 7)
+        XCTAssertEqual(ChartMath.finite(-.infinity, fallback: 7), 7)
+        XCTAssertEqual(ChartMath.finite(3.25, fallback: 7), 3.25)
+    }
+
+    func testProgressIsClampedToUnitInterval() {
+        XCTAssertEqual(ChartMath.progress(.nan), 0)
+        XCTAssertEqual(ChartMath.progress(-0.4), 0)
+        XCTAssertEqual(ChartMath.progress(-.infinity), 0)
+        XCTAssertEqual(ChartMath.progress(0.35), 0.35, accuracy: 0.000001)
+        XCTAssertEqual(ChartMath.progress(1.4), 1)
+        XCTAssertEqual(ChartMath.progress(.infinity), 1)
+    }
+
+    func testBarValueRejectsNonFiniteAndNegativeGeometry() {
+        XCTAssertEqual(ChartMath.barValue(base: .nan, progress: 1), 0)
+        XCTAssertEqual(ChartMath.barValue(base: 12, progress: .nan), 0)
+        XCTAssertEqual(ChartMath.barValue(base: 12, progress: 1, scale: .nan), 0)
+        XCTAssertEqual(ChartMath.barValue(base: -4, progress: 1), 0)
+        XCTAssertEqual(ChartMath.barValue(base: -4, progress: 1, scale: -2), 0)
+        XCTAssertEqual(
+            ChartMath.barValue(base: 8, progress: 0.5, scale: 2),
+            8,
+            accuracy: 0.000001
+        )
+    }
+
+    func testAxisMaxAlwaysReturnsPositiveFiniteValue() {
+        XCTAssertEqual(ChartMath.axisMax(.nan, fallback: 10), 10)
+        XCTAssertEqual(ChartMath.axisMax(.infinity, fallback: 10), 10)
+        XCTAssertEqual(ChartMath.axisMax(-1, fallback: 10), 10)
+        XCTAssertEqual(ChartMath.axisMax(0, fallback: 10), 10)
+        XCTAssertEqual(ChartMath.axisMax(3.25, fallback: 10), 3.25)
+    }
+
+    func testNiceStepRejectsNonFiniteDivisionInputs() {
+        XCTAssertEqual(ChartMath.niceStep(.nan), 1)
+        XCTAssertEqual(ChartMath.niceStep(0), 1)
+        XCTAssertEqual(ChartMath.niceStep(2), 2)
+        XCTAssertEqual(ChartMath.niceStep(4), 5)
+    }
+
+    func testScaleRejectsInvalidDenominatorAndValues() {
+        XCTAssertEqual(ChartMath.scale(12, denominator: 0, fallback: 1), 1)
+        XCTAssertEqual(ChartMath.scale(12, denominator: .nan, fallback: 1), 1)
+        XCTAssertEqual(ChartMath.scale(.nan, denominator: 4, fallback: 1), 1)
+        XCTAssertEqual(ChartMath.scale(12, denominator: 4, fallback: 1), 3)
+    }
+
+    func testTokenAxisMaxFallsBackToAtLeastOne() {
+        XCTAssertEqual(ChartMath.tokenAxisMax(context: 0, window: nil), 1)
+        XCTAssertEqual(ChartMath.tokenAxisMax(context: -10, window: nil), 1)
+        XCTAssertEqual(ChartMath.tokenAxisMax(context: .max, window: nil), Int.max)
+        XCTAssertEqual(ChartMath.tokenAxisMax(context: 100, window: nil), 115)
+        XCTAssertEqual(ChartMath.tokenAxisMax(context: 100, window: 200), 200)
+    }
+}

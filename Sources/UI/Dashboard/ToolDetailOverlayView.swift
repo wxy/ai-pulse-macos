@@ -247,7 +247,10 @@ struct ToolDetailOverlayView: View {
 
     private func contextChart(_ trend: ContextTrend) -> some View {
         let maxContext = trend.turns.map(\.contextTokens).max() ?? 1
-        let yMax = trend.windowTokens.map { max($0, maxContext) } ?? Int(Double(maxContext) * 1.15)
+        let yMax = ChartMath.tokenAxisMax(
+            context: maxContext,
+            window: trend.windowTokens
+        )
         return Chart {
             ForEach(trend.turns) { t in
                 // Single fill: cache area from zero. The space between this

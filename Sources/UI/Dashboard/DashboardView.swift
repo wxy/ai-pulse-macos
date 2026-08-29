@@ -976,11 +976,15 @@ struct DashboardView: View {
             let d = cal.startOfDay(for: s.date)
             return (dailyBalanceSpend[d] ?? 0) + subDaily  // stacked total
         }.max() ?? 5
-        let step = niceStep(rawMax / targetGrid)
-        let max = ceil(rawMax / step) * step
-        let sections = Int(max / step)
+        let safeRawMax = ChartMath.axisMax(rawMax, fallback: 5)
+        let step = ChartMath.niceStep(safeRawMax / targetGrid)
+        let max = ChartMath.axisMax(ceil(safeRawMax / step) * step, fallback: step)
+        let sections = Swift.max(1, Int((max / step).rounded(.toNearestOrEven)))
         var vals = [Double](); var v = 0.0
-        while v <= max + step / 2 { vals.append(v); v += step }
+        while v <= max + step / 2 {
+            vals.append(ChartMath.finite(v, fallback: max))
+            v += step
+        }
         return (max, step, vals, sections)
     }
 
@@ -990,12 +994,15 @@ struct DashboardView: View {
         let rawMax = Double(padded.map { $0.added + $0.deleted }.max() ?? 1)
         let sections = Double(trendSpendAxis.sections)
         guard rawMax > 0, trendSpendAxis.max > 0, sections > 0 else { return (10, 2, [0, 2, 4, 6, 8, 10], 1) }
-        var step = niceStep(rawMax / sections)
-        while step * sections < rawMax { step = nextNiceStep(step) }
+        var step = ChartMath.niceStep(rawMax / sections)
+        while step * sections < rawMax { step = ChartMath.nextNiceStep(step) }
         let max = step * sections
         var vals = [Double](); var v = 0.0
-        while v <= max + step / 2 { vals.append(v); v += step }
-        let scale = trendSpendAxis.max / max
+        while v <= max + step / 2 {
+            vals.append(ChartMath.finite(v, fallback: max))
+            v += step
+        }
+        let scale = ChartMath.scale(trendSpendAxis.max, denominator: max, fallback: 1)
         return (max, step, vals, scale)
     }
 
@@ -1048,51 +1055,66 @@ struct DashboardView: View {
         let padStats = padStats(dailyStats, days: timeRange.days)
         let padCode = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
         let noData = padStats.allSatisfy({ $0.cost == 0 }) && padCode.allSatisfy({ $0.added == 0 })
-        let scale = trendCodeAxis.scale
-        let leftMax = trendSpendAxis.max
+        let scale = ChartMath.finite(trendCodeAxis.scale, fallback: 1)
+        let leftMax = ChartMath.axisMax(trendSpendAxis.max, fallback: 10)
         let leftValues = trendSpendAxis.values
         let rightVals = trendCodeAxis.values
-        let rightMax = trendCodeAxis.max
+        let rightMax = ChartMath.axisMax(trendCodeAxis.max, fallback: 10)
         let dataReady = loadedTimeRange == timeRange
-        let prog = Double(dataReady ? barProgress : 0)
+        let prog = ChartMath.progress(Double(dataReady ? barProgress : 0))
 
         // Hide entirely when no data — don't show an empty chart shell
         if noData { return AnyView(EmptyView()) }
 
         return AnyView(VStack(spacing: 12) {
             Text(I18n.t("dashboard.daily_trend")).font(.headline)
-            let subDaily = StatsService.subscriptionDailyAmortization()
+            let subDaily = ChartMath.finite(
+                StatsService.subscriptionDailyAmortization(),
+                fallback: 0
+            )
                 let now = Date()
 
                 Chart {
                     // API spend bars
                     ForEach(padStats) { s in
                         let cal = Calendar.current; let d = cal.startOfDay(for: s.date)
-                        let spend = (dailyBalanceSpend[d] ?? 0) * prog
+                        let spend = ChartMath.barValue(
+                            base: dailyBalanceSpend[d] ?? 0,
+                            progress: prog
+                        )
                         BarMark(x: .value("Date", s.date, unit: .day), y: .value("Spend", spend))
                             .foregroundStyle(Color.marsGreen)
                             .position(by: .value("Series", I18n.t("dashboard.chart_cost")))
                     }
                     // Subscription bars (only up to today)
                     ForEach(padStats.filter { $0.date <= now }) { s in
-                        BarMark(x: .value("Date", s.date, unit: .day), y: .value("Sub", subDaily * prog))
+                        BarMark(
+                            x: .value("Date", s.date, unit: .day),
+                            y: .value("Sub", ChartMath.barValue(base: subDaily, progress: prog))
+                        )
                             .foregroundStyle(Color.marsGreenLight)
                             .position(by: .value("Series", I18n.t("dashboard.chart_cost")))
                     }
                     // Added lines
                     ForEach(padCode) { c in
-                        BarMark(x: .value("Date", c.date, unit: .day), y: .value("Added", Double(c.added) * scale * prog))
+                        BarMark(
+                            x: .value("Date", c.date, unit: .day),
+                            y: .value("Added", ChartMath.barValue(base: Double(c.added), progress: prog, scale: scale))
+                        )
                             .foregroundStyle(Color.deepRed2)
                             .position(by: .value("Series", I18n.t("dashboard.chart_code")))
                     }
                     // Deleted lines
                     ForEach(padCode) { c in
-                        BarMark(x: .value("Date", c.date, unit: .day), y: .value("Deleted", Double(c.deleted) * scale * prog))
+                        BarMark(
+                            x: .value("Date", c.date, unit: .day),
+                            y: .value("Deleted", ChartMath.barValue(base: Double(c.deleted), progress: prog, scale: scale))
+                        )
                             .foregroundStyle(Color.deepRed.opacity(0.35))
                             .position(by: .value("Series", I18n.t("dashboard.chart_code")))
                     }
                 }
-                .animation(.spring(response: 0.6, dampingFraction: 0.7), value: barProgress)
+                .id(timeRange)
                 .chartXAxis {
                     AxisMarks(values: dateStride) { _ in
                         AxisValueLabel(format: dateLabelFormat, orientation: .horizontal)
