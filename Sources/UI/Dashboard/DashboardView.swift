@@ -739,46 +739,41 @@ struct DashboardView: View {
     }
 
     /// Right eye: output donut — net lines per repo (Git facts), with total
-    /// output as the eyebrow label.
+    /// output as the center number. Segments compare added vs deleted so a
+    /// single repo still produces a meaningful two-way contrast.
     @ViewBuilder
     func repoOutputDonut(added: Int, deleted: Int) -> some View {
-        let netByRepo = repos.compactMap { r -> DonutItem? in
-            let net = r.added - r.deleted
-            guard net > 0 else { return nil }
-            return DonutItem(label: r.repo, cost: Double(net), pct: 0, color: .marsGreen)
-        }
-        let totalNet = Double(max(netByRepo.reduce(0.0) { $0 + $1.cost }, 0))
-        let segments = netByRepo.map {
-            DonutItem(label: $0.label, cost: $0.cost,
-                      pct: totalNet > 0 ? $0.cost / totalNet * 100 : 0, color: .marsGreen)
-        }
-        let colors: [Color] = [.marsGreen, .marsGreen2, .marsGreenLight, .deepRed2, .deepRed]
-        let colored = segments.enumerated().map { (i, s) in
-            DonutItem(label: s.label, cost: s.cost, pct: s.pct, color: colors[i % colors.count])
-        }
+        let rawSegments = [
+            DonutItem(label: I18n.t("dashboard.code_added"), cost: Double(max(added, 0)), pct: 0, color: .marsGreen),
+            DonutItem(label: I18n.t("dashboard.code_deleted"), cost: Double(max(deleted, 0)), pct: 0, color: .deepRed),
+        ]
+        let total = rawSegments.reduce(0.0) { $0 + $1.cost }
+        let segments = rawSegments
+            .filter { $0.cost > 0 }
+            .map { DonutItem(label: $0.label, cost: $0.cost,
+                             pct: total > 0 ? $0.cost / total * 100 : 0, color: $0.color) }
+        let netLines = added - deleted
         VStack(spacing: 6) {
-            Text("\(I18n.t("dashboard.code_output")) +\(added)/-\(deleted)")
-                .font(.caption).foregroundColor(.secondary)
             ZStack {
-                if !colored.isEmpty {
-                    Chart(colored) { item in
+                if !segments.isEmpty {
+                    Chart(segments) { item in
                         SectorMark(angle: .value("Lines", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
                             .foregroundStyle(item.color)
                     }
                     .chartLegend(.hidden)
                     .chartForegroundStyleScale(
-                        domain: colored.map(\.label),
-                        range: colored.map(\.color))
+                        domain: segments.map(\.label),
+                        range: segments.map(\.color))
                     .frame(width: 120, height: 120)
                 } else {
                     emptyDonut(title: I18n.t("dashboard.code_output"))
                 }
-                Text("+\(added)")
-                    .font(.system(size: Self.donutCenterFontSize(for: Double(added)), weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
+                    .font(.system(size: Self.donutCenterFontSize(for: Double(netLines)), weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.marsGreen)
             }
             VStack(spacing: 2) {
-                ForEach(colored.prefix(3)) { item in
+                ForEach(segments) { item in
                     HStack(spacing: 4) {
                         Circle().fill(item.color).frame(width: 6, height: 6)
                         Text(item.label).font(.caption2).foregroundColor(.secondary).lineLimit(1)
@@ -931,10 +926,8 @@ struct DashboardView: View {
                     HStack(spacing: 6) {
                         Text(m.model).font(.caption2).lineLimit(1)
                         Spacer()
-                        if let cost = m.cost {
-                            Text("$\(String(format: "%.2f", cost))\(m.costIsEstimate == true ? " ?" : "")")
-                                .font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                        }
+                        Text("\(m.calls) \(I18n.t("dashboard.calls"))")
+                            .font(.caption2).foregroundColor(.secondary)
                         Text(tokenShort(Int(clamping: m.tokens))).font(.caption2).monospacedDigit()
                     }
                 }
@@ -962,10 +955,8 @@ struct DashboardView: View {
                             Text(tool).font(.caption2).foregroundColor(.secondary)
                         }
                         Spacer()
-                        if let cost = m.cost {
-                            Text("$\(String(format: "%.2f", cost))\(m.costIsEstimate == true ? " ?" : "")")
-                                .font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                        }
+                        Text("\(m.calls) \(I18n.t("dashboard.calls"))")
+                            .font(.caption2).foregroundColor(.secondary)
                         Text(tokenShort(Int(clamping: m.tokens))).font(.caption).monospacedDigit()
                     }
                 }
@@ -1107,9 +1098,9 @@ struct DashboardView: View {
     @ViewBuilder
     private var effectiveRateSection: some View {
         if rateSeriesItems.isEmpty {
-            Text(I18n.t("dashboard.effective_rate_empty"))
-                .font(.caption2).foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // No attributable balance source — this is a data boundary, not an
+            // error. Hide the whole section instead of explaining absence.
+            EmptyView()
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text(I18n.t("dashboard.effective_rate")).font(.headline)
@@ -1317,15 +1308,6 @@ struct DashboardView: View {
                     )
                         .foregroundStyle(Color.deepRed.opacity(0.35))
                         .position(by: .value("Series", I18n.t("dashboard.chart_code")))
-                }
-                // Net lines — Git fact curve
-                ForEach(padCode) { c in
-                    LineMark(
-                        x: .value("Date", c.date, unit: .day),
-                        y: .value("Net", ChartMath.barValue(base: Double(c.added - c.deleted), progress: prog, scale: scale))
-                    )
-                        .foregroundStyle(Color.marsGreen2)
-                        .lineStyle(StrokeStyle(lineWidth: 1.5))
                 }
                 // Token usage — log fact curve on the right axis
                 ForEach(padStats) { s in

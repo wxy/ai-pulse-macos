@@ -859,9 +859,13 @@ enum StatsService {
         }
 
         // Per-model attribution (BYOK mixes), sanitized by the pure helper.
+        // Cost is intentionally not populated: usage_event.cost_usd is a
+        // token×catalog estimate, which must not enter the snapshot as if it
+        // were fact. Model-level spend can only appear once attribution to an
+        // exclusive balance source is implemented.
         let modelItems = StatsService.modelBreakdown(rows: modelRows.map {
             (model: $0.m, providerId: $0.pid, toolId: $0.s.isEmpty ? nil : $0.s,
-             tokens: $0.tok, calls: $0.cnt, cost: $0.c)
+             tokens: $0.tok, calls: $0.cnt, cost: 0)
         })
 
         // Effective-price series: only tools whose balance provider is
