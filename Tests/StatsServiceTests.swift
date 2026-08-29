@@ -20,8 +20,8 @@ final class StatsServiceTests: XCTestCase {
 
     func testModelBreakdownSanitizesRows() {
         let rows = [
-            (model: "deepseek-v4-pro", providerId: "deepseek", tokens: Int64(860_000), calls: 92, cost: 1.2),
-            (model: "bad", providerId: "deepseek", tokens: Int64(-1), calls: -2, cost: .nan),
+            (model: "deepseek-v4-pro", providerId: "deepseek", toolId: "claude-code", tokens: Int64(860_000), calls: 92, cost: 1.2),
+            (model: "bad", providerId: "deepseek", toolId: "claude-code", tokens: Int64(-1), calls: -2, cost: .nan),
         ]
 
         let items = StatsService.modelBreakdown(rows: rows)

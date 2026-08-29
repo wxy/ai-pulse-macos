@@ -80,9 +80,12 @@ struct DashboardView: View {
     @State private var trendHoverX: CGFloat = 0
     @State private var trendHoverY: CGFloat = 0
     @State private var trendPlotFrame: CGRect = .zero  // plot area in chart-view coords
-    @State private var toolCostBreakdown: [(name: String, cost: Double)] = []
+    @State private var toolCostBreakdown: [(name: String, cost: Double, tokens: Int64?, calls: Int?)] = []
     @State private var dailyBalanceSpend: [Date: Double] = [:]  // date → USD spend
     @State private var providerSourceKinds: [String: String] = [:]  // providerId → balance/usage/estimated
+    @State private var modelBreakdownItems: [ModelCostItem] = []
+    @State private var rateSeriesItems: [RateSeriesItem] = []
+    @State private var subscriptionCycle: (start: Date?, periodDays: Int?) = (nil, nil)
     @State private var i18nToken = 0  // bumped on language change to force re-render
     @State private var todayCombinedSpend: Double = 0
     @State private var weekCombinedSpend: Double = 0
@@ -399,7 +402,9 @@ struct DashboardView: View {
     }
 
 
-    func computeToolCosts() -> [(name: String, cost: Double)] { toolCostBreakdown }
+    func computeToolCosts() -> [(name: String, cost: Double, tokens: Int64?, calls: Int?)] {
+        toolCostBreakdown
+    }
 
     func providerDisplayName(_ pid: String) -> String {
         IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
@@ -856,24 +861,29 @@ struct DashboardView: View {
         }
     }
 
-    func toolBarRow(name: String, cost: Double, total: Double, index: Int = 0) -> some View {
-        let w = ChartMath.ratio(cost, denominator: total, fallback: 0)
-        let dataReady = loadedTimeRange == timeRange
-        let progress = dataReady ? barProgress : 0
-        return VStack(spacing: 3) {
-            HStack {
-                Text(name).font(.caption).lineLimit(1)
-                Spacer()
-                Text("$\(String(format: "%.2f", cost))").font(.caption).monospacedDigit()
+    /// Tool row: name · tokens · calls, with an attributable (exclusive)
+    /// balance cost when the tool's balance source is exclusively its own.
+    func toolBarRow(
+        name: String,
+        tokens: Int64?,
+        calls: Int?,
+        exclusiveCost: Double?,
+        index: Int = 0
+    ) -> some View {
+        let tokenText = tokens.map { tokenShort(Int(clamping: $0)) } ?? "—"
+        let callsText = calls.map { "\($0)" } ?? "—"
+        return HStack(spacing: 6) {
+            Text(name).font(.caption).lineLimit(1)
+            Spacer()
+            if let cost = exclusiveCost, cost > 0.001 {
+                Text("$\(String(format: "%.2f", cost))")
+                    .font(.caption2).monospacedDigit().foregroundColor(.secondary)
             }
-            GeometryReader { geo in
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.marsGreen)
-                    .frame(width: max(geo.size.width * w * progress, progress > 0.01 ? 4 : 0), height: 10)
-            }
-            .frame(height: 10)
+            Text(tokenText).font(.caption).monospacedDigit()
+            Text("\(callsText) \(I18n.t("dashboard.calls"))")
+                .font(.caption2).foregroundColor(.secondary)
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(Double(index) * 0.04), value: progress)
+        .padding(.vertical, 3)
     }
 
     struct DonutItem: Identifiable { let id = UUID(); let label: String; let cost: Double; let pct: Double; let color: Color }
@@ -885,18 +895,75 @@ struct DashboardView: View {
         segments.filter { $0.cost.isFinite && $0.cost > 0.001 }
     }
 
+    /// Reverse map from a tool display name to its integration/source id.
+    private func toolId(forDisplayName name: String) -> String? {
+        IntegrationRegistry.all.first { IntegrationRegistry.toolDisplayName(for: $0.id) == name }?.id
+    }
+
+    private func toolIdToDisplay(_ id: String) -> String? {
+        IntegrationRegistry.all.contains { $0.id == id } ? IntegrationRegistry.toolDisplayName(for: id) : nil
+    }
+
+    /// Per-tool model detail rows (BYOK: a tool running third-party models).
+    @ViewBuilder
+    private func modelDetailRows(for toolId: String) -> some View {
+        let rows = modelBreakdownItems
+            .filter { $0.toolId == toolId }
+            .sorted { $0.tokens > $1.tokens }
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(rows, id: \.model) { m in
+                    HStack(spacing: 6) {
+                        Text(m.model).font(.caption2).lineLimit(1)
+                        Spacer()
+                        if let cost = m.cost {
+                            Text("$\(String(format: "%.2f", cost))\(m.costIsEstimate == true ? " ?" : "")")
+                                .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                        }
+                        Text(tokenShort(Int(clamping: m.tokens))).font(.caption2).monospacedDigit()
+                    }
+                }
+            }
+            .padding(.leading, 28).padding(.vertical, 2)
+        }
+    }
+
+    /// Global by-model attribution block, shown under the tool rows.
+    @ViewBuilder
+    private var modelSection: some View {
+        if modelBreakdownItems.isEmpty {
+            Text(I18n.t("dashboard.by_model_waiting"))
+                .font(.caption2).foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+        } else {
+            let rows = modelBreakdownItems.sorted { $0.tokens > $1.tokens }.prefix(8)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(I18n.t("dashboard.by_model")).font(.caption).foregroundColor(.secondary)
+                ForEach(Array(rows), id: \.model) { m in
+                    HStack(spacing: 6) {
+                        Text(m.model).font(.caption).lineLimit(1)
+                        if let tool = m.toolId.flatMap(toolIdToDisplay) {
+                            Text(tool).font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if let cost = m.cost {
+                            Text("$\(String(format: "%.2f", cost))\(m.costIsEstimate == true ? " ?" : "")")
+                                .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                        }
+                        Text(tokenShort(Int(clamping: m.tokens))).font(.caption).monospacedDigit()
+                    }
+                }
+            }
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
     // MARK: - Output section
 
     var outputSection: some View {
-        let totalCost: Double = {
-            switch timeRange {
-            case .today: return todayCombinedSpend
-            case .thisWeek: return weekCombinedSpend
-            case .days30: return monthCombinedSpend
-            }
-        }()
         let toolCosts = computeToolCosts()
-        let dataReady = loadedTimeRange == timeRange
 
         return VStack(spacing: 12) {
             // ── Tool bars ("mouth") — hidden when no data ──
@@ -912,7 +979,16 @@ struct DashboardView: View {
                             : (isCodex
                                 ? (codexDetailExpanded ? "⌄ ChatGPT" : "› ChatGPT")
                                 : tc.name)
-                        toolBarRow(name: displayName, cost: tc.cost, total: totalCost, index: idx)
+                        let toolId = self.toolId(forDisplayName: tc.name)
+                        let exclusiveCost = toolId.flatMap { id in
+                            rateSeriesItems.first { $0.toolId == id }?.points.reduce(0.0) { $0 + $1.cost }
+                        }
+                        toolBarRow(
+                            name: displayName,
+                            tokens: tc.tokens,
+                            calls: tc.calls,
+                            exclusiveCost: exclusiveCost,
+                            index: idx)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -938,6 +1014,10 @@ struct DashboardView: View {
                             codexDetailCard
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }
+                        if let id = toolId {
+                            modelDetailRows(for: id)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
                     }
                     if toolCosts.count > 4 {
                         Button(toolsExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
@@ -950,6 +1030,9 @@ struct DashboardView: View {
                 .padding(12)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
             }
+
+            // ── By-model attribution (BYOK mixes) ──
+            modelSection
 
             // ── Mouth line — short horizontal connector ──
             HStack(spacing: 0) {
@@ -966,6 +1049,7 @@ struct DashboardView: View {
             // with what iOS reads from CloudKit.
             let shownRepos = repos.filter { $0.totalChanges > 0 }
             if !shownRepos.isEmpty {
+                let dataReady = loadedTimeRange == timeRange
                 // Ignore non-finite values when picking maxima: a NaN max would
                 // poison every downstream ratio and reach SwiftUI as a NaN frame.
                 let maxCost = shownRepos.compactMap { $0.cost.isFinite && $0.cost >= 0 ? $0.cost : nil }.max() ?? 1
@@ -1677,7 +1761,9 @@ struct DashboardView: View {
         todayTokens = Int(snap.todayTokens)
         yesterdaySpend = snap.yesterdaySpend
         previousPeriodSpend = snap.previousPeriodSpend
-        toolCostBreakdown = snap.toolBreakdown.map { (name: $0.name, cost: $0.cost) }
+        toolCostBreakdown = snap.toolBreakdown.map {
+            (name: $0.name, cost: $0.cost, tokens: $0.tokens, calls: $0.calls)
+        }
         balanceSpend = snap.providerBreakdown.map { (providerId: $0.providerId, name: $0.name, spend: $0.cost) }
         providerSourceKinds = Dictionary(uniqueKeysWithValues: snap.providerBreakdown.map {
             ($0.providerId, $0.sourceKind ?? "balance")
@@ -1697,6 +1783,9 @@ struct DashboardView: View {
         lastSnapshotTS = snap.updatedAt
         remainingBalances = snap.remainingBalances
         providerCosts = snap.providerBreakdown.map { ProviderDailyCost(date: Date(), providerId: $0.providerId, cost: $0.cost) }
+        modelBreakdownItems = snap.modelBreakdown
+        rateSeriesItems = snap.rateSeries
+        subscriptionCycle = (snap.subscriptionStart, snap.subscriptionPeriodDays)
         paddedChanges = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
         isDemoMode = false
         loadedTimeRange = range
@@ -1775,7 +1864,9 @@ struct DashboardView: View {
                 todayTokens = d.todayTokens
                 yesterdaySpend = d.yesterdaySpend
                 previousPeriodSpend = d.previousPeriodSpend
-                toolCostBreakdown = d.toolCostBreakdown
+                toolCostBreakdown = d.toolCostBreakdown.map {
+                    (name: $0.name, cost: $0.cost, tokens: nil, calls: nil)
+                }
                 isDemoMode = true
                 loadedTimeRange = currentTimeRange
                 if barProgress < 0.5 { barProgress = 0; withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 } }

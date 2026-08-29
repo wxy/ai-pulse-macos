@@ -140,7 +140,8 @@ public struct DashboardSnapshot: Codable, Sendable {
             NameCostItem(
                 name: $0.name,
                 cost: Self.safeNonNegative($0.cost),
-                tokens: $0.tokens.map(Self.safeNonNegative))
+                tokens: $0.tokens.map(Self.safeNonNegative),
+                calls: $0.calls.map(Self.safeNonNegative))
         }
         clean.topRepos = topRepos.map {
             RepoItem(
@@ -180,6 +181,7 @@ public struct DashboardSnapshot: Codable, Sendable {
             ModelCostItem(
                 model: $0.model,
                 providerId: $0.providerId,
+                toolId: $0.toolId,
                 tokens: Self.safeNonNegative($0.tokens),
                 calls: Self.safeNonNegative($0.calls),
                 cost: $0.cost.map { $0.isFinite && $0 >= 0 ? $0 : 0 },
@@ -278,11 +280,14 @@ public struct NameCostItem: Codable, Sendable {
     public var cost: Double
     /// Token usage attributed to this tool (JSONL fact). nil for legacy.
     public var tokens: Int64?
+    /// Call count attributed to this tool (JSONL fact). nil for legacy.
+    public var calls: Int?
 
-    public init(name: String, cost: Double, tokens: Int64? = nil) {
+    public init(name: String, cost: Double, tokens: Int64? = nil, calls: Int? = nil) {
         self.name = name
         self.cost = cost
         self.tokens = tokens
+        self.calls = calls
     }
 }
 
@@ -310,6 +315,8 @@ public struct RepoItem: Codable, Sendable {
 public struct ModelCostItem: Codable, Sendable {
     public var model: String
     public var providerId: String
+    /// Tool that produced this model's events (BYOK mixes live here).
+    public var toolId: String?
     public var tokens: Int64
     public var calls: Int
     /// Spend attributable to this model; nil when the balance source is
@@ -321,6 +328,7 @@ public struct ModelCostItem: Codable, Sendable {
     public init(
         model: String,
         providerId: String,
+        toolId: String? = nil,
         tokens: Int64,
         calls: Int,
         cost: Double? = nil,
@@ -328,6 +336,7 @@ public struct ModelCostItem: Codable, Sendable {
     ) {
         self.model = model
         self.providerId = providerId
+        self.toolId = toolId
         self.tokens = tokens
         self.calls = calls
         self.cost = cost

@@ -588,6 +588,7 @@ enum StatsService {
     struct ModelBreakdownRow {
         let model: String
         let providerId: String
+        let toolId: String?
         let tokens: Int64
         let calls: Int
         let cost: Double
@@ -596,13 +597,14 @@ enum StatsService {
     /// Builds per-model attribution items from DB aggregation rows, coercing
     /// every count to non-negative and dropping non-finite costs to nil.
     static func modelBreakdown(
-        rows: [(model: String, providerId: String, tokens: Int64, calls: Int, cost: Double)]
+        rows: [(model: String, providerId: String, toolId: String?, tokens: Int64, calls: Int, cost: Double)]
     ) -> [ModelCostItem] {
         rows.map { row in
             let safeCost: Double? = row.cost.isFinite && row.cost >= 0 ? row.cost : nil
             return ModelCostItem(
                 model: row.model,
                 providerId: row.providerId,
+                toolId: row.toolId,
                 tokens: max(row.tokens, 0),
                 calls: max(row.calls, 0),
                 cost: safeCost,
@@ -697,6 +699,7 @@ enum StatsService {
         async let modelRowsR = resultOrLog("modelBreakdown", []) { try await AppDatabase.shared.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT model AS m, COALESCE(provider_id, 'unknown') AS pid,
+                       source AS s,
                        COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok,
                        COUNT(*) AS cnt,
                        COALESCE(SUM(cost_usd), 0) AS c
@@ -706,6 +709,7 @@ enum StatsService {
                 """, arguments: [rangeStartMs]).map { r in
                     (m: r["m"] as String? ?? "",
                      pid: r["pid"] as String? ?? "unknown",
+                     s: r["s"] as String? ?? "",
                      tok: r["tok"] as Int64? ?? 0,
                      cnt: r["cnt"] as Int? ?? 0,
                      c: r["c"] as Double? ?? 0)
@@ -713,10 +717,14 @@ enum StatsService {
         } }
         async let sourceAggR = resultOrLog("toolUsage", []) { try await AppDatabase.shared.read { db in
             try Row.fetchAll(db, sql: """
-                SELECT source AS s, COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok
+                SELECT source AS s,
+                       COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok,
+                       COUNT(*) AS cnt
                 FROM usage_event WHERE ts >= ? GROUP BY s
                 """, arguments: [rangeStartMs]).map { r in
-                    (s: r["s"] as String? ?? "", tok: r["tok"] as Int64? ?? 0)
+                    (s: r["s"] as String? ?? "",
+                     tok: r["tok"] as Int64? ?? 0,
+                     cnt: r["cnt"] as Int? ?? 0)
                 }
         } }
         async let usageByToolR = resultOrLog("toolProviders", [:]) { try await AppDatabase.shared.read { db in
@@ -811,6 +819,7 @@ enum StatsService {
         let subTotalAll = subAmort * Double(days)
         let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
         let toolTokens = Dictionary(uniqueKeysWithValues: sourceAgg.map { ($0.s, $0.tok) })
+        let toolCalls = Dictionary(uniqueKeysWithValues: sourceAgg.map { ($0.s, $0.cnt) })
         let rawTools = toolMap.compactMap { (key, cost) -> (String, String, Double)? in
             let scaled = ChartMath.finite(cost * scale, fallback: 0)
             guard scaled > 0.001 else { return nil }
@@ -818,7 +827,7 @@ enum StatsService {
             return (key, label, scaled)
         }.sorted { $0.1 > $1.1 }
         let toolCosts: [NameCostItem] = rawTools.map {
-            NameCostItem(name: $0.1, cost: $0.2, tokens: toolTokens[$0.0])
+            NameCostItem(name: $0.1, cost: $0.2, tokens: toolTokens[$0.0], calls: toolCalls[$0.0])
         }
 
         // Repos with subscription scaling
@@ -841,7 +850,8 @@ enum StatsService {
 
         // Per-model attribution (BYOK mixes), sanitized by the pure helper.
         let modelItems = StatsService.modelBreakdown(rows: modelRows.map {
-            (model: $0.m, providerId: $0.pid, tokens: $0.tok, calls: $0.cnt, cost: $0.c)
+            (model: $0.m, providerId: $0.pid, toolId: $0.s.isEmpty ? nil : $0.s,
+             tokens: $0.tok, calls: $0.cnt, cost: $0.c)
         })
 
         // Effective-price series: only tools whose balance provider is
