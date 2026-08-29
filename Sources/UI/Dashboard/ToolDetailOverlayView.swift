@@ -259,12 +259,12 @@ struct ToolDetailOverlayView: View {
                 AreaMark(
                     x: .value(turnLabel, t.index),
                     yStart: .value(zeroLabel, 0),
-                    yEnd: .value(cacheLabel, t.cacheTokens)
+                    yEnd: .value(cacheLabel, ChartMath.barValue(base: Double(t.cacheTokens), progress: 1))
                 )
                     .foregroundStyle(Color.marsGreenLight.opacity(0.40))
                     .interpolationMethod(.monotone)
                 // Context window curve — dark green line.
-                LineMark(x: .value(turnLabel, t.index), y: .value(contextLabel, t.contextTokens))
+                LineMark(x: .value(turnLabel, t.index), y: .value(contextLabel, ChartMath.barValue(base: Double(t.contextTokens), progress: 1)))
                     .foregroundStyle(Color.marsGreen)
                     .lineStyle(StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
                     .interpolationMethod(.monotone)
@@ -319,7 +319,7 @@ struct ToolDetailOverlayView: View {
                 AxisGridLine()
                 AxisValueLabel {
                     if let v = value.as(Double.self) {
-                        Text(Self.abbrevTokens(Int(v)))
+                        Text(Self.abbrevTokens(ChartMath.safeInt(v)))
                     }
                 }
             }
@@ -333,7 +333,10 @@ struct ToolDetailOverlayView: View {
                 .font(.caption2).fontWeight(.semibold)
             Text("\(I18n.t("panel.chart_context")) \(Self.abbrevTokens(point.contextTokens))")
             Text("\(I18n.t("panel.chart_cache")) \(Self.abbrevTokens(point.cacheTokens))")
-            Text("\(I18n.t("panel.chart_uncached")) \(Self.abbrevTokens(max(point.contextTokens - point.cacheTokens, 0)))")
+            let uncached = point.contextTokens > point.cacheTokens
+                ? point.contextTokens - point.cacheTokens
+                : 0
+            Text("\(I18n.t("panel.chart_uncached")) \(Self.abbrevTokens(uncached))")
             if isCompaction {
                 Text(I18n.t("panel.chart_compaction"))
                     .foregroundColor(Color.deepRed)
@@ -361,7 +364,7 @@ struct ToolDetailOverlayView: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.secondary.opacity(0.15))
                 Capsule().fill(occColor(occ))
-                    .frame(width: geo.size.width * CGFloat(min(occ, 1)))
+                    .frame(width: geo.size.width * CGFloat(ChartMath.unit(occ)))
             }
         }
         .frame(width: 40, height: 4)
