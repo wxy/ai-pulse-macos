@@ -728,7 +728,10 @@ enum StatsService {
         snap.toolDetails = detailItems
         snap.payloadVersion = CKSchema.payloadVersion
         snap.writerAppVersion = CKSchema.writerAppVersion
-        return snap
+        // Sanitize at the source so every downstream consumer — local cache,
+        // CloudKit sync, iOS/watchOS/widget decoders — can only ever receive
+        // finite, non-negative values.
+        return snap.sanitized()
     }
 
     // MARK: - Tool detail (conclusion card + session explorer)
