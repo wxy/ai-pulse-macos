@@ -611,50 +611,46 @@ struct DashboardView: View {
 
     /// Nose: vertical overlapping bars. Added runs top-down, deleted runs
     /// bottom-up; the overlap is the net line change. Max height is the larger
-    /// of the two; labels and the net number sit inside a wide rounded bar.
+    /// of the two, so the visible difference is exactly |added−deleted|/max.
+    /// The bar area spans ~80% of the nose height (labels live in the 20%).
     @ViewBuilder var noseStatCards: some View {
         let added = codeChanges.reduce(0) { $0 + $1.added }
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
         let netLines = added - deleted
         let maxVal = Double(max(added, deleted, 1))
-        GeometryReader { geo in
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(nsColor: .quaternarySystemFill).opacity(0.35))
-                VStack {
-                    Spacer()
+        VStack(spacing: 2) {
+            Text("+\(added)")
+                .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                .foregroundColor(.marsGreen)
+            GeometryReader { geo in
+                ZStack {
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.deepRed.opacity(0.55))
-                        .frame(height: geo.size.height * Double(deleted) / maxVal)
-                }
-                VStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.marsGreen.opacity(0.85))
-                        .frame(height: geo.size.height * Double(added) / maxVal)
-                    Spacer()
-                }
-                VStack(spacing: 0) {
-                    Text("+\(added)")
-                        .font(.caption2).fontWeight(.semibold).monospacedDigit()
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(Color.marsGreen.opacity(0.85), in: RoundedRectangle(cornerRadius: 4))
-                    Spacer()
+                        .fill(Color(nsColor: .quaternarySystemFill).opacity(0.35))
+                    VStack {
+                        Spacer()
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.deepRed.opacity(0.55))
+                            .frame(height: geo.size.height * Double(deleted) / maxVal)
+                    }
+                    VStack {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.marsGreen.opacity(0.85))
+                            .frame(height: geo.size.height * Double(added) / maxVal)
+                        Spacer()
+                    }
                     Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
-                        .font(.system(size: 12, weight: .bold)).monospacedDigit()
+                        .font(.system(size: 13, weight: .bold)).monospacedDigit()
                         .foregroundColor(netLines >= 0 ? .marsGreen : .deepRed)
-                        .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
-                    Spacer()
-                    Text("-\(deleted)")
-                        .font(.caption2).fontWeight(.semibold).monospacedDigit()
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(Color.deepRed.opacity(0.8), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
                 }
             }
+            .frame(height: 145)   // ~80% of the ~175pt nose column (donut+legend height)
+            Text("-\(deleted)")
+                .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                .foregroundColor(.red)
         }
-        .frame(width: 78, height: 64)
+        .frame(width: 82)
     }
 
     // MARK: - Head overview (forehead usage · eyes expense/output · nose lines)
@@ -915,31 +911,6 @@ struct DashboardView: View {
         }
     }
 
-    /// Tool row: name · tokens · calls, with an attributable (exclusive)
-    /// balance cost when the tool's balance source is exclusively its own.
-    func toolBarRow(
-        name: String,
-        tokens: Int64?,
-        calls: Int?,
-        exclusiveCost: Double?,
-        index: Int = 0
-    ) -> some View {
-        let tokenText = tokens.map { tokenShort(Int(clamping: $0)) } ?? "—"
-        let callsText = calls.map { "\($0)" } ?? "—"
-        return HStack(spacing: 6) {
-            Text(name).font(.caption).lineLimit(1)
-            Spacer()
-            if let cost = exclusiveCost, cost > 0.001 {
-                Text("$\(String(format: "%.2f", cost))")
-                    .font(.caption2).monospacedDigit().foregroundColor(.secondary)
-            }
-            Text(tokenText).font(.caption).monospacedDigit()
-            Text("\(callsText) \(I18n.t("dashboard.calls"))")
-                .font(.caption2).foregroundColor(.secondary)
-        }
-        .padding(.vertical, 3)
-    }
-
     struct DonutItem: Identifiable { let id = UUID(); let label: String; let cost: Double; let pct: Double; let color: Color }
 
     /// SectorMark cannot safely render an all-zero angle set (for example, a
@@ -980,65 +951,43 @@ struct DashboardView: View {
         }
     }
 
-    /// Global by-model attribution block, shown under the tool rows.
-    @ViewBuilder
-    private var modelSection: some View {
-        if modelBreakdownItems.isEmpty {
-            Text(I18n.t("dashboard.by_model_waiting"))
-                .font(.caption2).foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-        } else {
-            let rows = modelBreakdownItems.sorted { $0.tokens > $1.tokens }.prefix(8)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(I18n.t("dashboard.by_model")).font(.caption).foregroundColor(.secondary)
-                ForEach(Array(rows), id: \.model) { m in
-                    HStack(spacing: 6) {
-                        Text(m.model).font(.caption).lineLimit(1)
-                        if let tool = m.toolId.flatMap(toolIdToDisplay) {
-                            Text(tool).font(.caption2).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Text("\(m.calls) \(I18n.t("dashboard.calls"))")
-                            .font(.caption2).foregroundColor(.secondary)
-                        Text(tokenShort(Int(clamping: m.tokens))).font(.caption).monospacedDigit()
-                    }
-                }
-            }
-            .padding(12)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        }
-    }
-
     // MARK: - Output section
 
     var outputSection: some View {
         let toolCosts = computeToolCosts()
+        let modelRows = modelBreakdownItems.sorted { $0.tokens > $1.tokens }.prefix(8)
+        let toolTotalTokens = toolCosts.reduce(Int64(0)) { $0 + ($1.tokens ?? 0) }
+        let toolTotalCalls = toolCosts.reduce(0) { $0 + ($1.calls ?? 0) }
+        let modelTotalTokens = modelRows.reduce(Int64(0)) { $0 + $1.tokens }
+        let modelTotalCalls = modelRows.reduce(0) { $0 + $1.calls }
 
         return VStack(spacing: 12) {
-            // ── Tool bars ("mouth") — hidden when no data ──
-            if !toolCosts.isEmpty {
+            // ── Tool × model two-dimensional table ("mouth") ──
+            if !toolCosts.isEmpty || !modelBreakdownItems.isEmpty {
                 let shown = toolsExpanded ? toolCosts : Array(toolCosts.prefix(4))
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
-                    ForEach(Array(shown.enumerated()), id: \.element.name) { idx, tc in
-                        let isClaude = tc.name == "Claude Code"
-                        let isCodex = tc.name == "ChatGPT"
-                        let displayName = isClaude
-                            ? (claudeDetailExpanded ? "⌄ Claude Code" : "› Claude Code")
-                            : (isCodex
-                                ? (codexDetailExpanded ? "⌄ ChatGPT" : "› ChatGPT")
-                                : tc.name)
-                        let toolId = self.toolId(forDisplayName: tc.name)
-                        let exclusiveCost = toolId.flatMap { id in
-                            rateSeriesItems.first { $0.toolId == id }?.points.reduce(0.0) { $0 + $1.cost }
+                    Text(I18n.t("dashboard.by_tool_model")).font(.caption).foregroundColor(.secondary)
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                        // ── Dev tools section ──
+                        GridRow {
+                            Text(I18n.t("dashboard.dev_tool")).font(.caption2).bold().foregroundColor(.secondary)
+                            Text("Token").font(.caption2).bold().foregroundColor(.secondary)
+                            Text(I18n.t("dashboard.calls")).font(.caption2).bold().foregroundColor(.secondary)
                         }
-                        toolBarRow(
-                            name: displayName,
-                            tokens: tc.tokens,
-                            calls: tc.calls,
-                            exclusiveCost: exclusiveCost,
-                            index: idx)
+                        ForEach(Array(shown.enumerated()), id: \.element.name) { idx, tc in
+                            let isClaude = tc.name == "Claude Code"
+                            let isCodex = tc.name == "ChatGPT"
+                            let displayName = isClaude
+                                ? (claudeDetailExpanded ? "⌄ Claude Code" : "› Claude Code")
+                                : (isCodex
+                                    ? (codexDetailExpanded ? "⌄ ChatGPT" : "› ChatGPT")
+                                    : tc.name)
+                            let toolId = self.toolId(forDisplayName: tc.name)
+                            GridRow {
+                                Text(displayName).font(.caption).lineLimit(1)
+                                Text(tokenShort(Int(clamping: tc.tokens ?? 0))).font(.caption).monospacedDigit()
+                                Text("\(tc.calls ?? 0)").font(.caption).monospacedDigit()
+                            }
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -1056,17 +1005,55 @@ struct DashboardView: View {
                                 }
                             }
                             .pointingHandCursor(isClaude || isCodex)
-                        if isClaude && claudeDetailExpanded {
-                            claudeDetailCard
+                            if isClaude && claudeDetailExpanded {
+                                GridRow {
+                                    claudeDetailCard.gridCellColumns(3)
+                                }
                                 .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                            if isCodex && codexDetailExpanded {
+                                GridRow {
+                                    codexDetailCard.gridCellColumns(3)
+                                }
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                            if let id = toolId {
+                                GridRow {
+                                    modelDetailRows(for: id).gridCellColumns(3)
+                                }
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
                         }
-                        if isCodex && codexDetailExpanded {
-                            codexDetailCard
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        GridRow {
+                            Text(I18n.t("dashboard.total")).font(.caption).fontWeight(.bold)
+                            Text(tokenShort(Int(clamping: toolTotalTokens)))
+                                .font(.caption).fontWeight(.bold).monospacedDigit()
+                            Text("\(toolTotalCalls)").font(.caption).fontWeight(.bold).monospacedDigit()
                         }
-                        if let id = toolId {
-                            modelDetailRows(for: id)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        Divider()
+                        // ── Models section (BYOK) ──
+                        GridRow {
+                            Text(I18n.t("dashboard.by_model")).font(.caption2).bold().foregroundColor(.secondary)
+                            Text("Token").font(.caption2).bold().foregroundColor(.secondary)
+                            Text(I18n.t("dashboard.calls")).font(.caption2).bold().foregroundColor(.secondary)
+                        }
+                        ForEach(Array(modelRows), id: \.model) { m in
+                            GridRow {
+                                HStack(spacing: 4) {
+                                    Text(m.model).font(.caption).lineLimit(1)
+                                    if let tool = m.toolId.flatMap(toolIdToDisplay) {
+                                        Text(tool).font(.caption2).foregroundColor(.secondary)
+                                    }
+                                }
+                                Text(tokenShort(Int(clamping: m.tokens))).font(.caption).monospacedDigit()
+                                Text("\(m.calls)").font(.caption).monospacedDigit()
+                            }
+                        }
+                        GridRow {
+                            Text(I18n.t("dashboard.total")).font(.caption).fontWeight(.bold)
+                            Text(tokenShort(Int(clamping: modelTotalTokens)))
+                                .font(.caption).fontWeight(.bold).monospacedDigit()
+                            Text("\(modelTotalCalls)").font(.caption).fontWeight(.bold).monospacedDigit()
                         }
                     }
                     if toolCosts.count > 4 {
@@ -1080,9 +1067,6 @@ struct DashboardView: View {
                 .padding(12)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
             }
-
-            // ── By-model attribution (BYOK mixes) ──
-            modelSection
 
             // ── Mouth line — short horizontal connector ──
             HStack(spacing: 0) {
@@ -1110,19 +1094,23 @@ struct DashboardView: View {
             let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
             VStack(alignment: .leading, spacing: 6) {
                 Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-                ForEach(shown) { r in
-                    HStack(spacing: 6) {
-                        Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
-                        Spacer()
-                        if let tokens = repoTokens[r.repo], tokens > 0 {
-                            Text(tokenShort(Int(clamping: tokens)))
-                                .font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                        }
-                        Text("+\(r.added)/-\(r.deleted)")
-                            .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                    GridRow {
+                        Text(I18n.t("dashboard.repo")).font(.caption2).bold().foregroundColor(.secondary)
+                        Text("Token").font(.caption2).bold().foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.code_added")).font(.caption2).bold().foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.code_deleted")).font(.caption2).bold().foregroundColor(.secondary)
                     }
-                    if r.id != shown.last?.id {
-                        Divider()
+                    ForEach(shown) { r in
+                        GridRow {
+                            Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
+                            Text(tokenShort(Int(clamping: repoTokens[r.repo] ?? 0)))
+                                .font(.caption).monospacedDigit()
+                            Text("+\(r.added)")
+                                .font(.caption).monospacedDigit().foregroundColor(.marsGreen)
+                            Text("-\(r.deleted)")
+                                .font(.caption).monospacedDigit().foregroundColor(.red)
+                        }
                     }
                 }
                 if shownRepos.count > 5 {
