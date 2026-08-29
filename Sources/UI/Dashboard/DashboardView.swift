@@ -959,28 +959,25 @@ struct DashboardView: View {
                         GridRow {
                             Text(I18n.t("dashboard.by_tool_model"))
                                 .font(.caption2).bold().foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .overlay(alignment: .trailing) { Divider() }
+                                .tableCell(alignment: .leading)
                             ForEach(toolIds, id: \.self) { t in
                                 Text(toolIdToDisplay(t) ?? t)
                                     .font(.caption2).bold().foregroundColor(.secondary).lineLimit(1)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .tableCell(alignment: .leading)
                                     .contentShape(Rectangle())
                                     .onTapGesture { selectedToolForOverlay = t }
                                     .pointingHandCursor()
-                                    .overlay(alignment: .trailing) { Divider() }
                             }
                             Text(I18n.t("dashboard.total"))
                                 .font(.caption2).bold().foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .tableCell()
                         }
                         .padding(.vertical, 5)
                         .background(Color.secondary.opacity(0.08))
-                        .overlay(alignment: .bottom) { Divider() }
                         ForEach(Array(modelNames.enumerated()), id: \.element) { idx, m in
                             GridRow {
                                 Text(m).font(.caption).lineLimit(1)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .tableCell(alignment: .leading)
                                     .contentShape(Rectangle())
                                     .onTapGesture {
                                         if let tool = matrixRows.first(where: { $0.model == m })?.toolId {
@@ -988,39 +985,33 @@ struct DashboardView: View {
                                         }
                                     }
                                     .pointingHandCursor()
-                                    .overlay(alignment: .trailing) { Divider() }
                                 ForEach(toolIds, id: \.self) { t in
                                     Text(tokenShort(Int(clamping: cellTokens(m, t))))
                                         .font(.caption).monospacedDigit()
-                                        .frame(maxWidth: .infinity, alignment: .trailing)
-                                        .overlay(alignment: .trailing) { Divider() }
+                                        .tableCell()
                                 }
                                 Text(tokenShort(Int(clamping: modelTokens(m))))
                                     .font(.caption).bold().monospacedDigit()
-                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                                    .tableCell()
                             }
                             .padding(.vertical, 4)
                             .background(idx % 2 == 0 ? Color.clear : Color.secondary.opacity(0.04))
-                            .overlay(alignment: .bottom) { Divider() }
                         }
                         GridRow {
                             Text(I18n.t("dashboard.total"))
                                 .font(.caption).bold()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .overlay(alignment: .trailing) { Divider() }
+                                .tableCell(alignment: .leading)
                             ForEach(toolIds, id: \.self) { t in
                                 Text(tokenShort(Int(clamping: toolTokens(t))))
                                     .font(.caption).bold().monospacedDigit()
-                                    .frame(maxWidth: .infinity, alignment: .trailing)
-                                    .overlay(alignment: .trailing) { Divider() }
+                                    .tableCell()
                             }
                             Text(tokenShort(Int(clamping: grandTotal)))
                                 .font(.caption).bold().monospacedDigit()
-                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .tableCell()
                         }
                         .padding(.vertical, 5)
                         .background(Color.secondary.opacity(0.08))
-                        .overlay(alignment: .bottom) { Divider() }
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -1058,43 +1049,35 @@ struct DashboardView: View {
                     GridRow {
                         Text(I18n.t("dashboard.repo"))
                             .font(.caption2).bold().foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .overlay(alignment: .trailing) { Divider() }
+                            .tableCell(alignment: .leading)
                         Text("Token")
                             .font(.caption2).bold().foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                            .overlay(alignment: .trailing) { Divider() }
+                            .tableCell()
                         Text(I18n.t("dashboard.code_added"))
                             .font(.caption2).bold().foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                            .overlay(alignment: .trailing) { Divider() }
+                            .tableCell()
                         Text(I18n.t("dashboard.code_deleted"))
                             .font(.caption2).bold().foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .tableCell()
                     }
                     .padding(.vertical, 5)
                     .background(Color.secondary.opacity(0.08))
-                    .overlay(alignment: .bottom) { Divider() }
                     ForEach(Array(shown.enumerated()), id: \.element.id) { idx, r in
                         GridRow {
                             Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .overlay(alignment: .trailing) { Divider() }
+                                .tableCell(alignment: .leading)
                             Text(tokenShort(Int(clamping: repoTokens[r.repo] ?? 0)))
                                 .font(.caption).monospacedDigit()
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                                .overlay(alignment: .trailing) { Divider() }
+                                .tableCell()
                             Text("+\(r.added)")
                                 .font(.caption).monospacedDigit().foregroundColor(.marsGreen)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                                .overlay(alignment: .trailing) { Divider() }
+                                .tableCell()
                             Text("-\(r.deleted)")
                                 .font(.caption).monospacedDigit().foregroundColor(.red)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .tableCell()
                         }
                         .padding(.vertical, 4)
                         .background(idx % 2 == 0 ? Color.clear : Color.secondary.opacity(0.04))
-                        .overlay(alignment: .bottom) { Divider() }
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -1863,4 +1846,16 @@ struct DashboardView: View {
         animateBarIfNeeded()
     }
 
+}
+
+/// Table cell style: full-width cell with a hairline border, so grids read as
+/// a normal table (borders + zebra), not a loose list.
+private extension View {
+    func tableCell(alignment: Alignment = .trailing) -> some View {
+        frame(maxWidth: .infinity, alignment: alignment)
+            .overlay(
+                Rectangle()
+                    .stroke(Color.secondary.opacity(0.12), lineWidth: 0.5)
+            )
+    }
 }
