@@ -1,5 +1,6 @@
 import XCTest
 @testable import AIPulse
+import AIPulseShared
 
 final class ChartMathTests: XCTestCase {
     @MainActor

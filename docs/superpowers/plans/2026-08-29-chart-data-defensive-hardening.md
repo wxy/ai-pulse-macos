@@ -141,3 +141,43 @@ func testParseDoubleRejectsNonFiniteStrings() {
 - [x] `git diff --check` 通过
 - [x] 构建最新版本，交由用户运行验证 Today/本周/30 日
 - [x] 汇总审计发现与修复清单
+
+---
+
+# Phase 2: CloudKit 写端与 iOS/watchOS/Widget 客户端防御
+
+**Goal:** 保证写入 CloudKit / 本地缓存的数据安全可靠，并让 iOS、watchOS、Widget
+在消费快照时具备与 macOS 同等的防御，避免旧毒数据导致客户端崩溃或无响应。
+
+### Task 8: 防御能力下沉到 AIPulseShared
+
+- [ ] 将 `ChartMath` 迁移至 `Packages/AIPulseShared/Sources/AIPulseShared/ChartMath.swift`（public），删除 macOS 本地副本
+- [ ] `DashboardSnapshot` 增加 `public func sanitized()`（迁移 macOS sanitizedSnapshot 逻辑）
+- [ ] `ActivityRing` 对非有限 progress 防御（trim 不能收到 NaN）
+- [ ] 迁移/新增 macOS 测试覆盖共享方法，`make test` 通过
+- [ ] 提交 `feat: move chart math and snapshot sanitization into AIPulseShared`
+
+### Task 9: macOS 写端保证 CloudKit 数据干净
+
+- [ ] `StatsService.dashboardSnapshot()` 返回前调用 `sanitized()`
+- [ ] `DashboardView.applySnapshot` 改用 `sanitized()`（保留原始 all_finite 日志）
+- [ ] `make test` 通过，提交 `fix: sanitize snapshots at the source before cache/CloudKit writes`
+
+### Task 10: iOS 客户端防御
+
+- [ ] `CloudDataService` 所有解码路径（hasData/fetchAndStore/loadLocalCache）接入 `sanitized()`
+- [ ] `DashboardView` donut 过滤非法段、tool/repo 比例与对比徽章用 ChartMath、trend 图加 X 域与 barValue、消除强制解包
+- [ ] `ToolDetailSheetView` occupancy 与 delta 防御
+- [ ] `xcodebuild` iOS simulator 编译通过，提交 `fix: harden iOS dashboard against poisoned snapshots`
+
+### Task 11: watchOS + Widget 防御
+
+- [ ] watchOS `SpendView` 比例/徽章用 ChartMath（safeInt/unit/percentageDelta）
+- [ ] Widget `loadLatestEntry` 解码后 sanitize，`WidgetViews` 同样接入
+- [ ] `xcodebuild` watchOS/widget simulator 编译通过，提交
+
+### Task 12: 全量验证
+
+- [ ] macOS `make test` 全量通过
+- [ ] iOS/watchOS/Widget 三个 scheme 编译通过
+- [ ] 汇总写端 + 三端防御说明

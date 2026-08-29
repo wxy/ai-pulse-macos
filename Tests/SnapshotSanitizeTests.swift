@@ -44,7 +44,7 @@ final class SnapshotSanitizeTests: XCTestCase {
                 ])
         ]
 
-        let clean = DashboardView.sanitizedSnapshot(snap)
+        let clean = snap.sanitized()
 
         XCTAssertEqual(clean.todayCost, 0)
         XCTAssertEqual(clean.weekCost, 0)

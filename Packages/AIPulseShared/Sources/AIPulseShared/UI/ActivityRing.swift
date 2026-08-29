@@ -18,7 +18,7 @@ public struct ActivityRing: View {
             Circle()
                 .stroke(color.opacity(0.20), style: StrokeStyle(lineWidth: thickness, lineCap: .round))
             Circle()
-                .trim(from: 0, to: max(0, min(progress, 1)))
+                .trim(from: 0, to: ChartMath.unit(progress))
                 .stroke(color, style: StrokeStyle(lineWidth: thickness, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.easeInOut(duration: 0.6), value: progress)
