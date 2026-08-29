@@ -607,45 +607,50 @@ struct DashboardView: View {
     /// Nose: vertical overlapping bars. Added runs top-down, deleted runs
     /// bottom-up; the overlap is the net line change. Max height is the larger
     /// of the two, so the visible difference is exactly |added−deleted|/max.
-    /// Labels sit beside the bar; the net number is white on the overlap.
+    /// Labels sit inside the bar at top (added), middle (net), bottom (deleted).
     @ViewBuilder var noseStatCards: some View {
         let added = codeChanges.reduce(0) { $0 + $1.added }
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
         let netLines = added - deleted
         let maxVal = Double(max(added, deleted, 1))
-        HStack(spacing: 6) {
-            Text("+\(added)")
-                .font(.caption).fontWeight(.semibold).monospacedDigit()
-                .foregroundColor(.marsGreen)
-            GeometryReader { geo in
-                ZStack {
+        GeometryReader { geo in
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .quaternarySystemFill).opacity(0.35))
+                VStack {
+                    Spacer()
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(nsColor: .quaternarySystemFill).opacity(0.35))
-                    VStack {
-                        Spacer()
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.deepRed.opacity(0.55))
-                            .frame(height: geo.size.height * Double(deleted) / maxVal)
-                    }
-                    VStack {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.marsGreen.opacity(0.85))
-                            .frame(height: geo.size.height * Double(added) / maxVal)
-                        Spacer()
-                    }
+                        .fill(Color.deepRed.opacity(0.55))
+                        .frame(height: geo.size.height * Double(deleted) / maxVal)
+                }
+                VStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.marsGreen.opacity(0.85))
+                        .frame(height: geo.size.height * Double(added) / maxVal)
+                    Spacer()
+                }
+                VStack(spacing: 0) {
+                    Text("+\(added)")
+                        .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color.marsGreen.opacity(0.85), in: RoundedRectangle(cornerRadius: 5))
+                    Spacer()
                     Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
                         .font(.system(size: 13, weight: .bold)).monospacedDigit()
                         .foregroundColor(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                    Spacer()
+                    Text("-\(deleted)")
+                        .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color.deepRed.opacity(0.8), in: RoundedRectangle(cornerRadius: 5))
                 }
             }
-            .frame(width: 44, height: 150)
-            Text("-\(deleted)")
-                .font(.caption).fontWeight(.semibold).monospacedDigit()
-                .foregroundColor(.red)
         }
-        .frame(width: 130)
+        .frame(width: 64, height: 150)
     }
 
     // MARK: - Head overview (forehead usage · eyes expense/output · nose lines)
@@ -957,36 +962,63 @@ struct DashboardView: View {
             if !matrixRows.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(I18n.t("dashboard.by_tool_model")).font(.caption).foregroundColor(.secondary)
-                    Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 4) {
+                    Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 0) {
                         GridRow {
                             Text("").gridCellUnsizedAxes([.horizontal])
                             ForEach(toolIds, id: \.self) { t in
                                 Text(toolIdToDisplay(t) ?? t)
                                     .font(.caption2).bold().foregroundColor(.secondary).lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            Text(I18n.t("dashboard.total")).font(.caption2).bold().foregroundColor(.secondary)
+                            Text(I18n.t("dashboard.total"))
+                                .font(.caption2).bold().foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
                         }
-                        ForEach(modelNames, id: \.self) { m in
+                        .padding(.vertical, 5)
+                        .background(Color.secondary.opacity(0.08))
+                        .overlay(alignment: .bottom) { Divider() }
+                        ForEach(Array(modelNames.enumerated()), id: \.element) { idx, m in
                             GridRow {
                                 Text(m).font(.caption).lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        if let tool = matrixRows.first(where: { $0.model == m })?.toolId {
+                                            selectedToolForOverlay = tool
+                                        }
+                                    }
+                                    .pointingHandCursor()
                                 ForEach(toolIds, id: \.self) { t in
                                     Text(tokenShort(Int(clamping: cellTokens(m, t))))
                                         .font(.caption).monospacedDigit()
+                                        .frame(maxWidth: .infinity, alignment: .trailing)
                                 }
                                 Text(tokenShort(Int(clamping: modelTokens(m))))
                                     .font(.caption).bold().monospacedDigit()
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
                             }
+                            .padding(.vertical, 4)
+                            .background(idx % 2 == 0 ? Color.clear : Color.secondary.opacity(0.04))
+                            .overlay(alignment: .bottom) { Divider() }
                         }
                         GridRow {
-                            Text(I18n.t("dashboard.total")).font(.caption).bold()
+                            Text(I18n.t("dashboard.total"))
+                                .font(.caption).bold()
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             ForEach(toolIds, id: \.self) { t in
                                 Text(tokenShort(Int(clamping: toolTokens(t))))
                                     .font(.caption).bold().monospacedDigit()
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
                             }
                             Text(tokenShort(Int(clamping: grandTotal)))
                                 .font(.caption).bold().monospacedDigit()
+                                .frame(maxWidth: .infinity, alignment: .trailing)
                         }
+                        .padding(.vertical, 5)
+                        .background(Color.secondary.opacity(0.08))
+                        .overlay(alignment: .bottom) { Divider() }
                     }
+                    .frame(maxWidth: .infinity)
                 }
                 .padding(12)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
@@ -1058,25 +1090,44 @@ struct DashboardView: View {
             let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
             VStack(alignment: .leading, spacing: 6) {
                 Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
+                Grid(alignment: .trailing, horizontalSpacing: 16, verticalSpacing: 0) {
                     GridRow {
-                        Text(I18n.t("dashboard.repo")).font(.caption2).bold().foregroundColor(.secondary)
-                        Text("Token").font(.caption2).bold().foregroundColor(.secondary)
-                        Text(I18n.t("dashboard.code_added")).font(.caption2).bold().foregroundColor(.secondary)
-                        Text(I18n.t("dashboard.code_deleted")).font(.caption2).bold().foregroundColor(.secondary)
+                        Text(I18n.t("dashboard.repo"))
+                            .font(.caption2).bold().foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Text("Token")
+                            .font(.caption2).bold().foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        Text(I18n.t("dashboard.code_added"))
+                            .font(.caption2).bold().foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        Text(I18n.t("dashboard.code_deleted"))
+                            .font(.caption2).bold().foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    ForEach(shown) { r in
+                    .padding(.vertical, 5)
+                    .background(Color.secondary.opacity(0.08))
+                    .overlay(alignment: .bottom) { Divider() }
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { idx, r in
                         GridRow {
                             Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             Text(tokenShort(Int(clamping: repoTokens[r.repo] ?? 0)))
                                 .font(.caption).monospacedDigit()
+                                .frame(maxWidth: .infinity, alignment: .trailing)
                             Text("+\(r.added)")
                                 .font(.caption).monospacedDigit().foregroundColor(.marsGreen)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
                             Text("-\(r.deleted)")
                                 .font(.caption).monospacedDigit().foregroundColor(.red)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
                         }
+                        .padding(.vertical, 4)
+                        .background(idx % 2 == 0 ? Color.clear : Color.secondary.opacity(0.04))
+                        .overlay(alignment: .bottom) { Divider() }
                     }
                 }
+                .frame(maxWidth: .infinity)
                 if shownRepos.count > 5 {
                     Button(reposExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
                         withAnimation { reposExpanded.toggle() }
