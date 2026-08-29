@@ -632,10 +632,31 @@ struct DashboardView: View {
         let added = codeChanges.reduce(0) { $0 + $1.added }
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
         let netLines = added - deleted
-        Group {
-            smallCard(title: I18n.t("dashboard.code_added"), value: "+\(added)", color: Color.marsGreen)
-            smallCard(title: I18n.t("dashboard.code_deleted"), value: "-\(deleted)", color: .red)
-            smallCard(title: I18n.t("dashboard.net_lines"), value: "\(netLines)", color: netLines >= 0 ? .marsGreen : .deepRed)
+        let maxVal = Double(max(added, deleted, 1))
+        // Overlapping bars: added (solid) and deleted (translucent) share the
+        // same origin, so the visible difference is the net line change.
+        VStack(spacing: 4) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.marsGreen.opacity(0.85))
+                        .frame(width: geo.size.width * Double(added) / maxVal)
+                    Capsule()
+                        .fill(Color.deepRed.opacity(0.55))
+                        .frame(width: geo.size.width * Double(deleted) / maxVal)
+                }
+            }
+            .frame(height: 14)
+            HStack(spacing: 4) {
+                Text("+\(added)")
+                    .font(.caption2).foregroundColor(.marsGreen).monospacedDigit()
+                Text("-\(deleted)")
+                    .font(.caption2).foregroundColor(.red).monospacedDigit()
+                Spacer()
+                Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
+                    .font(.caption).fontWeight(.semibold).monospacedDigit()
+                    .foregroundColor(netLines >= 0 ? .marsGreen : .deepRed)
+            }
         }
     }
 
@@ -651,9 +672,6 @@ struct DashboardView: View {
         let subDaily = ChartMath.finite(StatsService.subscriptionDailyAmortization(), fallback: 0)
         let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
         let subMonthly = subDaily * daysInMonth
-        // Right eye: code output — Git facts.
-        let added = codeChanges.reduce(0) { $0 + $1.added }
-        let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
 
         return VStack(spacing: 16) {
             // ── Forehead: usage ──
@@ -686,7 +704,7 @@ struct DashboardView: View {
                 }
                 .frame(width: 100)
 
-                toolTokenDonut()
+                repoTokenDonut()
             }
         }
         .padding(16)
@@ -699,13 +717,24 @@ struct DashboardView: View {
     /// subscription fixed cost as the eyebrow label.
     @ViewBuilder
     func providerExpenseDonut(actualSpend: Double, subMonthly: Double) -> some View {
-        let segments = Self.renderableDonutSegments(balanceSpend.enumerated().map { (i, item) in
+        // Subscription participates as a fixed-cycle share (like a balance
+        // delta) so the cost composition has both factual expense kinds.
+        let subscriptionSegment: [DonutItem] = subMonthly > 0.001
+            ? [DonutItem(label: I18n.t("dashboard.sub_label"), cost: subMonthly, pct: 0, color: .marsGreenLight)]
+            : []
+        let rawSegments = balanceSpend.enumerated().map { (i, item) in
             DonutItem(
                 label: item.name,
                 cost: item.spend,
-                pct: actualSpend > 0 ? item.spend / actualSpend * 100 : 0,
+                pct: 0,
                 color: Self.providerDonutColors[i % Self.providerDonutColors.count])
-        })
+        } + subscriptionSegment
+        let totalCost = actualSpend + subMonthly
+        let segments = Self.renderableDonutSegments(rawSegments).map {
+            DonutItem(label: $0.label, cost: $0.cost,
+                      pct: totalCost > 0 ? $0.cost / totalCost * 100 : 0,
+                      color: $0.color)
+        }
         let subLabel = subMonthly > 0.001
             ? " · +\(I18n.t("dashboard.sub_label")) \(String(format: "$%.0f", subMonthly))/\(I18n.t("dashboard.month"))"
             : ""
@@ -715,7 +744,9 @@ struct DashboardView: View {
             ZStack {
                 if !segments.isEmpty {
                     Chart(segments) { item in
-                        let isUsage = providerSourceKinds[providerId(for: item.label)] == "usage"
+                        let isUsage = item.label == I18n.t("dashboard.sub_label")
+                            ? false
+                            : providerSourceKinds[providerId(for: item.label)] == "usage"
                         SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
                             .foregroundStyle(item.color.opacity(isUsage ? 0.45 : 1))
                     }
@@ -727,8 +758,8 @@ struct DashboardView: View {
                 } else {
                     emptyDonut(title: I18n.t("dashboard.actual_spend"))
                 }
-                Text("$\(String(format: "%.2f", actualSpend))")
-                    .font(.system(size: Self.donutCenterFontSize(for: actualSpend), weight: .semibold, design: .rounded)).monospacedDigit()
+                Text("$\(String(format: "%.2f", totalCost))")
+                    .font(.system(size: Self.donutCenterFontSize(for: totalCost), weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.deepRed)
             }
             VStack(spacing: 2) {
@@ -747,17 +778,17 @@ struct DashboardView: View {
         .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.15), value: barProgress)
     }
 
-    /// Right eye: usage donut — token share per tool (log facts). Mirrors the
-    /// left eye's spend-by-provider: where the money goes vs where the tokens
-    /// go. Center shows the range token total (same as the forehead number).
+    /// Right eye: usage donut — token share per repo (log facts). Users often
+    /// work across several repos with one tool, so repo is the more useful
+    /// split than tool. Center shows the attributed token total.
     @ViewBuilder
-    func toolTokenDonut() -> some View {
+    func repoTokenDonut() -> some View {
         let colors: [Color] = [.marsGreen, .marsGreen2, .deepRed2, .deepRed, .marsGreenLight]
-        let items = toolCostBreakdown.enumerated().compactMap { (i, tc) -> DonutItem? in
-            guard let tokens = tc.tokens, tokens > 0 else { return nil }
+        let items = repoTokens.enumerated().compactMap { (i, kv) -> DonutItem? in
+            guard kv.value > 0 else { return nil }
             return DonutItem(
-                label: tc.name,
-                cost: Double(tokens),
+                label: kv.key,
+                cost: Double(kv.value),
                 pct: 0,
                 color: colors[i % colors.count])
         }
@@ -769,7 +800,7 @@ struct DashboardView: View {
         }
         let centerText = tokenShort(Int(clamping: Int64(totalTokens)))
         VStack(spacing: 6) {
-            Text("\(I18n.t("dashboard.by_tool")) \(centerText)")
+            Text("\(I18n.t("dashboard.by_repo")) \(centerText)")
                 .font(.caption).foregroundColor(.secondary)
             ZStack {
                 if !segments.isEmpty {
