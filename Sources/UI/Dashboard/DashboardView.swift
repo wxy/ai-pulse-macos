@@ -955,7 +955,7 @@ struct DashboardView: View {
             // ── Tool × model matrix ("mouth") ──
             if !matrixRows.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Grid(alignment: .trailing, horizontalSpacing: 0, verticalSpacing: 0) {
+                    Grid(alignment: .trailing, horizontalSpacing: 1, verticalSpacing: 1) {
                         GridRow {
                             Text(I18n.t("dashboard.by_tool_model"))
                                 .font(.caption2).bold().foregroundColor(.secondary)
@@ -997,6 +997,8 @@ struct DashboardView: View {
                             .padding(.vertical, 4)
                             .background(idx % 2 == 0 ? Color.clear : Color.secondary.opacity(0.04))
                         }
+                        // Total row participates in the zebra pattern (its shade
+                        // continues from the last data row).
                         GridRow {
                             Text(I18n.t("dashboard.total"))
                                 .font(.caption).bold()
@@ -1011,7 +1013,9 @@ struct DashboardView: View {
                                 .tableCell()
                         }
                         .padding(.vertical, 5)
-                        .background(Color.secondary.opacity(0.08))
+                        .background(modelNames.count % 2 == 0
+                                    ? Color.clear
+                                    : Color.secondary.opacity(0.04))
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -1831,11 +1835,13 @@ struct DashboardView: View {
 
 }
 
-/// Table cell style: full-width cell with a hairline border, so grids read as
-/// a normal table (borders + zebra), not a loose list.
+/// Table cell style: full-width cell with a hairline border and 2px inner
+/// padding; the 1px gap between cells comes from the Grid spacing, so every
+/// cell reads as a distinct box.
 private extension View {
     func tableCell(alignment: Alignment = .trailing) -> some View {
         frame(maxWidth: .infinity, alignment: alignment)
+            .padding(2)
             .overlay(
                 Rectangle()
                     .stroke(Color.secondary.opacity(0.12), lineWidth: 0.5)
