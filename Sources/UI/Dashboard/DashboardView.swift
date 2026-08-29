@@ -956,67 +956,59 @@ struct DashboardView: View {
             if !matrixRows.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Grid(alignment: .trailing, horizontalSpacing: 1, verticalSpacing: 1) {
-                        GridRow {
-                            Text(I18n.t("dashboard.by_tool_model"))
-                                .font(.caption2).bold().foregroundColor(.secondary)
-                                .tableCell(alignment: .leading)
-                            ForEach(toolIds, id: \.self) { t in
-                                Text(toolIdToDisplay(t) ?? t)
-                                    .font(.caption2).bold().foregroundColor(.secondary).lineLimit(1)
-                                    .tableCell(alignment: .leading)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { selectedToolForOverlay = t }
-                                    .pointingHandCursor()
-                            }
-                            Text(I18n.t("dashboard.total"))
-                                .font(.caption2).bold().foregroundColor(.secondary)
-                                .tableCell()
-                        }
-                        .padding(.vertical, 5)
-                        .background(Color.secondary.opacity(0.08))
-                        ForEach(Array(modelNames.enumerated()), id: \.element) { idx, m in
-                            GridRow {
-                                Text(m).font(.caption).lineLimit(1)
-                                    .tableCell(alignment: .leading)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        if let tool = matrixRows.first(where: { $0.model == m })?.toolId {
-                                            selectedToolForOverlay = tool
-                                        }
-                                    }
-                                    .pointingHandCursor()
-                                ForEach(toolIds, id: \.self) { t in
-                                    Text(tokenShort(Int(clamping: cellTokens(m, t))))
-                                        .font(.caption).monospacedDigit()
-                                        .tableCell()
-                                }
-                                Text(tokenShort(Int(clamping: modelTokens(m))))
-                                    .font(.caption).bold().monospacedDigit()
-                                    .tableCell()
-                            }
-                            .padding(.vertical, 4)
-                            .background(idx % 2 == 0 ? Color.clear : Color.secondary.opacity(0.04))
-                        }
-                        // Total row participates in the zebra pattern (its shade
-                        // continues from the last data row).
-                        GridRow {
-                            Text(I18n.t("dashboard.total"))
-                                .font(.caption).bold()
-                                .tableCell(alignment: .leading)
-                            ForEach(toolIds, id: \.self) { t in
-                                Text(tokenShort(Int(clamping: toolTokens(t))))
-                                    .font(.caption).bold().monospacedDigit()
-                                    .tableCell()
-                            }
-                            Text(tokenShort(Int(clamping: grandTotal)))
-                                .font(.caption).bold().monospacedDigit()
-                                .tableCell()
-                        }
-                        .padding(.vertical, 5)
-                        .background(modelNames.count % 2 == 0
-                                    ? Color.clear
-                                    : Color.secondary.opacity(0.04))
-                    }
+	                        GridRow {
+	                            Text(I18n.t("dashboard.by_tool_model"))
+	                                .font(.caption2).bold().foregroundColor(.secondary)
+	                                .dashboardTableCell(isHeader: true, alignment: .leading)
+	                            ForEach(toolIds, id: \.self) { t in
+	                                Text(toolIdToDisplay(t) ?? t)
+	                                    .font(.caption2).bold().foregroundColor(.secondary).lineLimit(1)
+	                                    .dashboardTableCell(isHeader: true, alignment: .leading)
+	                                    .contentShape(Rectangle())
+	                                    .onTapGesture { selectedToolForOverlay = t }
+	                                    .pointingHandCursor()
+	                            }
+	                            Text(I18n.t("dashboard.total"))
+	                                .font(.caption2).bold().foregroundColor(.secondary)
+	                                .dashboardTableCell(isHeader: true)
+	                        }
+	                        ForEach(Array(modelNames.enumerated()), id: \.element) { idx, m in
+	                            GridRow {
+	                                Text(m).font(.caption).lineLimit(1)
+	                                    .dashboardTableCell(rowIndex: idx, alignment: .leading)
+	                                    .contentShape(Rectangle())
+	                                    .onTapGesture {
+	                                        if let tool = matrixRows.first(where: { $0.model == m })?.toolId {
+	                                            selectedToolForOverlay = tool
+	                                        }
+	                                    }
+	                                    .pointingHandCursor()
+	                                ForEach(toolIds, id: \.self) { t in
+	                                    Text(tokenShort(Int(clamping: cellTokens(m, t))))
+	                                        .font(.caption).monospacedDigit()
+	                                        .dashboardTableCell(rowIndex: idx)
+	                                }
+	                                Text(tokenShort(Int(clamping: modelTokens(m))))
+	                                    .font(.caption).bold().monospacedDigit()
+	                                    .dashboardTableCell(rowIndex: idx)
+	                            }
+	                        }
+	                        // Total row participates in the zebra pattern (its shade
+	                        // continues from the last data row).
+	                        GridRow {
+	                            Text(I18n.t("dashboard.total"))
+	                                .font(.caption).bold()
+	                                .dashboardTableCell(rowIndex: modelNames.count, alignment: .leading)
+	                            ForEach(toolIds, id: \.self) { t in
+	                                Text(tokenShort(Int(clamping: toolTokens(t))))
+	                                    .font(.caption).bold().monospacedDigit()
+	                                    .dashboardTableCell(rowIndex: modelNames.count)
+	                            }
+	                            Text(tokenShort(Int(clamping: grandTotal)))
+	                                .font(.caption).bold().monospacedDigit()
+	                                .dashboardTableCell(rowIndex: modelNames.count)
+	                            }
+	                    }
                     .frame(maxWidth: .infinity)
                 }
                 .padding(12)
@@ -1049,25 +1041,39 @@ struct DashboardView: View {
             let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
             VStack(alignment: .leading, spacing: 6) {
                 Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-                Table(shown) {
-                    TableColumn(I18n.t("dashboard.repo")) { r in
-                        Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
+                Grid(alignment: .leading, horizontalSpacing: 1, verticalSpacing: 1) {
+                    GridRow {
+                        Text(I18n.t("dashboard.repo"))
+                            .font(.caption2).bold().foregroundColor(.secondary)
+                            .dashboardTableCell(isHeader: true, alignment: .leading)
+                        Text("Token")
+                            .font(.caption2).bold().foregroundColor(.secondary)
+                            .dashboardTableCell(isHeader: true)
+                        Text(I18n.t("dashboard.code_added"))
+                            .font(.caption2).bold().foregroundColor(.secondary)
+                            .dashboardTableCell(isHeader: true)
+                        Text(I18n.t("dashboard.code_deleted"))
+                            .font(.caption2).bold().foregroundColor(.secondary)
+                            .dashboardTableCell(isHeader: true)
                     }
-                    TableColumn("Token") { r in
-                        Text(tokenShort(Int(clamping: repoTokens[r.repo] ?? 0)))
-                            .font(.caption).monospacedDigit()
-                    }
-                    TableColumn(I18n.t("dashboard.code_added")) { r in
-                        Text("+\(r.added)")
-                            .font(.caption).monospacedDigit().foregroundColor(.marsGreen)
-                    }
-                    TableColumn(I18n.t("dashboard.code_deleted")) { r in
-                        Text("-\(r.deleted)")
-                            .font(.caption).monospacedDigit().foregroundColor(.red)
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { idx, r in
+                        GridRow {
+                            Text(r.repo)
+                                .font(.caption).fontWeight(.medium).lineLimit(1)
+                                .dashboardTableCell(rowIndex: idx, alignment: .leading)
+                            Text(tokenShort(Int(clamping: repoTokens[r.repo] ?? 0)))
+                                .font(.caption).monospacedDigit()
+                                .dashboardTableCell(rowIndex: idx)
+                            Text("+\(r.added)")
+                                .font(.caption).monospacedDigit().foregroundColor(.marsGreen)
+                                .dashboardTableCell(rowIndex: idx)
+                            Text("-\(r.deleted)")
+                                .font(.caption).monospacedDigit().foregroundColor(.red)
+                                .dashboardTableCell(rowIndex: idx)
+                        }
                     }
                 }
-                .alternatingRowBackgrounds()
-                .frame(height: 36 + CGFloat(shown.count) * 24)
+                .frame(maxWidth: .infinity)
                 if shownRepos.count > 5 {
                     Button(reposExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
                         withAnimation { reposExpanded.toggle() }
@@ -1835,16 +1841,27 @@ struct DashboardView: View {
 
 }
 
-/// Table cell style: full-width cell with a hairline border and 2px inner
-/// padding; the 1px gap between cells comes from the Grid spacing, so every
-/// cell reads as a distinct box.
+/// The one dashboard table cell style. Padding, row tint and hairline border
+/// are applied to the same cell frame. The 1px Grid spacing is only the gap
+/// between cells; it never becomes a second container around the cell.
 private extension View {
-    func tableCell(alignment: Alignment = .trailing) -> some View {
+    func dashboardTableCell(
+        rowIndex: Int? = nil,
+        isHeader: Bool = false,
+        alignment: Alignment = .trailing
+    ) -> some View {
         frame(maxWidth: .infinity, alignment: alignment)
             .padding(2)
+            .background(cellBackground(rowIndex: rowIndex, isHeader: isHeader))
             .overlay(
                 Rectangle()
                     .stroke(Color.secondary.opacity(0.12), lineWidth: 0.5)
             )
+    }
+
+    private func cellBackground(rowIndex: Int?, isHeader: Bool) -> Color {
+        if isHeader { return Color.secondary.opacity(0.08) }
+        guard let rowIndex else { return .clear }
+        return rowIndex.isMultiple(of: 2) ? .clear : Color.secondary.opacity(0.04)
     }
 }
