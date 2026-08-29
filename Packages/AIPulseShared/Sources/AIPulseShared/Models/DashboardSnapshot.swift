@@ -24,6 +24,17 @@ public struct DashboardSnapshot: Codable, Sendable {
     public var balanceDaily: [TrendPoint] = []
     public var remainingBalances: [RemainingBalanceItem] = []
     public var quotaStatus: [QuotaStatusItem] = []
+    /// Per-model usage/cost attribution (BYOK mixes live here). Optional so
+    /// older macOS writers can produce snapshots without this block.
+    public var modelBreakdown: [ModelCostItem] = []
+    /// Effective-price series for tools/models with attributable balance
+    /// sources (exclusive provider ownership). Empty when nothing is
+    /// attributable — clients show an explanatory placeholder instead.
+    public var rateSeries: [RateSeriesItem] = []
+    /// User-entered subscription cycle anchor. nil until configured.
+    public var subscriptionStart: Date?
+    /// Subscription cycle length in days (30/90/365). nil until configured.
+    public var subscriptionPeriodDays: Int?
 
     /// Per-tool conclusion summary + session list. Optional/empty when
     /// produced by an older macOS app; old clients ignore this field.
@@ -57,6 +68,10 @@ public struct DashboardSnapshot: Codable, Sendable {
         balanceDaily: [TrendPoint] = [],
         remainingBalances: [RemainingBalanceItem] = [],
         quotaStatus: [QuotaStatusItem] = [],
+        modelBreakdown: [ModelCostItem] = [],
+        rateSeries: [RateSeriesItem] = [],
+        subscriptionStart: Date? = nil,
+        subscriptionPeriodDays: Int? = nil,
         toolDetails: [ToolDetailItem] = [],
         payloadVersion: String? = nil,
         writerAppVersion: String? = nil,
@@ -80,6 +95,10 @@ public struct DashboardSnapshot: Codable, Sendable {
         self.balanceDaily = balanceDaily
         self.remainingBalances = remainingBalances
         self.quotaStatus = quotaStatus
+        self.modelBreakdown = modelBreakdown
+        self.rateSeries = rateSeries
+        self.subscriptionStart = subscriptionStart
+        self.subscriptionPeriodDays = subscriptionPeriodDays
         self.toolDetails = toolDetails
         self.payloadVersion = payloadVersion
         self.writerAppVersion = writerAppVersion
@@ -111,10 +130,17 @@ public struct DashboardSnapshot: Codable, Sendable {
         clean.todayTokens = Self.safeNonNegative(todayTokens)
 
         clean.providerBreakdown = providerBreakdown.map {
-            ProviderItem(providerId: $0.providerId, name: $0.name, cost: Self.safeNonNegative($0.cost))
+            ProviderItem(
+                providerId: $0.providerId,
+                name: $0.name,
+                cost: Self.safeNonNegative($0.cost),
+                sourceKind: $0.sourceKind)
         }
         clean.toolBreakdown = toolBreakdown.map {
-            NameCostItem(name: $0.name, cost: Self.safeNonNegative($0.cost))
+            NameCostItem(
+                name: $0.name,
+                cost: Self.safeNonNegative($0.cost),
+                tokens: $0.tokens.map(Self.safeNonNegative))
         }
         clean.topRepos = topRepos.map {
             RepoItem(
@@ -122,7 +148,8 @@ public struct DashboardSnapshot: Codable, Sendable {
                 cost: Self.safeNonNegative($0.cost),
                 added: Self.safeNonNegative($0.added),
                 deleted: Self.safeNonNegative($0.deleted),
-                cpl: Self.safeNonNegative($0.cpl))
+                cpl: Self.safeNonNegative($0.cpl),
+                tokens: $0.tokens.map(Self.safeNonNegative))
         }
         clean.prediction = prediction.map {
             PredictionItem(
@@ -148,6 +175,29 @@ public struct DashboardSnapshot: Codable, Sendable {
                 limitStatus: $0.limitStatus,
                 resetAt: Self.safeNonNegative($0.resetAt),
                 windowSeconds: Self.safeNonNegative($0.windowSeconds))
+        }
+        clean.modelBreakdown = modelBreakdown.map {
+            ModelCostItem(
+                model: $0.model,
+                providerId: $0.providerId,
+                tokens: Self.safeNonNegative($0.tokens),
+                calls: Self.safeNonNegative($0.calls),
+                cost: $0.cost.map { $0.isFinite && $0 >= 0 ? $0 : 0 },
+                costIsEstimate: $0.costIsEstimate)
+        }
+        clean.rateSeries = rateSeries.map { series in
+            RateSeriesItem(
+                toolId: series.toolId,
+                label: series.label,
+                points: series.points.map {
+                    RatePoint(
+                        ts: $0.ts.isFinite ? $0.ts : 0,
+                        tokens: Self.safeNonNegative($0.tokens),
+                        cost: Self.safeNonNegative($0.cost))
+                })
+        }
+        clean.subscriptionPeriodDays = subscriptionPeriodDays.flatMap {
+            $0 > 0 ? $0 : 30
         }
         clean.toolDetails = toolDetails.map { detail in
             let c = detail.conclusion
@@ -211,21 +261,28 @@ public struct ProviderItem: Codable, Sendable {
     public var providerId: String
     public var name: String
     public var cost: Double
+    /// `balance` (balance-API delta), `usage` (usage-type, no spend amount),
+    /// or `estimated` (token-price estimate). nil for legacy snapshots.
+    public var sourceKind: String?
 
-    public init(providerId: String, name: String, cost: Double) {
+    public init(providerId: String, name: String, cost: Double, sourceKind: String? = nil) {
         self.providerId = providerId
         self.name = name
         self.cost = cost
+        self.sourceKind = sourceKind
     }
 }
 
 public struct NameCostItem: Codable, Sendable {
     public var name: String
     public var cost: Double
+    /// Token usage attributed to this tool (JSONL fact). nil for legacy.
+    public var tokens: Int64?
 
-    public init(name: String, cost: Double) {
+    public init(name: String, cost: Double, tokens: Int64? = nil) {
         self.name = name
         self.cost = cost
+        self.tokens = tokens
     }
 }
 
@@ -235,13 +292,76 @@ public struct RepoItem: Codable, Sendable {
     public var added: Int
     public var deleted: Int
     public var cpl: Double
+    /// Token usage attributed to this repo (JSONL fact). nil for legacy.
+    public var tokens: Int64?
 
-    public init(name: String, cost: Double, added: Int, deleted: Int, cpl: Double) {
+    public init(name: String, cost: Double, added: Int, deleted: Int, cpl: Double, tokens: Int64? = nil) {
         self.name = name
         self.cost = cost
         self.added = added
         self.deleted = deleted
         self.cpl = cpl
+        self.tokens = tokens
+    }
+}
+
+/// Per-model usage/cost attribution, primarily for BYOK mixes where a tool
+/// runs third-party models (e.g. Claude Code on a DeepSeek key).
+public struct ModelCostItem: Codable, Sendable {
+    public var model: String
+    public var providerId: String
+    public var tokens: Int64
+    public var calls: Int
+    /// Spend attributable to this model; nil when the balance source is
+    /// shared/not attributable.
+    public var cost: Double?
+    /// True when `cost` is an estimate (token-price fallback) — UI shows "?".
+    public var costIsEstimate: Bool?
+
+    public init(
+        model: String,
+        providerId: String,
+        tokens: Int64,
+        calls: Int,
+        cost: Double? = nil,
+        costIsEstimate: Bool? = nil
+    ) {
+        self.model = model
+        self.providerId = providerId
+        self.tokens = tokens
+        self.calls = calls
+        self.cost = cost
+        self.costIsEstimate = costIsEstimate
+    }
+}
+
+/// One tool's effective-price series: daily balance delta ÷ daily tokens.
+/// Only populated for tools whose balance source is exclusively theirs, so
+/// both coordinates are facts.
+public struct RateSeriesItem: Codable, Sendable {
+    public var toolId: String
+    public var label: String
+    public var points: [RatePoint]
+
+    public init(toolId: String, label: String, points: [RatePoint]) {
+        self.toolId = toolId
+        self.label = label
+        self.points = points
+    }
+}
+
+public struct RatePoint: Codable, Sendable {
+    /// Day start (unix seconds).
+    public var ts: Double
+    /// Tokens logged that day (fact).
+    public var tokens: Int64
+    /// Balance delta that day (fact, attributable series only).
+    public var cost: Double
+
+    public init(ts: Double, tokens: Int64, cost: Double) {
+        self.ts = ts
+        self.tokens = tokens
+        self.cost = cost
     }
 }
 

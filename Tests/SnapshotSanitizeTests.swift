@@ -87,4 +87,33 @@ final class SnapshotSanitizeTests: XCTestCase {
         XCTAssertEqual(clean.toolDetails[0].sessions[0].avgCacheRatio ?? -1, 0.5)
         XCTAssertEqual(clean.toolDetails[0].sessions[0].compactionCount, 0)
     }
+
+    func testSanitizesNewTrustedDataFields() {
+        var snap = DashboardSnapshot()
+        snap.modelBreakdown = [ModelCostItem(
+            model: "deepseek-v4-pro", providerId: "deepseek",
+            tokens: -5, calls: -2, cost: .nan, costIsEstimate: nil)]
+        snap.rateSeries = [RateSeriesItem(
+            toolId: "claude-code", label: "Claude Code",
+            points: [RatePoint(ts: .nan, tokens: -1, cost: -.infinity)])]
+        snap.subscriptionStart = Date()
+        snap.subscriptionPeriodDays = -30
+        snap.toolBreakdown = [NameCostItem(name: "ChatGPT", cost: 1, tokens: -7)]
+        snap.topRepos = [RepoItem(name: "r", cost: 1, added: 1, deleted: 1, cpl: 1, tokens: -3)]
+        snap.providerBreakdown = [ProviderItem(
+            providerId: "deepseek", name: "DeepSeek", cost: 1, sourceKind: "balance")]
+
+        let clean = snap.sanitized()
+
+        XCTAssertEqual(clean.modelBreakdown[0].tokens, 0)
+        XCTAssertEqual(clean.modelBreakdown[0].calls, 0)
+        XCTAssertEqual(clean.modelBreakdown[0].cost ?? -1, 0)
+        XCTAssertEqual(clean.rateSeries[0].points[0].ts, 0)
+        XCTAssertEqual(clean.rateSeries[0].points[0].tokens, 0)
+        XCTAssertEqual(clean.rateSeries[0].points[0].cost, 0)
+        XCTAssertEqual(clean.subscriptionPeriodDays, 30)
+        XCTAssertEqual(clean.toolBreakdown[0].tokens, 0)
+        XCTAssertEqual(clean.topRepos[0].tokens, 0)
+        XCTAssertEqual(clean.providerBreakdown[0].sourceKind, "balance")
+    }
 }
