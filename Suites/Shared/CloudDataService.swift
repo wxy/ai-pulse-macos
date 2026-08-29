@@ -56,9 +56,11 @@ final class CloudDataService: ObservableObject {
     private func loadLocalCache() {
         guard let data = try? Data(contentsOf: localCacheURL),
               let dict = try? JSONDecoder().decode([String: DashboardSnapshot].self, from: data) else { return }
-        self.snapshots = dict
+        // A cache written by a buggy macOS build may still contain poisoned
+        // values; sanitize on every read so old data can never reach the UI.
+        self.snapshots = dict.mapValues { $0.sanitized() }
         // Default to today on first load (caller should call loadSnapshot(for:) afterward)
-        if let today = dict["today"] { self.snapshot = today }
+        if let today = self.snapshots["today"] { self.snapshot = today }
         log.info("loaded local cache: \(dict.keys.joined(separator: ", "))")
     }
 
@@ -159,7 +161,7 @@ final class CloudDataService: ObservableObject {
                 // Store today's snapshot independently (with CK updatedAt timestamp)
                 var stored = snap
                 if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
-                self.snapshots["today"] = stored
+                self.snapshots["today"] = stored.sanitized()
                 if self.snapshot == nil { self.loadSnapshot(for: "today") }
                 self.saveLocalCache()
                 // DashboardView.onAppear fires a fetchSnapshot("today") right
@@ -259,7 +261,7 @@ final class CloudDataService: ObservableObject {
             self.log.info("fetchAndStore(\(range)): today=\(snap.todayCost) week=\(snap.weekCost) month=\(snap.monthCost)")
             var stored = snap
             if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
-            self.snapshots[range] = stored
+            self.snapshots[range] = stored.sanitized()
             self.saveLocalCache()
         }
     }

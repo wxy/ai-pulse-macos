@@ -107,12 +107,12 @@ enum SessionStats {
     static let noRepoKey = "（无仓库）"
 
     static func deltaPct(current: Double, previous: Double) -> Double {
-        guard previous > 0 else { return 0 }
+        guard current.isFinite, previous.isFinite, previous > 0 else { return 0 }
         return (current - previous) / previous * 100
     }
 
     static func projectMonth(spendSoFar: Double, daysElapsed: Int, daysInMonth: Int) -> Double {
-        guard daysElapsed > 0 else { return 0 }
+        guard spendSoFar.isFinite, daysElapsed > 0 else { return 0 }
         return spendSoFar / Double(daysElapsed) * Double(daysInMonth)
     }
 
@@ -165,7 +165,10 @@ enum SessionStats {
         var m = SessionMetrics()
         m.turnCount = turns.count
         if let window = windowTokens, window > 0, !turns.isEmpty {
-            m.avgOccupancy = turns.reduce(0.0) { $0 + Double($1.contextTokens) } / Double(turns.count * window)
+            // Multiply in Double so extreme window sizes can never overflow Int.
+            let denominator = Double(turns.count) * Double(window)
+            guard denominator > 0 else { return m }
+            m.avgOccupancy = turns.reduce(0.0) { $0 + Double($1.contextTokens) } / denominator
         }
         let ratios = turns
             .filter { $0.contextTokens > 0 }

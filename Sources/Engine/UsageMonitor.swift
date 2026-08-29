@@ -46,7 +46,9 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
             return
         }
 
-        let usagePercent = max(status.utilization5h, status.utilization7d) * 100
+        // Clamp to 0-100 at ingestion: a corrupt status cache must never
+        // poison quota rendering or chart geometry downstream.
+        let usagePercent = min(max(max(status.utilization5h, status.utilization7d) * 100, 0), 100)
         // Store the reset time of whichever window is more utilized, so the
         // HUD's "distance to reset" matches the displayed utilization.
         let use7d = status.utilization7d > status.utilization5h
@@ -114,7 +116,8 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
               let percentRemaining = premium["percent_remaining"] as? Double
         else { return nil }
         let overageCount = (premium["overage_count"] as? Int) ?? Int(premium["overage_count"] as? Double ?? 0)
-        let usedPercent = 100 - percentRemaining
+        // Clamp: some proxies report percent_remaining outside 0-100.
+        let usedPercent = min(max(100 - percentRemaining, 0), 100)
 
         var resetAt: Double = 0
         if let iso = json["quota_reset_date"] as? String,

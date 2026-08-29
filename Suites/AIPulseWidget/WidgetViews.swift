@@ -26,15 +26,15 @@ struct AIPulseWidgetEntryView: View {
 
     private var dailyRate: Double { max(entry.dailyRate, 0.01) }
     private var weeklyAvg: Double { dailyRate * 7 }
-    private var todayPct: Double { entry.todayCost / dailyRate }
-    private var todayLaps: Int { Int(todayPct) }
-    private var weekPct: Double { entry.weekCost / weeklyAvg }
+    private var todayPct: Double { ChartMath.ratio(entry.todayCost, denominator: dailyRate, fallback: 0) }
+    private var todayLaps: Int { ChartMath.safeInt(todayPct) }
+    private var weekPct: Double { ChartMath.ratio(entry.weekCost, denominator: weeklyAvg, fallback: 0) }
     private var monthPct: Double {
         guard entry.monthProjected > 0.001 else { return 0 }
-        return min(entry.monthSoFar / entry.monthProjected, 1.0)
+        return ChartMath.unit(entry.monthSoFar / entry.monthProjected)
     }
     private var yesterdayDelta: Double {
-        entry.yesterdaySpend > 0.001 ? (entry.todayCost - entry.yesterdaySpend) / entry.yesterdaySpend : 0
+        ChartMath.percentageDelta(current: entry.todayCost, previous: entry.yesterdaySpend, fallback: 0)
     }
 
     // MARK: - systemSmall
@@ -60,7 +60,9 @@ struct AIPulseWidgetEntryView: View {
                 }
                 .overlay(alignment: .bottomLeading) {
                     if entry.yesterdaySpend > 0.001 {
-                        let badge = yesterdayDelta > 0 ? "↑" + Int(yesterdayDelta * 100).formatted(.percent) : "↓" + Int(-yesterdayDelta * 100).formatted(.percent)
+                        let badge = yesterdayDelta > 0
+                            ? "↑" + ChartMath.safeInt(yesterdayDelta * 100).formatted(.percent)
+                            : "↓" + ChartMath.safeInt(-yesterdayDelta * 100).formatted(.percent)
 Text(verbatim: badge)
                             .font(.system(size: 8, weight: .medium, design: .rounded))
                             .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen)
@@ -159,7 +161,9 @@ Text(verbatim: badge)
                         HStack {
                             Circle().fill(yesterdayDelta > 0 ? Color.deepRed : Color.marsGreen).frame(width: 6, height: 6)
                             Text(I18n.t("dashboard.vs_yesterday")).font(.caption2)
-                            let badge = yesterdayDelta > 0 ? "↑" + Int(yesterdayDelta * 100).formatted(.percent) : "↓" + Int(-yesterdayDelta * 100).formatted(.percent)
+                            let badge = yesterdayDelta > 0
+                                ? "↑" + ChartMath.safeInt(yesterdayDelta * 100).formatted(.percent)
+                                : "↓" + ChartMath.safeInt(-yesterdayDelta * 100).formatted(.percent)
 Text(verbatim: badge)
                                 .font(.caption2).fontWeight(.semibold).monospacedDigit()
                         }

@@ -113,6 +113,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         timersSuspended = true
         cancelAllTimers()
         Logger.debug("DataRefreshCoordinator: timers suspended (system sleeping)")
+        DiagnosticJournal.log("sleep", ["timers_suspended": .bool(true)])
     }
 
     private func resumeTimers() {
@@ -120,6 +121,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         timersSuspended = false
         recreateTimers()
         Logger.info("DataRefreshCoordinator: timers resumed (system woke)")
+        DiagnosticJournal.log("wake", ["timers_resumed": .bool(true)])
     }
 
     private func cancelAllTimers() {
@@ -206,8 +208,8 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
                 ("today", 1, 300), ("week", 7, 3600), ("30d", 30, 43200)
             ]
             // Compute actual weekDays
-                        let sTodayStart = Calendar.current.startOfDay(for: Date())
-            let weekDays = Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: sTodayStart).day! + 1
+            let sTodayStart = Calendar.current.startOfDay(for: Date())
+            let weekDays = max((Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: sTodayStart).day ?? 0) + 1, 1)
             let dayMap: [String: Int] = ["today": 1, "week": weekDays, "30d": 30]
 
             for (key, _, interval) in intervals {
@@ -244,6 +246,9 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     /// minutes while This Week keeps showing the pre-poll snapshot for up to
     /// an hour. Drop the caches so the next load recomputes from the new row.
     func notifyPhaseBalance() {
+        DiagnosticJournal.log("cache_invalidate", [
+            "reason": .string("balance_snapshot"),
+        ])
         Task { await DashboardCache.invalidateAll() }
         DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify(playSound: true) } }
     }

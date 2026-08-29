@@ -20,7 +20,18 @@ struct DashboardCache {
             }
         } catch {
             Logger.warning("Dashboard: cache write failed — \(error.localizedDescription)")
+            DiagnosticJournal.log("cache_write", [
+                "range": .string(timeRange),
+                "outcome": .string("failed"),
+                "error": .string(error.localizedDescription),
+            ])
+            return
         }
+        DiagnosticJournal.log("cache_write", [
+            "range": .string(timeRange),
+            "outcome": .string("ok"),
+            "bytes": .int(json.utf8.count),
+        ])
     }
 
     /// Removes all cached snapshots.
@@ -37,7 +48,17 @@ struct DashboardCache {
             }
         } catch {
             Logger.warning("Dashboard: cache invalidation failed — \(error.localizedDescription)")
+            DiagnosticJournal.log("cache_invalidate", [
+                "reason": .string("all"),
+                "outcome": .string("failed"),
+                "error": .string(error.localizedDescription),
+            ])
+            return
         }
+        DiagnosticJournal.log("cache_invalidate", [
+            "reason": .string("all"),
+            "outcome": .string("ok"),
+        ])
     }
 
     static func read(timeRange: String, maxAge: TimeInterval = 30) async -> DashboardSnapshot? {
@@ -51,16 +72,43 @@ struct DashboardCache {
                 else { return nil }
                 return (json, updatedAt)
             }
-            guard let cached,
-                  -cached.updatedAt.timeIntervalSinceNow < maxAge
-            else { return nil }
-            let json = cached.json
+            guard let cached else {
+                DiagnosticJournal.log("cache_read", [
+                    "range": .string(timeRange), "outcome": .string("miss"),
+                ])
+                return nil
+            }
+
+            let age = -cached.updatedAt.timeIntervalSinceNow
+            guard age < maxAge else {
+                DiagnosticJournal.log("cache_read", [
+                    "range": .string(timeRange), "outcome": .string("expired"),
+                    "age_seconds": .double(age.isFinite ? age : 0),
+                ])
+                return nil
+            }
+
             guard
-                  let data = json.data(using: .utf8),
+                  let data = cached.json.data(using: .utf8),
                   let snap = try? JSONDecoder().decode(DashboardSnapshot.self, from: data)
-            else { return nil }
+            else {
+                DiagnosticJournal.log("cache_read", [
+                    "range": .string(timeRange), "outcome": .string("decode_failed"),
+                    "age_seconds": .double(age.isFinite ? age : 0),
+                ])
+                return nil
+            }
+
+            DiagnosticJournal.log("cache_read", [
+                "range": .string(timeRange), "outcome": .string("hit"),
+                "age_seconds": .double(age.isFinite ? age : 0),
+            ])
             return snap
         } catch {
+            DiagnosticJournal.log("cache_read", [
+                "range": .string(timeRange), "outcome": .string("failed"),
+                "error": .string(error.localizedDescription),
+            ])
             return nil
         }
     }

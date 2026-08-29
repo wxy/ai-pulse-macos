@@ -90,6 +90,121 @@ public struct DashboardSnapshot: Codable, Sendable {
         guard let data = try? JSONEncoder().encode(self) else { return "{}" }
         return String(data: data, encoding: .utf8) ?? "{}"
     }
+
+    /// Coerces every numeric field into a finite, non-negative value.
+    ///
+    /// Charts and SwiftUI layout can trap on NaN/Inf (and macOS Charts can
+    /// recurse on degenerate zero-angle geometry), and negative spend/counts
+    /// render as inverted bars. Call this at every trust boundary: after
+    /// decoding from CloudKit/cache, before persisting a snapshot, and before
+    /// feeding values into SwiftUI state. Delta percentages keep their sign;
+    /// only non-finite values become zero.
+    public func sanitized() -> DashboardSnapshot {
+        var clean = self
+        clean.todayCost = Self.safeNonNegative(todayCost)
+        clean.weekCost = Self.safeNonNegative(weekCost)
+        clean.monthCost = Self.safeNonNegative(monthCost)
+        clean.yesterdaySpend = Self.safeNonNegative(yesterdaySpend)
+        clean.previousPeriodSpend = Self.safeNonNegative(previousPeriodSpend)
+        clean.subDaily = Self.safeNonNegative(subDaily)
+        clean.todayCalls = Self.safeNonNegative(todayCalls)
+        clean.todayTokens = Self.safeNonNegative(todayTokens)
+
+        clean.providerBreakdown = providerBreakdown.map {
+            ProviderItem(providerId: $0.providerId, name: $0.name, cost: Self.safeNonNegative($0.cost))
+        }
+        clean.toolBreakdown = toolBreakdown.map {
+            NameCostItem(name: $0.name, cost: Self.safeNonNegative($0.cost))
+        }
+        clean.topRepos = topRepos.map {
+            RepoItem(
+                name: $0.name,
+                cost: Self.safeNonNegative($0.cost),
+                added: Self.safeNonNegative($0.added),
+                deleted: Self.safeNonNegative($0.deleted),
+                cpl: Self.safeNonNegative($0.cpl))
+        }
+        clean.prediction = prediction.map {
+            PredictionItem(
+                monthProjected: Self.safeNonNegative($0.monthProjected),
+                dailyRate: Self.safeNonNegative($0.dailyRate),
+                daysRemaining: Self.safeNonNegative($0.daysRemaining),
+                monthSoFar: Self.safeNonNegative($0.monthSoFar))
+        }
+        clean.dailyStats = dailyStats.map(Self.sanitizedTrendPoint)
+        clean.codeChanges = codeChanges.map(Self.sanitizedTrendPoint)
+        clean.balanceDaily = balanceDaily.map(Self.sanitizedTrendPoint)
+        clean.remainingBalances = remainingBalances.map {
+            RemainingBalanceItem(
+                providerId: $0.providerId,
+                displayName: $0.displayName,
+                balance: Self.safeNonNegative($0.balance),
+                currency: $0.currency)
+        }
+        clean.quotaStatus = quotaStatus.map {
+            QuotaStatusItem(
+                toolId: $0.toolId,
+                utilization: Self.safeNonNegative($0.utilization),
+                limitStatus: $0.limitStatus,
+                resetAt: Self.safeNonNegative($0.resetAt),
+                windowSeconds: Self.safeNonNegative($0.windowSeconds))
+        }
+        clean.toolDetails = toolDetails.map { detail in
+            let c = detail.conclusion
+            let cleanConclusion = ToolConclusionItem(
+                spend: Self.safeNonNegative(c.spend),
+                previousSpend: Self.safeNonNegative(c.previousSpend),
+                deltaPct: c.deltaPct.isFinite ? c.deltaPct : 0,
+                projectedMonth: Self.safeNonNegative(c.projectedMonth),
+                sessionCount: Self.safeNonNegative(c.sessionCount),
+                commitCount: Self.safeNonNegative(c.commitCount),
+                addedLines: Self.safeNonNegative(c.addedLines),
+                deletedLines: Self.safeNonNegative(c.deletedLines),
+                avgCostPerSession: Self.safeNonNegative(c.avgCostPerSession),
+                cpl: Self.safeNonNegative(c.cpl),
+                crossToolDeltaPct: c.crossToolDeltaPct.map { $0.isFinite ? $0 : 0 })
+            let cleanSessions = detail.sessions.map { s in
+                ToolSessionItem(
+                    sessionId: s.sessionId,
+                    title: s.title,
+                    repo: s.repo,
+                    firstTs: Self.safeNonNegative(s.firstTs),
+                    lastTs: Self.safeNonNegative(s.lastTs),
+                    cost: Self.safeNonNegative(s.cost),
+                    windowTokens: s.windowTokens.map(Self.safeNonNegative),
+                    lastInput: Self.safeNonNegative(s.lastInput),
+                    turnCount: Self.safeNonNegative(s.turnCount),
+                    avgOccupancy: s.avgOccupancy.map { $0.isFinite ? $0 : 0 },
+                    avgCacheRatio: s.avgCacheRatio.map { $0.isFinite ? $0 : 0 },
+                    compactionCount: Self.safeNonNegative(s.compactionCount))
+            }
+            return ToolDetailItem(source: detail.source, conclusion: cleanConclusion, sessions: cleanSessions)
+        }
+        return clean
+    }
+
+    private static func sanitizedTrendPoint(_ p: TrendPoint) -> TrendPoint {
+        TrendPoint(
+            ts: p.ts.isFinite ? p.ts : 0,
+            value: Self.safeNonNegative(p.value),
+            calls: Self.safeNonNegative(p.calls),
+            tokens: Self.safeNonNegative(p.tokens),
+            netLines: Self.safeNonNegative(p.netLines),
+            added: Self.safeNonNegative(p.added),
+            deleted: Self.safeNonNegative(p.deleted))
+    }
+
+    private static func safeNonNegative(_ v: Double) -> Double {
+        v.isFinite && v >= 0 ? v : 0
+    }
+
+    private static func safeNonNegative(_ v: Int64) -> Int64 {
+        v >= 0 ? v : 0
+    }
+
+    private static func safeNonNegative(_ v: Int) -> Int {
+        v >= 0 ? v : 0
+    }
 }
 
 public struct ProviderItem: Codable, Sendable {

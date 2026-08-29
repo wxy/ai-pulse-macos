@@ -229,7 +229,8 @@ enum DemoData {
         case .thisWeek:
             cutoffDate = Calendar.mondayOfWeek()
         case .days30:
-            cutoffDate = cal.date(byAdding: .day, value: -29, to: cal.startOfDay(for: Date()))!
+            cutoffDate = cal.date(byAdding: .day, value: -29, to: cal.startOfDay(for: Date()))
+                ?? cal.startOfDay(for: Date())
         }
 
         let fStats = dailyStats.filter { $0.date >= cutoffDate }

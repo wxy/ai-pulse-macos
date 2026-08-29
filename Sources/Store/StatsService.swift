@@ -316,7 +316,7 @@ enum StatsService {
         let daysRemaining = totalDays - daysElapsed
 
         // Rolling 30-day window for stable daily rate
-        let rollingStart = cal.date(byAdding: .day, value: -29, to: todayStart)!
+        let rollingStart = cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
         let rollingMs = Int64(rollingStart.timeIntervalSince1970 * 1000)
         let monthMs = Int64(monthStart.timeIntervalSince1970 * 1000)
 
@@ -601,21 +601,21 @@ enum StatsService {
     static func dashboardSnapshot(days: Int) async -> DashboardSnapshot {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
-        let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart)!
+        let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) ?? todayStart
         let rangeStartMs = Int64(rangeStart.timeIntervalSince1970 * 1000)
         let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
         // 30-day window + 14d lookback for correct balance delta computation.
-        let monthStart = cal.date(byAdding: .day, value: -29, to: todayStart)!
+        let monthStart = cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
         let monthStartMs = Int64(monthStart.timeIntervalSince1970 * 1000)
-        let lookbackStart = cal.date(byAdding: .day, value: -14, to: monthStart)!
+        let lookbackStart = cal.date(byAdding: .day, value: -14, to: monthStart) ?? monthStart
         let lookbackStartMs = Int64(lookbackStart.timeIntervalSince1970 * 1000)
 
         // Monday of this week (for unified week cost)
         let mondayStartMs = Int64(Calendar.mondayOfWeek().timeIntervalSince1970 * 1000)
-        let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart)!
+        let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
         let yesterdayStartMs = Int64(yesterdayStart.timeIntervalSince1970 * 1000)
         // Previous 30-day window for period-over-period comparison
-        let prevPeriodStart = cal.date(byAdding: .day, value: -30, to: todayStart)!
+        let prevPeriodStart = cal.date(byAdding: .day, value: -30, to: todayStart) ?? todayStart
 
         //
         // ── Unified cost computation: all three ranges use combinedSpend ──
@@ -686,20 +686,25 @@ enum StatsService {
         let subTotalAll = subAmort * Double(days)
         let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
         let rawTools = toolMap.compactMap { (key, cost) -> (String, Double)? in
-            guard cost * scale > 0.001 else { return nil }
+            let scaled = ChartMath.finite(cost * scale, fallback: 0)
+            guard scaled > 0.001 else { return nil }
             let label = IntegrationRegistry.toolDisplayName(for: key)
-            return (label, cost * scale)
+            return (label, scaled)
         }.sorted { $0.1 > $1.1 }
         let toolCosts: [NameCostItem] = rawTools.map { NameCostItem(name: $0.0, cost: $0.1) }
 
         // Repos with subscription scaling
         let logTotal = rp.reduce(0.0) { $0 + $1.cost }
-        let repoScale = toolTotal > 0 ? apiSpend / logTotal : 1.0
+        // Guard the denominator: usage rows can carry a tool source without
+        // any repo attribution, leaving logTotal == 0 while toolTotal > 0.
+        // Dividing then yields +Inf and poisons every RepoItem cost.
+        let repoScale = logTotal > 0 && toolTotal > 0 ? apiSpend / logTotal : 1.0
         let subScale = logTotal > 0 ? subTotalAll / logTotal : 0.0
         let repoItems: [RepoItem] = rp.map { r in
-            let scaledCost = r.cost * repoScale + r.cost * subScale
+            let scaledCost = ChartMath.finite(r.cost * repoScale + r.cost * subScale, fallback: 0)
+            let totalChanges = Int64(r.added) + Int64(r.deleted)
             return RepoItem(name: r.repo, cost: scaledCost, added: r.added, deleted: r.deleted,
-                            cpl: (r.added + r.deleted) > 0 ? scaledCost * 1000 / Double(r.added + r.deleted) : 0)
+                            cpl: totalChanges > 0 ? scaledCost * 1000 / Double(totalChanges) : 0)
         }
 
         // Daily/balance trend points
@@ -723,7 +728,10 @@ enum StatsService {
         snap.toolDetails = detailItems
         snap.payloadVersion = CKSchema.payloadVersion
         snap.writerAppVersion = CKSchema.writerAppVersion
-        return snap
+        // Sanitize at the source so every downstream consumer — local cache,
+        // CloudKit sync, iOS/watchOS/widget decoders — can only ever receive
+        // finite, non-negative values.
+        return snap.sanitized()
     }
 
     // MARK: - Tool detail (conclusion card + session explorer)

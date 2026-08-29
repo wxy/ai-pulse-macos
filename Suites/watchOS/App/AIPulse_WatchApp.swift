@@ -25,15 +25,15 @@ struct SpendView: View {
     private var snap: DashboardSnapshot { cloudData.snapshot ?? DashboardSnapshot() }
     private var dailyRate: Double { max(snap.prediction?.dailyRate ?? 20, 0.01) }
     private var weeklyAvg: Double { dailyRate * 7 }
-    private var todayPct: Double { snap.todayCost / dailyRate }
-    private var todayLaps: Int { Int(todayPct) }
-    private var weekPct: Double { snap.weekCost / weeklyAvg }
+    private var todayPct: Double { ChartMath.ratio(snap.todayCost, denominator: dailyRate, fallback: 0) }
+    private var todayLaps: Int { ChartMath.safeInt(todayPct) }
+    private var weekPct: Double { ChartMath.ratio(snap.weekCost, denominator: weeklyAvg, fallback: 0) }
     private var monthPct: Double {
         guard let p = snap.prediction, p.monthProjected > 0.001 else { return 0 }
-        return min(p.monthSoFar / p.monthProjected, 1.0)
+        return ChartMath.unit(p.monthSoFar / p.monthProjected)
     }
     private var yesterdayDelta: Double {
-        snap.yesterdaySpend > 0.001 ? (snap.todayCost - snap.yesterdaySpend) / snap.yesterdaySpend : 0
+        ChartMath.percentageDelta(current: snap.todayCost, previous: snap.yesterdaySpend, fallback: 0)
     }
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -107,7 +107,9 @@ struct SpendView: View {
     @ViewBuilder
     private var deltaLabel: some View {
         if snap.yesterdaySpend > 0.001 {
-            let badge = yesterdayDelta > 0 ? "↑" + Int(yesterdayDelta * 100).formatted(.percent) : "↓" + Int(-yesterdayDelta * 100).formatted(.percent)
+            let badge = yesterdayDelta > 0
+                ? "↑" + ChartMath.safeInt(yesterdayDelta * 100).formatted(.percent)
+                : "↓" + ChartMath.safeInt(-yesterdayDelta * 100).formatted(.percent)
             Text(verbatim: badge)
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen)

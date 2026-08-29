@@ -63,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Sync active CostSources to database for StatsService queries
         CostSource.syncToDatabase(IntegrationRegistry.activeCostSources())
         Logger.debug("integrations started, costSources synced")
+        DiagnosticJournal.log("app_launch", [
+            "integrations": .int(IntegrationRegistry.all.count),
+            "active_cost_sources": .int(IntegrationRegistry.activeCostSources().count),
+        ])
         // Git/repo + Claude log monitoring is independent of which integrations are
         // enabled: it must run whenever the user has authorized repo directories or
         // ~/.claude. LogWatcher.start() is safe to call again (idempotent scans).
