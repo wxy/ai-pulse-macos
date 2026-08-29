@@ -67,4 +67,21 @@ final class PricingCatalogTests: XCTestCase {
         XCTAssertNotNil(cost1); XCTAssertNotNil(cost2)
         XCTAssertEqual(cost2!, cost1! * 2.0, accuracy: 0.001)
     }
+
+    func testCostUSDWithCacheTokensExceedingInputBillsOnlyCache() {
+        // Cache tokens may exceed input tokens in corrupt logs; the non-cached
+        // portion must clamp to zero instead of going negative.
+        let cost = PricingManager.shared.costUSD(model: "deepseek-v4-pro", inTokens: 1_000, outTokens: 0, cacheTokens: 2_000)
+        XCTAssertNotNil(cost)
+        XCTAssertEqual(cost ?? -1, Double(2_000) / 1_000_000 * 0.0035, accuracy: 0.0001)
+    }
+
+    func testCostUSDWithHugeCacheTokensDoesNotTrap() {
+        // The old `inTokens - cacheTokens` subtraction can trap when the token
+        // fields are extreme. The subtraction must be overflow-safe.
+        let cost = PricingManager.shared.costUSD(model: "deepseek-v4-pro", inTokens: .max, outTokens: 0, cacheTokens: -1)
+        XCTAssertNotNil(cost)
+        XCTAssertTrue(cost!.isFinite)
+        XCTAssertGreaterThan(cost!, 0)
+    }
 }

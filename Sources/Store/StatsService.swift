@@ -686,20 +686,25 @@ enum StatsService {
         let subTotalAll = subAmort * Double(days)
         let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
         let rawTools = toolMap.compactMap { (key, cost) -> (String, Double)? in
-            guard cost * scale > 0.001 else { return nil }
+            let scaled = ChartMath.finite(cost * scale, fallback: 0)
+            guard scaled > 0.001 else { return nil }
             let label = IntegrationRegistry.toolDisplayName(for: key)
-            return (label, cost * scale)
+            return (label, scaled)
         }.sorted { $0.1 > $1.1 }
         let toolCosts: [NameCostItem] = rawTools.map { NameCostItem(name: $0.0, cost: $0.1) }
 
         // Repos with subscription scaling
         let logTotal = rp.reduce(0.0) { $0 + $1.cost }
-        let repoScale = toolTotal > 0 ? apiSpend / logTotal : 1.0
+        // Guard the denominator: usage rows can carry a tool source without
+        // any repo attribution, leaving logTotal == 0 while toolTotal > 0.
+        // Dividing then yields +Inf and poisons every RepoItem cost.
+        let repoScale = logTotal > 0 && toolTotal > 0 ? apiSpend / logTotal : 1.0
         let subScale = logTotal > 0 ? subTotalAll / logTotal : 0.0
         let repoItems: [RepoItem] = rp.map { r in
-            let scaledCost = r.cost * repoScale + r.cost * subScale
+            let scaledCost = ChartMath.finite(r.cost * repoScale + r.cost * subScale, fallback: 0)
+            let totalChanges = Int64(r.added) + Int64(r.deleted)
             return RepoItem(name: r.repo, cost: scaledCost, added: r.added, deleted: r.deleted,
-                            cpl: (r.added + r.deleted) > 0 ? scaledCost * 1000 / Double(r.added + r.deleted) : 0)
+                            cpl: totalChanges > 0 ? scaledCost * 1000 / Double(totalChanges) : 0)
         }
 
         // Daily/balance trend points

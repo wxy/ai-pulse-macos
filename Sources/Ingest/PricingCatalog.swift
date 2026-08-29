@@ -92,7 +92,10 @@ final class PricingManager: @unchecked Sendable {
         // Qwen `cached`). The cache portion must not also be billed at the full
         // input price, otherwise context-heavy sessions get ~100x overcharged
         // for providers like DeepSeek where cache price ≪ input price.
-        let nonCachedIn = max(0, inTokens - cacheTokens)
+        // Overflow-safe: cacheTokens may exceed inTokens or be negative in
+        // corrupt logs. Clamp both sides before subtracting in Int64 space.
+        let safeCache = Int64(max(cacheTokens, 0))
+        let nonCachedIn = max(0, Int64(inTokens) - safeCache)
         let inCost = Double(nonCachedIn) / 1_000_000 * p.inPricePerMtok
         let outCost = Double(outTokens) / 1_000_000 * p.outPricePerMtok
         let cacheCost = Double(cacheTokens) / 1_000_000 * p.cachePricePerMtok

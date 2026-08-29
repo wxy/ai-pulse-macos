@@ -8,8 +8,20 @@ final class SessionStatsTests: XCTestCase {
         XCTAssertEqual(SessionStats.deltaPct(current: 5, previous: 0), 0)
     }
 
+    func testDeltaPctRejectsNonFiniteInputs() {
+        XCTAssertEqual(SessionStats.deltaPct(current: .nan, previous: 100), 0)
+        XCTAssertEqual(SessionStats.deltaPct(current: .infinity, previous: 100), 0)
+        XCTAssertEqual(SessionStats.deltaPct(current: 100, previous: .infinity), 0)
+        XCTAssertEqual(SessionStats.deltaPct(current: -.infinity, previous: -5), 0)
+    }
+
     func testProjectMonth() {
         XCTAssertEqual(SessionStats.projectMonth(spendSoFar: 30, daysElapsed: 10, daysInMonth: 30), 90, accuracy: 0.001)
+    }
+
+    func testProjectMonthRejectsNonFiniteSpend() {
+        XCTAssertEqual(SessionStats.projectMonth(spendSoFar: .nan, daysElapsed: 10, daysInMonth: 30), 0)
+        XCTAssertEqual(SessionStats.projectMonth(spendSoFar: 30, daysElapsed: 0, daysInMonth: 30), 0)
     }
 
     func testGroupSessionsSortsByCostDesc() {
@@ -86,6 +98,17 @@ final class SessionStatsTests: XCTestCase {
         XCTAssertNil(m.avgOccupancy)
         XCTAssertNil(m.avgCacheRatio)
         XCTAssertEqual(m.compactionCount, 0)
+    }
+
+    func testMetricsDoesNotOverflowWithHugeWindow() {
+        let turns = [
+            TurnPoint(index: 0, ts: 1, inputTokens: 10, cacheTokens: 0, outTokens: 0, cost: 0, contextTokens: 10),
+            TurnPoint(index: 1, ts: 2, inputTokens: 10, cacheTokens: 0, outTokens: 0, cost: 0, contextTokens: 10),
+        ]
+        // Int.max * turnCount previously overflowed (and trapped) before the
+        // Double-based denominator fix.
+        let m = SessionStats.metrics(turns: turns, windowTokens: Int.max)
+        XCTAssertEqual(m.avgOccupancy ?? -1, 0, accuracy: 0.0001)
     }
 
 }
