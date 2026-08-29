@@ -66,6 +66,40 @@ final class ChartMathTests: XCTestCase {
         XCTAssertEqual(ChartMath.scale(12, denominator: 4, fallback: 1), 3)
     }
 
+    func testRatioReturnsFiniteFractionOrFallback() {
+        XCTAssertEqual(ChartMath.ratio(5, denominator: 10, fallback: 1), 0.5, accuracy: 0.0001)
+        XCTAssertEqual(ChartMath.ratio(.nan, denominator: 10, fallback: 1), 0)
+        XCTAssertEqual(ChartMath.ratio(-3, denominator: 10, fallback: 1), 0)
+        XCTAssertEqual(ChartMath.ratio(5, denominator: 0, fallback: 1), 1)
+        XCTAssertEqual(ChartMath.ratio(5, denominator: .infinity, fallback: 1), 1)
+        // Overflowing division must fall back instead of producing +Inf.
+        XCTAssertEqual(ChartMath.ratio(1e308, denominator: 1e-308, fallback: 1), 1)
+    }
+
+    func testPercentageDeltaRejectsNonFiniteInputs() {
+        XCTAssertEqual(ChartMath.percentageDelta(current: 110, previous: 100, fallback: 0), 10, accuracy: 0.0001)
+        XCTAssertEqual(ChartMath.percentageDelta(current: .nan, previous: 100, fallback: 0), 0)
+        XCTAssertEqual(ChartMath.percentageDelta(current: 110, previous: .infinity, fallback: 0), 0)
+        XCTAssertEqual(ChartMath.percentageDelta(current: 110, previous: 0, fallback: 0), 0)
+    }
+
+    func testUnitClampsToUnitInterval() {
+        XCTAssertEqual(ChartMath.unit(.nan), 0)
+        XCTAssertEqual(ChartMath.unit(-0.3), 0)
+        XCTAssertEqual(ChartMath.unit(0.35), 0.35, accuracy: 0.000001)
+        XCTAssertEqual(ChartMath.unit(1.7), 1)
+        XCTAssertEqual(ChartMath.unit(.infinity), 0)
+    }
+
+    func testSafeIntClampsInsteadOfTrapping() {
+        XCTAssertEqual(ChartMath.safeInt(.nan), 0)
+        XCTAssertEqual(ChartMath.safeInt(.infinity), 0)
+        XCTAssertEqual(ChartMath.safeInt(-.infinity), 0)
+        XCTAssertEqual(ChartMath.safeInt(3.7), 3)
+        XCTAssertEqual(ChartMath.safeInt(1e30), Int.max)
+        XCTAssertEqual(ChartMath.safeInt(-1e30), Int.min)
+    }
+
     func testTokenAxisMaxFallsBackToAtLeastOne() {
         XCTAssertEqual(ChartMath.tokenAxisMax(context: 0, window: nil), 1)
         XCTAssertEqual(ChartMath.tokenAxisMax(context: -10, window: nil), 1)

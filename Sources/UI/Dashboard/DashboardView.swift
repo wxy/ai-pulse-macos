@@ -402,7 +402,8 @@ struct DashboardView: View {
     // MARK: - Quota HUD
 
     func usageBarView(percent: Double) -> some View {
-        let clamped = min(max(percent, 0), 100)
+        let safePercent = percent.isFinite ? percent : 0
+        let clamped = min(max(safePercent, 0), 100)
         let barColor: Color = switch clamped {
         case 0..<75:  .marsGreen
         case 75..<90: .marsGreen2
@@ -613,8 +614,8 @@ struct DashboardView: View {
     // MARK: - Spend overview
 
     var spendingOverview: some View {
-        let apiSpend = balanceSpend.reduce(0.0) { $0 + $1.spend }
-        let subDaily = StatsService.subscriptionDailyAmortization()
+        let apiSpend = ChartMath.finite(balanceSpend.reduce(0.0) { $0 + $1.spend }, fallback: 0)
+        let subDaily = ChartMath.finite(StatsService.subscriptionDailyAmortization(), fallback: 0)
         let subTotal = subDaily * Double(timeRange.days)
         let totalCost: Double = {
             switch timeRange {
@@ -777,7 +778,7 @@ struct DashboardView: View {
     }
 
     func toolBarRow(name: String, cost: Double, total: Double, index: Int = 0) -> some View {
-        let w = total > 0 ? cost / total : 0
+        let w = ChartMath.ratio(cost, denominator: total, fallback: 0)
         let dataReady = loadedTimeRange == timeRange
         let progress = dataReady ? barProgress : 0
         return VStack(spacing: 3) {
@@ -912,15 +913,23 @@ struct DashboardView: View {
             // with what iOS reads from CloudKit.
             let shownRepos = repos.filter { $0.totalChanges > 0 }
             if !shownRepos.isEmpty {
-                let maxCost = shownRepos.map(\.cost).max() ?? 1
-                let maxCPL = shownRepos.compactMap { r in r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : nil }.max() ?? 1
+                // Ignore non-finite values when picking maxima: a NaN max would
+                // poison every downstream ratio and reach SwiftUI as a NaN frame.
+                let maxCost = shownRepos.compactMap { $0.cost.isFinite && $0.cost >= 0 ? $0.cost : nil }.max() ?? 1
+                let maxCPL = shownRepos.compactMap { r -> Double? in
+                    guard r.totalChanges > 0, r.cost.isFinite else { return nil }
+                    let cpl = r.cost * 1000 / Double(r.totalChanges)
+                    return cpl.isFinite ? cpl : nil
+                }.max() ?? 1
                 let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
                 VStack(alignment: .leading, spacing: 6) {
                     Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
                     ForEach(Array(shown.enumerated()), id: \.element.id) { idx, r in
-                        let combinedCPL = r.totalChanges > 0 ? r.cost * 1000 / Double(r.totalChanges) : 0
-                        let costRatio = maxCost > 0 ? r.cost / maxCost : 0
-                        let cplRatio = maxCPL > 0 ? combinedCPL / maxCPL : 0
+                        let combinedCPL = r.totalChanges > 0
+                            ? ChartMath.finite(r.cost * 1000 / Double(r.totalChanges), fallback: 0)
+                            : 0
+                        let costRatio = ChartMath.ratio(r.cost, denominator: maxCost, fallback: 0)
+                        let cplRatio = ChartMath.ratio(combinedCPL, denominator: maxCPL, fallback: 0)
                         let progress = dataReady ? barProgress : 0
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
@@ -1418,7 +1427,7 @@ struct DashboardView: View {
         if let c = conclusion, c.sessionCount > 0 {
             let money = String(format: "$%.2f", c.spend)
             let projected = String(format: "$%.2f", c.projectedMonth)
-            let progress = c.projectedMonth > 0 ? min(max(c.spend / c.projectedMonth, 0), 1) : 0
+            let progress = ChartMath.unit(c.projectedMonth > 0 ? c.spend / c.projectedMonth : 0)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(money).font(.caption).fontWeight(.semibold).monospacedDigit()
@@ -1454,8 +1463,9 @@ struct DashboardView: View {
 
     /// Colored pill showing this period's spend change vs the previous period.
     private func deltaBadge(_ c: ToolConclusion) -> some View {
-        let up = c.deltaPct >= 0
-        let pct = String(format: "%.0f", abs(c.deltaPct))
+        let safeDelta = c.deltaPct.isFinite ? c.deltaPct : 0
+        let up = safeDelta >= 0
+        let pct = String(format: "%.0f", abs(safeDelta))
         return Text((up ? "↑" : "↓") + pct + "%")
             .font(.caption2).fontWeight(.medium).monospacedDigit()
             .padding(.horizontal, 6).padding(.vertical, 2)
@@ -1464,7 +1474,7 @@ struct DashboardView: View {
     }
 
     private func crossText(_ c: ToolConclusion) -> String {
-        guard let d = c.crossToolDeltaPct else { return "—" }
+        guard let d = c.crossToolDeltaPct, d.isFinite else { return "—" }
         let pct = (abs(d) / 100).formatted(.percent.precision(.fractionLength(0)))
         return d >= 0
             ? String(format: I18n.t("card.cross_more"), pct)
@@ -1482,7 +1492,7 @@ struct DashboardView: View {
     /// Comparison badge — just the arrow + percentage, no label.
     @ViewBuilder
     func comparisonBadge(current: Double, previous: Double) -> some View {
-        let pct = (current - previous) / previous * 100
+        let pct = ChartMath.percentageDelta(current: current, previous: previous, fallback: 0)
         if abs(pct) < 1 {
             Text("→")
                 .font(.caption2).foregroundColor(.secondary)
@@ -1490,14 +1500,14 @@ struct DashboardView: View {
                 .background(Color(nsColor: .quaternarySystemFill))
                 .cornerRadius(4)
         } else if pct > 0 {
-            let badge = "↑" + Int(round(pct)).formatted(.percent)
+            let badge = "↑" + ChartMath.safeInt(round(pct)).formatted(.percent)
             Text(verbatim: badge)
                 .font(.caption2).foregroundColor(.deepRed)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.deepRed.opacity(0.1))
                 .cornerRadius(4)
         } else {
-            let badge = "↓" + Int(round(-pct)).formatted(.percent)
+            let badge = "↓" + ChartMath.safeInt(round(-pct)).formatted(.percent)
             Text(verbatim: badge)
                 .font(.caption2).foregroundColor(.marsGreen)
                 .padding(.horizontal, 5).padding(.vertical, 1)

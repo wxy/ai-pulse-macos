@@ -82,6 +82,42 @@ nonisolated enum ChartMath {
         return result.isFinite && result >= 0 ? result : safeFallback
     }
 
+    /// Returns a finite ratio for bar widths. Negative or non-finite
+    /// numerators render as zero; zero/non-finite denominators fall back so a
+    /// SwiftUI frame can never receive NaN/Inf.
+    static func ratio(_ numerator: Double, denominator: Double, fallback: Double) -> Double {
+        let safeFallback = finite(fallback, fallback: 0)
+        guard numerator.isFinite, numerator >= 0 else { return 0 }
+        let safeDenominator = finite(denominator, fallback: 0)
+        guard safeDenominator > 0 else { return safeFallback }
+        let result = numerator / safeDenominator
+        return result.isFinite ? result : safeFallback
+    }
+
+    /// Percentage change between two periods. Returns the fallback when either
+    /// side is non-finite or the baseline is not positive.
+    static func percentageDelta(current: Double, previous: Double, fallback: Double) -> Double {
+        let safeFallback = finite(fallback, fallback: 0)
+        guard current.isFinite, previous.isFinite, previous > 0 else { return safeFallback }
+        let result = (current - previous) / previous * 100
+        return result.isFinite ? result : safeFallback
+    }
+
+    /// Clamps a fraction to 0...1; non-finite input becomes zero.
+    static func unit(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        return min(max(value, 0), 1)
+    }
+
+    /// Converts a Double to Int without trapping on NaN/Inf/out-of-range
+    /// values, clamping to the representable extremes instead.
+    static func safeInt(_ value: Double, fallback: Int = 0) -> Int {
+        guard value.isFinite else { return fallback }
+        if value > Double(Int.max) { return Int.max }
+        if value < Double(Int.min) { return Int.min }
+        return Int(value)
+    }
+
     /// Calculates a positive token-axis upper bound without raw Int overflow.
     static func tokenAxisMax(context: Int, window: Int?) -> Int {
         let contextMax = max(context, 1)
