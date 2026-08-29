@@ -259,6 +259,10 @@ struct GeneralTab: View {
     @State private var spendAlertsEnabled = SpendAlertSettings.current().master
     @State private var systemNotificationsEnabled = SystemNotifications.isEnabled
     @State private var notificationAuthorization: UNAuthorizationStatus = .notDetermined
+    @State private var subscriptionStart: Date = UserDefaults.standard
+        .object(forKey: "subscription_start") as? Date ?? Date()
+    @State private var subscriptionPeriodDays: Int = UserDefaults.standard
+        .object(forKey: "subscription_period_days") as? Int ?? 30
 
     var body: some View {
         ScrollView {
@@ -396,6 +400,42 @@ struct GeneralTab: View {
                         w.contentView = NSHostingView(rootView: OnboardingView())
                         w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
                         OnboardingWindowManager.shared.window = w
+                    }
+                }
+
+                settingsGroup(I18n.t("general.subscription_cycle")) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(I18n.t("general.subscription_period")).font(.body)
+                            Text(I18n.t("general.subscription_cycle_desc"))
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: $subscriptionPeriodDays) {
+                            Text(I18n.t("general.subscription_30")).tag(30)
+                            Text(I18n.t("general.subscription_90")).tag(90)
+                            Text(I18n.t("general.subscription_365")).tag(365)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 200)
+                        .labelsHidden()
+                        .onChange(of: subscriptionPeriodDays) { _, v in
+                            UserDefaults.standard.set(v, forKey: "subscription_period_days")
+                            NotificationCenter.default.post(name: .dataDidChange, object: nil)
+                        }
+                    }
+
+                    Divider()
+
+                    HStack {
+                        Text(I18n.t("general.subscription_start")).font(.body)
+                        Spacer()
+                        DatePicker("", selection: $subscriptionStart, displayedComponents: .date)
+                            .labelsHidden()
+                            .onChange(of: subscriptionStart) { _, v in
+                                UserDefaults.standard.set(v, forKey: "subscription_start")
+                                NotificationCenter.default.post(name: .dataDidChange, object: nil)
+                            }
                     }
                 }
 
