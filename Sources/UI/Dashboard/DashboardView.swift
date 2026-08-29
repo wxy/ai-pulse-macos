@@ -82,6 +82,7 @@ struct DashboardView: View {
     @State private var trendPlotFrame: CGRect = .zero  // plot area in chart-view coords
     @State private var toolCostBreakdown: [(name: String, cost: Double)] = []
     @State private var dailyBalanceSpend: [Date: Double] = [:]  // date → USD spend
+    @State private var providerSourceKinds: [String: String] = [:]  // providerId → balance/usage/estimated
     @State private var i18nToken = 0  // bumped on language change to force re-render
     @State private var todayCombinedSpend: Double = 0
     @State private var weekCombinedSpend: Double = 0
@@ -603,71 +604,42 @@ struct DashboardView: View {
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
         let netLines = added - deleted
         Group {
-            smallCard(title: I18n.t("dashboard.net_lines"), value: "\(netLines)", color: netLines >= 0 ? .marsGreen : .deepRed)
             smallCard(title: I18n.t("dashboard.code_added"), value: "+\(added)", color: Color.marsGreen)
             smallCard(title: I18n.t("dashboard.code_deleted"), value: "-\(deleted)", color: .red)
-            if timeRange == .today {
-                smallCard(title: I18n.t("dashboard.request_count"), value: "\(todayCalls)", color: .primary)
-                smallCard(title: I18n.t("dashboard.token_usage"), value: tokenShort(todayTokens), color: .primary)
-            }
+            smallCard(title: I18n.t("dashboard.net_lines"), value: "\(netLines)", color: netLines >= 0 ? .marsGreen : .deepRed)
         }
     }
 
-    // MARK: - Bottom cards row
-
-
-    // MARK: - Spend overview
+    // MARK: - Head overview (forehead usage · eyes expense/output · nose lines)
 
     var spendingOverview: some View {
-        let apiSpend = ChartMath.finite(balanceSpend.reduce(0.0) { $0 + $1.spend }, fallback: 0)
+        // Forehead: usage is the primary number — pure JSONL facts.
+        let rangeTokens = dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
+        let rangeCalls = dailyStats.reduce(0) { $0 + $1.calls }
+        // Left eye: actual spend = balance deltas only (facts). Subscription is
+        // shown as a fixed-cycle label, never amortized into the number.
+        let actualSpend = ChartMath.finite(balanceSpend.reduce(0.0) { $0 + $1.spend }, fallback: 0)
         let subDaily = ChartMath.finite(StatsService.subscriptionDailyAmortization(), fallback: 0)
-        let subTotal = subDaily * Double(timeRange.days)
-        let totalCost: Double = {
-            switch timeRange {
-            case .today: return todayCombinedSpend
-            case .thisWeek: return weekCombinedSpend
-            case .days30: return monthCombinedSpend
-            }
-        }()
-
-        let apiData = apiDonutData()
-        let subVsApi = subVsApiDonutData(api: apiSpend, sub: subTotal)
+        let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        let subMonthly = subDaily * daysInMonth
+        // Right eye: code output — Git facts.
+        let added = codeChanges.reduce(0) { $0 + $1.added }
+        let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
 
         return VStack(spacing: 16) {
-            // Big total
+            // ── Forehead: usage ──
             VStack(spacing: 4) {
-                // Cost number centered, badge as trailing overlay — doesn't affect centering
-                Text("$\(String(format: "%.2f", totalCost))")
+                Text(tokenShort(Int(clamping: rangeTokens)))
                     .font(.system(size: 48, weight: .bold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(Color.deepRed)
+                    .foregroundStyle(Color.marsGreen)
                     .scaleEffect(loadedTimeRange == timeRange ? (0.8 + 0.2 * barProgress) : 0.8)
                     .animation(.spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
-                    .overlay(alignment: .trailing) {
-                        HStack(spacing: 4) {
-                            if timeRange == .today, yesterdaySpend > 0.001 {
-                                comparisonBadge(current: totalCost, previous: yesterdaySpend)
-                            }
-                            if timeRange == .days30, previousPeriodSpend > 0.001 {
-                                comparisonBadge(current: totalCost, previous: previousPeriodSpend)
-                            }
-                        }
-                        .offset(x: 56)  // push badge to the right of the number
-                    }
                 HStack(spacing: 4) {
-                    Text("\(timeRange.label) \(I18n.t("dashboard.api_spent"))")
+                    Text("\(timeRange.label) · \(rangeCalls) \(I18n.t("dashboard.calls"))")
                         .font(.caption).foregroundColor(.secondary)
-                    // Per-tab context: today=projected, week/30d=daily avg + projected + remaining
-                    if let p = prediction, p.monthProjected > 0.001 {
-                        if timeRange == .today {
-                            Text("· \(String(format: I18n.t("dashboard.today_expected"), String(format: "%.2f", p.dailyRate)))")
-                        } else if timeRange == .thisWeek {
-                            Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 7), 7 - timeRange.days))")
-                        } else {
-                            Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 30), p.daysRemaining))")
-                        }
-                    }
+                    Text(I18n.t("dashboard.source_logs"))
+                        .font(.caption2).foregroundColor(.secondary)
                 }
-                .font(.caption2).foregroundColor(.secondary)
             }
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity)
@@ -675,37 +647,139 @@ struct DashboardView: View {
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
             .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
 
-            // Donuts flanking stat cards: left donut | nose stats | right donut
+            // ── Eyes + nose ──
             HStack(alignment: .top, spacing: 12) {
-                // Left: subscription vs API donut — show the real donut only once
-                // this range's data has actually loaded. Before that (first open)
-                // subTotal is already > 0 from the configured subscription, but the
-                // donut is held at opacity 0 — so render the gray placeholder instead
-                // of a hole on the left while the range loads.
-                if loadedTimeRange == timeRange, subVsApi.total > 0.001 {
-                    subVsApiDonut(data: subVsApi)
-                } else {
-                    emptyDonut(title: I18n.t("dashboard.sub_api_ratio"))
-                }
+                providerExpenseDonut(actualSpend: actualSpend, subMonthly: subMonthly)
 
-                // Center: stat cards as "nose" (vertical stack, limited width)
+                // Nose: code lines
                 VStack(spacing: 6) {
                     noseStatCards
                 }
                 .frame(width: 100)
 
-                // Right: API provider donut (placeholder when empty)
-                if !apiData.isEmpty {
-                    apiProviderDonut(data: apiData, apiSpend: apiSpend)
-                } else {
-                    emptyDonut(title: I18n.t("dashboard.by_provider"))
-                }
+                repoOutputDonut(added: added, deleted: deleted)
             }
         }
         .padding(16)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
+    }
+
+    /// Left eye: expense donut — balance deltas per provider (facts), with the
+    /// subscription fixed cost as the eyebrow label.
+    @ViewBuilder
+    func providerExpenseDonut(actualSpend: Double, subMonthly: Double) -> some View {
+        let segments = Self.renderableDonutSegments(balanceSpend.enumerated().map { (i, item) in
+            DonutItem(
+                label: item.name,
+                cost: item.spend,
+                pct: actualSpend > 0 ? item.spend / actualSpend * 100 : 0,
+                color: Self.providerDonutColors[i % Self.providerDonutColors.count])
+        })
+        let subLabel = subMonthly > 0.001
+            ? " · +\(I18n.t("dashboard.sub_label")) \(String(format: "$%.0f", subMonthly))/\(I18n.t("dashboard.month"))"
+            : ""
+        VStack(spacing: 6) {
+            Text("\(I18n.t("dashboard.actual_spend")) \(String(format: "$%.2f", actualSpend))\(subLabel)")
+                .font(.caption).foregroundColor(.secondary)
+            ZStack {
+                if !segments.isEmpty {
+                    Chart(segments) { item in
+                        let isUsage = providerSourceKinds[providerId(for: item.label)] == "usage"
+                        SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                            .foregroundStyle(item.color.opacity(isUsage ? 0.45 : 1))
+                    }
+                    .chartLegend(.hidden)
+                    .chartForegroundStyleScale(
+                        domain: segments.map(\.label),
+                        range: segments.map(\.color))
+                    .frame(width: 120, height: 120)
+                } else {
+                    emptyDonut(title: I18n.t("dashboard.actual_spend"))
+                }
+                Text("$\(String(format: "%.2f", actualSpend))")
+                    .font(.system(size: Self.donutCenterFontSize(for: actualSpend), weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(Color.deepRed)
+            }
+            VStack(spacing: 2) {
+                ForEach(segments.prefix(3)) { item in
+                    HStack(spacing: 4) {
+                        Circle().fill(item.color).frame(width: 6, height: 6)
+                        Text(item.label).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                        Spacer()
+                        Text(verbatim: ChartMath.safeInt(item.pct).formatted(.percent))
+                            .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 150)
+        .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.15), value: barProgress)
+    }
+
+    /// Right eye: output donut — net lines per repo (Git facts), with total
+    /// output as the eyebrow label.
+    @ViewBuilder
+    func repoOutputDonut(added: Int, deleted: Int) -> some View {
+        let netByRepo = repos.compactMap { r -> DonutItem? in
+            let net = r.added - r.deleted
+            guard net > 0 else { return nil }
+            return DonutItem(label: r.repo, cost: Double(net), pct: 0, color: .marsGreen)
+        }
+        let totalNet = Double(max(netByRepo.reduce(0.0) { $0 + $1.cost }, 0))
+        let segments = netByRepo.map {
+            DonutItem(label: $0.label, cost: $0.cost,
+                      pct: totalNet > 0 ? $0.cost / totalNet * 100 : 0, color: .marsGreen)
+        }
+        let colors: [Color] = [.marsGreen, .marsGreen2, .marsGreenLight, .deepRed2, .deepRed]
+        let colored = segments.enumerated().map { (i, s) in
+            DonutItem(label: s.label, cost: s.cost, pct: s.pct, color: colors[i % colors.count])
+        }
+        VStack(spacing: 6) {
+            Text("\(I18n.t("dashboard.code_output")) +\(added)/-\(deleted)")
+                .font(.caption).foregroundColor(.secondary)
+            ZStack {
+                if !colored.isEmpty {
+                    Chart(colored) { item in
+                        SectorMark(angle: .value("Lines", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                            .foregroundStyle(item.color)
+                    }
+                    .chartLegend(.hidden)
+                    .chartForegroundStyleScale(
+                        domain: colored.map(\.label),
+                        range: colored.map(\.color))
+                    .frame(width: 120, height: 120)
+                } else {
+                    emptyDonut(title: I18n.t("dashboard.code_output"))
+                }
+                Text("+\(added)")
+                    .font(.system(size: Self.donutCenterFontSize(for: Double(added)), weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(Color.marsGreen)
+            }
+            VStack(spacing: 2) {
+                ForEach(colored.prefix(3)) { item in
+                    HStack(spacing: 4) {
+                        Circle().fill(item.color).frame(width: 6, height: 6)
+                        Text(item.label).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                        Spacer()
+                        Text(verbatim: ChartMath.safeInt(item.pct).formatted(.percent))
+                            .font(.caption2).monospacedDigit().foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 150)
+        .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.2), value: barProgress)
+    }
+
+    private static let providerDonutColors: [Color] = [
+        .deepRed, .marsGreen, .deepRed2, .marsGreen2, .deepRed, .marsGreen,
+    ]
+
+    /// Reverse lookup from a donut label back to a provider id.
+    private func providerId(for label: String) -> String {
+        balanceSpend.first(where: { $0.name == label })?.providerId ?? label
     }
 
     // MARK: - Quota (subscription remaining)
@@ -809,32 +883,6 @@ struct DashboardView: View {
     /// entries out of chart geometry and show a placeholder at the call site.
     static func renderableDonutSegments(_ segments: [DonutItem]) -> [DonutItem] {
         segments.filter { $0.cost.isFinite && $0.cost > 0.001 }
-    }
-
-    func apiDonutData() -> [DonutItem] {
-        var map: [String: Double] = [:]
-        for (pid, _, spend) in balanceSpend where spend > 0.001 {
-            let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
-            map[name] = (map[name] ?? 0) + spend
-        }
-        // Add error entries for providers whose balance fetch failed
-        let tracked = IntegrationRegistry.balanceTrackedCostSources()
-            .compactMap { cs -> String? in
-                if case .apiKey(let pid) = cs.kind { return pid }; return nil
-            }
-        for pid in tracked where balanceErrors.contains(pid) && !map.keys.contains(pid) {
-            let name = IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
-            map[name] = -1  // sentinel: error, not zero
-        }
-        let total = map.values.filter { $0 > 0 }.reduce(0, +)
-        let colors: [Color] = [.deepRed, .marsGreen, .deepRed2, .marsGreen2, .deepRed, .marsGreen]
-        return map.sorted(by: { $0.value > $1.value }).enumerated().map { (i, kv) in
-            let isError = kv.value < 0
-            return DonutItem(label: isError ? "\(kv.key) ⚠" : kv.key,
-                             cost: isError ? 0 : kv.value,
-                             pct: isError ? 0 : (total > 0 ? kv.value / total * 100 : 0),
-                             color: isError ? .gray.opacity(0.5) : colors[i % colors.count])
-        }
     }
 
     // MARK: - Output section
@@ -1547,105 +1595,6 @@ struct DashboardView: View {
         .frame(maxWidth: 140)
     }
 
-    func subVsApiDonutData(api: Double, sub: Double) -> (segments: [DonutItem], total: Double) {
-        let total = api + sub
-        var segments: [DonutItem] = []
-        if api > 0.001 {
-            segments.append(DonutItem(label: I18n.t("dashboard.api_paid"), cost: api,
-                                      pct: total > 0 ? api / total * 100 : 0, color: .deepRed))
-        }
-        if sub > 0.001 {
-            segments.append(DonutItem(label: I18n.t("dashboard.sub_label"), cost: sub,
-                                      pct: total > 0 ? sub / total * 100 : 0, color: .marsGreen))
-        }
-        return (segments, total)
-    }
-
-    /// Subscription-vs-API donut chart.
-    @ViewBuilder
-    func subVsApiDonut(data: (segments: [DonutItem], total: Double)) -> some View {
-        let dataReady = loadedTimeRange == timeRange
-        let segments = Self.renderableDonutSegments(data.segments)
-        Group {
-            if segments.isEmpty {
-                emptyDonut(title: I18n.t("dashboard.sub_api_ratio"))
-            } else {
-                VStack(spacing: 6) {
-                    Text(I18n.t("dashboard.sub_api_ratio")).font(.caption).foregroundColor(.secondary)
-                    ZStack {
-                        Chart(segments) { item in
-                            SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
-                                .foregroundStyle(by: .value("Type", item.label))
-                        }
-                        .chartLegend(.hidden)
-                        .chartForegroundStyleScale(domain: segments.map(\.label),
-                                                   range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
-                        .frame(width: 120, height: 120)
-                        Text("$\(String(format: "%.2f", data.total))")
-                            .font(.system(size: Self.donutCenterFontSize(for: data.total), weight: .semibold, design: .rounded)).monospacedDigit()
-                            .foregroundStyle(Color.deepRed)
-                    }
-                    .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
-                    .opacity(dataReady ? barProgress : 0)
-                    VStack(spacing: 2) {
-                        ForEach(segments) { item in
-                            HStack(spacing: 4) {
-                                Circle().fill(item.color).frame(width: 6, height: 6)
-                                Text(item.label).font(.caption2).foregroundColor(.secondary)
-                                Spacer()
-                                Text(verbatim: Int(item.pct).formatted(.percent)).font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: 140)
-        .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.15), value: barProgress)
-    }
-
-    /// API provider donut chart.
-    @ViewBuilder
-    func apiProviderDonut(data: [DonutItem], apiSpend: Double) -> some View {
-        let dataReady = loadedTimeRange == timeRange
-        let segments = Self.renderableDonutSegments(data)
-        Group {
-            if segments.isEmpty {
-                emptyDonut(title: I18n.t("dashboard.by_provider"))
-            } else {
-                VStack(spacing: 6) {
-                    Text(I18n.t("dashboard.by_provider")).font(.caption).foregroundColor(.secondary)
-                    ZStack {
-                        Chart(segments) { item in
-                            SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
-                                .foregroundStyle(by: .value("Provider", item.label))
-                        }
-                        .chartLegend(.hidden)
-                        .chartForegroundStyleScale(domain: segments.map(\.label), range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
-                        .frame(width: 120, height: 120)
-                        Text("$\(String(format: "%.2f", apiSpend))")
-                            .font(.system(size: Self.donutCenterFontSize(for: apiSpend), weight: .semibold, design: .rounded)).monospacedDigit()
-                            .foregroundStyle(Color.deepRed)
-                    }
-                    .scaleEffect(dataReady ? (0.5 + 0.5 * barProgress) : 0.5)
-                    .opacity(dataReady ? barProgress : 0)
-                    VStack(spacing: 2) {
-                        ForEach(segments) { item in
-                            HStack(spacing: 4) {
-                                Circle().fill(item.color).frame(width: 6, height: 6)
-                                Text(item.label).font(.caption2).foregroundColor(.secondary)
-                                Spacer()
-                                Text(verbatim: Int(item.pct).formatted(.percent)).font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: 140)
-        .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.2), value: barProgress)
-    }
-
     /// Sync the cached dashboard snapshot to iCloud, throttled to 5 min.
     private func triggerCloudSync() {
         let syncKey = "lastCloudSyncTime"
@@ -1730,6 +1679,9 @@ struct DashboardView: View {
         previousPeriodSpend = snap.previousPeriodSpend
         toolCostBreakdown = snap.toolBreakdown.map { (name: $0.name, cost: $0.cost) }
         balanceSpend = snap.providerBreakdown.map { (providerId: $0.providerId, name: $0.name, spend: $0.cost) }
+        providerSourceKinds = Dictionary(uniqueKeysWithValues: snap.providerBreakdown.map {
+            ($0.providerId, $0.sourceKind ?? "balance")
+        })
         dailyBalanceSpend = snap.balanceDaily.reduce(into: [Date: Double]()) { map, p in
             map[Date(timeIntervalSince1970: p.ts)] = p.value
         }
