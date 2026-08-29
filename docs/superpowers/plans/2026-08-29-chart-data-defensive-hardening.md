@@ -29,7 +29,7 @@
 **Interfaces:**
 - Produces: `ApiPoller.parseDouble(_ value: Any?) -> Double?` 变为 `internal static`，非有限值返回 nil。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```swift
 func testParseDoubleRejectsNonFiniteStrings() {
@@ -41,10 +41,10 @@ func testParseDoubleRejectsNonFiniteStrings() {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败（编译错误）**
-- [ ] **Step 3: 实现**：`parseDouble` 增加 `isFinite` 过滤；`cacheBalance` 写库/写缓存前 `filter { $0.totalBalance.isFinite }`；UsageMonitor 写入 DB 前将 utilization clamp 到 0...100。
-- [ ] **Step 4: 运行测试确认通过**
-- [ ] **Step 5: 提交** `fix: sanitize balance parsing and quota utilization at ingestion`
+- [x] **Step 2: 运行测试确认失败（编译错误）**
+- [x] **Step 3: 实现**：`parseDouble` 增加 `isFinite` 过滤；`cacheBalance` 写库/写缓存前 `filter { $0.totalBalance.isFinite }`；UsageMonitor 写入 DB 前将 utilization clamp 到 0...100。
+- [x] **Step 4: 运行测试确认通过**
+- [x] **Step 5: 提交** `fix: sanitize balance parsing and quota utilization at ingestion`
 
 ---
 
@@ -59,16 +59,16 @@ func testParseDoubleRejectsNonFiniteStrings() {
 **Interfaces:**
 - Produces: `SessionStats.deltaPct(current:previous:)` 对非有限输入返回 0；`projectMonth` 同；`metrics` 用 Double 乘法。
 
-- [ ] **Step 1: 写失败测试**（deltaPct NaN/Inf → 0；metrics 大 window 不溢出；costUSD cacheTokens > inTokens 不 trap）
-- [ ] **Step 2: 运行确认失败**
-- [ ] **Step 3: 实现**
+- [x] **Step 1: 写失败测试**（deltaPct NaN/Inf → 0；metrics 大 window 不溢出；costUSD cacheTokens > inTokens 不 trap）
+- [x] **Step 2: 运行确认失败**
+- [x] **Step 3: 实现**
   - `repoScale = toolTotal > 0 && logTotal > 0 ? apiSpend / logTotal : 1.0`
   - `scaledCost` 结果非有限 → 0
   - `deltaPct` / `projectMonth` guard `isFinite`
   - `metrics`：`Double(turns.count) * Double(window)`
   - `costUSD`：`let nonCachedIn = inTokens > cacheTokens ? inTokens - cacheTokens : 0`
-- [ ] **Step 4: 运行测试**
-- [ ] **Step 5: 提交** `fix: guard division and overflow in stats and pricing math`
+- [x] **Step 4: 运行测试**
+- [x] **Step 5: 提交** `fix: guard division and overflow in stats and pricing math`
 
 ---
 
@@ -82,12 +82,12 @@ func testParseDoubleRejectsNonFiniteStrings() {
 **Interfaces:**
 - Produces: `ChartMath.ratio(_:denominator:fallback:) -> Double`（有限、分母>0 才除）；`percentageDelta(current:previous:fallback:) -> Double`；`unit(_:) -> Double`（clamp 0...1，非有限→0）。
 
-- [ ] **Step 1: 写失败测试**（ratio NaN/负/除零；percentageDelta NaN；unit NaN/越界）
-- [ ] **Step 2: 运行确认失败**
-- [ ] **Step 3: 实现** ChartMath 三个方法
-- [ ] **Step 4: DashboardView 接入**：所有比例/百分比/进度计算走 ChartMath；`usageBarView` guard 有限
-- [ ] **Step 5: 运行测试**
-- [ ] **Step 6: 提交** `fix: sanitize dashboard ratios, percentages and progress at render boundary`
+- [x] **Step 1: 写失败测试**（ratio NaN/负/除零；percentageDelta NaN；unit NaN/越界）
+- [x] **Step 2: 运行确认失败**
+- [x] **Step 3: 实现** ChartMath 三个方法
+- [x] **Step 4: DashboardView 接入**：所有比例/百分比/进度计算走 ChartMath；`usageBarView` guard 有限
+- [x] **Step 5: 运行测试**
+- [x] **Step 6: 提交** `fix: sanitize dashboard ratios, percentages and progress at render boundary`
 
 ---
 
@@ -96,9 +96,9 @@ func testParseDoubleRejectsNonFiniteStrings() {
 **Files:**
 - Modify: `Sources/UI/Dashboard/ToolDetailOverlayView.swift`（`occupancyBar`、`contextChart`）
 
-- [ ] **Step 1: 实现**：`occupancyBar` 用 `ChartMath.unit`；AreaMark/LineMark 用 `ChartMath.barValue` 非负化
-- [ ] **Step 2: 编译 + 现有测试**
-- [ ] **Step 3: 提交** `fix: clamp occupancy and sanitize context trend chart values`
+- [x] **Step 1: 实现**：`occupancyBar` 用 `ChartMath.unit`；AreaMark/LineMark 用 `ChartMath.barValue` 非负化
+- [x] **Step 2: 编译 + 现有测试**
+- [x] **Step 3: 提交** `fix: clamp occupancy and sanitize context trend chart values`
 
 ---
 
@@ -114,10 +114,10 @@ func testParseDoubleRejectsNonFiniteStrings() {
 - Modify: `Sources/Engine/AnomalyDetector.swift`
 - Test: `Tests/CalendarTests.swift`（新增 mondayOfWeek 始终返回有效日期）
 
-- [ ] **Step 1: 写测试**：mondayOfWeek 对任意日期非崩溃且返回周一
-- [ ] **Step 2: 实现**：所有 `date(byAdding:)!` / `.day!` 替换为 guard + 安全 fallback
-- [ ] **Step 3: 编译 + 测试**
-- [ ] **Step 4: 提交** `fix: remove force-unwrapped date math from data and chart paths`
+- [x] **Step 1: 写测试**：mondayOfWeek 对任意日期非崩溃且返回周一
+- [x] **Step 2: 实现**：所有 `date(byAdding:)!` / `.day!` 替换为 guard + 安全 fallback
+- [x] **Step 3: 编译 + 测试**
+- [x] **Step 4: 提交** `fix: remove force-unwrapped date math from data and chart paths`
 
 ---
 
@@ -127,17 +127,17 @@ func testParseDoubleRejectsNonFiniteStrings() {
 - Modify: `Sources/UI/Dashboard/DashboardView.swift`（新增 `sanitizedSnapshot` 静态方法，`applySnapshot` 与 cache 读取路径接入）
 - Test: `Tests/ChartMathTests.swift`（或新建 `Tests/SnapshotSanitizeTests.swift`）
 
-- [ ] **Step 1: 写失败测试**：构造含 NaN/Inf/负值的 DashboardSnapshot，sanitize 后全为有限非负，正常值不变
-- [ ] **Step 2: 运行确认失败**
-- [ ] **Step 3: 实现** sanitize（Double 非有限/负 → 0；Int64/Int 负 → 0；TrendPoint.ts 非有限 → 0），在 `applySnapshot` 入口调用
-- [ ] **Step 4: 运行测试**
-- [ ] **Step 5: 提交** `fix: sanitize dashboard snapshots before they reach SwiftUI state`
+- [x] **Step 1: 写失败测试**：构造含 NaN/Inf/负值的 DashboardSnapshot，sanitize 后全为有限非负，正常值不变
+- [x] **Step 2: 运行确认失败**
+- [x] **Step 3: 实现** sanitize（Double 非有限/负 → 0；Int64/Int 负 → 0；TrendPoint.ts 非有限 → 0），在 `applySnapshot` 入口调用
+- [x] **Step 4: 运行测试**
+- [x] **Step 5: 提交** `fix: sanitize dashboard snapshots before they reach SwiftUI state`
 
 ---
 
 ### Task 7: 全量验证与交接
 
-- [ ] `make test` 全量通过（151+ 新测试）
-- [ ] `git diff --check` 通过
-- [ ] 构建最新版本，交由用户运行验证 Today/本周/30 日
-- [ ] 汇总审计发现与修复清单
+- [x] `make test` 全量通过（151+ 新测试）
+- [x] `git diff --check` 通过
+- [x] 构建最新版本，交由用户运行验证 Today/本周/30 日
+- [x] 汇总审计发现与修复清单
