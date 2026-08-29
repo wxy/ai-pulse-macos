@@ -276,14 +276,23 @@ struct DashboardView: View {
                                 )
                                 .padding(.horizontal, 60)
                         }
+                        // Body: one outer frame hosting trend/balance + repos
+                        VStack(spacing: 12) {
+                            if timeRange != .today {
+                                trendSection
+                            } else {
+                                remainingBalanceSection
+                            }
+                            repoListSection
+                        }
+                        .padding(20)
+                        .background(
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
+                        )
+                        .padding(.horizontal, 60)
+                        // Effective-rate chart — only when attributable data exists
                         effectiveRateSection
-                            .padding(20)
-                            .background(
-                                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                    .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
-                            )
-                            .padding(.horizontal, 60)
-                        repoListSection
                             .padding(20)
                             .background(
                                 RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -677,7 +686,7 @@ struct DashboardView: View {
                 }
                 .frame(width: 100)
 
-                repoOutputDonut(added: added, deleted: deleted)
+                toolTokenDonut()
             }
         }
         .padding(16)
@@ -738,26 +747,34 @@ struct DashboardView: View {
         .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.15), value: barProgress)
     }
 
-    /// Right eye: output donut — net lines per repo (Git facts), with total
-    /// output as the center number. Segments compare added vs deleted so a
-    /// single repo still produces a meaningful two-way contrast.
+    /// Right eye: usage donut — token share per tool (log facts). Mirrors the
+    /// left eye's spend-by-provider: where the money goes vs where the tokens
+    /// go. Center shows the range token total (same as the forehead number).
     @ViewBuilder
-    func repoOutputDonut(added: Int, deleted: Int) -> some View {
-        let rawSegments = [
-            DonutItem(label: I18n.t("dashboard.code_added"), cost: Double(max(added, 0)), pct: 0, color: .marsGreen),
-            DonutItem(label: I18n.t("dashboard.code_deleted"), cost: Double(max(deleted, 0)), pct: 0, color: .deepRed),
-        ]
-        let total = rawSegments.reduce(0.0) { $0 + $1.cost }
-        let segments = rawSegments
-            .filter { $0.cost > 0 }
-            .map { DonutItem(label: $0.label, cost: $0.cost,
-                             pct: total > 0 ? $0.cost / total * 100 : 0, color: $0.color) }
-        let netLines = added - deleted
+    func toolTokenDonut() -> some View {
+        let colors: [Color] = [.marsGreen, .marsGreen2, .deepRed2, .deepRed, .marsGreenLight]
+        let items = toolCostBreakdown.enumerated().compactMap { (i, tc) -> DonutItem? in
+            guard let tokens = tc.tokens, tokens > 0 else { return nil }
+            return DonutItem(
+                label: tc.name,
+                cost: Double(tokens),
+                pct: 0,
+                color: colors[i % colors.count])
+        }
+        let totalTokens = items.reduce(0.0) { $0 + $1.cost }
+        let segments = items.map {
+            DonutItem(label: $0.label, cost: $0.cost,
+                      pct: totalTokens > 0 ? $0.cost / totalTokens * 100 : 0,
+                      color: $0.color)
+        }
+        let centerText = tokenShort(Int(clamping: Int64(totalTokens)))
         VStack(spacing: 6) {
+            Text("\(I18n.t("dashboard.by_tool")) \(centerText)")
+                .font(.caption).foregroundColor(.secondary)
             ZStack {
                 if !segments.isEmpty {
                     Chart(segments) { item in
-                        SectorMark(angle: .value("Lines", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                        SectorMark(angle: .value("Tokens", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
                             .foregroundStyle(item.color)
                     }
                     .chartLegend(.hidden)
@@ -766,14 +783,14 @@ struct DashboardView: View {
                         range: segments.map(\.color))
                     .frame(width: 120, height: 120)
                 } else {
-                    emptyDonut(title: I18n.t("dashboard.code_output"))
+                    emptyDonut(title: I18n.t("dashboard.by_tool"))
                 }
-                Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
-                    .font(.system(size: Self.donutCenterFontSize(for: Double(netLines)), weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(centerText)
+                    .font(.system(size: Self.donutCenterFontSize(for: totalTokens), weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.marsGreen)
             }
             VStack(spacing: 2) {
-                ForEach(segments) { item in
+                ForEach(segments.prefix(3)) { item in
                     HStack(spacing: 4) {
                         Circle().fill(item.color).frame(width: 6, height: 6)
                         Text(item.label).font(.caption2).foregroundColor(.secondary).lineLimit(1)
