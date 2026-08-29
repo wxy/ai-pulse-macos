@@ -624,6 +624,18 @@ enum StatsService {
         return Set(providerTools.filter { $0.value.count == 1 }.keys)
     }
 
+    /// Aggregates token usage by repo basename. Distinct paths can share a
+    /// basename (e.g. /a/new-chat and /b/new-chat), so collisions are summed
+    /// instead of crashing a unique-key dictionary.
+    static func repoTokenByName(_ rows: [(path: String, tokens: Int64)]) -> [String: Int64] {
+        var map: [String: Int64] = [:]
+        for row in rows {
+            let name = URL(fileURLWithPath: row.path).lastPathComponent
+            map[name, default: 0] += row.tokens
+        }
+        return map
+    }
+
     struct SubscriptionProgress {
         let elapsedDays: Int
         let totalDays: Int
@@ -837,9 +849,7 @@ enum StatsService {
         // Dividing then yields +Inf and poisons every RepoItem cost.
         let repoScale = logTotal > 0 && toolTotal > 0 ? apiSpend / logTotal : 1.0
         let subScale = logTotal > 0 ? subTotalAll / logTotal : 0.0
-        let repoTokenByName = Dictionary(uniqueKeysWithValues: repoTokens.map {
-            (URL(fileURLWithPath: $0.p).lastPathComponent, $0.tok)
-        })
+        let repoTokenByName = StatsService.repoTokenByName(repoTokens.map { ($0.p, $0.tok) })
         let repoItems: [RepoItem] = rp.map { r in
             let scaledCost = ChartMath.finite(r.cost * repoScale + r.cost * subScale, fallback: 0)
             let totalChanges = Int64(r.added) + Int64(r.deleted)

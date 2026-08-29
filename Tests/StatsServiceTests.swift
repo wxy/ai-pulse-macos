@@ -45,6 +45,19 @@ final class StatsServiceTests: XCTestCase {
         XCTAssertEqual(StatsService.exclusiveProviders(usageByTool: usage), ["openai"])
     }
 
+    func testRepoTokenByNameMergesDuplicateBasenames() {
+        let rows = [
+            (path: "/a/new-chat", tokens: Int64(100)),
+            (path: "/b/new-chat", tokens: Int64(200)),
+            (path: "/c/ai-pulse", tokens: Int64(50)),
+        ]
+
+        let map = StatsService.repoTokenByName(rows)
+
+        XCTAssertEqual(map["new-chat"], 300)
+        XCTAssertEqual(map["ai-pulse"], 50)
+    }
+
     func testSubscriptionProgress() {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())

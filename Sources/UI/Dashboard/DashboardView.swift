@@ -1823,9 +1823,11 @@ struct DashboardView: View {
             (name: $0.name, cost: $0.cost, tokens: $0.tokens, calls: $0.calls)
         }
         balanceSpend = snap.providerBreakdown.map { (providerId: $0.providerId, name: $0.name, spend: $0.cost) }
-        providerSourceKinds = Dictionary(uniqueKeysWithValues: snap.providerBreakdown.map {
-            ($0.providerId, $0.sourceKind ?? "balance")
-        })
+        var mergedProviderKinds: [String: String] = [:]
+        for provider in snap.providerBreakdown where mergedProviderKinds[provider.providerId] == nil {
+            mergedProviderKinds[provider.providerId] = provider.sourceKind ?? "balance"
+        }
+        providerSourceKinds = mergedProviderKinds
         dailyBalanceSpend = snap.balanceDaily.reduce(into: [Date: Double]()) { map, p in
             map[Date(timeIntervalSince1970: p.ts)] = p.value
         }
@@ -1836,7 +1838,11 @@ struct DashboardView: View {
             DailyCodeChange(date: Date(timeIntervalSince1970: p.ts), added: p.added, deleted: p.deleted)
         }
         repos = snap.topRepos.map { RepoBreakdown(repo: $0.name, cost: $0.cost, added: $0.added, deleted: $0.deleted, apiSources: [], subscriptionSources: []) }
-        repoTokens = Dictionary(uniqueKeysWithValues: snap.topRepos.map { ($0.name, $0.tokens ?? 0) })
+        var mergedRepoTokens: [String: Int64] = [:]
+        for repo in snap.topRepos {
+            mergedRepoTokens[repo.name, default: 0] += repo.tokens ?? 0
+        }
+        repoTokens = mergedRepoTokens
         prediction = snap.prediction.map { Prediction(monthProjected: $0.monthProjected, dailyRate: $0.dailyRate, daysRemaining: $0.daysRemaining, monthSoFar: $0.monthSoFar) }
         lastUpdated = snap.updatedAt
         lastSnapshotTS = snap.updatedAt
