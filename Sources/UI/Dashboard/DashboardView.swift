@@ -101,7 +101,6 @@ struct DashboardView: View {
     @State private var remainingBalances: [RemainingBalanceItem] = []
     @State private var isDemoMode = false
     @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
-    @State private var toolsExpanded = false
     @State private var claudeDetailExpanded = false
     @State private var codexDetailExpanded = false
     @State private var selectedToolForOverlay: String? = nil
@@ -408,10 +407,6 @@ struct DashboardView: View {
     }
 
 
-    func computeToolCosts() -> [(name: String, cost: Double, tokens: Int64?, calls: Int?)] {
-        toolCostBreakdown
-    }
-
     func providerDisplayName(_ pid: String) -> String {
         IntegrationRegistry.all.first(where: { $0.id == pid })?.displayName ?? pid
     }
@@ -612,15 +607,15 @@ struct DashboardView: View {
     /// Nose: vertical overlapping bars. Added runs top-down, deleted runs
     /// bottom-up; the overlap is the net line change. Max height is the larger
     /// of the two, so the visible difference is exactly |added−deleted|/max.
-    /// The bar area spans ~80% of the nose height (labels live in the 20%).
+    /// Labels sit beside the bar; the net number is white on the overlap.
     @ViewBuilder var noseStatCards: some View {
         let added = codeChanges.reduce(0) { $0 + $1.added }
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
         let netLines = added - deleted
         let maxVal = Double(max(added, deleted, 1))
-        VStack(spacing: 2) {
+        HStack(spacing: 6) {
             Text("+\(added)")
-                .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                .font(.caption).fontWeight(.semibold).monospacedDigit()
                 .foregroundColor(.marsGreen)
             GeometryReader { geo in
                 ZStack {
@@ -640,17 +635,17 @@ struct DashboardView: View {
                     }
                     Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
                         .font(.system(size: 13, weight: .bold)).monospacedDigit()
-                        .foregroundColor(netLines >= 0 ? .marsGreen : .deepRed)
+                        .foregroundColor(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                        .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
                 }
             }
-            .frame(height: 145)   // ~80% of the ~175pt nose column (donut+legend height)
+            .frame(width: 44, height: 150)
             Text("-\(deleted)")
-                .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                .font(.caption).fontWeight(.semibold).monospacedDigit()
                 .foregroundColor(.red)
         }
-        .frame(width: 82)
+        .frame(width: 130)
     }
 
     // MARK: - Head overview (forehead usage · eyes expense/output · nose lines)
@@ -920,152 +915,107 @@ struct DashboardView: View {
         segments.filter { $0.cost.isFinite && $0.cost > 0.001 }
     }
 
-    /// Reverse map from a tool display name to its integration/source id.
-    private func toolId(forDisplayName name: String) -> String? {
-        IntegrationRegistry.all.first { IntegrationRegistry.toolDisplayName(for: $0.id) == name }?.id
-    }
-
     private func toolIdToDisplay(_ id: String) -> String? {
         IntegrationRegistry.all.contains { $0.id == id } ? IntegrationRegistry.toolDisplayName(for: id) : nil
     }
 
-    /// Per-tool model detail rows (BYOK: a tool running third-party models).
-    @ViewBuilder
-    private func modelDetailRows(for toolId: String) -> some View {
-        let rows = modelBreakdownItems
-            .filter { $0.toolId == toolId }
-            .sorted { $0.tokens > $1.tokens }
-        if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(rows, id: \.model) { m in
-                    HStack(spacing: 6) {
-                        Text(m.model).font(.caption2).lineLimit(1)
-                        Spacer()
-                        Text("\(m.calls) \(I18n.t("dashboard.calls"))")
-                            .font(.caption2).foregroundColor(.secondary)
-                        Text(tokenShort(Int(clamping: m.tokens))).font(.caption2).monospacedDigit()
-                    }
-                }
-            }
-            .padding(.leading, 28).padding(.vertical, 2)
-        }
-    }
-
     // MARK: - Output section
 
+    @ViewBuilder
     var outputSection: some View {
-        let toolCosts = computeToolCosts()
-        let modelRows = modelBreakdownItems.sorted { $0.tokens > $1.tokens }.prefix(8)
-        let toolTotalTokens = toolCosts.reduce(Int64(0)) { $0 + ($1.tokens ?? 0) }
-        let toolTotalCalls = toolCosts.reduce(0) { $0 + ($1.calls ?? 0) }
-        let modelTotalTokens = modelRows.reduce(Int64(0)) { $0 + $1.tokens }
-        let modelTotalCalls = modelRows.reduce(0) { $0 + $1.calls }
+        // Matrix: one column per dev tool, one row per model; a cell is the
+        // token usage of that tool for that model. Row/column totals plus the
+        // grand total make both dimensions readable. Calls are not shown.
+        let matrixRows = modelBreakdownItems
+        let toolIds = Array(Set(matrixRows.compactMap(\.toolId)))
+            .sorted { a, b in
+                let ta = matrixRows.filter { $0.toolId == a }.reduce(Int64(0)) { $0 + $1.tokens }
+                let tb = matrixRows.filter { $0.toolId == b }.reduce(Int64(0)) { $0 + $1.tokens }
+                return ta > tb
+            }
+            .prefix(6)
+        let modelNames = Array(Set(matrixRows.map(\.model)))
+            .sorted { a, b in
+                let ta = matrixRows.filter { $0.model == a }.reduce(Int64(0)) { $0 + $1.tokens }
+                let tb = matrixRows.filter { $0.model == b }.reduce(Int64(0)) { $0 + $1.tokens }
+                return ta > tb
+            }
+            .prefix(8)
+        let cellTokens: (String, String) -> Int64 = { model, tool in
+            matrixRows.first { $0.model == model && $0.toolId == tool }?.tokens ?? 0
+        }
+        let toolTokens: (String) -> Int64 = { tool in
+            matrixRows.filter { $0.toolId == tool }.reduce(Int64(0)) { $0 + $1.tokens }
+        }
+        let modelTokens: (String) -> Int64 = { model in
+            matrixRows.filter { $0.model == model }.reduce(Int64(0)) { $0 + $1.tokens }
+        }
+        let grandTotal = matrixRows.reduce(Int64(0)) { $0 + $1.tokens }
 
-        return VStack(spacing: 12) {
-            // ── Tool × model two-dimensional table ("mouth") ──
-            if !toolCosts.isEmpty || !modelBreakdownItems.isEmpty {
-                let shown = toolsExpanded ? toolCosts : Array(toolCosts.prefix(4))
+        VStack(spacing: 12) {
+            // ── Tool × model matrix ("mouth") ──
+            if !matrixRows.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(I18n.t("dashboard.by_tool_model")).font(.caption).foregroundColor(.secondary)
-                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
-                        // ── Dev tools section ──
+                    Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 4) {
                         GridRow {
-                            Text(I18n.t("dashboard.dev_tool")).font(.caption2).bold().foregroundColor(.secondary)
-                            Text("Token").font(.caption2).bold().foregroundColor(.secondary)
-                            Text(I18n.t("dashboard.calls")).font(.caption2).bold().foregroundColor(.secondary)
+                            Text("").gridCellUnsizedAxes([.horizontal])
+                            ForEach(toolIds, id: \.self) { t in
+                                Text(toolIdToDisplay(t) ?? t)
+                                    .font(.caption2).bold().foregroundColor(.secondary).lineLimit(1)
+                            }
+                            Text(I18n.t("dashboard.total")).font(.caption2).bold().foregroundColor(.secondary)
                         }
-                        ForEach(Array(shown.enumerated()), id: \.element.name) { idx, tc in
-                            let isClaude = tc.name == "Claude Code"
-                            let isCodex = tc.name == "ChatGPT"
-                            let displayName = isClaude
-                                ? (claudeDetailExpanded ? "⌄ Claude Code" : "› Claude Code")
-                                : (isCodex
-                                    ? (codexDetailExpanded ? "⌄ ChatGPT" : "› ChatGPT")
-                                    : tc.name)
-                            let toolId = self.toolId(forDisplayName: tc.name)
+                        ForEach(modelNames, id: \.self) { m in
                             GridRow {
-                                Text(displayName).font(.caption).lineLimit(1)
-                                Text(tokenShort(Int(clamping: tc.tokens ?? 0))).font(.caption).monospacedDigit()
-                                Text("\(tc.calls ?? 0)").font(.caption).monospacedDigit()
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    if isClaude {
-                                        claudeDetailExpanded.toggle()
-                                    }
-                                    if isCodex {
-                                        codexDetailExpanded.toggle()
-                                    }
+                                Text(m).font(.caption).lineLimit(1)
+                                ForEach(toolIds, id: \.self) { t in
+                                    Text(tokenShort(Int(clamping: cellTokens(m, t))))
+                                        .font(.caption).monospacedDigit()
                                 }
-                                if isClaude && claudeDetailExpanded {
-                                    Task { await loadClaudeStats() }
-                                } else if isCodex && codexDetailExpanded {
-                                    Task { await loadCodexStats() }
-                                }
-                            }
-                            .pointingHandCursor(isClaude || isCodex)
-                            if isClaude && claudeDetailExpanded {
-                                GridRow {
-                                    claudeDetailCard.gridCellColumns(3)
-                                }
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
-                            if isCodex && codexDetailExpanded {
-                                GridRow {
-                                    codexDetailCard.gridCellColumns(3)
-                                }
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
-                            if let id = toolId {
-                                GridRow {
-                                    modelDetailRows(for: id).gridCellColumns(3)
-                                }
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                                Text(tokenShort(Int(clamping: modelTokens(m))))
+                                    .font(.caption).bold().monospacedDigit()
                             }
                         }
                         GridRow {
-                            Text(I18n.t("dashboard.total")).font(.caption).fontWeight(.bold)
-                            Text(tokenShort(Int(clamping: toolTotalTokens)))
-                                .font(.caption).fontWeight(.bold).monospacedDigit()
-                            Text("\(toolTotalCalls)").font(.caption).fontWeight(.bold).monospacedDigit()
-                        }
-                        Divider()
-                        // ── Models section (BYOK) ──
-                        GridRow {
-                            Text(I18n.t("dashboard.by_model")).font(.caption2).bold().foregroundColor(.secondary)
-                            Text("Token").font(.caption2).bold().foregroundColor(.secondary)
-                            Text(I18n.t("dashboard.calls")).font(.caption2).bold().foregroundColor(.secondary)
-                        }
-                        ForEach(Array(modelRows), id: \.model) { m in
-                            GridRow {
-                                HStack(spacing: 4) {
-                                    Text(m.model).font(.caption).lineLimit(1)
-                                    if let tool = m.toolId.flatMap(toolIdToDisplay) {
-                                        Text(tool).font(.caption2).foregroundColor(.secondary)
-                                    }
-                                }
-                                Text(tokenShort(Int(clamping: m.tokens))).font(.caption).monospacedDigit()
-                                Text("\(m.calls)").font(.caption).monospacedDigit()
+                            Text(I18n.t("dashboard.total")).font(.caption).bold()
+                            ForEach(toolIds, id: \.self) { t in
+                                Text(tokenShort(Int(clamping: toolTokens(t))))
+                                    .font(.caption).bold().monospacedDigit()
                             }
+                            Text(tokenShort(Int(clamping: grandTotal)))
+                                .font(.caption).bold().monospacedDigit()
                         }
-                        GridRow {
-                            Text(I18n.t("dashboard.total")).font(.caption).fontWeight(.bold)
-                            Text(tokenShort(Int(clamping: modelTotalTokens)))
-                                .font(.caption).fontWeight(.bold).monospacedDigit()
-                            Text("\(modelTotalCalls)").font(.caption).fontWeight(.bold).monospacedDigit()
-                        }
-                    }
-                    if toolCosts.count > 4 {
-                        Button(toolsExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
-                            withAnimation { toolsExpanded.toggle() }
-                        }
-                        .font(.caption2)
-                        .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
                 .padding(12)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            // ── Tool summary entries (Claude Code / ChatGPT conclusion) ──
+            HStack(spacing: 12) {
+                summaryButton(
+                    title: "Claude Code",
+                    expanded: claudeDetailExpanded,
+                    action: {
+                        claudeDetailExpanded.toggle()
+                        if claudeDetailExpanded { Task { await loadClaudeStats() } }
+                    })
+                summaryButton(
+                    title: "ChatGPT",
+                    expanded: codexDetailExpanded,
+                    action: {
+                        codexDetailExpanded.toggle()
+                        if codexDetailExpanded { Task { await loadCodexStats() } }
+                    })
+            }
+            if claudeDetailExpanded {
+                claudeDetailCard
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            if codexDetailExpanded {
+                codexDetailCard
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             // ── Mouth line — short horizontal connector ──
@@ -1081,6 +1031,20 @@ struct DashboardView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
+    }
+
+    private func summaryButton(title: String, expanded: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.caption2)
+                Text(title).font(.caption)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Body sections
