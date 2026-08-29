@@ -258,24 +258,6 @@ struct DashboardView: View {
                         )
                         .padding(.horizontal, 60).padding(.top, 60).padding(.bottom, 12)
 
-                        // ── Body under the robot head ──
-                        if timeRange != .today {
-                            trendSection
-                                .padding(20)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                        .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
-                                )
-                                .padding(.horizontal, 60)
-                        } else {
-                            remainingBalanceSection
-                                .padding(20)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                        .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
-                                )
-                                .padding(.horizontal, 60)
-                        }
                         // Body: one outer frame hosting trend/balance + repos
                         VStack(spacing: 12) {
                             if timeRange != .today {
@@ -629,41 +611,50 @@ struct DashboardView: View {
 
     /// Nose: vertical overlapping bars. Added runs top-down, deleted runs
     /// bottom-up; the overlap is the net line change. Max height is the larger
-    /// of the two, labels sit at top/bottom, net number in the middle.
+    /// of the two; labels and the net number sit inside a wide rounded bar.
     @ViewBuilder var noseStatCards: some View {
         let added = codeChanges.reduce(0) { $0 + $1.added }
         let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
         let netLines = added - deleted
         let maxVal = Double(max(added, deleted, 1))
-        VStack(spacing: 2) {
-            Text("+\(added)")
-                .font(.caption).foregroundColor(.marsGreen).monospacedDigit()
-            GeometryReader { geo in
-                ZStack {
-                    VStack {
-                        Spacer()
-                        Capsule()
-                            .fill(Color.deepRed.opacity(0.55))
-                            .frame(width: 22, height: geo.size.height * Double(deleted) / maxVal)
-                    }
-                    VStack {
-                        Capsule()
-                            .fill(Color.marsGreen.opacity(0.85))
-                            .frame(width: 22, height: geo.size.height * Double(added) / maxVal)
-                        Spacer()
-                    }
-                    Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
-                        .font(.system(size: 11, weight: .bold)).monospacedDigit()
-                        .foregroundColor(netLines >= 0 ? .marsGreen : .deepRed)
+        GeometryReader { geo in
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .quaternarySystemFill).opacity(0.35))
+                VStack {
+                    Spacer()
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.deepRed.opacity(0.55))
+                        .frame(height: geo.size.height * Double(deleted) / maxVal)
+                }
+                VStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.marsGreen.opacity(0.85))
+                        .frame(height: geo.size.height * Double(added) / maxVal)
+                    Spacer()
+                }
+                VStack(spacing: 0) {
+                    Text("+\(added)")
+                        .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                        .foregroundColor(.white)
                         .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 4))
+                        .background(Color.marsGreen.opacity(0.85), in: RoundedRectangle(cornerRadius: 4))
+                    Spacer()
+                    Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
+                        .font(.system(size: 12, weight: .bold)).monospacedDigit()
+                        .foregroundColor(netLines >= 0 ? .marsGreen : .deepRed)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+                    Spacer()
+                    Text("-\(deleted)")
+                        .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(Color.deepRed.opacity(0.8), in: RoundedRectangle(cornerRadius: 4))
                 }
             }
-            .frame(height: 56)
-            Text("-\(deleted)")
-                .font(.caption).foregroundColor(.red).monospacedDigit()
         }
-        .frame(width: 90)
+        .frame(width: 78, height: 64)
     }
 
     // MARK: - Head overview (forehead usage · eyes expense/output · nose lines)
@@ -739,12 +730,7 @@ struct DashboardView: View {
                       pct: totalCost > 0 ? s.cost / totalCost * 100 : 0,
                       color: Self.donutPalette[i % Self.donutPalette.count])
         }
-        let subLabel = subMonthly > 0.001
-            ? " · +\(I18n.t("dashboard.sub_label")) \(String(format: "$%.0f", subMonthly))/\(I18n.t("dashboard.month"))"
-            : ""
         VStack(spacing: 6) {
-            Text("\(I18n.t("dashboard.actual_spend")) \(String(format: "$%.2f", actualSpend))\(subLabel)")
-                .font(.caption).foregroundColor(.secondary)
             ZStack {
                 if !segments.isEmpty {
                     Chart(segments) { item in
@@ -799,8 +785,6 @@ struct DashboardView: View {
         }
         let centerText = tokenShort(Int(clamping: Int64(totalTokens)))
         VStack(spacing: 6) {
-            Text("\(I18n.t("dashboard.by_repo")) \(centerText)")
-                .font(.caption).foregroundColor(.secondary)
             ZStack {
                 if !segments.isEmpty {
                     Chart(segments) { item in
@@ -1381,6 +1365,7 @@ struct DashboardView: View {
                     )
                         .foregroundStyle(Color.marsGreenLight)
                         .lineStyle(StrokeStyle(lineWidth: 1.5))
+                        .interpolationMethod(.catmullRom)
                         .position(by: .value("Series", I18n.t("dashboard.chart_tokens")))
                 }
             }
