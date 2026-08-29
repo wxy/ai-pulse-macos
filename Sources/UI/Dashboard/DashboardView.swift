@@ -1719,7 +1719,8 @@ struct DashboardView: View {
     /// Apply a snapshot to @State variables, skipping all DB queries.
     /// `range` is the time range this snapshot was computed for — loadedTimeRange
     /// must match the data, not the (possibly already-switched) current tab.
-    private func applySnapshot(_ snap: DashboardSnapshot, for range: TimeRange) {
+    private func applySnapshot(_ rawSnap: DashboardSnapshot, for range: TimeRange) {
+        let snap = Self.sanitizedSnapshot(rawSnap)
         todayCombinedSpend = snap.todayCost
         weekCombinedSpend = snap.weekCost
         monthCombinedSpend = snap.monthCost
@@ -1749,25 +1750,139 @@ struct DashboardView: View {
         loadedTimeRange = range
 
         let scalarValues = [
-            snap.todayCost, snap.weekCost, snap.monthCost,
-            snap.yesterdaySpend, snap.previousPeriodSpend,
+            rawSnap.todayCost, rawSnap.weekCost, rawSnap.monthCost,
+            rawSnap.yesterdaySpend, rawSnap.previousPeriodSpend,
         ]
-        let trendValues = (snap.dailyStats + snap.balanceDaily).map(\.value)
+        let trendValues = (rawSnap.dailyStats + rawSnap.balanceDaily).map(\.value)
         let allFinite = scalarValues.allSatisfy(\.isFinite)
             && trendValues.allSatisfy(\.isFinite)
-            && snap.balanceDaily.allSatisfy { $0.ts.isFinite }
-            && snap.dailyStats.allSatisfy { $0.ts.isFinite }
+            && rawSnap.balanceDaily.allSatisfy { $0.ts.isFinite }
+            && rawSnap.dailyStats.allSatisfy { $0.ts.isFinite }
         DiagnosticJournal.log("apply_snapshot", [
             "loaded_range": .string(range.cacheKey),
-            "daily_count": .int(snap.dailyStats.count),
-            "balance_day_count": .int(snap.balanceDaily.count),
-            "code_count": .int(snap.codeChanges.count),
-            "provider_count": .int(snap.providerBreakdown.count),
+            "daily_count": .int(rawSnap.dailyStats.count),
+            "balance_day_count": .int(rawSnap.balanceDaily.count),
+            "code_count": .int(rawSnap.codeChanges.count),
+            "provider_count": .int(rawSnap.providerBreakdown.count),
             "all_finite": .bool(allFinite),
         ])
 
         // Same entry animation as the full load path
         animateBarIfNeeded()
+    }
+
+    // MARK: - Snapshot sanitization
+
+    /// Coerces every numeric field of a dashboard snapshot into a finite,
+    /// non-negative value before it enters SwiftUI state. Charts and layout
+    /// can never trap on NaN/Inf, and negative spend/counts render as zero
+    /// instead of inverted geometry. The diagnostic journal still records the
+    /// raw `all_finite` status before this pass.
+    nonisolated static func sanitizedSnapshot(_ snap: DashboardSnapshot) -> DashboardSnapshot {
+        var clean = snap
+        clean.todayCost = Self.safeNonNegative(snap.todayCost)
+        clean.weekCost = Self.safeNonNegative(snap.weekCost)
+        clean.monthCost = Self.safeNonNegative(snap.monthCost)
+        clean.yesterdaySpend = Self.safeNonNegative(snap.yesterdaySpend)
+        clean.previousPeriodSpend = Self.safeNonNegative(snap.previousPeriodSpend)
+        clean.subDaily = Self.safeNonNegative(snap.subDaily)
+        clean.todayCalls = Self.safeNonNegative(snap.todayCalls)
+        clean.todayTokens = Self.safeNonNegative(snap.todayTokens)
+
+        clean.providerBreakdown = snap.providerBreakdown.map {
+            ProviderItem(providerId: $0.providerId, name: $0.name, cost: Self.safeNonNegative($0.cost))
+        }
+        clean.toolBreakdown = snap.toolBreakdown.map {
+            NameCostItem(name: $0.name, cost: Self.safeNonNegative($0.cost))
+        }
+        clean.topRepos = snap.topRepos.map {
+            RepoItem(
+                name: $0.name,
+                cost: Self.safeNonNegative($0.cost),
+                added: Self.safeNonNegative($0.added),
+                deleted: Self.safeNonNegative($0.deleted),
+                cpl: Self.safeNonNegative($0.cpl))
+        }
+        clean.prediction = snap.prediction.map {
+            PredictionItem(
+                monthProjected: Self.safeNonNegative($0.monthProjected),
+                dailyRate: Self.safeNonNegative($0.dailyRate),
+                daysRemaining: Self.safeNonNegative($0.daysRemaining),
+                monthSoFar: Self.safeNonNegative($0.monthSoFar))
+        }
+        clean.dailyStats = snap.dailyStats.map(Self.sanitizedTrendPoint)
+        clean.codeChanges = snap.codeChanges.map(Self.sanitizedTrendPoint)
+        clean.balanceDaily = snap.balanceDaily.map(Self.sanitizedTrendPoint)
+        clean.remainingBalances = snap.remainingBalances.map {
+            RemainingBalanceItem(
+                providerId: $0.providerId,
+                displayName: $0.displayName,
+                balance: Self.safeNonNegative($0.balance),
+                currency: $0.currency)
+        }
+        clean.quotaStatus = snap.quotaStatus.map {
+            QuotaStatusItem(
+                toolId: $0.toolId,
+                utilization: Self.safeNonNegative($0.utilization),
+                limitStatus: $0.limitStatus,
+                resetAt: Self.safeNonNegative($0.resetAt),
+                windowSeconds: Self.safeNonNegative($0.windowSeconds))
+        }
+        clean.toolDetails = snap.toolDetails.map { detail in
+            let c = detail.conclusion
+            let cleanConclusion = ToolConclusionItem(
+                spend: Self.safeNonNegative(c.spend),
+                previousSpend: Self.safeNonNegative(c.previousSpend),
+                deltaPct: c.deltaPct.isFinite ? c.deltaPct : 0,
+                projectedMonth: Self.safeNonNegative(c.projectedMonth),
+                sessionCount: Self.safeNonNegative(c.sessionCount),
+                commitCount: Self.safeNonNegative(c.commitCount),
+                addedLines: Self.safeNonNegative(c.addedLines),
+                deletedLines: Self.safeNonNegative(c.deletedLines),
+                avgCostPerSession: Self.safeNonNegative(c.avgCostPerSession),
+                cpl: Self.safeNonNegative(c.cpl),
+                crossToolDeltaPct: c.crossToolDeltaPct.map { $0.isFinite ? $0 : 0 })
+            let cleanSessions = detail.sessions.map { s in
+                ToolSessionItem(
+                    sessionId: s.sessionId,
+                    title: s.title,
+                    repo: s.repo,
+                    firstTs: Self.safeNonNegative(s.firstTs),
+                    lastTs: Self.safeNonNegative(s.lastTs),
+                    cost: Self.safeNonNegative(s.cost),
+                    windowTokens: s.windowTokens.map(Self.safeNonNegative),
+                    lastInput: Self.safeNonNegative(s.lastInput),
+                    turnCount: Self.safeNonNegative(s.turnCount),
+                    avgOccupancy: s.avgOccupancy.map { $0.isFinite ? $0 : 0 },
+                    avgCacheRatio: s.avgCacheRatio.map { $0.isFinite ? $0 : 0 },
+                    compactionCount: Self.safeNonNegative(s.compactionCount))
+            }
+            return ToolDetailItem(source: detail.source, conclusion: cleanConclusion, sessions: cleanSessions)
+        }
+        return clean
+    }
+
+    private nonisolated static func sanitizedTrendPoint(_ p: TrendPoint) -> TrendPoint {
+        TrendPoint(
+            ts: p.ts.isFinite ? p.ts : 0,
+            value: Self.safeNonNegative(p.value),
+            calls: Self.safeNonNegative(p.calls),
+            tokens: Self.safeNonNegative(p.tokens),
+            netLines: Self.safeNonNegative(p.netLines),
+            added: Self.safeNonNegative(p.added),
+            deleted: Self.safeNonNegative(p.deleted))
+    }
+
+    private nonisolated static func safeNonNegative(_ v: Double) -> Double {
+        v.isFinite && v >= 0 ? v : 0
+    }
+
+    private nonisolated static func safeNonNegative(_ v: Int64) -> Int64 {
+        v >= 0 ? v : 0
+    }
+
+    private nonisolated static func safeNonNegative(_ v: Int) -> Int {
+        v >= 0 ? v : 0
     }
 
     @MainActor
