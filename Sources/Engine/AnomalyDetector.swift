@@ -16,7 +16,7 @@ final class AnomalyDetector: @unchecked Sendable {
             let cal = Calendar.current
             let now = Date()
             // Last 7 days of hourly spending
-            let weekAgo = cal.date(byAdding: .day, value: -7, to: now)!
+            let weekAgo = cal.date(byAdding: .day, value: -7, to: now) ?? now
             let startMs = Int64(weekAgo.timeIntervalSince1970 * 1000)
 
             let rows = try await AppDatabase.shared.read { db -> [(hr: Int64, cost: Double)] in

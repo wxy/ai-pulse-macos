@@ -249,7 +249,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             // days before Monday (same lookback as combinedSpend) so the first
             // delta at the week boundary is measured against a prior snapshot
             // instead of being silently dropped for the whole week.
-            let weekDays = Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: Calendar.current.startOfDay(for: Date())).day! + 1
+            let weekDays = max((Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: Calendar.current.startOfDay(for: Date())).day ?? 0) + 1, 1)
             let monday = Calendar.mondayOfWeek()
             let lookbackStart = cal.date(byAdding: .day, value: -14, to: monday) ?? monday
             let lookbackStartMs = Int64(lookbackStart.timeIntervalSince1970 * 1000)
@@ -329,7 +329,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             }
 
             // 7-day average for percentage comparison
-            _ = cal.startOfDay(for: cal.date(byAdding: .day, value: -6, to: Date())!).timeIntervalSince1970 * 1000
+            _ = cal.startOfDay(for: cal.date(byAdding: .day, value: -6, to: Date()) ?? Date()).timeIntervalSince1970 * 1000
             let weekAvgCst = (apiSpend + subAmortization * 7.0) / 7.0
 
             let todaySum = makeSummary(cnt: todayCnt, cost: todayCst, added: todayAdded, deleted: todayDeleted, label: I18n.t("menu.today"), vsAvg: weekAvgCst)

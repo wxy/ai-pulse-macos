@@ -316,7 +316,7 @@ enum StatsService {
         let daysRemaining = totalDays - daysElapsed
 
         // Rolling 30-day window for stable daily rate
-        let rollingStart = cal.date(byAdding: .day, value: -29, to: todayStart)!
+        let rollingStart = cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
         let rollingMs = Int64(rollingStart.timeIntervalSince1970 * 1000)
         let monthMs = Int64(monthStart.timeIntervalSince1970 * 1000)
 
@@ -601,21 +601,21 @@ enum StatsService {
     static func dashboardSnapshot(days: Int) async -> DashboardSnapshot {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
-        let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart)!
+        let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) ?? todayStart
         let rangeStartMs = Int64(rangeStart.timeIntervalSince1970 * 1000)
         let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
         // 30-day window + 14d lookback for correct balance delta computation.
-        let monthStart = cal.date(byAdding: .day, value: -29, to: todayStart)!
+        let monthStart = cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
         let monthStartMs = Int64(monthStart.timeIntervalSince1970 * 1000)
-        let lookbackStart = cal.date(byAdding: .day, value: -14, to: monthStart)!
+        let lookbackStart = cal.date(byAdding: .day, value: -14, to: monthStart) ?? monthStart
         let lookbackStartMs = Int64(lookbackStart.timeIntervalSince1970 * 1000)
 
         // Monday of this week (for unified week cost)
         let mondayStartMs = Int64(Calendar.mondayOfWeek().timeIntervalSince1970 * 1000)
-        let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart)!
+        let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
         let yesterdayStartMs = Int64(yesterdayStart.timeIntervalSince1970 * 1000)
         // Previous 30-day window for period-over-period comparison
-        let prevPeriodStart = cal.date(byAdding: .day, value: -30, to: todayStart)!
+        let prevPeriodStart = cal.date(byAdding: .day, value: -30, to: todayStart) ?? todayStart
 
         //
         // ── Unified cost computation: all three ranges use combinedSpend ──

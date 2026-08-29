@@ -12,7 +12,12 @@ enum TimeRange: Hashable {
         switch self {
         case .today: return 1
         case .thisWeek:
-            return Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: Calendar.current.startOfDay(for: Date())).day! + 1
+            let days = Calendar.current.dateComponents(
+                [.day],
+                from: Calendar.mondayOfWeek(),
+                to: Calendar.current.startOfDay(for: Date())
+            ).day ?? 0
+            return max(days + 1, 1)
         case .days30: return 30
         }
     }
@@ -1324,7 +1329,8 @@ struct DashboardView: View {
         if case .thisWeek = timeRange {
             return Calendar.mondayOfWeek()
         }
-        return cal.date(byAdding: .day, value: -(timeRange.days - 1), to: cal.startOfDay(for: Date()))!
+        return cal.date(byAdding: .day, value: -(timeRange.days - 1), to: cal.startOfDay(for: Date()))
+            ?? cal.startOfDay(for: Date())
     }
 
     /// Charts' inferred date domain becomes degenerate when every mark uses the
@@ -1399,7 +1405,8 @@ struct DashboardView: View {
         case .thisWeek:
             return Int64(Calendar.mondayOfWeek().timeIntervalSince1970 * 1000)
         case .days30:
-            return Int64(cal.date(byAdding: .day, value: -29, to: todayStart)!.timeIntervalSince1970 * 1000)
+            let start = cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
+            return Int64(start.timeIntervalSince1970 * 1000)
         }
     }
 
@@ -1696,8 +1703,8 @@ struct DashboardView: View {
         // Recompute and cache all three time ranges.
         // Then post a dashboardRefresh notification — the onReceive handler
         // calls load(), which reads the fresh cache. Single code path, no races.
-                let sTodayStart = Calendar.current.startOfDay(for: Date())
-        let weekDays = Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: sTodayStart).day! + 1
+        let sTodayStart = Calendar.current.startOfDay(for: Date())
+        let weekDays = max((Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: sTodayStart).day ?? 0) + 1, 1)
         let dayMap: [String: Int] = ["today": 1, "week": weekDays, "30d": 30]
         for (key, days) in dayMap {
             let snap = await StatsService.dashboardSnapshot(days: days)

@@ -65,7 +65,11 @@ nonisolated final class ApiPoller: @unchecked Sendable {
 
     private func fetchSimple(provider: ProviderDef, url: String, apiKey: String,
                               parser: @escaping @Sendable ([String: Any]) -> [BalanceEntry]) {
-        var req = URLRequest(url: URL(string: url)!)
+        guard let url = URL(string: url) else {
+            self.cacheError(pid: provider.id, msg: "Invalid URL")
+            return
+        }
+        var req = URLRequest(url: url)
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         session.dataTask(with: req) { [weak self] data, resp, error in
             DispatchQueue.main.async {

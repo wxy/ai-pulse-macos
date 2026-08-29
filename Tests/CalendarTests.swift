@@ -49,4 +49,12 @@ final class CalendarTests: XCTestCase {
         let newYear = date(2026, 1, 1)
         XCTAssertEqual(Calendar.mondayOfWeek(for: newYear), date(2025, 12, 29))
     }
+
+    func testMondayOfWeekNeverCrashesOnExtremeDates() {
+        let dates: [Date] = [.distantPast, .distantFuture, Date(timeIntervalSince1970: 0)]
+        for d in dates {
+            let monday = Calendar.mondayOfWeek(for: d)
+            XCTAssertTrue(monday.timeIntervalSince1970.isFinite)
+        }
+    }
 }

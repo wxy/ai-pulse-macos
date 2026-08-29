@@ -7,7 +7,7 @@ extension Calendar {
     static nonisolated func mondayOfWeek(for date: Date = Date()) -> Date {
         var cal = Calendar.current
         cal.firstWeekday = 2
-        return cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear],
-                                                  from: date))!
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        return cal.date(from: comps) ?? cal.startOfDay(for: date)
     }
 }
