@@ -35,7 +35,7 @@ final class CloudDataService: ObservableObject {
     private(set) var currentRange: String = "today"
 
     /// All three per-range snapshots. Keyed by "today" / "week" / "30d".
-    private var snapshots: [String: DashboardSnapshot] = [:]
+    @Published private var snapshots: [String: DashboardSnapshot] = [:]
 
     private lazy var database: CKDatabase = {
         let db = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
@@ -101,6 +101,13 @@ final class CloudDataService: ObservableObject {
         self.currentRange = range
         self.snapshot = self.snapshots[range]
         self.lastUpdated = self.snapshot?.updatedAt
+    }
+
+    /// Returns the range-local snapshot without switching the published data.
+    /// DashboardView uses this at body-evaluation time so a tab can never
+    /// render another range's breakdown while a CloudKit fetch is in flight.
+    func cachedSnapshot(for range: String) -> DashboardSnapshot? {
+        snapshots[range]
     }
 
     private func recordName(for range: String) -> String {
@@ -269,6 +276,7 @@ final class CloudDataService: ObservableObject {
     /// Fetch a single range AND switch the published snapshot to it.
     /// Called on tab switch — shows that range's data immediately.
     func fetchSnapshot(for range: String = "today") async throws {
+        loadSnapshot(for: range)
         await fetchAndStore(range: range)
         loadSnapshot(for: range)
     }
