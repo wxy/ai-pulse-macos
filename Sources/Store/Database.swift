@@ -51,6 +51,8 @@ final class AppDatabase: @unchecked Sendable {
                 }
                 try? db.create(indexOn: "usage_event", columns: ["ts"])
                 try? db.create(indexOn: "usage_event", columns: ["repo_path"])
+                try? db.create(indexOn: "usage_event", columns: ["source", "ts"])
+                try? db.create(indexOn: "usage_event", columns: ["source", "session_id", "ts"])
             }),
             ("code_change", { db in
                 try db.create(table: "code_change", ifNotExists: true) { t in

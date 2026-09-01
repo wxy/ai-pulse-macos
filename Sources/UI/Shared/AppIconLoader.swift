@@ -36,7 +36,15 @@ enum AppIconLoader {
     /// Render a pulse frame: artwork scaled up with a gold overlay.
     /// - Parameter scale: artwork scale multiplier (1.0 = normal, 1.3 = 30% larger)
     /// - Parameter tintAmount: 0 = no gold, 1 = full gold overlay
+    @MainActor private static let pulseFrameCache = NSCache<NSString, NSImage>()
+
+    @MainActor
     static func pulseFrame(scale: CGFloat, tintAmount: CGFloat) -> NSImage {
+        let key = "\(scale.rounded(toPlaces: 3))|\(tintAmount.rounded(toPlaces: 3))" as NSString
+        if let cached = pulseFrameCache.object(forKey: key) {
+            return cached
+        }
+
         let px = Int(size)
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
@@ -83,6 +91,7 @@ enum AppIconLoader {
 
         let img = NSImage(size: NSSize(width: size, height: size))
         img.addRepresentation(rep)
+        pulseFrameCache.setObject(img, forKey: key)
         return img
     }
 
@@ -361,5 +370,12 @@ enum AppIconLoader {
             }
         }
         return nil
+    }
+}
+
+private extension CGFloat {
+    func rounded(toPlaces places: Int) -> CGFloat {
+        let divisor = pow(10.0, CGFloat(places))
+        return (self * divisor).rounded() / divisor
     }
 }
