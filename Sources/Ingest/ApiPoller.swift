@@ -256,24 +256,43 @@ nonisolated final class ApiPoller: @unchecked Sendable {
             }
         }
 
-        // Record balance snapshot for daily spend calculation.
+        // Record only balances that can affect spend: the first baseline or a
+        // real balance move. Re-recording an unchanged balance would invalidate
+        // the dashboard cache and trigger a full snapshot recompute.
+        var detectedSpend = false
+        var balancesToRecord: [BalanceEntry] = []
         // For usage-type providers (OpenAI), cumulative spend grows over time —
         // store as negative so that "balance decreases" correctly represents spend.
         for entry in safeEntries {
+            let moved = prevBalance.map {
+                isUsageType ? entry.totalBalance > $0 : entry.totalBalance < $0
+            } ?? false
+            guard prevBalance == nil || moved else { continue }
+            if moved { detectedSpend = true }
+            balancesToRecord.append(entry)
+        }
+
+        if !balancesToRecord.isEmpty {
+            let shouldNotify = detectedSpend
             Task {
-                do {
-                    try await AppDatabase.shared.write { db in
-                        let csId = "api-key:\(pid)"
-                        let storedBalance = isUsageType ? -entry.totalBalance : entry.totalBalance
-                        guard storedBalance.isFinite else { return }
-                        try db.execute(sql: """
-                            INSERT INTO balance_snapshot (ts, provider_id, balance, currency, cost_source_id)
-                            VALUES (?, ?, ?, ?, ?)
-                            """, arguments: [now, pid, storedBalance, entry.currency, csId])
+                for entry in balancesToRecord {
+                    do {
+                        try await AppDatabase.shared.write { db in
+                            let csId = "api-key:\(pid)"
+                            let storedBalance = isUsageType ? -entry.totalBalance : entry.totalBalance
+                            if storedBalance.isFinite {
+                                try db.execute(sql: """
+                                    INSERT INTO balance_snapshot (ts, provider_id, balance, currency, cost_source_id)
+                                    VALUES (?, ?, ?, ?, ?)
+                                    """, arguments: [now, pid, storedBalance, entry.currency, csId])
+                            }
+                        }
+                    } catch {
+                        Logger.error("ApiPoller[\(pid)]: snapshot insert failed: \(error)")
                     }
+                }
+                if shouldNotify {
                     DataRefreshCoordinator.shared.notifyPhaseBalance()
-                } catch {
-                    Logger.error("ApiPoller[\(pid)]: snapshot insert failed: \(error)")
                 }
             }
         }

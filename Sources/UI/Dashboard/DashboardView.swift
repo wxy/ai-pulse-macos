@@ -40,6 +40,19 @@ enum TimeRange: Hashable {
     }
 }
 
+/// Kept outside observable state: an unchanged heartbeat can be ignored
+/// without invalidating the dashboard while the user is scrolling.
+@MainActor
+private final class DashboardLoadThrottle {
+    private var lastLoad = Date.distantPast
+
+    func shouldLoad(now: Date, minimumInterval: TimeInterval) -> Bool {
+        guard now.timeIntervalSince(lastLoad) >= minimumInterval else { return false }
+        lastLoad = now
+        return true
+    }
+}
+
 struct DashboardView: View {
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
@@ -47,19 +60,10 @@ struct DashboardView: View {
 
     let initialTimeRange: TimeRange
 
-    @State private var dailyStats: [DailyStat] = []
-    @State private var providerCosts: [ProviderDailyCost] = []
-    @State private var codeChanges: [DailyCodeChange] = []
-    @State private var paddedChanges: [DailyCodeChange] = []
-    @State private var repos: [RepoBreakdown] = []
-    @State private var prediction: Prediction?
     @State private var timeRange: TimeRange
     @State private var costHoverDate: Date? = nil
-    @State private var lastUpdated: Date? = nil
     @State private var isRefreshing = false
-    @State private var lastSnapshotTS: Date? = nil
-    @State private var lastDataChangeLoad: Date = .distantPast
-    private let dataChangeThrottle: TimeInterval = 15  // min interval for data-change-driven reloads
+    @State private var dataChangeThrottle = DashboardLoadThrottle()
     @State private var lastChartJournalKey: String = ""
 
     init(initialTimeRange: TimeRange = .today) {
@@ -70,32 +74,18 @@ struct DashboardView: View {
     @State private var costHoverX: CGFloat = 0
     @State private var codeHoverX: CGFloat = 0
     @State private var editorMappings: [EditorDetector.Mapping] = []
-    @State private var balanceSpend: [(providerId: String, name: String, spend: Double)] = []
-    @State private var loadError: String? = nil
     @State private var healthSeverity = AppHealthMonitor.Severity.nominal
     @State private var healthMessages: [String] = []
     @State private var showHealthDetails = false
     @State private var usageData: [String: (percent: Double, limitStatus: String, resetAt: Double, windowSeconds: Double)] = [:]  // toolId → quota state
-    @State private var trendHoverDate: Date? = nil
-    @State private var trendHoverX: CGFloat = 0
-    @State private var trendHoverY: CGFloat = 0
-    @State private var trendPlotFrame: CGRect = .zero  // plot area in chart-view coords
-    @State private var toolCostBreakdown: [(name: String, cost: Double)] = []
-    @State private var dailyBalanceSpend: [Date: Double] = [:]  // date → USD spend
     @State private var i18nToken = 0  // bumped on language change to force re-render
-    @State private var todayCombinedSpend: Double = 0
-    @State private var weekCombinedSpend: Double = 0
-    @State private var monthCombinedSpend: Double = 0
-    @State private var todayCalls: Int = 0
-    @State private var todayTokens: Int = 0
-    @State private var yesterdaySpend: Double = 0
-    @State private var previousPeriodSpend: Double = 0  // for 30-day comparison
     @State private var barProgress: CGFloat = 0  // 0→1 drives all entry animations
-    @State private var loadedTimeRange: TimeRange? = nil  // set after data lands; gates bars against stale renders
     @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
-    @State private var remainingBalances: [RemainingBalanceItem] = []
-    @State private var isDemoMode = false
     @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
+    @State private var entryAnimationToken = 0   // cancels a stale zero→one entry run
+    @State private var rangeChangeStartedAt: Date? = nil
+    @State private var rangeSnapshots: [TimeRange: DashboardSnapshot] = [:]
+    @State private var demoRanges: Set<TimeRange> = []
     @State private var toolsExpanded = false
     @State private var claudeDetailExpanded = false
     @State private var codexDetailExpanded = false
@@ -107,6 +97,109 @@ struct DashboardView: View {
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
     }
+
+    // The dashboard keeps a complete, independent snapshot per range. All UI
+    // data below is a projection of the selected range; switching a tab cannot
+    // mutate one range while another range is mid-render.
+    private var activeSnapshot: DashboardSnapshot? {
+        rangeSnapshots[timeRange]
+    }
+
+    private var loadedTimeRange: TimeRange? {
+        activeSnapshot != nil ? timeRange : nil
+    }
+
+    private var lastUpdated: Date? {
+        activeSnapshot?.updatedAt
+    }
+
+    private var lastSnapshotTS: Date? {
+        activeSnapshot?.updatedAt
+    }
+
+    private var isDemoMode: Bool {
+        demoRanges.contains(timeRange)
+    }
+
+    private var providerCosts: [ProviderDailyCost] {
+        guard let snapshot = activeSnapshot else { return [] }
+        return snapshot.providerBreakdown.map {
+            ProviderDailyCost(date: snapshot.updatedAt,
+                              providerId: $0.providerId,
+                              cost: $0.cost)
+        }
+    }
+
+    private var balanceSpend: [(providerId: String, name: String, spend: Double)] {
+        (activeSnapshot?.providerBreakdown ?? []).map {
+            (providerId: $0.providerId, name: $0.name, spend: $0.cost)
+        }
+    }
+
+    private var toolCostBreakdown: [(name: String, cost: Double)] {
+        (activeSnapshot?.toolBreakdown ?? []).map { (name: $0.name, cost: $0.cost) }
+    }
+
+    private var dailyStats: [DailyStat] {
+        (activeSnapshot?.dailyStats ?? []).map {
+            DailyStat(date: Date(timeIntervalSince1970: $0.ts),
+                      cost: $0.value,
+                      calls: Int($0.calls),
+                      tokens: Int($0.tokens),
+                      netLines: $0.netLines,
+                      costPerLine: 0)
+        }
+    }
+
+    private var dailyBalanceSpend: [Date: Double] {
+        (activeSnapshot?.balanceDaily ?? []).reduce(into: [Date: Double]()) { map, point in
+            map[Date(timeIntervalSince1970: point.ts)] = point.value
+        }
+    }
+
+    private var codeChanges: [DailyCodeChange] {
+        (activeSnapshot?.codeChanges ?? []).map {
+            DailyCodeChange(date: Date(timeIntervalSince1970: $0.ts),
+                            added: $0.added,
+                            deleted: $0.deleted)
+        }
+    }
+
+    private var paddedChanges: [DailyCodeChange] {
+        Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
+    }
+
+    private var repos: [RepoBreakdown] {
+        (activeSnapshot?.topRepos ?? []).map {
+            RepoBreakdown(repo: $0.name,
+                          cost: $0.cost,
+                          added: $0.added,
+                          deleted: $0.deleted,
+                          apiSources: [],
+                          subscriptionSources: [])
+        }
+    }
+
+    private var prediction: Prediction? {
+        activeSnapshot?.prediction.map {
+            Prediction(monthProjected: $0.monthProjected,
+                       dailyRate: $0.dailyRate,
+                       daysRemaining: $0.daysRemaining,
+                       monthSoFar: $0.monthSoFar)
+        }
+    }
+
+    private var remainingBalances: [RemainingBalanceItem] {
+        activeSnapshot?.remainingBalances ?? []
+    }
+
+    private var todayCombinedSpend: Double { activeSnapshot?.todayCost ?? 0 }
+    private var weekCombinedSpend: Double { activeSnapshot?.weekCost ?? 0 }
+    private var monthCombinedSpend: Double { activeSnapshot?.monthCost ?? 0 }
+    private var todayCalls: Int { Int(activeSnapshot?.todayCalls ?? 0) }
+    private var todayTokens: Int { Int(activeSnapshot?.todayTokens ?? 0) }
+    private var yesterdaySpend: Double { activeSnapshot?.yesterdaySpend ?? 0 }
+    private var previousPeriodSpend: Double { activeSnapshot?.previousPeriodSpend ?? 0 }
 
 
     /// Rounded-rect "ear" for the robot-head frame.
@@ -190,7 +283,15 @@ struct DashboardView: View {
             HStack {
                 Text(I18n.t("dashboard.title")).font(.title2).fontWeight(.bold)
                 Spacer()
-                Picker("", selection: $timeRange) {
+                Picker("", selection: Binding(
+                    get: { timeRange },
+                    set: { newValue in
+                        // Child .task runs before onChange, so stamp the intent
+                        // before committing the range to keep render timing honest.
+                        rangeChangeStartedAt = Date()
+                        timeRange = newValue
+                    }
+                )) {
                     Text(I18n.t("dashboard.today")).tag(TimeRange.today)
                     Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
                     Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
@@ -254,7 +355,7 @@ struct DashboardView: View {
                         .padding(.horizontal, 60).padding(.top, 60).padding(.bottom, 12)
 
                         // ── Trend frame (body) — daily trend chart ──
-                        if timeRange != .today {
+                        if timeRange != .today, loadedTimeRange == timeRange {
                             trendSection
                                 .padding(20)
                                 .background(
@@ -283,15 +384,23 @@ struct DashboardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .environment(\.locale, I18n.resolvedLocale)
         .task {
+            await hydrateRangeSnapshotCache()
             await load()
             ApiPoller.shared.pollAll()
             triggerCloudSync()
         }
         .onChange(of: timeRange) { _, newValue in
+            rangeChangeStartedAt = Date()
             DiagnosticJournal.log("range_change", [
                 "to": .string(newValue.cacheKey),
+                "snapshot_ready": .bool(rangeSnapshots[newValue] != nil),
             ])
-            barProgress = 0
+            // Commit the new range at zero first, then animate on the next
+            // run-loop tick. Animating in the same update can be coalesced
+            // with the tab change and leave geometry at an intermediate state.
+            startEntryAnimation()
+            costHoverDate = nil
+            codeHoverDate = nil
             Task { await load() }
             if claudeDetailExpanded { Task { await loadClaudeStats() } }
             if codexDetailExpanded { Task { await loadCodexStats() } }
@@ -303,8 +412,7 @@ struct DashboardView: View {
         .onReceive(NotificationCenter.default.publisher(for: .dataDidChange)) { _ in
             // Background data change — throttle to avoid redundant work
             let now = Date()
-            guard now.timeIntervalSince(lastDataChangeLoad) >= dataChangeThrottle else { return }
-            lastDataChangeLoad = now
+            guard dataChangeThrottle.shouldLoad(now: now, minimumInterval: 15) else { return }
             Task { await load() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .appHealthDidChange)) { _ in
@@ -620,7 +728,7 @@ struct DashboardView: View {
 
     var spendingOverview: some View {
         let apiSpend = ChartMath.finite(balanceSpend.reduce(0.0) { $0 + $1.spend }, fallback: 0)
-        let subDaily = ChartMath.finite(StatsService.subscriptionDailyAmortization(), fallback: 0)
+        let subDaily = ChartMath.finite(activeSnapshot?.subDaily ?? 0, fallback: 0)
         let subTotal = subDaily * Double(timeRange.days)
         let totalCost: Double = {
             switch timeRange {
@@ -776,7 +884,16 @@ struct DashboardView: View {
             for (id, pct, status, resetAt, window) in rows where !id.isEmpty {
                 map[id] = (pct, status, resetAt, window)
             }
-            usageData = map
+            let unchanged = map.count == usageData.count && map.allSatisfy { key, next in
+                guard let current = usageData[key] else { return false }
+                return current.percent == next.percent
+                    && current.limitStatus == next.limitStatus
+                    && current.resetAt == next.resetAt
+                    && current.windowSeconds == next.windowSeconds
+            }
+            if !unchanged {
+                usageData = map
+            }
         } catch {
             Logger.debug("Dashboard: loadUsageData failed: \(error)")
         }
@@ -802,11 +919,26 @@ struct DashboardView: View {
         .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(Double(index) * 0.04), value: progress)
     }
 
-    struct DonutItem: Identifiable { let id = UUID(); let label: String; let cost: Double; let pct: Double; let color: Color }
+    struct DonutItem: Identifiable {
+        // Labels are unique within each donut. Stable identity avoids turning
+        // every refresh into a destroy/create transition for ring geometry.
+        let id: String
+        let label: String
+        let cost: Double
+        let pct: Double
+        let color: Color
 
-    /// SectorMark cannot safely render an all-zero angle set (for example, a
-    /// provider that is configured but currently reporting an error). Keep such
-    /// entries out of chart geometry and show a placeholder at the call site.
+        init(label: String, cost: Double, pct: Double, color: Color) {
+            self.id = label
+            self.label = label
+            self.cost = cost
+            self.pct = pct
+            self.color = color
+        }
+    }
+
+    /// SectorMark receives only positive, finite angles. All-zero/error entries
+    /// stay out of chart geometry and are represented by the caller's placeholder.
     static func renderableDonutSegments(_ segments: [DonutItem]) -> [DonutItem] {
         segments.filter { $0.cost.isFinite && $0.cost > 0.001 }
     }
@@ -993,43 +1125,53 @@ struct DashboardView: View {
     /// Target grid-line count — both axes share the same number of sections.
     private let targetGrid = 4.0
 
-    /// Left axis: cost (USD).
-    private var trendSpendAxis: (max: Double, step: Double, values: [Double], sections: Int) {
-        let padded = padStats(dailyStats, days: timeRange.days)
+    private struct TrendAxes {
+        let spend: (max: Double, step: Double, values: [Double], sections: Int)
+        let code: (max: Double, step: Double, values: [Double], scale: Double)
+    }
+
+    private func makeTrendAxes(
+        paddedStats: [DailyStat],
+        paddedCode: [DailyCodeChange],
+        balanceSpendByDay: [Date: Double]
+    ) -> TrendAxes {
         let cal = Calendar.current
-        let subDaily = StatsService.subscriptionDailyAmortization()
-        let rawMax = padded.map { s -> Double in
+        let subDaily = ChartMath.finite(activeSnapshot?.subDaily ?? 0, fallback: 0)
+        let rawSpendMax = paddedStats.map { s -> Double in
             let d = cal.startOfDay(for: s.date)
-            return (dailyBalanceSpend[d] ?? 0) + subDaily  // stacked total
+            return (balanceSpendByDay[d] ?? 0) + subDaily  // stacked total
         }.max() ?? 5
-        let safeRawMax = ChartMath.axisMax(rawMax, fallback: 5)
+        let safeRawMax = ChartMath.axisMax(rawSpendMax, fallback: 5)
         let step = ChartMath.niceStep(safeRawMax / targetGrid)
         let max = ChartMath.axisMax(ceil(safeRawMax / step) * step, fallback: step)
         let sections = Swift.max(1, Int((max / step).rounded(.toNearestOrEven)))
-        var vals = [Double](); var v = 0.0
-        while v <= max + step / 2 {
-            vals.append(ChartMath.finite(v, fallback: max))
-            v += step
+        var spendValues = [Double]()
+        var spendValue = 0.0
+        while spendValue <= max + step / 2 {
+            spendValues.append(ChartMath.finite(spendValue, fallback: max))
+            spendValue += step
         }
-        return (max, step, vals, sections)
-    }
 
-    /// Right axis: code lines. Same section count as left.
-    private var trendCodeAxis: (max: Double, step: Double, values: [Double], scale: Double) {
-        let padded = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
-        let rawMax = Double(padded.map { $0.added + $0.deleted }.max() ?? 1)
-        let sections = Double(trendSpendAxis.sections)
-        guard rawMax > 0, trendSpendAxis.max > 0, sections > 0 else { return (10, 2, [0, 2, 4, 6, 8, 10], 1) }
-        var step = ChartMath.niceStep(rawMax / sections)
-        while step * sections < rawMax { step = ChartMath.nextNiceStep(step) }
-        let max = step * sections
-        var vals = [Double](); var v = 0.0
-        while v <= max + step / 2 {
-            vals.append(ChartMath.finite(v, fallback: max))
-            v += step
+        let rawCodeMax = Double(paddedCode.map { $0.added + $0.deleted }.max() ?? 1)
+        let codeSections = Double(sections)
+        var codeStep = ChartMath.niceStep(rawCodeMax / codeSections)
+        while codeStep * codeSections < rawCodeMax { codeStep = ChartMath.nextNiceStep(codeStep) }
+        let codeMax = codeStep * codeSections
+        var codeValues = [Double]()
+        var codeValue = 0.0
+        while codeValue <= codeMax + codeStep / 2 {
+            codeValues.append(ChartMath.finite(codeValue, fallback: codeMax))
+            codeValue += codeStep
         }
-        let scale = ChartMath.scale(trendSpendAxis.max, denominator: max, fallback: 1)
-        return (max, step, vals, scale)
+
+        let spend = (max: max, step: step, values: spendValues, sections: sections)
+        let code = (
+            max: codeMax,
+            step: codeStep,
+            values: codeValues,
+            scale: ChartMath.scale(max, denominator: codeMax, fallback: 1)
+        )
+        return TrendAxes(spend: spend, code: code)
     }
 
     var remainingBalanceSection: some View {
@@ -1078,16 +1220,25 @@ struct DashboardView: View {
     }
 
     var trendSection: some View {
+        let dataReady = loadedTimeRange == timeRange
+        guard dataReady else { return AnyView(EmptyView()) }
+
+        let dataPreparationStartedAt = Date()
         let padStats = padStats(dailyStats, days: timeRange.days)
         let padCode = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
-        let noData = padStats.allSatisfy({ $0.cost == 0 }) && padCode.allSatisfy({ $0.added == 0 })
-        let scale = ChartMath.finite(trendCodeAxis.scale, fallback: 1)
-        let leftMax = ChartMath.axisMax(trendSpendAxis.max, fallback: 10)
-        let leftValues = trendSpendAxis.values
-        let rightVals = trendCodeAxis.values
-        let rightMax = ChartMath.axisMax(trendCodeAxis.max, fallback: 10)
-        let dataReady = loadedTimeRange == timeRange
-        let prog = ChartMath.progress(Double(dataReady ? barProgress : 0))
+        let balanceSpendByDay = dailyBalanceSpend
+        let axes = makeTrendAxes(
+            paddedStats: padStats,
+            paddedCode: padCode,
+            balanceSpendByDay: balanceSpendByDay
+        )
+        let spendAxis = axes.spend
+        let codeAxis = axes.code
+        let scale = ChartMath.finite(codeAxis.scale, fallback: 1)
+        let leftMax = ChartMath.axisMax(spendAxis.max, fallback: 10)
+        let leftValues = spendAxis.values
+        let rightVals = codeAxis.values
+        let rightMax = ChartMath.axisMax(codeAxis.max, fallback: 10)
         let chartJournalKey = [
             timeRange.cacheKey,
             String(padStats.count),
@@ -1095,16 +1246,11 @@ struct DashboardView: View {
             String(Int((lastUpdated?.timeIntervalSince1970 ?? 0) * 1000)),
             String(leftMax),
         ].joined(separator: "|")
-
-        // Hide entirely when no data — don't show an empty chart shell
-        if noData { return AnyView(EmptyView()) }
+        let dataPreparationMs = Date().timeIntervalSince(dataPreparationStartedAt) * 1_000
 
         return AnyView(VStack(spacing: 12) {
             Text(I18n.t("dashboard.daily_trend")).font(.headline)
-            let subDaily = ChartMath.finite(
-                StatsService.subscriptionDailyAmortization(),
-                fallback: 0
-            )
+            let subDaily = ChartMath.finite(activeSnapshot?.subDaily ?? 0, fallback: 0)
                 let now = Date()
 
                 Chart {
@@ -1112,8 +1258,8 @@ struct DashboardView: View {
                     ForEach(padStats) { s in
                         let cal = Calendar.current; let d = cal.startOfDay(for: s.date)
                         let spend = ChartMath.barValue(
-                            base: dailyBalanceSpend[d] ?? 0,
-                            progress: prog
+                            base: balanceSpendByDay[d] ?? 0,
+                            progress: 1
                         )
                         BarMark(x: .value("Date", s.date, unit: .day), y: .value("Spend", spend))
                             .foregroundStyle(Color.marsGreen)
@@ -1123,7 +1269,7 @@ struct DashboardView: View {
                     ForEach(padStats.filter { $0.date <= now }) { s in
                         BarMark(
                             x: .value("Date", s.date, unit: .day),
-                            y: .value("Sub", ChartMath.barValue(base: subDaily, progress: prog))
+                            y: .value("Sub", ChartMath.barValue(base: subDaily, progress: 1))
                         )
                             .foregroundStyle(Color.marsGreenLight)
                             .position(by: .value("Series", I18n.t("dashboard.chart_cost")))
@@ -1132,7 +1278,7 @@ struct DashboardView: View {
                     ForEach(padCode) { c in
                         BarMark(
                             x: .value("Date", c.date, unit: .day),
-                            y: .value("Added", ChartMath.barValue(base: Double(c.added), progress: prog, scale: scale))
+                            y: .value("Added", ChartMath.barValue(base: Double(c.added), progress: 1, scale: scale))
                         )
                             .foregroundStyle(Color.deepRed2)
                             .position(by: .value("Series", I18n.t("dashboard.chart_code")))
@@ -1141,13 +1287,12 @@ struct DashboardView: View {
                     ForEach(padCode) { c in
                         BarMark(
                             x: .value("Date", c.date, unit: .day),
-                            y: .value("Deleted", ChartMath.barValue(base: Double(c.deleted), progress: prog, scale: scale))
+                            y: .value("Deleted", ChartMath.barValue(base: Double(c.deleted), progress: 1, scale: scale))
                         )
                             .foregroundStyle(Color.deepRed.opacity(0.35))
                             .position(by: .value("Series", I18n.t("dashboard.chart_code")))
                     }
                 }
-                .id(timeRange)
                 .chartXAxis {
                     AxisMarks(values: dateStride) { _ in
                         AxisValueLabel(format: dateLabelFormat, orientation: .horizontal)
@@ -1169,74 +1314,38 @@ struct DashboardView: View {
                     }
                 }
                 .chartOverlay { proxy in
-                    GeometryReader { geo in
-                        Color.clear
-                            .onContinuousHover { phase in
-                                if case .active(let loc) = phase,
-                                   let frame = proxy.plotFrame {
-                                    let pf = geo[frame]
-                                    let x = loc.x - pf.origin.x
-                                    let y = loc.y - pf.origin.y
-                                    guard x >= 0, x <= pf.width else { trendHoverDate = nil; return }
-                                    trendHoverX = x
-                                    trendHoverY = y
-                                    trendPlotFrame = pf
-                                    trendHoverDate = proxy.value(atX: x)
-                                } else { trendHoverDate = nil }
-                            }
-                    }
+                    TrendChartOverlay(
+                        proxy: proxy,
+                        stats: padStats,
+                        codeChanges: padCode,
+                        subDaily: subDaily,
+                        now: now
+                    )
                 }
                 .frame(height: 180)
+                .id(timeRange)
+                .transaction { $0.animation = nil }
                 .task(id: chartJournalKey) {
                     guard dataReady, lastChartJournalKey != chartJournalKey else { return }
                     lastChartJournalKey = chartJournalKey
+                    let now = Date()
                     DiagnosticJournal.log("chart_render", [
                         "range": .string(timeRange.cacheKey),
                         "daily_count": .int(padStats.count),
                         "code_count": .int(padCode.count),
+                        "data_preparation_ms": .double(dataPreparationMs.isFinite ? dataPreparationMs : 0),
+                        "range_to_chart_task_ms": .double(
+                            rangeChangeStartedAt.map { max(0, now.timeIntervalSince($0) * 1_000) } ?? 0
+                        ),
                         "spend_axis_max": .double(leftMax),
                         "code_axis_max": .double(rightMax),
-                        "progress": .double(prog),
+                        "progress": .double(1),
                         "all_finite": .bool(
                             leftMax.isFinite && rightMax.isFinite
-                                && scale.isFinite && prog.isFinite
+                                && scale.isFinite
                         ),
                     ])
                 }
-                .overlay(alignment: .topLeading) {
-                    if let hd = trendHoverDate,
-                       let stat = padStats.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
-                       let code = padCode.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }),
-                       stat.cost > 0 || code.added > 0 || code.deleted > 0 {
-                        let subCost = hd <= now ? subDaily : 0
-                        // Try right of cursor; flip left only if the tooltip would overflow.
-                        let tipW: CGFloat = 110
-                        let tipH: CGFloat = 68
-                        let gap: CGFloat = 8
-                        let pw = trendPlotFrame.width
-                        let ph = trendPlotFrame.height
-                        let fitsRight = (trendHoverX + gap + tipW <= pw)
-                        let rawX = fitsRight
-                            ? trendHoverX + gap
-                            : trendHoverX - tipW - gap
-                        let fitsAbove = (trendHoverY - tipH - gap >= 0)
-                        let rawY = fitsAbove
-                            ? trendHoverY - tipH - gap
-                            : trendHoverY + gap
-                        let tipX = trendPlotFrame.origin.x + max(0, min(rawX, pw - tipW))
-                        let tipY = trendPlotFrame.origin.y + max(0, min(rawY, ph - tipH))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(hd, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
-                            Text(String(format: I18n.t("dashboard.tooltip_api"), String(format: "%.2f", stat.cost))).font(.caption2).monospacedDigit()
-                            Text(String(format: I18n.t("dashboard.tooltip_sub"), String(format: "%.2f", subCost))).font(.caption2).monospacedDigit()
-                            Text(String(format: I18n.t("dashboard.tooltip_added"), code.added)).font(.caption2).monospacedDigit()
-                            Text(String(format: I18n.t("dashboard.tooltip_deleted"), code.deleted)).font(.caption2).monospacedDigit()
-                        }
-                        .padding(6).background(.regularMaterial).cornerRadius(6)
-                        .offset(x: max(0, tipX), y: max(0, tipY))
-                    }
-                }
-
                 // Legend
                 HStack(spacing: 16) {
                     HStack(spacing: 4) {
@@ -1260,7 +1369,84 @@ struct DashboardView: View {
         .padding(16)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.05), radius: 12, y: 3))
+        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
+        .opacity(Double(barProgress))
+        .scaleEffect(0.98 + 0.02 * Double(barProgress))
+        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: barProgress))
+    }
+
+    /// Keeps cursor tracking local so hover changes in a 30-day chart cannot
+    /// invalidate the whole dashboard while the page is being scrolled.
+    private struct TrendChartOverlay: View {
+        let proxy: ChartProxy
+        let stats: [DailyStat]
+        let codeChanges: [DailyCodeChange]
+        let subDaily: Double
+        let now: Date
+
+        @State private var hoverDate: Date? = nil
+        @State private var hoverX: CGFloat = 0
+        @State private var hoverY: CGFloat = 0
+        @State private var plotFrame: CGRect = .zero
+
+        var body: some View {
+            GeometryReader { geo in
+                Color.clear
+                    .onContinuousHover { phase in
+                        if case .active(let loc) = phase,
+                           let frame = proxy.plotFrame {
+                            let pf = geo[frame]
+                            let x = loc.x - pf.origin.x
+                            let y = loc.y - pf.origin.y
+                            guard x >= 0, x <= pf.width else {
+                                hoverDate = nil
+                                return
+                            }
+                            hoverX = x
+                            hoverY = y
+                            plotFrame = pf
+                            hoverDate = proxy.value(atX: x)
+                        } else {
+                            hoverDate = nil
+                        }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        if let date = hoverDate,
+                           let stat = stats.first(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }),
+                           let code = codeChanges.first(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }),
+                           stat.cost > 0 || code.added > 0 || code.deleted > 0 {
+                            tooltip(for: date, stat: stat, code: code)
+                        }
+                    }
+            }
+        }
+
+        private func tooltip(for date: Date, stat: DailyStat, code: DailyCodeChange) -> some View {
+            let subCost = date <= now ? subDaily : 0
+            let tipWidth: CGFloat = 110
+            let tipHeight: CGFloat = 68
+            let gap: CGFloat = 8
+            let fitsRight = hoverX + gap + tipWidth <= plotFrame.width
+            let rawX = fitsRight
+                ? hoverX + gap
+                : hoverX - tipWidth - gap
+            let fitsAbove = hoverY - tipHeight - gap >= 0
+            let rawY = fitsAbove
+                ? hoverY - tipHeight - gap
+                : hoverY + gap
+            let x = plotFrame.origin.x + max(0, min(rawX, plotFrame.width - tipWidth))
+            let y = plotFrame.origin.y + max(0, min(rawY, plotFrame.height - tipHeight))
+
+            return VStack(alignment: .leading, spacing: 2) {
+                Text(date, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
+                Text(String(format: I18n.t("dashboard.tooltip_api"), String(format: "%.2f", stat.cost))).font(.caption2).monospacedDigit()
+                Text(String(format: I18n.t("dashboard.tooltip_sub"), String(format: "%.2f", subCost))).font(.caption2).monospacedDigit()
+                Text(String(format: I18n.t("dashboard.tooltip_added"), code.added)).font(.caption2).monospacedDigit()
+                Text(String(format: I18n.t("dashboard.tooltip_deleted"), code.deleted)).font(.caption2).monospacedDigit()
+            }
+            .padding(6).background(.regularMaterial).cornerRadius(6)
+            .offset(x: max(0, x), y: max(0, y))
+        }
     }
 
     // MARK: - Axis helpers
@@ -1580,6 +1766,8 @@ struct DashboardView: View {
                         .chartLegend(.hidden)
                         .chartForegroundStyleScale(domain: segments.map(\.label),
                                                    range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
+                        .id(timeRange)
+                        .transaction { $0.animation = nil }
                         .frame(width: 120, height: 120)
                         Text("$\(String(format: "%.2f", data.total))")
                             .font(.system(size: Self.donutCenterFontSize(for: data.total), weight: .semibold, design: .rounded)).monospacedDigit()
@@ -1622,6 +1810,8 @@ struct DashboardView: View {
                         }
                         .chartLegend(.hidden)
                         .chartForegroundStyleScale(domain: segments.map(\.label), range: [Color.deepRed, .marsGreen, .deepRed2, .marsGreen2])
+                        .id(timeRange)
+                        .transaction { $0.animation = nil }
                         .frame(width: 120, height: 120)
                         Text("$\(String(format: "%.2f", apiSpend))")
                             .font(.system(size: Self.donutCenterFontSize(for: apiSpend), weight: .semibold, design: .rounded)).monospacedDigit()
@@ -1691,10 +1881,24 @@ struct DashboardView: View {
 
     @MainActor
     private func animateBarIfNeeded() {
-        guard barProgress < 0.5 else { return }
+        startEntryAnimation()
+    }
+
+    @MainActor
+    private func startEntryAnimation() {
+        entryAnimationToken += 1
+        let token = entryAnimationToken
         barProgress = 0
-        withAnimation(.spring(response: 0.65, dampingFraction: 0.7)) {
-            barProgress = 1
+
+        // Let SwiftUI commit the zero-progress frame before beginning the
+        // spring. One millisecond is enough to avoid transaction coalescing;
+        // all actual movement is driven by the spring below.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_000_000)
+            guard entryAnimationToken == token, barProgress == 0 else { return }
+            withAnimation(.spring(response: 0.65, dampingFraction: 0.7)) {
+                barProgress = 1
+            }
         }
     }
 
@@ -1705,10 +1909,24 @@ struct DashboardView: View {
         // calls load(), which reads the fresh cache. Single code path, no races.
         let sTodayStart = Calendar.current.startOfDay(for: Date())
         let weekDays = max((Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: sTodayStart).day ?? 0) + 1, 1)
-        let dayMap: [String: Int] = ["today": 1, "week": weekDays, "30d": 30]
-        for (key, days) in dayMap {
-            let snap = await StatsService.dashboardSnapshot(days: days)
-            await DashboardCache.write(timeRange: key, json: snap.jsonString())
+        let ranges: [(range: TimeRange, days: Int)] = [
+            (.today, 1),
+            (.thisWeek, weekDays),
+            (.days30, 30),
+        ]
+
+        if DemoData.isActive {
+            for item in ranges {
+                let demo = DemoData.data(for: item.range)
+                rangeSnapshots[item.range] = Self.demoSnapshot(demo, for: item.range)
+                demoRanges.insert(item.range)
+            }
+            return
+        }
+
+        for item in ranges {
+            let snap = await StatsService.dashboardSnapshot(days: item.days)
+            await storeSnapshot(snap, for: item.range)
         }
         triggerCloudSync()
         // Invalidate any in-flight load so the cache we just wrote is used
@@ -1716,59 +1934,91 @@ struct DashboardView: View {
         NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
     }
 
-    /// Apply a snapshot to @State variables, skipping all DB queries.
-    /// `range` is the time range this snapshot was computed for — loadedTimeRange
-    /// must match the data, not the (possibly already-switched) current tab.
-    private func applySnapshot(_ rawSnap: DashboardSnapshot, for range: TimeRange) {
+    @MainActor
+    private func storeSnapshot(_ rawSnap: DashboardSnapshot, for range: TimeRange, persist: Bool = true) async {
         let snap = rawSnap.sanitized()
-        todayCombinedSpend = snap.todayCost
-        weekCombinedSpend = snap.weekCost
-        monthCombinedSpend = snap.monthCost
-        todayCalls = Int(snap.todayCalls)
-        todayTokens = Int(snap.todayTokens)
-        yesterdaySpend = snap.yesterdaySpend
-        previousPeriodSpend = snap.previousPeriodSpend
-        toolCostBreakdown = snap.toolBreakdown.map { (name: $0.name, cost: $0.cost) }
-        balanceSpend = snap.providerBreakdown.map { (providerId: $0.providerId, name: $0.name, spend: $0.cost) }
-        dailyBalanceSpend = snap.balanceDaily.reduce(into: [Date: Double]()) { map, p in
-            map[Date(timeIntervalSince1970: p.ts)] = p.value
-        }
-        dailyStats = snap.dailyStats.map { p in
-            DailyStat(date: Date(timeIntervalSince1970: p.ts), cost: p.value, calls: Int(p.calls), tokens: Int(p.tokens), netLines: p.netLines, costPerLine: 0)
-        }
-        codeChanges = snap.codeChanges.map { p in
-            DailyCodeChange(date: Date(timeIntervalSince1970: p.ts), added: p.added, deleted: p.deleted)
-        }
-        repos = snap.topRepos.map { RepoBreakdown(repo: $0.name, cost: $0.cost, added: $0.added, deleted: $0.deleted, apiSources: [], subscriptionSources: []) }
-        prediction = snap.prediction.map { Prediction(monthProjected: $0.monthProjected, dailyRate: $0.dailyRate, daysRemaining: $0.daysRemaining, monthSoFar: $0.monthSoFar) }
-        lastUpdated = snap.updatedAt
-        lastSnapshotTS = snap.updatedAt
-        remainingBalances = snap.remainingBalances
-        providerCosts = snap.providerBreakdown.map { ProviderDailyCost(date: Date(), providerId: $0.providerId, cost: $0.cost) }
-        paddedChanges = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
-        isDemoMode = false
-        loadedTimeRange = range
+        rangeSnapshots[range] = snap
+        demoRanges.remove(range)
 
         let scalarValues = [
-            rawSnap.todayCost, rawSnap.weekCost, rawSnap.monthCost,
-            rawSnap.yesterdaySpend, rawSnap.previousPeriodSpend,
+            snap.todayCost, snap.weekCost, snap.monthCost,
+            snap.yesterdaySpend, snap.previousPeriodSpend,
         ]
-        let trendValues = (rawSnap.dailyStats + rawSnap.balanceDaily).map(\.value)
+        let trendValues = (snap.dailyStats + snap.balanceDaily).map(\.value)
         let allFinite = scalarValues.allSatisfy(\.isFinite)
             && trendValues.allSatisfy(\.isFinite)
-            && rawSnap.balanceDaily.allSatisfy { $0.ts.isFinite }
-            && rawSnap.dailyStats.allSatisfy { $0.ts.isFinite }
-        DiagnosticJournal.log("apply_snapshot", [
+            && snap.balanceDaily.allSatisfy { $0.ts.isFinite }
+            && snap.dailyStats.allSatisfy { $0.ts.isFinite }
+        DiagnosticJournal.log("store_snapshot", [
             "loaded_range": .string(range.cacheKey),
-            "daily_count": .int(rawSnap.dailyStats.count),
-            "balance_day_count": .int(rawSnap.balanceDaily.count),
-            "code_count": .int(rawSnap.codeChanges.count),
-            "provider_count": .int(rawSnap.providerBreakdown.count),
+            "daily_count": .int(snap.dailyStats.count),
+            "balance_day_count": .int(snap.balanceDaily.count),
+            "code_count": .int(snap.codeChanges.count),
+            "provider_count": .int(snap.providerBreakdown.count),
             "all_finite": .bool(allFinite),
         ])
 
-        // Same entry animation as the full load path
-        animateBarIfNeeded()
+        if persist {
+            await DashboardCache.write(timeRange: range.cacheKey, json: snap.jsonString())
+        }
+    }
+
+    private static func demoSnapshot(_ data: DemoData.RangeData, for range: TimeRange) -> DashboardSnapshot {
+        let dailyStats = data.dailyStats.map {
+            TrendPoint(ts: $0.date.timeIntervalSince1970,
+                       value: $0.cost,
+                       calls: Int64($0.calls),
+                       tokens: Int64($0.tokens),
+                       netLines: $0.netLines)
+        }
+        let codeChanges = data.codeChanges.map {
+            TrendPoint(ts: $0.date.timeIntervalSince1970,
+                       value: Double($0.added),
+                       calls: 0,
+                       tokens: 0,
+                       netLines: $0.added - $0.deleted,
+                       added: $0.added,
+                       deleted: $0.deleted)
+        }
+        let balanceDaily = data.dailyBalanceSpend.map { date, spend in
+            TrendPoint(ts: date.timeIntervalSince1970,
+                       value: spend,
+                       calls: 0,
+                       tokens: 0,
+                       netLines: 0)
+        }.sorted { $0.ts < $1.ts }
+
+        return DashboardSnapshot(
+            todayCost: range == .today ? data.combinedSpend : 0,
+            weekCost: range == .thisWeek ? data.combinedSpend : 0,
+            monthCost: range == .days30 ? data.combinedSpend : 0,
+            yesterdaySpend: data.yesterdaySpend,
+            previousPeriodSpend: data.previousPeriodSpend,
+            subDaily: 0.67,
+            todayCalls: Int64(data.todayCalls),
+            todayTokens: Int64(data.todayTokens),
+            providerBreakdown: data.balanceSpend.map {
+                ProviderItem(providerId: $0.providerId, name: $0.name, cost: $0.spend)
+            },
+            toolBreakdown: data.toolCostBreakdown.map {
+                NameCostItem(name: $0.name, cost: $0.cost)
+            },
+            topRepos: data.repos.map { repo in
+                let totalChanges = repo.totalChanges
+                return RepoItem(name: repo.repo,
+                                cost: repo.cost,
+                                added: repo.added,
+                                deleted: repo.deleted,
+                                cpl: totalChanges > 0 ? repo.cost * 1000 / Double(totalChanges) : 0)
+            },
+            prediction: PredictionItem(monthProjected: data.prediction.monthProjected,
+                                       dailyRate: data.prediction.dailyRate,
+                                       daysRemaining: data.prediction.daysRemaining,
+                                       monthSoFar: data.prediction.monthSoFar),
+            dailyStats: dailyStats,
+            codeChanges: codeChanges,
+            balanceDaily: balanceDaily
+        ).sanitized()
     }
 
     @MainActor
@@ -1789,59 +2039,61 @@ struct DashboardView: View {
         let cacheMaxAge: TimeInterval = {
             switch requestedRange { case .today: return 300; case .thisWeek: return 3600; default: return 43200 }
         }()
-        if loadedTimeRange != nil,
-           let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: cacheMaxAge) {
+        if let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: cacheMaxAge) {
             guard myGen == loadGeneration else { return }
             // Debounce data-change reloads only when staying on the same range;
             // a tab switch must always apply the new range's snapshot.
             if loadedTimeRange == requestedRange,
-               let last = lastSnapshotTS, abs(cached.updatedAt.timeIntervalSince(last)) < 1 { return }
-            applySnapshot(cached, for: requestedRange)
+               let last = lastSnapshotTS, abs(cached.updatedAt.timeIntervalSince(last)) < 1 {
+                // Hydration can restore the current range before this first
+                // load runs; show it immediately instead of leaving entry
+                // progress at zero.
+                animateBarIfNeeded()
+                return
+            }
+            await storeSnapshot(cached, for: requestedRange)
             Logger.debug("Dashboard: loaded from cache (\(requestedRange.label))")
             return
         }
 
-        // ── Synchronous prep ──
-        let currentTimeRange = requestedRange  // capture before async closures for sendability
-
         // ── Demo mode: auto-activates when no integrations configured ──
         let demoActive = DemoData.isActive
         if demoActive {
-            let d = DemoData.data(for: currentTimeRange)
+            let d = DemoData.data(for: requestedRange)
+            let snap = Self.demoSnapshot(d, for: requestedRange)
             guard myGen == loadGeneration else { return }
-            await MainActor.run {
-                dailyStats = d.dailyStats
-                providerCosts = d.providerCosts
-                codeChanges = d.codeChanges
-                paddedChanges = Self.padChanges(d.codeChanges, chartStart: chartStart, chartDays: chartDays)
-                repos = d.repos
-                prediction = d.prediction
-                balanceSpend = d.balanceSpend
-                dailyBalanceSpend = d.dailyBalanceSpend
-                todayCombinedSpend = currentTimeRange == .today ? d.combinedSpend : 0
-                todayCalls = d.todayCalls
-                todayTokens = d.todayTokens
-                yesterdaySpend = d.yesterdaySpend
-                previousPeriodSpend = d.previousPeriodSpend
-                toolCostBreakdown = d.toolCostBreakdown
-                isDemoMode = true
-                loadedTimeRange = currentTimeRange
-                if barProgress < 0.5 { barProgress = 0; withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 } }
-            }
+            rangeSnapshots[requestedRange] = snap
+            demoRanges.insert(requestedRange)
+            animateBarIfNeeded()
             return
         }
         
         // ── Real data: use shared StatsService builder ──
-        let snap = await StatsService.dashboardSnapshot(days: currentTimeRange.days)
+        let snap = await StatsService.dashboardSnapshot(days: requestedRange.days)
 
         guard myGen == loadGeneration else { return }
 
-        applySnapshot(snap, for: currentTimeRange)
-
-        Task { await DashboardCache.write(timeRange: currentTimeRange.cacheKey, json: snap.jsonString()) }
+        await storeSnapshot(snap, for: requestedRange)
 
         // ── Trigger entry animations (only when bars were reset by tab switch) ──
         animateBarIfNeeded()
+    }
+
+    @MainActor
+    private func hydrateRangeSnapshotCache() async {
+        let ranges: [(range: TimeRange, maxAge: TimeInterval)] = [
+            (.today, 300),
+            (.thisWeek, 3600),
+            (.days30, 43200),
+        ]
+
+        for item in ranges where rangeSnapshots[item.range] == nil {
+            guard let cached = await DashboardCache.read(timeRange: item.range.cacheKey, maxAge: item.maxAge) else { continue }
+            rangeSnapshots[item.range] = cached.sanitized()
+            DiagnosticJournal.log("snapshot_hydrate", [
+                "range": .string(item.range.cacheKey),
+            ])
+        }
     }
 
 }
