@@ -3,7 +3,7 @@ import Foundation
 /// Full dashboard snapshot — computed by macOS and synced via iCloud.
 /// iOS/watchOS read this structure to render their dashboards.
 public struct DashboardSnapshot: Codable, Sendable {
-    public var version: Int = 1
+    public var version: Int = 2
 
     public var todayCost: Double = 0
     public var weekCost: Double = 0
@@ -50,7 +50,7 @@ public struct DashboardSnapshot: Codable, Sendable {
     public var updatedAt: Date = Date()
 
     public init(
-        version: Int = 1,
+        version: Int = 2,
         todayCost: Double = 0,
         weekCost: Double = 0,
         monthCost: Double = 0,

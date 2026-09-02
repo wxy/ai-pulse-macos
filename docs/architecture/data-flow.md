@@ -35,7 +35,7 @@ macOS is the sole data producer. iOS and watchOS are read-only consumers via iCl
 
 ## CloudKit Schema
 
-Single record type: `DashboardCache_v1`
+Single record type: `DashboardCache_v2`
 
 | Record Name | Content | Sync Frequency |
 |-------------|---------|---------------|

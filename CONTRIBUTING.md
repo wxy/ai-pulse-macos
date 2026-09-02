@@ -110,16 +110,17 @@ via `applicationDockMenu(_:)` — there is no status-bar icon.
 
 The macOS app writes dashboard snapshots; iOS / watchOS / widget read them:
 
-- **CloudKit**: schema in `Suites/Shared/Models/CloudKitSchema.swift` — a single
-  record type `DashboardCache_v1`, one record per time range
+- **CloudKit**: schema in `Packages/AIPulseShared/Sources/AIPulseShared/CloudKitSchema.swift` — a single
+  record type `DashboardCache_v2`, one record per time range
   (`snapshot-today` / `snapshot-week` / `snapshot-30d`), JSON blob + `updatedAt`.
+  The 2.x contract is isolated from the 1.x `DashboardCache_v1` series.
   Container `iCloud.com.wxy.aipulse` (private database).
 - **macOS → iCloud**: one-way write, throttled ~5 min
   (`Sync/CloudSyncService`). Mobile targets are read-only.
 - **iOS**: also caches locally (`dashboard_cache.json`) with a copy in App
   Group `group.com.wxy.aipulse` for the widget.
 - **Push notifications**: iOS registers a CloudKit query subscription
-  (`dashboard-changes`, silent `content-available`) → background refresh +
+  (`dashboard-v2-changes`, silent `content-available`) → background refresh +
   optional coin sound (`Suites/iOS/App/Notifications.swift`).
 - Entitlements: `com.apple.developer.icloud-services` + `aps-environment` on
   the iOS target.

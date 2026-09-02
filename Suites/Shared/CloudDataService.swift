@@ -22,7 +22,7 @@ struct SnapshotEnvelope: Codable {
     var writerAppVersion: String?
 }
 
-/// Reads the DashboardCache_v1 record synced by macOS.
+/// Reads the DashboardCache_v2 record synced by macOS.
 /// Maintains THREE independent snapshots — one per time range — so each tab
 /// always displays its own data, even offline or when a CK fetch fails.
 @MainActor

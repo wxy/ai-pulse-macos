@@ -10,6 +10,14 @@ final class CloudSyncService {
 
     private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
 
+    private static let allowsCloudWrites: Bool = {
+        #if DEBUG
+        return false
+        #else
+        return true
+        #endif
+    }()
+
     /// Content fingerprint (updatedAt excluded) of the last snapshot actually
     /// written per range. Used to skip no-op CloudKit writes — see
     /// `syncFromCache()`.
@@ -18,6 +26,11 @@ final class CloudSyncService {
     private init() {}
 
     func syncFromCache() async {
+        guard Self.allowsCloudWrites else {
+            Logger.info("CloudSync: dashboard writes disabled in Debug")
+            return
+        }
+
         Logger.info("CloudSync: starting sync")
         // Per-range config: days, cache maxAge
         let ranges: [(key: String, recordName: String, days: Int, maxAge: TimeInterval)] = [
@@ -72,6 +85,11 @@ final class CloudSyncService {
 
     /// Upsert the latest spend-surge / balance-drop alert for iOS readers.
     func writeSpendAlert(_ payload: SpendAlertPayload) async {
+        guard Self.allowsCloudWrites else {
+            Logger.info("CloudSync: spend-alert CloudKit write disabled in Debug")
+            return
+        }
+
         guard let data = try? JSONEncoder().encode(payload),
               let json = String(data: data, encoding: .utf8) else {
             Logger.error("CloudSync: spend alert encode failed")
