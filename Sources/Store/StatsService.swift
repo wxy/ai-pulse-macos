@@ -672,6 +672,7 @@ enum StatsService {
     /// Computes everything needed for a complete DashboardSnapshot for `days`.
     /// Used by both live Dashboard loading and background cache refresh.
     static func dashboardSnapshot(days: Int) async -> DashboardSnapshot {
+        let snapshotStartedAt = Date()
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
         let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) ?? todayStart
@@ -775,6 +776,11 @@ enum StatsService {
             stR, blR, bmR, cdR, rpR, prR, lbR, qsR,
             modelRowsR, sourceAggR, usageByToolR, repoTokensR, sourceDailyR
         )
+        DiagnosticJournal.log("dashboard_snapshot_stage", [
+            "stage": .string("core_data"),
+            "days": .int(days),
+            "elapsed_ms": .double(Date().timeIntervalSince(snapshotStartedAt) * 1_000),
+        ])
 
         let subAmort = subscriptionDailyAmortization()
 
@@ -815,11 +821,15 @@ enum StatsService {
                 }
             }
         }
-        async let codexDetail = StatsService.toolDetail(source: "codex", sinceMs: toolStartMs)
-        async let claudeDetail = StatsService.toolDetail(source: "claude-code", sinceMs: toolStartMs)
         // Keep both entries even when a tool has no sessions — the iOS detail
         // sheet falls back to an empty state instead of a dead tap.
-        let detailItems = [await codexDetail, await claudeDetail]
+        let toolDetailStartedAt = Date()
+        let detailItems = await toolDetails(sinceMs: toolStartMs)
+        DiagnosticJournal.log("dashboard_snapshot_stage", [
+            "stage": .string("tool_details"),
+            "days": .int(days),
+            "elapsed_ms": .double(Date().timeIntervalSince(toolDetailStartedAt) * 1_000),
+        ])
         let toolTotal = toolMap.reduce(0.0) { $0 + $1.value }
         let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
             if case .apiKey(let pid) = cs.kind { return pid }; return nil
@@ -941,49 +951,344 @@ enum StatsService {
         // Sanitize at the source so every downstream consumer — local cache,
         // CloudKit sync, iOS/watchOS/widget decoders — can only ever receive
         // finite, non-negative values.
-        return snap.sanitized()
+        let sanitized = snap.sanitized()
+        DiagnosticJournal.log("dashboard_snapshot_stage", [
+            "stage": .string("total"),
+            "days": .int(days),
+            "elapsed_ms": .double(Date().timeIntervalSince(snapshotStartedAt) * 1_000),
+        ])
+        return sanitized
     }
 
     // MARK: - Tool detail (conclusion card + session explorer)
 
     /// Period summary for one tool's dashboard conclusion card.
     static func toolConclusion(source: String, sinceMs: Int64) async -> ToolConclusion {
+        let rows = await sessionRows(source: source, sinceMs: sinceMs)
+        return await toolConclusion(source: source, sinceMs: sinceMs, rows: rows)
+    }
+
+    private static func toolConclusion(
+        source: String,
+        sinceMs: Int64,
+        rows: [SessionRow]
+    ) async -> ToolConclusion {
         let cal = Calendar.current
         let todayMs = Int64(cal.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
         let toMs = todayMs + 86_400_000
         let rangeLen = toMs - sinceMs
         let prevSince = sinceMs - rangeLen
 
-        let spend = await sourceSpend(source: source, sinceMs: sinceMs, toMs: toMs)
-        let previous = await sourceSpend(source: source, sinceMs: prevSince, toMs: sinceMs)
-        let rows = await sessionRows(source: source, sinceMs: sinceMs)
-        let changes = await attributedChanges(source: source, sinceMs: sinceMs, toMs: toMs)
+        let metrics = await toolMetrics(source: source, sinceMs: sinceMs, toMs: toMs, prevSince: prevSince)
 
         let daysElapsed = max(1, Int((todayMs - sinceMs) / 86_400_000) + 1)
         let daysInMonth = cal.range(of: .day, in: .month, for: Date())?.count ?? 30
-        let totalLines = changes.added + changes.deleted
-        let cpl = totalLines > 0 ? spend / Double(totalLines) * 1000 : 0
+        let totalLines = metrics.changes.added + metrics.changes.deleted
+        let cpl = totalLines > 0 ? metrics.spend / Double(totalLines) * 1000 : 0
         let count = rows.count
         let otherSource = source == "codex" ? "claude-code" : "codex"
         let otherRows = await sessionRows(source: otherSource, sinceMs: sinceMs)
-        let thisAvg = count > 0 ? spend / Double(count) : 0
+        let thisAvg = count > 0 ? metrics.spend / Double(count) : 0
         let otherAvg = otherRows.count > 0
             ? (await sourceSpend(source: otherSource, sinceMs: sinceMs, toMs: toMs)) / Double(otherRows.count)
             : 0
 
         return ToolConclusion(
-            spend: spend,
-            previousSpend: previous,
-            deltaPct: SessionStats.deltaPct(current: spend, previous: previous),
+            spend: metrics.spend,
+            previousSpend: metrics.previousSpend,
+            deltaPct: SessionStats.deltaPct(current: metrics.spend, previous: metrics.previousSpend),
             projectedMonth: SessionStats.projectMonth(
-                spendSoFar: spend, daysElapsed: daysElapsed, daysInMonth: daysInMonth),
+                spendSoFar: metrics.spend, daysElapsed: daysElapsed, daysInMonth: daysInMonth),
             sessionCount: count,
-            commitCount: changes.commits,
-            addedLines: changes.added,
-            deletedLines: changes.deleted,
+            commitCount: metrics.changes.commits,
+            addedLines: metrics.changes.added,
+            deletedLines: metrics.changes.deleted,
             avgCostPerSession: thisAvg,
             cpl: cpl,
             crossToolDeltaPct: otherAvg > 0 ? SessionStats.deltaPct(current: thisAvg, previous: otherAvg) : nil)
+    }
+
+    /// Builds both iOS tool blocks together. Each tool's cross-tool comparison
+    /// needs the other tool's sessions. One database pass keeps those related
+    /// readings consistent and avoids queueing six separate scans of 30-day
+    /// usage events behind each other.
+    private static func toolDetails(sinceMs: Int64) async -> [ToolDetailItem] {
+        let toMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000) + 86_400_000
+        let prevSince = sinceMs - (toMs - sinceMs)
+
+        let rowsStartedAt = Date()
+        let buildStartedAt = Date()
+        let detailData = await toolDetailData(
+            sources: ["codex", "claude-code"], sinceMs: sinceMs, toMs: toMs, prevSince: prevSince)
+        DiagnosticJournal.log("dashboard_snapshot_stage", [
+            "stage": .string("tool_details_rows"),
+            "elapsed_ms": .double(Date().timeIntervalSince(rowsStartedAt) * 1_000),
+            "database_and_aggregation_ms": .double(
+                Date().timeIntervalSince(buildStartedAt) * 1_000),
+        ])
+
+        let codex = detailData.sources["codex"]
+        let claude = detailData.sources["claude-code"]
+        let resolvedCodexRows = codex?.rows ?? []
+        let resolvedClaudeRows = claude?.rows ?? []
+        let resolvedCodexMetrics = codex?.metrics ?? ToolMetrics()
+        let resolvedClaudeMetrics = claude?.metrics ?? ToolMetrics()
+
+        return [
+            toolDetail(
+                source: "codex", sinceMs: sinceMs, rows: resolvedCodexRows,
+                metrics: resolvedCodexMetrics, otherAverageSpend: resolvedClaudeMetrics.spend,
+                otherRowCount: resolvedClaudeRows.count),
+            toolDetail(
+                source: "claude-code", sinceMs: sinceMs, rows: resolvedClaudeRows,
+                metrics: resolvedClaudeMetrics, otherAverageSpend: resolvedCodexMetrics.spend,
+                otherRowCount: resolvedCodexRows.count),
+        ]
+    }
+
+    private struct ToolDetailSourceData: Sendable {
+        let rows: [SessionRow]
+        let metrics: ToolMetrics
+    }
+
+    private struct ToolDetailData: Sendable {
+        let sources: [String: ToolDetailSourceData]
+    }
+
+    private static func toolDetailData(
+        sources: [String],
+        sinceMs: Int64,
+        toMs: Int64,
+        prevSince: Int64
+    ) async -> ToolDetailData {
+        do {
+            return try await AppDatabase.shared.read { db in
+                var eventArguments = StatementArguments(sources)
+                eventArguments += [sinceMs, toMs]
+                let eventRows = try Row.fetchAll(db, sql: """
+                    SELECT source, session_id, ts, in_tokens, cache_tokens,
+                           cost_usd, repo_path
+                    FROM usage_event
+                    WHERE source IN (\(sources.map { _ in "?" }.joined(separator: ",")))
+                      AND ts >= ? AND ts < ? AND session_id IS NOT NULL
+                    ORDER BY source, ts
+                    """, arguments: eventArguments)
+
+                struct SessionBuild {
+                    var sessionId: String = ""
+                    var firstTs: Int64 = .max
+                    var lastTs: Int64 = 0
+                    var cost: Double = 0
+                    var lastInput: Int = 0
+                    var firstRepo: String? = nil
+                    var hasFirstRepo = false
+                    var turns: [TurnPoint] = []
+                }
+
+                var builders: [String: [String: SessionBuild]] = [:]
+                for row in eventRows {
+                    let source: String = row["source"]
+                    let sid: String = row["session_id"]
+                    let ts: Int64 = row["ts"] ?? 0
+                    let input: Int = row["in_tokens"] ?? 0
+                    let cache: Int = row["cache_tokens"] ?? 0
+                    let cost: Double = row["cost_usd"] ?? 0
+
+                    var session = builders[source]?[sid] ?? SessionBuild()
+                    session.sessionId = sid
+                    session.firstTs = min(session.firstTs, ts)
+                    session.lastTs = max(session.lastTs, ts)
+                    session.cost += cost
+                    if ts >= session.lastTs { session.lastInput = input }
+                    if !session.hasFirstRepo {
+                        session.firstRepo = row["repo_path"]
+                        session.hasFirstRepo = true
+                    }
+                    if input + cache > 0 {
+                        let context = source == "claude-code" ? input + cache : input
+                        session.turns.append(TurnPoint(
+                            index: session.turns.count,
+                            ts: Int(ts),
+                            inputTokens: input,
+                            cacheTokens: cache,
+                            outTokens: 0,
+                            cost: cost,
+                            contextTokens: context))
+                    }
+                    builders[source, default: [:]][sid] = session
+                }
+
+                let infoRows = try Row.fetchAll(db, sql: """
+                    SELECT source, session_id, title, repo, window_tokens
+                    FROM session_info
+                    WHERE source IN (\(sources.map { _ in "?" }.joined(separator: ",")))
+                    """, arguments: StatementArguments(sources))
+                var sessionInfo: [String: (title: String?, repo: String?, window: Int?)] = [:]
+                for row in infoRows {
+                    let source: String = row["source"]
+                    let sid: String = row["session_id"]
+                    sessionInfo["\(source)|\(sid)"] = (
+                        title: row["title"],
+                        repo: row["repo"],
+                        window: row["window_tokens"]
+                    )
+                }
+
+                var spendArguments = StatementArguments(sources)
+                spendArguments += [sinceMs, sinceMs, prevSince, toMs]
+                let spendRows = try Row.fetchAll(db, sql: """
+                    SELECT source,
+                           COALESCE(SUM(CASE WHEN ts >= ? THEN cost_usd ELSE 0 END), 0) AS current_spend,
+                           COALESCE(SUM(CASE WHEN ts < ? THEN cost_usd ELSE 0 END), 0) AS previous_spend
+                    FROM usage_event
+                    WHERE source IN (\(sources.map { _ in "?" }.joined(separator: ",")))
+                      AND ts >= ? AND ts < ?
+                    GROUP BY source
+                    """, arguments: spendArguments)
+                var currentSpend: [String: Double] = [:]
+                var previousSpend: [String: Double] = [:]
+                for row in spendRows {
+                    let source: String = row["source"] ?? ""
+                    currentSpend[source] = row["current_spend"] ?? 0
+                    previousSpend[source] = row["previous_spend"] ?? 0
+                }
+
+                var changeArguments = StatementArguments(sources)
+                changeArguments += [sinceMs, toMs, sinceMs, toMs]
+                let changeRows = try Row.fetchAll(db, sql: """
+                    WITH touched AS (
+                        SELECT DISTINCT source, repo_path
+                        FROM usage_event
+                        WHERE source IN (\(sources.map { _ in "?" }.joined(separator: ",")))
+                          AND ts >= ? AND ts < ? AND repo_path IS NOT NULL
+                    )
+                    SELECT touched.source AS source,
+                           COUNT(DISTINCT c.commit_hash) AS commits,
+                           COALESCE(SUM(c.added), 0) AS added,
+                           COALESCE(SUM(c.deleted), 0) AS deleted
+                    FROM touched
+                    JOIN code_change c ON c.repo_path = touched.repo_path
+                    WHERE c.ts >= ? AND c.ts < ?
+                    GROUP BY touched.source
+                    """, arguments: changeArguments)
+                var changes: [String: (commits: Int, added: Int, deleted: Int)] = [:]
+                for row in changeRows {
+                    let source: String = row["source"]
+                    changes[source] = (
+                        commits: row["commits"] ?? 0,
+                        added: row["added"] ?? 0,
+                        deleted: row["deleted"] ?? 0
+                    )
+                }
+
+                var sourceData: [String: ToolDetailSourceData] = [:]
+                for source in sources {
+                    let sessions = builders[source] ?? [:]
+                    let rows = sessions.values
+                        .sorted { $0.cost > $1.cost }
+                        .map { build -> SessionRow in
+                            let info = sessionInfo["\(source)|\(build.sessionId)"]
+                            let repo = build.firstRepo
+                            return SessionRow(
+                                source: source,
+                                sessionId: build.sessionId,
+                                title: info?.title,
+                                repo: repo?.isEmpty == true ? nil : repo,
+                                firstTs: Int(build.firstTs),
+                                lastTs: Int(build.lastTs),
+                                lastInput: build.lastInput,
+                                cost: build.cost,
+                                windowTokens: info?.window)
+                        }
+                    sourceData[source] = ToolDetailSourceData(
+                        rows: rows,
+                        metrics: ToolMetrics(
+                            spend: currentSpend[source] ?? 0,
+                            previousSpend: previousSpend[source] ?? 0,
+                            changes: changes[source] ?? (0, 0, 0)))
+                }
+                return ToolDetailData(sources: sourceData)
+            }
+        } catch {
+            Logger.error("StatsService.toolDetailData failed: \(error)")
+            return ToolDetailData(sources: [:])
+        }
+    }
+
+    private struct ToolMetrics {
+        var spend: Double = 0
+        var previousSpend: Double = 0
+        var changes: (commits: Int, added: Int, deleted: Int) = (0, 0, 0)
+    }
+
+    private static func toolMetrics(
+        source: String,
+        sinceMs: Int64,
+        toMs: Int64,
+        prevSince: Int64
+    ) async -> ToolMetrics {
+        let (spends, changes) = await (
+            sourceSpends(source: source, sinceMs: sinceMs, toMs: toMs, prevSince: prevSince),
+            attributedChanges(source: source, sinceMs: sinceMs, toMs: toMs)
+        )
+        return ToolMetrics(
+            spend: spends.current,
+            previousSpend: spends.previous,
+            changes: changes)
+    }
+
+    private static func toolDetail(
+        source: String,
+        sinceMs: Int64,
+        rows: [SessionRow],
+        metrics: ToolMetrics,
+        otherAverageSpend: Double,
+        otherRowCount: Int
+    ) -> ToolDetailItem {
+        let count = rows.count
+        let todayMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+        let daysElapsed = max(1, Int((todayMs - sinceMs) / 86_400_000) + 1)
+        let daysInMonth = Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30
+        let thisAverage = count > 0 ? metrics.spend / Double(count) : 0
+        let otherAverage = otherRowCount > 0 ? otherAverageSpend / Double(otherRowCount) : 0
+        let totalLines = metrics.changes.added + metrics.changes.deleted
+        let cpl = totalLines > 0 ? metrics.spend / Double(totalLines) * 1000 : 0
+
+        return ToolDetailItem(
+            source: source,
+            conclusion: ToolConclusionItem(
+                spend: metrics.spend,
+                previousSpend: metrics.previousSpend,
+                deltaPct: SessionStats.deltaPct(
+                    current: metrics.spend, previous: metrics.previousSpend),
+                projectedMonth: SessionStats.projectMonth(
+                    spendSoFar: metrics.spend,
+                    daysElapsed: daysElapsed,
+                    daysInMonth: daysInMonth),
+                sessionCount: count,
+                commitCount: metrics.changes.commits,
+                addedLines: metrics.changes.added,
+                deletedLines: metrics.changes.deleted,
+                avgCostPerSession: thisAverage,
+                cpl: cpl,
+                crossToolDeltaPct: otherAverage > 0
+                    ? SessionStats.deltaPct(current: thisAverage, previous: otherAverage)
+                    : nil),
+            sessions: rows.map {
+                ToolSessionItem(
+                    sessionId: $0.sessionId,
+                    title: $0.title,
+                    repo: $0.repo,
+                    firstTs: Int64($0.firstTs),
+                    lastTs: Int64($0.lastTs),
+                    cost: $0.cost,
+                    windowTokens: $0.windowTokens,
+                    lastInput: $0.lastInput,
+                    turnCount: $0.turnCount,
+                    avgOccupancy: $0.avgOccupancy,
+                    avgCacheRatio: $0.avgCacheRatio,
+                    compactionCount: $0.compactionCount)
+            })
     }
 
     /// Sessions that had interactions in `[sinceMs, today+1d)`, newest-cost ordered.
@@ -1069,38 +1374,21 @@ enum StatsService {
     /// One tool's detail block for the iOS detail panel: conclusion summary
     /// + session list with profile metrics.
     static func toolDetail(source: String, sinceMs: Int64) async -> ToolDetailItem {
-        async let conclusion = toolConclusion(source: source, sinceMs: sinceMs)
         let rows = await sessionRows(source: source, sinceMs: sinceMs)
-        let c = await conclusion
-        return ToolDetailItem(
+        let toMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000) + 86_400_000
+        let prevSince = sinceMs - (toMs - sinceMs)
+        let metrics = await toolMetrics(
+            source: source, sinceMs: sinceMs, toMs: toMs, prevSince: prevSince)
+        let otherSource = source == "codex" ? "claude-code" : "codex"
+        let otherRows = await sessionRows(source: otherSource, sinceMs: sinceMs)
+        let otherSpend = await sourceSpend(source: otherSource, sinceMs: sinceMs, toMs: toMs)
+        return toolDetail(
             source: source,
-            conclusion: ToolConclusionItem(
-                spend: c.spend,
-                previousSpend: c.previousSpend,
-                deltaPct: c.deltaPct,
-                projectedMonth: c.projectedMonth,
-                sessionCount: c.sessionCount,
-                commitCount: c.commitCount,
-                addedLines: c.addedLines,
-                deletedLines: c.deletedLines,
-                avgCostPerSession: c.avgCostPerSession,
-                cpl: c.cpl,
-                crossToolDeltaPct: c.crossToolDeltaPct),
-            sessions: rows.map {
-                ToolSessionItem(
-                    sessionId: $0.sessionId,
-                    title: $0.title,
-                    repo: $0.repo,
-                    firstTs: Int64($0.firstTs),
-                    lastTs: Int64($0.lastTs),
-                    cost: $0.cost,
-                    windowTokens: $0.windowTokens,
-                    lastInput: $0.lastInput,
-                    turnCount: $0.turnCount,
-                    avgOccupancy: $0.avgOccupancy,
-                    avgCacheRatio: $0.avgCacheRatio,
-                    compactionCount: $0.compactionCount)
-            })
+            sinceMs: sinceMs,
+            rows: rows,
+            metrics: metrics,
+            otherAverageSpend: otherSpend,
+            otherRowCount: otherRows.count)
     }
 
     /// Full per-turn trajectory of one session (context trend chart data).
@@ -1141,6 +1429,31 @@ enum StatsService {
         } catch {
             Logger.error("StatsService.sourceSpend failed: \(error)")
             return 0
+        }
+    }
+
+    private static func sourceSpends(
+        source: String,
+        sinceMs: Int64,
+        toMs: Int64,
+        prevSince: Int64
+    ) async -> (current: Double, previous: Double) {
+        do {
+            return try await AppDatabase.shared.read { db -> (current: Double, previous: Double) in
+                let row = try Row.fetchOne(db, sql: """
+                    SELECT
+                      COALESCE(SUM(CASE WHEN ts >= ? THEN cost_usd ELSE 0 END), 0) AS current_spend,
+                      COALESCE(SUM(CASE WHEN ts < ? THEN cost_usd ELSE 0 END), 0) AS previous_spend
+                    FROM usage_event
+                    WHERE source = ? AND ts >= ? AND ts < ?
+                    """, arguments: [sinceMs, sinceMs, source, prevSince, toMs])
+                let current: Double = row?["current_spend"] ?? 0
+                let previous: Double = row?["previous_spend"] ?? 0
+                return (current: current, previous: previous)
+            }
+        } catch {
+            Logger.error("StatsService.sourceSpends failed: \(error)")
+            return (current: 0, previous: 0)
         }
     }
 

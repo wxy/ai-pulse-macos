@@ -1,29 +1,30 @@
-# AI Pulse v1.2.6 — Spend Alert Accuracy & watchOS Polish
+# AI Pulse v1.2.8 - Dashboard Stability
 
 ## What's New
 
-- More accurate spend-surge and balance-drop alerts driven by the balance API
-- watchOS now shows the app/CloudKit version and aligns the corner labels
+- Faster, steadier switching and scrolling across Today, This Week, and 30 Days
+- Charts now restart safely for each time range instead of animating between unrelated snapshots
+- Fix an iOS crash when switching dashboard time ranges while snapshots refresh
 
 ## Fixes & Engineering
 
-- Correct cache-token pricing in cost calculations
-- Use Int64 session timestamps in the iCloud dashboard snapshot
-- Normalize percentage formatting and localization
-- Extract the cross-platform shared core into `AIPulseShared`
+- Keep Today, Week, and 30-day dashboard snapshots independent to prevent stale cross-range state
+- Read range-local iOS snapshots directly and rebuild range-specific Charts after data changes
+- Suppress redundant dashboard refreshes and record API balance snapshots only when spend changes
+- Add usage-event indexes and consolidate tool-detail queries to reduce 30-day snapshot latency
+- Cache Dock pulse frames and reduce repeated trend-axis work during dashboard rendering
+- Disable Thread Sanitizer in the shared macOS debug scheme
 
 ## Deployment Notes
 
-- No CloudKit record type, field, index, or subscription changes
+- Align iOS, watchOS, and widget builds with macOS at 1.2.8 (build 31)
+- watchOS and widget behavior is unchanged
+- No CloudKit record type, field, index, subscription, or record-name changes
 - `CKSchema.payloadVersion` remains `1.2.4`
-- App Store submission should use `MARKETING_VERSION = 1.2.6` and
-  `CURRENT_PROJECT_VERSION = 29`
+- App Store submission should use `MARKETING_VERSION = 1.2.8` and `CURRENT_PROJECT_VERSION = 31`
 
 ## Verification
 
-- Tests: `swift test` — 137 passed
-- Builds:
-  - macOS `AIPulse_macOS`
-  - iOS `AIPulse_iOS`
-  - watchOS `AIPulse_watchOS`
-  - Widget `AIPulseWidgetExtension`
+- Tests: `swift test` - 163 passed
+- Builds: macOS `AIPulse_macOS` Debug build for `platform=macOS`
+- Builds: iOS `AIPulse_iOS` Debug build for a connected iPhone; the iOS scheme also builds the embedded watchOS app and widget extension

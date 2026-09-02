@@ -33,7 +33,13 @@ struct DashboardView: View {
     @State private var fetchTask: Task<Void, Never>?
     @State private var selectedTool: ToolDetailItem? = nil
 
-    private var snap: DashboardSnapshot { cloudData.snapshot ?? DashboardSnapshot() }
+    private var hasCurrentSnapshot: Bool {
+        cloudData.cachedSnapshot(for: timeRange.cacheKey) != nil
+    }
+
+    private var snap: DashboardSnapshot {
+        cloudData.cachedSnapshot(for: timeRange.cacheKey) ?? DashboardSnapshot()
+    }
 
     private var totalCost: Double {
         switch timeRange {
@@ -69,6 +75,11 @@ struct DashboardView: View {
                     fetchTask?.cancel()
                     let key = newRange.cacheKey
                     fetchTask = Task { try? await cloudData.fetchSnapshot(for: key) }
+                }
+                .onChange(of: hasCurrentSnapshot) { _, isReady in
+                    guard isReady else { return }
+                    barProgress = 0
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 }
                 }
 
                 // ── Robot head frame (face) — spending + output ──
@@ -110,14 +121,14 @@ struct DashboardView: View {
                     // Donuts + stats — centered
                     HStack(alignment: .top, spacing: 6) {
                         Spacer(minLength: 0)
-                        subVsApiDonut
+                        subVsApiDonut.id(timeRange)
                         noseStatCards
-                        providerDonut
+                        providerDonut.id(timeRange)
                         Spacer(minLength: 0)
                     }
 
                     // Tool + repo ("mouth")
-                    outputSection
+                    outputSection.id(timeRange)
                 }
                 .padding(.top, 28).padding(.horizontal, 12).padding(.bottom, 14)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -507,8 +518,17 @@ struct DashboardView: View {
 
     // MARK: - Trend (duplicate of macOS logic)
 
-    @ViewBuilder
     private var trendChart: some View {
+        Group {
+            if hasCurrentSnapshot {
+                trendChartBody
+                    .id(timeRange)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var trendChartBody: some View {
         let chartDays = timeRange.chartDays
         let cal = Calendar.current
         let chartStart: Date = {

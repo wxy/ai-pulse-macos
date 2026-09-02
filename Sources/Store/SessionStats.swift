@@ -17,7 +17,7 @@ struct ToolConclusion {
 }
 
 /// One session in the explorer list.
-struct SessionRow: Identifiable, Equatable {
+struct SessionRow: Identifiable, Equatable, Sendable {
     var id: String { "\(source)|\(sessionId ?? "")" }
     let source: String
     let sessionId: String?

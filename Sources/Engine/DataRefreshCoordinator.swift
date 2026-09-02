@@ -172,9 +172,6 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         if discovered > 0 {
             Logger.info("RepoDiscovery: found \(discovered) new repo(s)")
         }
-        // Heartbeat: always notify UI so dock icon stays current (pulses),
-        // but without coin sound unless LogWatcher inserted actual new data.
-        scheduleUINotify(playSound: false)
         // LogWatcher.insertEvent() pushes notifyPhaseIngest() with playSound: true
     }
 
@@ -182,8 +179,6 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         let start = Date()
         GitMonitor.shared.poll()
         Logger.debug("Phase2 git scan completed in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
-        // Heartbeat (no sound unless GitMonitor found new commits).
-        scheduleUINotify(playSound: false)
         // GitMonitor.insertChange() pushes notifyPhaseGitScan() with playSound: true
     }
 
@@ -192,8 +187,6 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         ApiPoller.shared.pollAll()
         UsageMonitor.shared.refreshCopilotStatus()
         Logger.debug("Phase3 balance poll dispatched in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
-        // Heartbeat (no sound unless ApiPoller found balance changes).
-        scheduleUINotify(playSound: false)
         // ApiPoller.cacheBalance() pushes notifyPhaseBalance() with playSound: true
     }
 
