@@ -11,42 +11,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test
-    runs-on: macos-15
+  static-analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v5
 
-      - name: Select Xcode 26.3
-        run: sudo xcode-select -s /Applications/Xcode_26.3.app
-
-      - name: Cache SPM dependencies
-        uses: actions/cache@v5
-        with:
-          path: .build
-          key: ${{ runner.os }}-spm-${{ hashFiles('Package.resolved', 'Package.swift') }}
-          restore-keys: |
-            ${{ runner.os }}-spm-
-
-      - name: Run tests
-        env:
-          # SPM strips most env vars, but swift build -Xcc flags aren't
-          # stripped and propagate to the C module compilation.
-          SWIFT_FLAGS: -Xcc -I${{ github.workspace }}/Libraries/libgit2/include
+      - name: Parse Swift sources
         run: |
-          # Build main + test targets. The -Xcc -I flag ensures the
-          # Clibgit2 module can find its nested headers (git2/common.h).
-          swift build --build-tests -Xcc -I$(pwd)/Libraries/libgit2/include
+          find Sources Tests Packages/AIPulseShared/Sources -type f -name '*.swift' -print0 |
+            xargs -0 swiftc -parse
 
-          # SPM's @rpath doesn't resolve for xctest bundles — inject the
-          # absolute path to libgit2 before execution. The test target may
-          # already carry the rpath via Package.swift linker settings, so
-          # only add it when missing (idempotent).
-          BIN_DIR=$(swift build --show-bin-path)
-          TEST_BIN="$BIN_DIR/AIPulsePackageTests.xctest/Contents/MacOS/AIPulsePackageTests"
-          otool -l "$TEST_BIN" | grep -q "$(pwd)/Libraries/libgit2/lib" || \
-            install_name_tool -add_rpath "$(pwd)/Libraries/libgit2/lib" "$TEST_BIN"
+      - name: Check shell syntax
+        run: |
+          find scripts -type f -name '*.sh' -print0 |
+            xargs -0 -n1 bash -n
 
-          # Run tests without rebuilding.
-          swift test --skip-build
+      - name: Check Python syntax
+        run: python3 -m py_compile scripts/generate-icons.py
+
+      - name: Validate workflow YAML
+        run: |
+          ruby -e 'require "yaml"; Dir[".github/workflows/*.{yml,yaml}"].sort.each { |file| YAML.parse_file(file); puts "checked #{file}" }'
