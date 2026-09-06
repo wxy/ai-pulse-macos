@@ -5,11 +5,21 @@ final class AppDatabase: @unchecked Sendable {
     static let shared = AppDatabase()
     private var dbQueue: DatabaseQueue?
 
+    /// Debug builds must not contend with an installed release for SQLite locks
+    /// or accidentally mix test-generated usage with production history.
+    static var databaseDirectoryName: String {
+        #if DEBUG
+        "AIPulseDebug"
+        #else
+        "AIPulse"
+        #endif
+    }
+
     func setup() throws {
         let appSupport = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: true)
-        let dbDir = appSupport.appendingPathComponent("AIPulse")
+        let dbDir = appSupport.appendingPathComponent(Self.databaseDirectoryName)
         try FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
         let dbPath = dbDir.appendingPathComponent("aipulse.db").path
         dbQueue = try DatabaseQueue(path: dbPath)
@@ -20,6 +30,32 @@ final class AppDatabase: @unchecked Sendable {
         // Additive column migrations for existing installs
         // (create-ifNotExists won't add columns to tables that already exist).
         addColumnIfMissing("quota_status", "window_seconds", "REAL")
+        try dbQueue?.write { db in
+            try Self.backfillKnownProviderAttribution(db)
+        }
+
+        // The first DSH scan marked compressed journals complete before
+        // multi-frame zstd decoding worked. Their usage lines are immutable,
+        // so dropping only those parser positions is enough to replay them
+        // safely while usage_event dedupe keys prevent duplicates.
+        let dshReplayKey = "dsh_usage_shape_positions_replayed_v2"
+        if !UserDefaults.standard.bool(forKey: dshReplayKey) {
+            try dbQueue?.write { db in
+                try Self.invalidateDeepSeekHarnessPositions(db)
+            }
+            UserDefaults.standard.set(true, forKey: dshReplayKey)
+        }
+
+        // Startup used to cache a snapshot at the 20-second mark while cold
+        // history import could still be running. Rebuild those derived rows
+        // once; usage and balance facts are never touched.
+        let cacheRebuildKey = "dashboard_cache_rebuilt_after_startup_backfill_guard"
+        if !UserDefaults.standard.bool(forKey: cacheRebuildKey) {
+            try dbQueue?.write { db in
+                try db.execute(sql: "DELETE FROM dashboard_cache")
+            }
+            UserDefaults.standard.set(true, forKey: cacheRebuildKey)
+        }
         Logger.info("DB migration complete")
     }
 
@@ -29,6 +65,47 @@ final class AppDatabase: @unchecked Sendable {
         for (_, migration) in tables {
             try migration(db)
         }
+    }
+
+    /// Earlier Codex scans missed `session_meta.payload.model`, so valid GLM
+    /// and DeepSeek rows could stay unattributed after the byte offset advanced.
+    /// Provider attribution is factual; pricing/cost remains untouched.
+    static func backfillKnownProviderAttribution(_ db: Database) throws {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT id, model FROM usage_event
+            WHERE model IS NOT NULL AND (provider_id IS NULL OR provider_id = 'unknown')
+            """)
+        var updates: [(id: Int64, providerId: String)] = []
+        for row in rows {
+            guard let id: Int64 = row["id"],
+                  let model: String = row["model"],
+                  let providerId = PricingManager.shared.providerId(for: model)
+            else { continue }
+            updates.append((id, providerId))
+        }
+
+        guard !updates.isEmpty else { return }
+        for update in updates {
+            try db.execute(sql: """
+                UPDATE usage_event SET provider_id = ? WHERE id = ?
+                """, arguments: [update.providerId, update.id])
+        }
+        try db.execute(sql: "DELETE FROM dashboard_cache")
+        Logger.info("DB attributed \(updates.count) usage events to known providers")
+    }
+
+    /// Clear parser positions for the current user's DSH journals and derived
+    /// dashboard rows. Exposed for a regression test; callers decide when the
+    /// one-time replay runs.
+    static func invalidateDeepSeekHarnessPositions(
+        _ db: Database,
+        homeDirectory: String = FileManager.default.realHomeDirectory.path
+    ) throws {
+        try db.execute(sql: """
+            DELETE FROM logwatcher_position
+            WHERE file_path LIKE ?
+            """, arguments: ["\(homeDirectory)/.dsh/sessions/%/session.jsonl.zstd"])
+        try db.execute(sql: "DELETE FROM dashboard_cache")
     }
 
     private static nonisolated(unsafe) let tables: [(String, (Database) throws -> Void)] = [

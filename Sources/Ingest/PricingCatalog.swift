@@ -82,7 +82,18 @@ final class PricingManager: @unchecked Sendable {
     }
 
     func providerId(for model: String?) -> String? {
-        return pricing(for: model)?.provider
+        if let provider = pricing(for: model)?.provider {
+            return provider
+        }
+
+        // Catalog coverage lags behind custom endpoints. Vendor-specific model
+        // IDs are still enough for factual provider attribution; pricing can
+        // remain nil until the catalog has a verified tariff.
+        let normalized = Self.normalize(model ?? "")
+        if normalized.hasPrefix("glm-") || normalized == "glm" { return "zhipu" }
+        if normalized.hasPrefix("deepseek-") { return "deepseek" }
+        if normalized.hasPrefix("qwen") { return "qwen" }
+        return nil
     }
 
     func costUSD(model: String?, inTokens: Int, outTokens: Int, cacheTokens: Int) -> Double? {

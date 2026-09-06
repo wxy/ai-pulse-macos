@@ -11,6 +11,7 @@ enum IntegrationRegistry {
         CodexIntegration(),
         QwenCodeIntegration(),
         OpenCodeIntegration(),
+        DeepSeekHarnessIntegration(),
         ApiKeyIntegration(
             id: "deepseek", displayName: "DeepSeek", providerId: "deepseek",
             usesClaudeModels: false, limitationKey: "limitation.assume_programming",
@@ -205,6 +206,7 @@ enum IntegrationRegistry {
     static func toolDisplayName(for integrationId: String) -> String {
         switch integrationId {
         case "claude-code": return "Claude Code"
+        case "deepseek-harness": return "DeepSeek Harness"
         case "aider":       return "aider"
         case "codex":       return "ChatGPT"
         case "qwen-code":   return "Qwen Code"

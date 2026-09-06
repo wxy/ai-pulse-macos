@@ -57,7 +57,7 @@ struct ToolDetailOverlayView: View {
     }
 
     private var toolDisplayName: String {
-        toolId == "codex" ? "ChatGPT" : "Claude Code"
+        IntegrationRegistry.toolDisplayName(for: toolId)
     }
 
     private var totalCostText: String {
@@ -66,7 +66,8 @@ struct ToolDetailOverlayView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: toolId == "codex" ? "sparkles" : "bubble.left.and.bubble.right")
+            Image(systemName: toolId == "deepseek-harness"
+                  ? "terminal" : toolId == "codex" ? "sparkles" : "bubble.left.and.bubble.right")
                 .foregroundColor(.accentColor)
             VStack(alignment: .leading, spacing: 1) {
                 Text(toolDisplayName).font(.headline)
@@ -376,7 +377,7 @@ struct ToolDetailOverlayView: View {
     }
 
     private func load() async {
-        let source = toolId == "codex" ? "codex" : "claude-code"
+        let source = toolId
         async let conclusion = StatsService.toolConclusion(source: source, sinceMs: sinceMs)
         let rows = await StatsService.sessionRows(source: source, sinceMs: sinceMs)
         let c = await conclusion

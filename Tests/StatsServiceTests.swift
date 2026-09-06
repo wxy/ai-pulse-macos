@@ -58,6 +58,12 @@ final class StatsServiceTests: XCTestCase {
         XCTAssertEqual(map["ai-pulse"], 50)
     }
 
+    func testRepositoryVisibilityIncludesUsageOnlyFacts() {
+        XCTAssertTrue(DashboardView.shouldShowRepository(totalChanges: 0, tokens: 1))
+        XCTAssertTrue(DashboardView.shouldShowRepository(totalChanges: 12, tokens: 0))
+        XCTAssertFalse(DashboardView.shouldShowRepository(totalChanges: 0, tokens: 0))
+    }
+
     func testSubscriptionProgress() {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())

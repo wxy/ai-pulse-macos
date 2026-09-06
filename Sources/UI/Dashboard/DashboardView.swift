@@ -91,6 +91,7 @@ struct DashboardView: View {
     @State private var codexDetailExpanded = false
     @State private var selectedToolForOverlay: String? = nil
     @State private var reposExpanded = false
+    @State private var isImportingHistory = LogWatcher.backfill.isActive
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -233,6 +234,12 @@ struct DashboardView: View {
         return 12
     }
 
+    /// A repository is a dashboard subject when either fact stream saw it:
+    /// code changes or attributed token usage. Usage-only days must not vanish.
+    nonisolated static func shouldShowRepository(totalChanges: Int, tokens: Int64) -> Bool {
+        totalChanges > 0 || tokens > 0
+    }
+
     private func earView(width: CGFloat, height: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
             .fill(Color.marsGreen.opacity(0.20))
@@ -331,6 +338,18 @@ struct DashboardView: View {
                         }
                         .padding(.horizontal, 20).padding(.vertical, 8)
                         .background(Color.accentColor.opacity(0.08))
+                    }
+                    if isImportingHistory {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                                .frame(width: 12, height: 12)
+                            Text(I18n.t("menu.loading"))
+                                .font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20).padding(.vertical, 8)
+                        .background(Color.secondary.opacity(0.08))
                     }
                     if hasActiveCostSources || !providerCosts.isEmpty || isDemoMode {
                         // ── Robot head frame (face) — spending + output ──
@@ -444,6 +463,9 @@ struct DashboardView: View {
             let snap = AppHealthMonitor.shared.current
             healthSeverity = snap.severity
             healthMessages = snap.messages
+        }
+        .onReceive(NotificationCenter.default.publisher(for: IngestionBackfillState.changeNotification)) { _ in
+            isImportingHistory = LogWatcher.backfill.isActive
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardSwitchTab)) { notification in
             if let tr = notification.userInfo?["timeRange"] as? TimeRange, tr != timeRange {
@@ -866,7 +888,7 @@ struct DashboardView: View {
                         range: segments.map(\.color))
                     .frame(width: 120, height: 120)
                 } else {
-                    emptyDonut(title: I18n.t("dashboard.actual_spend"))
+                    emptyDonut()
                 }
                 Text("$\(String(format: "%.2f", totalCost))")
                     .font(.system(size: Self.donutCenterFontSize(for: totalCost), weight: .semibold, design: .rounded)).monospacedDigit()
@@ -917,7 +939,7 @@ struct DashboardView: View {
                         range: segments.map(\.color))
                     .frame(width: 120, height: 120)
                 } else {
-                    emptyDonut(title: I18n.t("dashboard.by_tool"))
+                    emptyDonut()
                 }
                 Text(centerText)
                     .font(.system(size: Self.donutCenterFontSize(for: totalTokens), weight: .semibold, design: .rounded)).monospacedDigit()
@@ -1069,7 +1091,7 @@ struct DashboardView: View {
     }
 
     private func toolIdToDisplay(_ id: String) -> String? {
-        IntegrationRegistry.all.contains { $0.id == id } ? IntegrationRegistry.toolDisplayName(for: id) : nil
+        IntegrationRegistry.toolDisplayName(for: id)
     }
 
     // MARK: - Output section
@@ -1113,7 +1135,7 @@ struct DashboardView: View {
 	                        GridRow {
 	                            Text(I18n.t("dashboard.by_tool_model"))
 	                                .font(.caption2).bold().foregroundColor(.secondary)
-	                                .dashboardTableCell(isHeader: true, alignment: .leading)
+	                                .dashboardTableCell(isHeader: true)
 	                            ForEach(toolIds, id: \.self) { t in
 	                                Text(toolIdToDisplay(t) ?? t)
 	                                    .font(.caption2).bold().foregroundColor(.secondary).lineLimit(1)
@@ -1190,7 +1212,11 @@ struct DashboardView: View {
     /// (log facts). No estimated costs or CPL here.
     @ViewBuilder
     private var repoListSection: some View {
-        let shownRepos = repos.filter { $0.totalChanges > 0 }
+        let shownRepos = repos.filter {
+            Self.shouldShowRepository(
+                totalChanges: $0.totalChanges,
+                tokens: repoTokens[$0.repo] ?? 0)
+        }
         if !shownRepos.isEmpty {
             let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
             VStack(alignment: .leading, spacing: 6) {
@@ -1846,25 +1872,16 @@ struct DashboardView: View {
     // MARK: - Donut charts
 
     /// Data for subscription-vs-API donut chart.
-    /// Gray placeholder donut shown when there's no data to fill it.
-    /// Keeps the 3-column layout balanced instead of collapsing.
-    func emptyDonut(title: String) -> some View {
-        VStack(spacing: 6) {
-            Text(title).font(.caption).foregroundColor(.secondary)
-            ZStack {
-                // Ring geometry matches the real donuts (SectorMark innerRadius .ratio(0.5)
-                // in a 120×120 chart): inner radius 30, outer radius 60, thickness 30.
-                // A larger lineWidth would bleed the stroke past the outer radius.
-                Circle()
-                    .stroke(Color.secondary.opacity(0.12), lineWidth: 30)
-                    .frame(width: 90, height: 90)
-                Text(I18n.t("dashboard.zero_cost"))
-                    .font(.system(size: 14, weight: .semibold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
+    /// Gray placeholder ring shown when there's no data to fill a donut.
+    /// Matches the 120×120 real chart; the caller renders the shared center value.
+    func emptyDonut() -> some View {
+        // Ring geometry matches the real donuts (SectorMark innerRadius .ratio(0.5)
+        // in a 120×120 chart): inner radius 30, outer radius 60, thickness 30.
+        // A larger lineWidth would bleed the stroke past the outer radius.
+        Circle()
+            .stroke(Color.secondary.opacity(0.12), lineWidth: 30)
+            .frame(width: 90, height: 90)
             .frame(width: 120, height: 120)
-        }
-        .frame(maxWidth: 140)
     }
 
     /// Sync the cached dashboard snapshot to iCloud, throttled to 5 min.

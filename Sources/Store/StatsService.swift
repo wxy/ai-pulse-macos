@@ -842,12 +842,17 @@ enum StatsService {
         let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
         let toolTokens = Dictionary(uniqueKeysWithValues: sourceAgg.map { ($0.s, $0.tok) })
         let toolCalls = Dictionary(uniqueKeysWithValues: sourceAgg.map { ($0.s, $0.cnt) })
-        let rawTools = toolMap.compactMap { (key, cost) -> (String, String, Double)? in
-            let scaled = ChartMath.finite(cost * scale, fallback: 0)
-            guard scaled > 0.001 else { return nil }
+        let rawTools = Set(toolMap.keys).union(sourceAgg.map(\.s)).compactMap { key -> (String, String, Double, Int64)? in
+            let tokens = toolTokens[key] ?? 0
+            let calls = toolCalls[key] ?? 0
+            guard tokens > 0 || calls > 0 else { return nil }
+            let cost = ChartMath.finite((toolMap[key] ?? 0) * scale, fallback: 0)
             let label = IntegrationRegistry.toolDisplayName(for: key)
-            return (key, label, scaled)
-        }.sorted { $0.1 > $1.1 }
+            return (key, label, cost, tokens)
+        }.sorted {
+            if $0.3 != $1.3 { return $0.3 > $1.3 }
+            return $0.2 > $1.2
+        }
         let toolCosts: [NameCostItem] = rawTools.map {
             NameCostItem(name: $0.1, cost: $0.2, tokens: toolTokens[$0.0], calls: toolCalls[$0.0])
         }
@@ -1008,7 +1013,7 @@ enum StatsService {
             crossToolDeltaPct: otherAvg > 0 ? SessionStats.deltaPct(current: thisAvg, previous: otherAvg) : nil)
     }
 
-    /// Builds both iOS tool blocks together. Each tool's cross-tool comparison
+    /// Builds all dashboard tool blocks together. Each tool's cross-tool comparison
     /// needs the other tool's sessions. One database pass keeps those related
     /// readings consistent and avoids queueing six separate scans of 30-day
     /// usage events behind each other.
@@ -1018,8 +1023,9 @@ enum StatsService {
 
         let rowsStartedAt = Date()
         let buildStartedAt = Date()
+        let detailSources = ["codex", "claude-code", "deepseek-harness"]
         let detailData = await toolDetailData(
-            sources: ["codex", "claude-code"], sinceMs: sinceMs, toMs: toMs, prevSince: prevSince)
+            sources: detailSources, sinceMs: sinceMs, toMs: toMs, prevSince: prevSince)
         DiagnosticJournal.log("dashboard_snapshot_stage", [
             "stage": .string("tool_details_rows"),
             "elapsed_ms": .double(Date().timeIntervalSince(rowsStartedAt) * 1_000),
@@ -1027,23 +1033,22 @@ enum StatsService {
                 Date().timeIntervalSince(buildStartedAt) * 1_000),
         ])
 
-        let codex = detailData.sources["codex"]
-        let claude = detailData.sources["claude-code"]
-        let resolvedCodexRows = codex?.rows ?? []
-        let resolvedClaudeRows = claude?.rows ?? []
-        let resolvedCodexMetrics = codex?.metrics ?? ToolMetrics()
-        let resolvedClaudeMetrics = claude?.metrics ?? ToolMetrics()
+        let totalSpend = detailSources.reduce(0.0) {
+            $0 + (detailData.sources[$1]?.metrics.spend ?? 0)
+        }
+        let totalSessions = detailSources.reduce(0) {
+            $0 + (detailData.sources[$1]?.rows.count ?? 0)
+        }
 
-        return [
-            toolDetail(
-                source: "codex", sinceMs: sinceMs, rows: resolvedCodexRows,
-                metrics: resolvedCodexMetrics, otherAverageSpend: resolvedClaudeMetrics.spend,
-                otherRowCount: resolvedClaudeRows.count),
-            toolDetail(
-                source: "claude-code", sinceMs: sinceMs, rows: resolvedClaudeRows,
-                metrics: resolvedClaudeMetrics, otherAverageSpend: resolvedCodexMetrics.spend,
-                otherRowCount: resolvedCodexRows.count),
-        ]
+        return detailSources.compactMap { source in
+            guard let data = detailData.sources[source] else { return nil }
+            let otherSessionCount = totalSessions - data.rows.count
+            let otherSpend = totalSpend - data.metrics.spend
+            return toolDetail(
+                source: source, sinceMs: sinceMs, rows: data.rows,
+                metrics: data.metrics, otherAverageSpend: otherSpend,
+                otherRowCount: otherSessionCount)
+        }
     }
 
     private struct ToolDetailSourceData: Sendable {

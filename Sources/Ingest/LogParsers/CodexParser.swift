@@ -103,6 +103,17 @@ struct CodexParser {
         return payload["model"] as? String
     }
 
+    /// Extract the startup model from `session_meta`. Resumed rollout scans use
+    /// this as a fallback when the relevant `turn_context` is before the offset.
+    static func sessionMetaModel(fromLine line: String) -> String? {
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              json["type"] as? String == "session_meta",
+              let payload = json["payload"] as? [String: Any]
+        else { return nil }
+        return payload["model"] as? String
+    }
+
     /// Extract the first user-authored message from a `user_message` event.
     static func firstUserMessage(fromLine line: String) -> String? {
         guard let data = line.data(using: .utf8),

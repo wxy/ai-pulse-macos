@@ -9,10 +9,18 @@ import PackageDescription
 // which made `swift test` fail to load libgit2 at runtime.
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 let libgit2LibPath = "\(packageRoot)/Libraries/libgit2/lib"
-let libgit2LinkerSettings: [LinkerSetting] = [
+let zstdLibPath = "\(packageRoot)/Libraries/zstd/lib"
+let zstdIncludePath = "\(packageRoot)/Libraries/zstd/include"
+let zstdSwiftSettings: [SwiftSetting] = [
+    .unsafeFlags(["-I\(zstdIncludePath)"]),
+]
+let nativeLibrarySettings: [LinkerSetting] = [
     .unsafeFlags([
         "-L\(libgit2LibPath)",
         "-Xlinker", "-rpath", "-Xlinker", libgit2LibPath,
+        "-L\(zstdLibPath)",
+        "-lzstd",
+        "-Xcc", "-I\(zstdIncludePath)",
     ]),
 ]
 
@@ -38,7 +46,8 @@ let package = Package(
             path: "Sources",
             exclude: ["Clibgit2"],
             resources: [.process("Localizable.xcstrings")],
-            linkerSettings: libgit2LinkerSettings
+            swiftSettings: zstdSwiftSettings,
+            linkerSettings: nativeLibrarySettings
         ),
         .testTarget(
             name: "AIPulseTests",
@@ -48,7 +57,8 @@ let package = Package(
                 .product(name: "AIPulseShared", package: "AIPulseShared"),
             ],
             path: "Tests",
-            linkerSettings: libgit2LinkerSettings
+            swiftSettings: zstdSwiftSettings,
+            linkerSettings: nativeLibrarySettings
         ),
     ]
 )
