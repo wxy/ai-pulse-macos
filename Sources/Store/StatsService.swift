@@ -584,6 +584,79 @@ enum StatsService {
 
     // MARK: - Full snapshot builder (shared by DashboardView and Phase 4 timer)
 
+    /// One row of per-model usage aggregation.
+    struct ModelBreakdownRow {
+        let model: String
+        let providerId: String
+        let toolId: String?
+        let tokens: Int64
+        let calls: Int
+        let cost: Double
+    }
+
+    /// Builds per-model attribution items from DB aggregation rows, coercing
+    /// every count to non-negative and dropping non-finite costs to nil.
+    static func modelBreakdown(
+        rows: [(model: String, providerId: String, toolId: String?, tokens: Int64, calls: Int, cost: Double)]
+    ) -> [ModelCostItem] {
+        rows.map { row in
+            let safeCost: Double? = row.cost.isFinite && row.cost >= 0 ? row.cost : nil
+            return ModelCostItem(
+                model: row.model,
+                providerId: row.providerId,
+                toolId: row.toolId,
+                tokens: max(row.tokens, 0),
+                calls: max(row.calls, 0),
+                cost: safeCost,
+                costIsEstimate: safeCost == nil ? nil : false)
+        }
+    }
+
+    /// Providers whose balance is consumed by exactly one tool. Only these can
+    /// expose per-tool/per-model spend as fact instead of an estimate.
+    static func exclusiveProviders(usageByTool: [String: Set<String>]) -> Set<String> {
+        var providerTools: [String: Set<String>] = [:]
+        for (tool, providers) in usageByTool {
+            for provider in providers {
+                providerTools[provider, default: []].insert(tool)
+            }
+        }
+        return Set(providerTools.filter { $0.value.count == 1 }.keys)
+    }
+
+    /// Aggregates token usage by repo basename. Distinct paths can share a
+    /// basename (e.g. /a/new-chat and /b/new-chat), so collisions are summed
+    /// instead of crashing a unique-key dictionary.
+    static func repoTokenByName(_ rows: [(path: String, tokens: Int64)]) -> [String: Int64] {
+        var map: [String: Int64] = [:]
+        for row in rows {
+            let name = URL(fileURLWithPath: row.path).lastPathComponent
+            map[name, default: 0] += row.tokens
+        }
+        return map
+    }
+
+    struct SubscriptionProgress {
+        let elapsedDays: Int
+        let totalDays: Int
+        let nextReset: Date?
+    }
+
+    /// Cycle progress for a user-entered subscription start date. Never
+    /// amortizes money — only tracks elapsed time within the billing cycle.
+    static func subscriptionProgress(start: Date?, periodDays: Int?, now: Date) -> SubscriptionProgress {
+        guard let start, let periodDays, periodDays > 0 else {
+            return SubscriptionProgress(elapsedDays: 0, totalDays: 30, nextReset: nil)
+        }
+        let cal = Calendar.current
+        let cycleStart = cal.startOfDay(for: start)
+        let today = cal.startOfDay(for: now)
+        let rawElapsed = cal.dateComponents([.day], from: cycleStart, to: today).day ?? 0
+        let elapsed = min(max(rawElapsed, 0), periodDays)
+        let nextReset = cal.date(byAdding: .day, value: periodDays, to: cycleStart)
+        return SubscriptionProgress(elapsedDays: elapsed, totalDays: periodDays, nextReset: nextReset)
+    }
+
     /// Await a throwing async value, logging the failure before returning the
     /// fallback. Replaces bare `try?` in dashboardSnapshot so a data-source
     /// failure is visible in logs instead of silently degrading.
@@ -636,10 +709,72 @@ enum StatsService {
         async let prR = StatsService.prediction()
         async let lbR = resultOrLog("latestRemainingBalances", []) { try await StatsService.latestRemainingBalances(sinceMs: lookbackStartMs) }
         async let qsR = StatsService.latestQuotaStatus()
+        async let modelRowsR = resultOrLog("modelBreakdown", []) { try await AppDatabase.shared.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT model AS m, COALESCE(provider_id, 'unknown') AS pid,
+                       source AS s,
+                       COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok,
+                       COUNT(*) AS cnt,
+                       COALESCE(SUM(cost_usd), 0) AS c
+                FROM usage_event
+                WHERE ts >= ? AND model IS NOT NULL AND model != '<synthetic>'
+                GROUP BY m, pid
+                """, arguments: [rangeStartMs]).map { r in
+                    (m: r["m"] as String? ?? "",
+                     pid: r["pid"] as String? ?? "unknown",
+                     s: r["s"] as String? ?? "",
+                     tok: r["tok"] as Int64? ?? 0,
+                     cnt: r["cnt"] as Int? ?? 0,
+                     c: r["c"] as Double? ?? 0)
+                }
+        } }
+        async let sourceAggR = resultOrLog("toolUsage", []) { try await AppDatabase.shared.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT source AS s,
+                       COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok,
+                       COUNT(*) AS cnt
+                FROM usage_event WHERE ts >= ? GROUP BY s
+                """, arguments: [rangeStartMs]).map { r in
+                    (s: r["s"] as String? ?? "",
+                     tok: r["tok"] as Int64? ?? 0,
+                     cnt: r["cnt"] as Int? ?? 0)
+                }
+        } }
+        async let usageByToolR = resultOrLog("toolProviders", [:]) { try await AppDatabase.shared.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT source AS s, COALESCE(provider_id, 'unknown') AS pid
+                FROM usage_event WHERE ts >= ? AND provider_id IS NOT NULL
+                GROUP BY s, pid
+                """, arguments: [rangeStartMs]).reduce(into: [String: Set<String>]()) { map, r in
+                    let s: String = r["s"] ?? ""
+                    let pid: String = r["pid"] ?? "unknown"
+                    if !s.isEmpty { map[s, default: []].insert(pid) }
+                }
+        } }
+        async let repoTokensR = resultOrLog("repoTokens", []) { try await AppDatabase.shared.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT repo_path AS p, COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok
+                FROM usage_event WHERE ts >= ? AND repo_path IS NOT NULL
+                GROUP BY p
+                """, arguments: [rangeStartMs]).map { r in
+                    (p: r["p"] as String? ?? "", tok: r["tok"] as Int64? ?? 0)
+                }
+        } }
+        async let sourceDailyR = resultOrLog("sourceDailyTokens", []) { try await AppDatabase.shared.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT source AS s, (ts / 86400000) * 86400000 AS day,
+                       COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok
+                FROM usage_event WHERE ts >= ? GROUP BY s, day
+                """, arguments: [rangeStartMs]).map { r in
+                    (s: r["s"] as String? ?? "", day: r["day"] as Int64? ?? 0, tok: r["tok"] as Int64? ?? 0)
+                }
+        } }
 
-        let (tc, wc, mc, yc, st, bl, bm, cd, rp, pr, lb, qs) = await (
+        let (tc, wc, mc, yc, st, bl, bm, cd, rp, pr, lb, qs,
+             modelRows, sourceAgg, usageByTool, repoTokens, sourceDaily) = await (
             tcR, wcR, mcR, ycR,
-            stR, blR, bmR, cdR, rpR, prR, lbR, qsR
+            stR, blR, bmR, cdR, rpR, prR, lbR, qsR,
+            modelRowsR, sourceAggR, usageByToolR, repoTokensR, sourceDailyR
         )
         DiagnosticJournal.log("dashboard_snapshot_stage", [
             "stage": .string("core_data"),
@@ -665,7 +800,17 @@ enum StatsService {
             let prev = provTotals[s.providerId]?.cost ?? 0
             provTotals[s.providerId] = (name, prev + s.spend)
         }
-        let providers = provTotals.map { ProviderItem(providerId: $0.key, name: $0.value.name, cost: $0.value.cost) }.sorted { $0.cost > $1.cost }
+        let providers = provTotals.map { entry in
+            let providerKind: String = {
+                guard let def = ProviderRegistry.byId(entry.key) else { return "balance" }
+                return def.balanceType == .usage ? "usage" : "balance"
+            }()
+            return ProviderItem(
+                providerId: entry.key,
+                name: entry.value.name,
+                cost: entry.value.cost,
+                sourceKind: providerKind)
+        }.sorted { $0.cost > $1.cost }
 
         // Tool costs from usage_event source aggregation
         let toolStartMs = rangeStartMs
@@ -695,13 +840,22 @@ enum StatsService {
         }.reduce(0.0) { $0 + $1.spend }
         let subTotalAll = subAmort * Double(days)
         let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
-        let rawTools = toolMap.compactMap { (key, cost) -> (String, Double)? in
-            let scaled = ChartMath.finite(cost * scale, fallback: 0)
-            guard scaled > 0.001 else { return nil }
+        let toolTokens = Dictionary(uniqueKeysWithValues: sourceAgg.map { ($0.s, $0.tok) })
+        let toolCalls = Dictionary(uniqueKeysWithValues: sourceAgg.map { ($0.s, $0.cnt) })
+        let rawTools = Set(toolMap.keys).union(sourceAgg.map(\.s)).compactMap { key -> (String, String, Double, Int64)? in
+            let tokens = toolTokens[key] ?? 0
+            let calls = toolCalls[key] ?? 0
+            guard tokens > 0 || calls > 0 else { return nil }
+            let cost = ChartMath.finite((toolMap[key] ?? 0) * scale, fallback: 0)
             let label = IntegrationRegistry.toolDisplayName(for: key)
-            return (label, scaled)
-        }.sorted { $0.1 > $1.1 }
-        let toolCosts: [NameCostItem] = rawTools.map { NameCostItem(name: $0.0, cost: $0.1) }
+            return (key, label, cost, tokens)
+        }.sorted {
+            if $0.3 != $1.3 { return $0.3 > $1.3 }
+            return $0.2 > $1.2
+        }
+        let toolCosts: [NameCostItem] = rawTools.map {
+            NameCostItem(name: $0.1, cost: $0.2, tokens: toolTokens[$0.0], calls: toolCalls[$0.0])
+        }
 
         // Repos with subscription scaling
         let logTotal = rp.reduce(0.0) { $0 + $1.cost }
@@ -710,12 +864,70 @@ enum StatsService {
         // Dividing then yields +Inf and poisons every RepoItem cost.
         let repoScale = logTotal > 0 && toolTotal > 0 ? apiSpend / logTotal : 1.0
         let subScale = logTotal > 0 ? subTotalAll / logTotal : 0.0
+        let repoTokenByName = StatsService.repoTokenByName(repoTokens.map { ($0.p, $0.tok) })
         let repoItems: [RepoItem] = rp.map { r in
             let scaledCost = ChartMath.finite(r.cost * repoScale + r.cost * subScale, fallback: 0)
             let totalChanges = Int64(r.added) + Int64(r.deleted)
             return RepoItem(name: r.repo, cost: scaledCost, added: r.added, deleted: r.deleted,
-                            cpl: totalChanges > 0 ? scaledCost * 1000 / Double(totalChanges) : 0)
+                            cpl: totalChanges > 0 ? scaledCost * 1000 / Double(totalChanges) : 0,
+                            tokens: repoTokenByName[r.repo])
         }
+
+        // Per-model attribution (BYOK mixes), sanitized by the pure helper.
+        // Cost is intentionally not populated: usage_event.cost_usd is a
+        // token×catalog estimate, which must not enter the snapshot as if it
+        // were fact. Model-level spend can only appear once attribution to an
+        // exclusive balance source is implemented.
+        let modelItems = StatsService.modelBreakdown(rows: modelRows.map {
+            (model: $0.m, providerId: $0.pid, toolId: $0.s.isEmpty ? nil : $0.s,
+             tokens: $0.tok, calls: $0.cnt, cost: 0)
+        })
+
+        // Effective-price series: only tools whose balance provider is
+        // exclusively theirs produce points — both coordinates stay facts.
+        let exclusive = StatsService.exclusiveProviders(usageByTool: usageByTool)
+        var providerTool: [String: String] = [:]
+        for (tool, providers) in usageByTool {
+            for provider in providers where exclusive.contains(provider) {
+                providerTool[provider] = tool
+            }
+        }
+        var dailyCostByProvider: [String: [Int64: Double]] = [:]
+        for s in bm {
+            let day = Int64(s.date.timeIntervalSince1970)
+            dailyCostByProvider[s.providerId, default: [:]][day, default: 0] += s.spend
+        }
+        var sourceDailyByTool: [String: [Int64: Int64]] = [:]
+        for row in sourceDaily {
+            let daySec = row.day / 1000
+            sourceDailyByTool[row.s, default: [:]][daySec] = row.tok
+        }
+        let rangeStartInterval = Int64(rangeStart.timeIntervalSince1970)
+        let rangeEndInterval = Int64(todayStart.timeIntervalSince1970) + 86_400
+        var rateSeries: [RateSeriesItem] = []
+        for provider in providerTool.keys.sorted() {
+            guard let tool = providerTool[provider],
+                  let costs = dailyCostByProvider[provider],
+                  let tokens = sourceDailyByTool[tool]
+            else { continue }
+            let points = costs.compactMap { day, cost -> RatePoint? in
+                guard cost > 0, let tok = tokens[day], tok > 0,
+                      day >= rangeStartInterval, day < rangeEndInterval
+                else { return nil }
+                return RatePoint(ts: Double(day), tokens: tok, cost: cost)
+            }.sorted { $0.ts < $1.ts }
+            if !points.isEmpty {
+                rateSeries.append(RateSeriesItem(
+                    toolId: tool,
+                    label: IntegrationRegistry.toolDisplayName(for: tool),
+                    points: points))
+            }
+        }
+
+        // User-entered subscription cycle anchor (settings page).
+        let defaults = UserDefaults.standard
+        let subscriptionStart = defaults.object(forKey: "subscription_start") as? Date
+        let subscriptionPeriodDays = defaults.object(forKey: "subscription_period_days") as? Int
 
         // Daily/balance trend points
         let fmt = ISO8601DateFormatter(); fmt.formatOptions = [.withFullDate]
@@ -733,6 +945,9 @@ enum StatsService {
             prediction: PredictionItem(monthProjected: pr.monthProjected, dailyRate: pr.dailyRate, daysRemaining: pr.daysRemaining, monthSoFar: pr.monthSoFar),
             dailyStats: dailyPts, codeChanges: codePts, balanceDaily: balPts,
             remainingBalances: lb, quotaStatus: qs,
+            modelBreakdown: modelItems, rateSeries: rateSeries,
+            subscriptionStart: subscriptionStart,
+            subscriptionPeriodDays: subscriptionPeriodDays,
             updatedAt: Date()
         )
         snap.toolDetails = detailItems
@@ -798,7 +1013,7 @@ enum StatsService {
             crossToolDeltaPct: otherAvg > 0 ? SessionStats.deltaPct(current: thisAvg, previous: otherAvg) : nil)
     }
 
-    /// Builds both iOS tool blocks together. Each tool's cross-tool comparison
+    /// Builds all dashboard tool blocks together. Each tool's cross-tool comparison
     /// needs the other tool's sessions. One database pass keeps those related
     /// readings consistent and avoids queueing six separate scans of 30-day
     /// usage events behind each other.
@@ -808,8 +1023,9 @@ enum StatsService {
 
         let rowsStartedAt = Date()
         let buildStartedAt = Date()
+        let detailSources = ["codex", "claude-code", "deepseek-harness"]
         let detailData = await toolDetailData(
-            sources: ["codex", "claude-code"], sinceMs: sinceMs, toMs: toMs, prevSince: prevSince)
+            sources: detailSources, sinceMs: sinceMs, toMs: toMs, prevSince: prevSince)
         DiagnosticJournal.log("dashboard_snapshot_stage", [
             "stage": .string("tool_details_rows"),
             "elapsed_ms": .double(Date().timeIntervalSince(rowsStartedAt) * 1_000),
@@ -817,23 +1033,22 @@ enum StatsService {
                 Date().timeIntervalSince(buildStartedAt) * 1_000),
         ])
 
-        let codex = detailData.sources["codex"]
-        let claude = detailData.sources["claude-code"]
-        let resolvedCodexRows = codex?.rows ?? []
-        let resolvedClaudeRows = claude?.rows ?? []
-        let resolvedCodexMetrics = codex?.metrics ?? ToolMetrics()
-        let resolvedClaudeMetrics = claude?.metrics ?? ToolMetrics()
+        let totalSpend = detailSources.reduce(0.0) {
+            $0 + (detailData.sources[$1]?.metrics.spend ?? 0)
+        }
+        let totalSessions = detailSources.reduce(0) {
+            $0 + (detailData.sources[$1]?.rows.count ?? 0)
+        }
 
-        return [
-            toolDetail(
-                source: "codex", sinceMs: sinceMs, rows: resolvedCodexRows,
-                metrics: resolvedCodexMetrics, otherAverageSpend: resolvedClaudeMetrics.spend,
-                otherRowCount: resolvedClaudeRows.count),
-            toolDetail(
-                source: "claude-code", sinceMs: sinceMs, rows: resolvedClaudeRows,
-                metrics: resolvedClaudeMetrics, otherAverageSpend: resolvedCodexMetrics.spend,
-                otherRowCount: resolvedCodexRows.count),
-        ]
+        return detailSources.compactMap { source in
+            guard let data = detailData.sources[source] else { return nil }
+            let otherSessionCount = totalSessions - data.rows.count
+            let otherSpend = totalSpend - data.metrics.spend
+            return toolDetail(
+                source: source, sinceMs: sinceMs, rows: data.rows,
+                metrics: data.metrics, otherAverageSpend: otherSpend,
+                otherRowCount: otherSessionCount)
+        }
     }
 
     private struct ToolDetailSourceData: Sendable {

@@ -3,16 +3,21 @@ import Foundation
 /// CloudKit schema constants shared by the macOS writer and the
 /// iOS/watchOS/widget readers.
 ///
-/// Architecture: a single `DashboardCache_v1` record type with one record per
+/// Architecture: a single `DashboardCache_v2` record type with one record per
 /// time range. Each record stores a JSON blob of the full dashboard snapshot
 /// under the `json` field, plus an `updatedAt` timestamp.
+///
+/// 2.x intentionally uses a separate record type from the 1.x contract so a
+/// legacy writer cannot overwrite trusted-data snapshots. There is no v1
+/// fallback: readers either receive a matching v2 payload or show no-data /
+/// version states.
 public enum CKSchema {
-    public static let recordType = "DashboardCache_v1"
+    public static let recordType = "DashboardCache_v2"
 
     /// JSON payload format version the reader accepts (exact match). Bump ONLY
     /// when the `DashboardSnapshot` JSON structure changes, and set it to the
-    /// macOS app version that introduces the new format.
-    public static let payloadVersion = "1.2.4"
+    /// major contract version that introduces the new format.
+    public static let payloadVersion = "2.0.0"
 
     #if os(macOS)
     /// Version of the macOS app currently writing snapshots.
@@ -33,7 +38,9 @@ public enum CKSchema {
     }
 
     public enum Subscription {
-        public static let dashboardChanges = "dashboard-changes"
+        /// A new ID is required so an upgraded 1.x client does not mistake its
+        /// old DashboardCache_v1 subscription for a DashboardCache_v2 one.
+        public static let dashboardChanges = "dashboard-v2-changes"
         public static let spendAlertChanges = "spend-alert-changes"
     }
 

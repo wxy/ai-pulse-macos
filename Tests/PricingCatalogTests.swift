@@ -31,6 +31,13 @@ final class PricingCatalogTests: XCTestCase {
         XCTAssertEqual(PricingManager.shared.providerId(for: "deepseek-v4-pro"), "deepseek")
     }
 
+    func testGLMAttributionWithoutPricing() {
+        XCTAssertEqual(PricingManager.shared.providerId(for: "glm-5.3-flash"), "zhipu")
+        XCTAssertNil(PricingManager.shared.pricing(for: "glm-5.3-flash"))
+        XCTAssertNil(PricingManager.shared.costUSD(
+            model: "glm-5.3-flash", inTokens: 1, outTokens: 1, cacheTokens: 0))
+    }
+
     func testCostUSDForDeepSeekPro() {
         let cost = PricingManager.shared.costUSD(model: "deepseek-v4-pro", inTokens: 1_000_000, outTokens: 500_000, cacheTokens: 1_000_000)
         XCTAssertNotNil(cost)

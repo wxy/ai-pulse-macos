@@ -136,6 +136,7 @@ struct IntegrationRow: View {
     private var needsHomeGrant: Bool {
         integration.id == "claude-code" || integration.id == "codex"
             || integration.id == "qwen-code" || integration.id == "opencode"
+            || integration.id == "deepseek-harness"
     }
 
     var summaryText: String {

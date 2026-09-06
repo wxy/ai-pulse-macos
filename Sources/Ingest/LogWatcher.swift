@@ -1,5 +1,7 @@
 import Foundation
 import GRDB
+import Darwin
+import zstd
 
 /// Watches log directories for AI coding tools and incrementally parses them.
 ///
@@ -17,6 +19,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// after granting access, after adding a directory) or when an FSEvent fires
     /// while an initial scan is still running.
     private let scanQueue = DispatchQueue(label: "com.wxy.aipulse.logwatcher.scan", qos: .utility)
+    private let stateLock = NSLock()
 
     /// Last-read byte offset per file path.  Persisted in UserDefaults.
     private var filePositions: [String: UInt64] = [:]
@@ -25,6 +28,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Last seen model per aider file (survives incremental scans).
     private var aiderModels: [String: String] = [:]
 
+    /// FSEvents can fire many times while one cold-history scan is running.
+    /// Coalesce those notifications into a single follow-up scan; a serial
+    /// queue alone would otherwise preserve a backlog of duplicate full scans.
+    private var scanQueued = false
+
+    /// Visible while a cold database is still importing history. The app can
+    /// already show balances and cached snapshots, but usage panels must not be
+    /// mistaken for an empty account while backfill is running.
+    static let backfill = IngestionBackfillState()
+
     /// Ensures positions are loaded before the first scan() runs.
     private let loadGroup = DispatchGroup()
     /// Tracks in-flight persist tasks so stop() can wait for them.
@@ -32,7 +45,9 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
     private init() {
         loadGroup.enter()
-        Task { await loadPositionsFromDB(); loadGroup.leave() }
+        scanQueue.async {
+            Task { await self.loadPositionsFromDB(); self.loadGroup.leave() }
+        }
     }
 
     private func loadPositionsFromDB() async {
@@ -47,33 +62,44 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                 }
                 return result
             }
+            applyLoadedPositions(map)
+        } catch {
+            Logger.warning("LogWatcher: DB positions load failed, re-scanning all files: \(error)")
+        }
+    }
+
+    private func applyLoadedPositions(_ map: [String: UInt64]) {
+        stateLock.withLock {
             if !map.isEmpty {
                 filePositions = map
             } else if let saved = UserDefaults.standard.dictionary(forKey: "logwatcher_positions") as? [String: UInt64], !saved.isEmpty {
                 // One-time migration from UserDefaults to DB
                 filePositions = saved
-                persistPositions()
+                persistPositions(filePositions)
                 UserDefaults.standard.removeObject(forKey: "logwatcher_positions")
             }
-        } catch {
-            Logger.warning("LogWatcher: DB positions load failed, re-scanning all files: \(error)")
         }
     }
 
     func start() {
         scanQueue.async { [weak self] in
             let timedOut = self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                MainActor.assumeIsolated {
-                    if timedOut {
-                        Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
-                    }
-                    self.watchClaudeCode()
-                    self.watchCodex()
-                    self.discoverAndWatchRepos()
-                    self.scanQwenSessions()
-                    self.scanOpenCodeSessions()
+            guard let self else { return }
+            if timedOut {
+                Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+            }
+        let isColdStart = self.filePositions.isEmpty
+        LogWatcher.backfill.setActive(isColdStart)
+        self.watchClaudeCode(scanNow: false)
+        self.watchCodex(scanNow: false)
+        self.runScan(includeClaudeProjects: true)
+        LogWatcher.backfill.setActive(false)
+            if isColdStart {
+                // A previous launch could have cached a snapshot before the
+                // cold backfill finished. Rebuild after history is settled.
+                Task { await DashboardCache.invalidateAll() }
+                DispatchQueue.main.async {
+                    DataRefreshCoordinator.shared.notifyDataChange()
                 }
             }
         }
@@ -83,21 +109,29 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Safe to call repeatedly; idempotent. Used by DataRefreshCoordinator.
     func scan() {
         scanQueue.async { [weak self] in
-            let timedOut = self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut
-            DispatchQueue.main.async { [weak self] in
+            guard let self, !self.scanQueued else { return }
+            self.scanQueued = true
+            self.scanQueue.async { [weak self] in
                 guard let self else { return }
-                MainActor.assumeIsolated {
-                    if timedOut {
-                        Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
-                    }
-                    self.scanClaudeProjectsOnly()
-                    self.discoverAndWatchRepos()
-                    self.scanCodexSessions()
-                    self.scanQwenSessions()
-                    self.scanOpenCodeSessions()
-                }
+                defer { self.scanQueued = false }
+                self.runScan(includeClaudeProjects: true)
             }
         }
+    }
+
+    private func runScan(includeClaudeProjects: Bool) {
+        let timedOut = loadGroup.wait(timeout: .now() + 5.0) == .timedOut
+        if timedOut {
+            Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
+        }
+        if includeClaudeProjects {
+                self.scanClaudeProjectsOnly()
+        }
+        discoverAndWatchRepos()
+        scanCodexSessions()
+        scanDeepSeekHarnessSessions()
+        scanQwenSessions()
+        scanOpenCodeSessions()
     }
 
     func stop() {
@@ -125,14 +159,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         scanClaudeCode(at: dir)
     }
 
-    private func watchClaudeCode() {
+    private func watchClaudeCode(scanNow: Bool = true) {
         let dir = FileManager.default.realHomeDirectory
             .appendingPathComponent(".claude/projects")
         guard FileManager.default.fileExists(atPath: dir.path) else {
             Logger.warning("Claude Code projects dir not found")
             return
         }
-        scanClaudeCode(at: dir)
+        if scanNow {
+            scanClaudeCode(at: dir)
+        }
 
         // Already watching (start() may be called again after granting access
         // or adding repos) — re-scan above is enough; don't create a 2nd source.
@@ -147,19 +183,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         )
         claudeSource?.setEventHandler { [weak self] in
             guard let self else { return }
-            self.scanQueue.async { [weak self] in
-                guard let self else { return }
-                // Hop to the main queue explicitly instead of `Task { @MainActor }`:
-                // creating a MainActor-isolated Task from a GCD block (this source
-                // runs on utility-qos) trips Swift's isolation check and crashes
-                // with _dispatch_assert_queue_fail on quit.
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    MainActor.assumeIsolated {
-                        self.scanClaudeCode(at: dir)
-                    }
-                }
-            }
+            self.scan()
         }
         claudeSource?.setCancelHandler { close(fd) }
         claudeSource?.resume()
@@ -221,22 +245,32 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                   options: [.skipsHiddenFiles, .skipsPackageDescendants])
         else { return }
 
+        var files = [URL]()
         for case let url as URL in enumerator
         where url.lastPathComponent.hasPrefix("rollout-") && url.pathExtension == "jsonl" {
+            files.append(url)
+        }
+
+        // Cold starts used to parse month-old files before the current day.
+        // Rollout names sort chronologically, so newest-first makes Today and
+        // the current session visible while older history continues backfilling.
+        for url in files.sorted(by: { $0.lastPathComponent > $1.lastPathComponent }) {
             parseCodexFile(url)
         }
     }
 
     /// Watch `~/.codex/sessions` with FSEvents so ChatGPT desktop / Codex CLI
     /// sessions are ingested in real time, mirroring the Claude Code watcher.
-    private func watchCodex() {
+    private func watchCodex(scanNow: Bool = true) {
         let home = FileManager.default.realHomeDirectory
         let sessionsDir = home.appendingPathComponent(".codex/sessions")
         guard FileManager.default.fileExists(atPath: sessionsDir.path) else {
             Logger.warning("Codex sessions dir not found")
             return
         }
-        scanCodexSessions()
+        if scanNow {
+            scanCodexSessions()
+        }
 
         guard codexSource == nil else { return }
 
@@ -249,18 +283,148 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         )
         codexSource?.setEventHandler { [weak self] in
             guard let self else { return }
-            self.scanQueue.async { [weak self] in
-                guard let self else { return }
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    MainActor.assumeIsolated {
-                        self.scanCodexSessions()
-                    }
-                }
-            }
+            self.scan()
         }
         codexSource?.setCancelHandler { close(fd) }
         codexSource?.resume()
+    }
+
+    // MARK: - DeepSeek Harness
+
+    private func scanDeepSeekHarnessSessions() {
+        let home = FileManager.default.realHomeDirectory
+        let sessionsDir = home.appendingPathComponent(".dsh/sessions")
+        guard FileManager.default.fileExists(atPath: sessionsDir.path),
+              let enumerator = FileManager.default.enumerator(
+                  at: sessionsDir,
+                  includingPropertiesForKeys: [.contentModificationDateKey],
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else { return }
+
+        var files = [(url: URL, modified: Date)]()
+        for case let url as URL in enumerator
+        where url.lastPathComponent == "session.jsonl.zstd" {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            files.append((url, modified))
+        }
+        for item in files.sorted(by: { $0.modified > $1.modified }) {
+            parseDeepSeekHarnessFile(item.url)
+        }
+    }
+
+    private func parseDeepSeekHarnessFile(_ file: URL) {
+        let path = file.path
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let fileSize = attrs[.size] as? UInt64
+        else { return }
+
+        // A zstd journal cannot be safely read at a byte boundary. Re-parse on
+        // size changes and rely on usage_event dedupe keys to keep idempotence.
+        if filePositions[path] == fileSize { return }
+
+        let result: DeepSeekHarnessScanResult
+        do {
+            result = try parseDeepSeekHarnessStream(at: file)
+        } catch {
+            Logger.warning("LogWatcher: DSH decompression failed for \(path): \(error.localizedDescription)")
+            return
+        }
+
+        if !result.events.isEmpty {
+            insertEvents(result.events)
+        }
+        if let sessionId = result.sessionId, result.maxTs > 0 {
+            upsertSessionInfo(SessionInfoRecord(
+                source: "deepseek-harness", sessionId: sessionId,
+                title: result.title, repo: result.cwd,
+                firstTs: result.minTs, lastTs: result.maxTs,
+                completed: result.completed ? true : nil, windowTokens: nil))
+        }
+        if result.parsedCount > 0 {
+            Logger.info("LogWatcher: parsed \(result.parsedCount) DeepSeek Harness events from \(path), decompressedBytes=\(result.byteCount)")
+        }
+        filePositions[path] = fileSize
+        persistPositions([path: fileSize])
+    }
+
+    private struct DeepSeekHarnessScanResult {
+        var events: [UsageEvent]
+        var cwd: String?
+        var sessionId: String?
+        var title: String?
+        var model: String?
+        var completed: Bool
+        var minTs: Int
+        var maxTs: Int
+        var parsedCount: Int
+        var byteCount: Int
+    }
+
+    /// Stream zstd output and retain only a bounded working set. The previous
+    /// implementation materialized the decompressed journal three times: as
+    /// Data, String, and an array of every line.
+    private func parseDeepSeekHarnessStream(at url: URL) throws -> DeepSeekHarnessScanResult {
+        let decoder = try ZstdStreamDecoder()
+
+        var state = (
+            cwd: String?.none,
+            sessionId: String?.none,
+            title: String?.none,
+            completed: false
+        )
+        var currentModel: String? = nil
+        var result = DeepSeekHarnessScanResult(
+            events: [], cwd: nil, sessionId: nil, title: nil,
+            completed: false, minTs: Int.max, maxTs: 0,
+            parsedCount: 0, byteCount: 0
+        )
+        var splitter = LineSplitter()
+
+        func processLine(_ line: String) {
+            guard !line.isEmpty else { return }
+            result.byteCount += line.utf8.count + 1
+            if let metadata = DeepSeekHarnessParser.metadata(fromLine: line) {
+                state.cwd = metadata.cwd ?? state.cwd
+                state.sessionId = metadata.sessionId ?? state.sessionId
+                state.title = metadata.title ?? state.title
+                currentModel = metadata.model ?? currentModel
+            }
+            if DeepSeekHarnessParser.isComplete(fromLine: line) {
+                state.completed = true
+            }
+            guard let event = DeepSeekHarnessParser.parse(
+                line: line, cwd: state.cwd, model: currentModel,
+                sessionId: state.sessionId)
+            else { return }
+            result.minTs = min(result.minTs, event.ts)
+            result.maxTs = max(result.maxTs, event.ts)
+            result.parsedCount += 1
+            result.events.append(event)
+            if result.events.count >= 512 {
+                insertEvents(result.events)
+                result.events.removeAll(keepingCapacity: false)
+            }
+        }
+
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        while let compressedChunk = try handle.read(upToCount: 256 << 10), !compressedChunk.isEmpty {
+            try decoder.decompress(compressedChunk) { chunk in
+                splitter.append(chunk, handler: processLine)
+            }
+        }
+        try decoder.finish { chunk in
+            splitter.append(chunk, handler: processLine)
+        }
+        splitter.finish(handler: processLine)
+        result.cwd = state.cwd
+        result.sessionId = state.sessionId
+        result.title = state.title
+        result.model = currentModel
+        result.completed = state.completed
+        return result
     }
 
     private func parseCodexFile(_ file: URL) {
@@ -274,8 +438,13 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         var maxTs = 0
         var parsedCount = 0
         let filePath = file.path
+        let resume = hasNewBytes(at: file) ? codexResumeMetadata(at: file) : nil
+        currentCwd = resume?.cwd
+        currentModel = resume?.model
+        currentSessionId = resume?.sessionId
         parseLinesIncremental(from: file) { line in
             // Track cwd / session_id (session_meta) and model (turn_context) across lines.
+            if let m = CodexParser.sessionMetaModel(fromLine: line) { currentModel = m }
             if let cwd = CodexParser.cwd(fromLine: line) { currentCwd = cwd }
             if let sid = CodexParser.sessionId(fromLine: line) { currentSessionId = sid }
             if let m = CodexParser.model(fromLine: line) { currentModel = m }
@@ -307,6 +476,54 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         if parsedCount > 0 {
             Logger.info("LogWatcher: parsed \(parsedCount) codex events from \(filePath)")
         }
+    }
+
+    private struct CodexResumeMetadata {
+        let cwd: String?
+        let sessionId: String?
+        let model: String?
+    }
+
+    /// Incremental reads begin at the stored byte offset, so parser state from
+    /// earlier lines no longer exists. Rebuild only the small metadata needed to
+    /// attribute the new events; token_count parsing still stays incremental.
+    private func codexResumeMetadata(at file: URL) -> CodexResumeMetadata? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
+              let fileSize = attrs[.size] as? UInt64,
+              let lastPos = filePositions[file.path],
+              lastPos > 0, lastPos <= fileSize,
+              let handle = try? FileHandle(forReadingFrom: file)
+        else { return nil }
+        defer { try? handle.close() }
+
+        var cwd: String? = nil
+        var sessionId: String? = nil
+        var model: String? = nil
+
+        var splitter = LineSplitter()
+        var bytesRead = 0
+        while bytesRead < lastPos,
+              let chunk = try? handle.read(upToCount: min(1 << 20, Int(lastPos - UInt64(bytesRead)))),
+              !chunk.isEmpty {
+            bytesRead += chunk.count
+            splitter.append(chunk) { line in
+            if let value = CodexParser.cwd(fromLine: line) { cwd = value }
+            if let value = CodexParser.sessionId(fromLine: line) { sessionId = value }
+            if let value = CodexParser.sessionMetaModel(fromLine: line) ?? CodexParser.model(fromLine: line) {
+                model = value
+            }
+            }
+        }
+        // `lastPos` is a byte boundary observed after a complete line in the
+        // normal case. Do not consume a trailing partial line as metadata.
+        return CodexResumeMetadata(cwd: cwd, sessionId: sessionId, model: model)
+    }
+
+    private func hasNewBytes(at file: URL) -> Bool {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
+              let fileSize = attrs[.size] as? UInt64
+        else { return false }
+        return filePositions[file.path] != fileSize
     }
 
     // MARK: - Qwen Code
@@ -436,30 +653,41 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         defer { try? handle.close() }
 
         try? handle.seek(toOffset: startPos)
-        let newBytes = handle.readData(ofLength: Int(fileSize - startPos))
-        guard let raw = String(data: newBytes, encoding: .utf8), !raw.isEmpty else {
-            filePositions[path] = fileSize; persistPositions(); return
+        var events = [UsageEvent]()
+        let pendingLine = partialLines[path].map { Data($0.utf8) } ?? Data()
+        var splitter = LineSplitter(initialBytes: pendingLine)
+        var bytesRead = 0
+
+        while bytesRead < Int(fileSize - startPos),
+              let chunk = try? handle.read(upToCount: min(1 << 20, Int(fileSize - startPos) - bytesRead)),
+              !chunk.isEmpty {
+            bytesRead += chunk.count
+            splitter.append(chunk) { line in
+                guard !line.isEmpty, let event = parser(line) else { return }
+                events.append(event)
+                if events.count >= 512 {
+                    insertEvents(events)
+                    events.removeAll(keepingCapacity: false)
+                }
+            }
         }
 
-        // Prepend any partial line left over from the last read
-        let content = (partialLines[path] ?? "") + raw
-        let lines = content.components(separatedBy: .newlines)
-
-        // Process all complete lines (drop the last — it may be incomplete)
-        for line in lines.dropLast() {
-            guard !line.isEmpty, let event = parser(line) else { continue }
-            insertEvent(event)
+        // Save the trailing (potentially incomplete) line for next time.
+        partialLines[path] = String(decoding: splitter.pendingBytes, as: UTF8.self)
+        if !events.isEmpty {
+            insertEvents(events)
         }
-
-        // Save the trailing (potentially incomplete) line for next time
-        partialLines[path] = lines.last ?? ""
 
         filePositions[path] = fileSize
-        persistPositions()
+        persistPositions(filePositions)
     }
 
     private func persistPositions() {
         let positions = filePositions
+        persistPositions(positions)
+    }
+
+    private func persistPositions(_ positions: [String: UInt64]) {
         persistGroup.enter()
         Task {
             defer { persistGroup.leave() }
@@ -483,7 +711,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     }
 
     private func insertEvent(_ event: UsageEvent) {
-        let providerId = PricingManager.shared.providerId(for: event.model) ?? "unknown"
+        insertEvents([event])
+    }
+
+    /// Batch all events read from one file into a single SQLite transaction.
+    /// A historical JSONL can contain thousands of rows; spawning one Task per
+    /// row makes first launch fight itself for the database queue and UI.
+    private func insertEvents(_ events: [UsageEvent]) {
+        guard !events.isEmpty else { return }
+        let rows = events.map { event -> (event: UsageEvent, providerId: String, confidence: CostConfidence, csId: String, cost: Double?) in
+            let providerId = PricingManager.shared.providerId(for: event.model) ?? "unknown"
 
         // CostSource arbitration
         let sources = IntegrationRegistry.activeCostSources()
@@ -512,28 +749,33 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             effectiveConfidence = confidence
         }
 
+        return (event, providerId, effectiveConfidence, csId, cost)
+        }
+
         Task {
             do {
                 try await AppDatabase.shared.write { db in
-                    try db.execute(sql: """
-                        INSERT INTO usage_event
-                          (ts, source, provider_id, model, in_tokens, out_tokens,
-                           cache_tokens, cost_usd, repo_path, session_id, dedupe_key,
-                           cost_source_id, cost_confidence)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(dedupe_key) DO UPDATE SET
-                          provider_id = excluded.provider_id,
-                          model       = excluded.model,
-                          cost_usd    = excluded.cost_usd,
-                          repo_path   = excluded.repo_path,
-                          cost_source_id = excluded.cost_source_id,
-                          cost_confidence = excluded.cost_confidence
-                        """, arguments: [
-                            event.ts, event.source, providerId, event.model,
-                            event.inTokens, event.outTokens, event.cacheTokens,
-                            cost, event.repoPath, event.sessionId, event.dedupeKey,
-                            csId, effectiveConfidence.rawValue,
-                        ])
+                    for row in rows {
+                        try db.execute(sql: """
+                            INSERT INTO usage_event
+                              (ts, source, provider_id, model, in_tokens, out_tokens,
+                               cache_tokens, cost_usd, repo_path, session_id, dedupe_key,
+                               cost_source_id, cost_confidence)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(dedupe_key) DO UPDATE SET
+                              provider_id = excluded.provider_id,
+                              model       = excluded.model,
+                              cost_usd    = excluded.cost_usd,
+                              repo_path   = excluded.repo_path,
+                              cost_source_id = excluded.cost_source_id,
+                              cost_confidence = excluded.cost_confidence
+                            """, arguments: [
+                                row.event.ts, row.event.source, row.providerId, row.event.model,
+                                row.event.inTokens, row.event.outTokens, row.event.cacheTokens,
+                                row.cost, row.event.repoPath, row.event.sessionId, row.event.dedupeKey,
+                                row.csId, row.confidence.rawValue,
+                            ])
+                    }
                 }
                 DataRefreshCoordinator.shared.notifyPhaseIngest()
             } catch {
@@ -604,6 +846,227 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// the same upsert path without exposing it.
     static func upsertForBackfill(_ record: SessionInfoRecord) {
         LogWatcher.shared.upsertSessionInfo(record)
+    }
+}
+
+/// Small thread-safe flag shared with UI during the first cold-history import.
+final class IngestionBackfillState: @unchecked Sendable {
+    static let changeNotification = Notification.Name("ingestionBackfillDidChange")
+    private let lock = NSLock()
+    private var active = false
+
+    var isActive: Bool {
+        lock.withLock { active }
+    }
+
+    func setActive(_ isActive: Bool) {
+        let didChange: Bool = lock.withLock {
+            let didChange = active != isActive
+            active = isActive
+            return didChange
+        }
+        guard didChange else { return }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Self.changeNotification, object: nil)
+        }
+    }
+}
+
+private enum ZstdDecoderError: LocalizedError {
+    case decompressionFailed(Int)
+    case truncatedStream
+
+    var errorDescription: String? {
+        switch self {
+        case .decompressionFailed(let code):
+            return "zstd decompression failed with code \(code)"
+        case .truncatedStream:
+            return "zstd stream ended before its final frame"
+        }
+    }
+}
+
+/// Streams compressed DSH journals through libzstd without spawning a helper
+/// process or materializing the decompressed file in memory.
+final class ZstdStreamDecoder {
+    private let context: OpaquePointer
+    private var pendingInput = Data()
+    private var frameComplete = false
+
+    init() throws {
+        guard let context = ZSTD_createDCtx() else {
+            throw ZstdDecoderError.decompressionFailed(0)
+        }
+        self.context = context
+    }
+
+    deinit {
+        _ = ZSTD_freeDCtx(context)
+    }
+
+    func decompress(_ input: Data, outputHandler: (Data) throws -> Void) throws {
+        var compressed = pendingInput
+        compressed.append(input)
+        pendingInput.removeAll(keepingCapacity: true)
+        frameComplete = false
+
+        var consumed = 0
+        try compressed.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            while consumed < raw.count {
+                let source = raw.baseAddress?.advanced(by: consumed)
+                var inputBuffer = ZSTD_inBuffer(
+                    src: source,
+                    size: raw.count - consumed,
+                    pos: 0
+                )
+                let code = try withUnsafeMutablePointer(to: &inputBuffer) { inputPointer in
+                    try run(allowPendingInput: true, outputHandler: outputHandler) { outputBuffer in
+                        ZSTD_decompressStream(context, outputBuffer, inputPointer)
+                    }
+                }
+                guard inputBuffer.pos > 0 else { break }
+                consumed += inputBuffer.pos
+                if code == 0 {
+                    frameComplete = true
+                } else {
+                    frameComplete = false
+                    break
+                }
+            }
+        }
+
+        if consumed < compressed.count {
+            pendingInput = compressed.subdata(in: consumed..<compressed.count)
+        }
+    }
+
+    func finish(outputHandler: (Data) throws -> Void) throws {
+        if !pendingInput.isEmpty {
+            let pending = pendingInput
+            pendingInput.removeAll(keepingCapacity: false)
+            try decompress(pending, outputHandler: outputHandler)
+            if !pendingInput.isEmpty {
+                throw ZstdDecoderError.truncatedStream
+            }
+        }
+
+        guard !frameComplete else { return }
+        var inputBuffer = ZSTD_inBuffer(src: nil, size: 0, pos: 0)
+        _ = try withUnsafeMutablePointer(to: &inputBuffer) { inputPointer in
+            try run(allowPendingInput: false, outputHandler: outputHandler) { outputBuffer in
+                ZSTD_decompressStream(context, outputBuffer, inputPointer)
+            }
+        }
+    }
+
+    private func run(
+        allowPendingInput: Bool,
+        outputHandler: (Data) throws -> Void,
+        decompress: (UnsafeMutablePointer<ZSTD_outBuffer>) -> Int
+    ) throws -> Int {
+        let capacity = 1 << 20
+        let output = UnsafeMutableRawPointer.allocate(
+            byteCount: capacity,
+            alignment: MemoryLayout<UInt8>.alignment
+        )
+        defer { output.deallocate() }
+        var outputBuffer = ZSTD_outBuffer(dst: output, size: capacity, pos: 0)
+        var noProgressCalls = 0
+
+        while true {
+            outputBuffer.pos = 0
+            let code = decompress(&outputBuffer)
+            if ZSTD_isError(code) != 0 {
+                throw ZstdDecoderError.decompressionFailed(code)
+            }
+            if outputBuffer.pos > 0 {
+                try outputHandler(Data(bytes: output, count: outputBuffer.pos))
+            } else {
+                noProgressCalls += 1
+                if noProgressCalls >= 16 {
+                    throw ZstdDecoderError.decompressionFailed(-16)
+                }
+            }
+            if code == 0 {
+                frameComplete = true
+                return code
+            }
+            if outputBuffer.pos == 0 {
+                if allowPendingInput {
+                    // The decoder consumed the chunk and is waiting for more.
+                    frameComplete = false
+                    return code
+                }
+            }
+            // At EOF, keep draining the decoder even when a call emits no
+            // bytes; a final empty call can still complete the frame.
+        }
+    }
+}
+
+/// Splits streamed UTF-8 input into complete lines without materializing the
+/// whole stream. Multi-byte characters split across read boundaries remain in
+/// the pending byte buffer until the next newline.
+struct LineSplitter {
+    private var pending = [UInt8]()
+    private var skippingOversizedLine = false
+    private let maxLineBytes: Int
+
+    /// A practical ceiling for parser input. Normal JSONL records are far
+    /// smaller; this prevents one malformed line from becoming an unbounded
+    /// allocation even when the source stream is large.
+    static let defaultMaxLineBytes = 64 * 1_048_576
+
+    var pendingBytes: Data {
+        Data(pending)
+    }
+
+    init(initialBytes: Data = Data(), maxLineBytes: Int = LineSplitter.defaultMaxLineBytes) {
+        self.maxLineBytes = maxLineBytes
+        pending = [UInt8](initialBytes)
+        skippingOversizedLine = pending.count > maxLineBytes
+    }
+
+    mutating func append(_ chunk: Data, handler: (String) -> Void) {
+        let pieces = chunk.split(separator: UInt8(0x0A), omittingEmptySubsequences: false)
+        guard let last = pieces.last else { return }
+
+        for piece in pieces.dropLast() {
+            if let line = consume(piece, terminated: true), !skippingOversizedLine {
+                handler(line)
+            }
+            skippingOversizedLine = false
+        }
+
+        // The final piece is incomplete unless the chunk ended with a newline;
+        // a newline produces a trailing empty piece and is emitted immediately.
+        _ = consume(last, terminated: false)
+    }
+
+    mutating func finish(handler: (String) -> Void) {
+        guard !skippingOversizedLine, !pending.isEmpty else { return }
+        handler(String(decoding: pending, as: UTF8.self))
+        pending.removeAll(keepingCapacity: false)
+    }
+
+    private mutating func consume(_ piece: Data, terminated: Bool) -> String? {
+        if !skippingOversizedLine {
+            if pending.count + piece.count <= maxLineBytes {
+                pending.append(contentsOf: piece)
+            } else {
+                pending.removeAll(keepingCapacity: false)
+                skippingOversizedLine = true
+            }
+        }
+
+        if terminated || piece.isEmpty {
+            let line = String(decoding: pending, as: UTF8.self)
+            pending.removeAll(keepingCapacity: false)
+            if terminated, !skippingOversizedLine {
+                return line
+            }
+        }
+        return nil
     }
 }
 

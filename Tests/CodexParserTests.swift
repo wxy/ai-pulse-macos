@@ -79,6 +79,13 @@ final class CodexParserTests: XCTestCase {
         XCTAssertEqual(CodexParser.model(fromLine: line), "gpt-5-codex")
     }
 
+    func testSessionMetaModelExtraction() {
+        let line = """
+        {"timestamp":"2026-08-02T10:00:00Z","type":"session_meta","payload":{"id":"s1","model":"glm-5.3-flash"}}
+        """
+        XCTAssertEqual(CodexParser.sessionMetaModel(fromLine: line), "glm-5.3-flash")
+    }
+
     func testTimestampParsedFromISO8601() {
         let line = """
         {"timestamp":"2026-08-02T10:00:00.000Z","type":"token_count","payload":{"last_token_usage":{"input_tokens":1,"output_tokens":1}}}

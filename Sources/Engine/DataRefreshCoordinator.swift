@@ -194,6 +194,10 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     /// Runs every 5 min in the background, independent of Dashboard open state.
     /// Ensures iCloud sync always has fresh data for iOS/watchOS.
     private func runPhase4() {
+        // A cold database may still be backfilling years of JSONL at the 20s
+        // startup mark. Never let that partial view become a fresh cache entry;
+        // the next five-minute tick runs after history import has settled.
+        guard !LogWatcher.backfill.isActive else { return }
         Task.detached(priority: .background) {
             let now = Date().timeIntervalSince1970
             // Per-range throttles: today=5min, week=1h, 30d=12h
@@ -223,6 +227,10 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
 
     /// Called by LogWatcher after a usage_event row is inserted.
     func notifyPhaseIngest() {
+        DiagnosticJournal.log("cache_invalidate", [
+            "reason": .string("usage_event"),
+        ])
+        Task { await DashboardCache.invalidateAll() }
         DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify(playSound: true) } }
     }
 

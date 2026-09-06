@@ -1,0 +1,4 @@
+module zstd [extern_c] {
+    header "zstd.h"
+    export *
+}

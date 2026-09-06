@@ -33,7 +33,7 @@
 
 /* Begin PBXFileReference section */
 		542A515D2D6803121DB17A0E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		C0843E1D2FF555ED00E3F6C4 /* AI Pulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "AI Pulse.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0843E1D2FF555ED00E3F6C4 /* AI Pulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "AI Pulse.app"; path = AIPulseDebug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libgit2.1.9.dylib; path = ../Libraries/libgit2/lib/libgit2.1.9.dylib; sourceTree = SOURCE_ROOT; };
 		C0843EB22FF5561900E3F6C4 /* AIPulse.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = AIPulse.png; path = ../Resources/AIPulse.png; sourceTree = SOURCE_ROOT; };
 		C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "pricing-catalog.json"; path = "../Resources/pricing-catalog.json"; sourceTree = SOURCE_ROOT; };
@@ -317,14 +317,17 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/../Libraries/libgit2/include";
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../Libraries/libgit2/include",
+					"$(SRCROOT)/../Libraries/zstd/include",
+				);
 				INFOPLIST_FILE = "AIPulse-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse";
+				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse Debug";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright 2026 Xingyu Wang. Licensed under Apache 2.0.";
@@ -334,19 +337,21 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.8;
+				MARKETING_VERSION = 2.0.0;
 				OTHER_LDFLAGS = (
 					"-L$(SRCROOT)/../Libraries/libgit2/lib",
 					"-lgit2",
+					"-L$(SRCROOT)/../Libraries/zstd/lib",
+					"-lzstd",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = xingyu.wang.aipulse.debug;
+				PRODUCT_NAME = AIPulseDebug;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../Sources/Clibgit2";
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../Sources/Clibgit2 $(SRCROOT)/../Libraries/zstd/include";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
@@ -361,13 +366,16 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_HARDENED_RUNTIME = YES;
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/../Libraries/libgit2/include";
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../Libraries/libgit2/include",
+					"$(SRCROOT)/../Libraries/zstd/include",
+				);
 				INFOPLIST_FILE = "AIPulse-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -379,10 +387,12 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.8;
+				MARKETING_VERSION = 2.0.0;
 				OTHER_LDFLAGS = (
 					"-L$(SRCROOT)/../Libraries/libgit2/lib",
 					"-lgit2",
+					"-L$(SRCROOT)/../Libraries/zstd/lib",
+					"-lzstd",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -391,7 +401,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../Sources/Clibgit2";
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../Sources/Clibgit2 $(SRCROOT)/../Libraries/zstd/include";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
