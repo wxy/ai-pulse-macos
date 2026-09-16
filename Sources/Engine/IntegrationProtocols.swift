@@ -7,6 +7,10 @@ extension Notification.Name {
     /// UI consumers (MenuBar, Dashboard, Dock) should refresh in response.
     static let dataDidChange = Notification.Name("AIPulseDataDidChange")
 
+    /// Posted by the lightweight time tick because pulse intensity can decay
+    /// without any database write. This is never a new-activity notification.
+    static let pulseDidChange = Notification.Name("AIPulsePulseDidChange")
+
     /// Posted to request the open Dashboard to switch to a specific TimeRange tab.
     /// userInfo contains "timeRange": TimeRange value.
     static let dashboardSwitchTab = Notification.Name("AIPulseDashboardSwitchTab")

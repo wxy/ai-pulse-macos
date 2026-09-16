@@ -13,13 +13,31 @@ final class SnapshotSanitizeTests: XCTestCase {
         snap.subDaily = 0.7
         snap.todayCalls = -5
         snap.todayTokens = 100
+        snap.observedSpend = [ObservedSpendItem(
+            providerId: "p", amount: .nan, currency: "CNY",
+            convertedUSD: -1, conversionRateToUSD: -.infinity,
+            conversionSource: "test", observedAt: .infinity)]
+        snap.convertedObservedSpendUSD = .nan
+        snap.catalogEquivalentUSD = -2
+        snap.declaredMonthlyCostUSD = 20
+        snap.pulse = PulseSnapshot(
+            tier: .intense, primarySignal: .observedSpend, reason: "observed_spend",
+            signals: [PulseSignal(
+                kind: .observedSpend, rawValue: .nan, unit: "USD/h", baseline: -.infinity,
+                normalized: .infinity, freshness: .fresh, completeness: .intervalNet,
+                observedAt: Date(), reason: "observed_spend")], asOf: Date())
         snap.providerBreakdown = [ProviderItem(providerId: "p", name: "P", cost: .nan)]
         snap.toolBreakdown = [NameCostItem(name: "t", cost: -.infinity)]
-        snap.topRepos = [RepoItem(name: "r", cost: .nan, added: -1, deleted: 2, cpl: .infinity)]
+        snap.topRepos = [RepoItem(name: "r", cost: .nan, added: -1, deleted: 2,
+                                  cpl: .infinity, commits: -4)]
         snap.prediction = PredictionItem(
             monthProjected: .nan, dailyRate: 3, daysRemaining: -2, monthSoFar: 4)
         snap.dailyStats = [
             TrendPoint(ts: .nan, value: -8, calls: -1, tokens: 2, netLines: 3)
+        ]
+        snap.codeChanges = [
+            TrendPoint(ts: 1, value: 2, calls: 0, tokens: 0, netLines: 1,
+                       added: 2, deleted: 1, commits: -3)
         ]
         snap.balanceDaily = [
             TrendPoint(ts: 5, value: .infinity, calls: 0, tokens: 0, netLines: 0)
@@ -28,7 +46,9 @@ final class SnapshotSanitizeTests: XCTestCase {
             RemainingBalanceItem(providerId: "x", displayName: "X", balance: -.infinity, currency: "USD")
         ]
         snap.quotaStatus = [
-            QuotaStatusItem(toolId: "c", utilization: -1, limitStatus: "", resetAt: .nan, windowSeconds: 3600)
+            QuotaStatusItem(toolId: "c", windowId: "5h", utilization: -1,
+                            limitStatus: "", resetAt: .nan, windowSeconds: 3600,
+                            updatedAt: .nan)
         ]
         snap.toolDetails = [
             ToolDetailItem(
@@ -54,12 +74,24 @@ final class SnapshotSanitizeTests: XCTestCase {
         XCTAssertEqual(clean.subDaily, 0.7)
         XCTAssertEqual(clean.todayCalls, 0)
         XCTAssertEqual(clean.todayTokens, 100)
+        XCTAssertEqual(clean.observedSpend?[0].amount, 0)
+        XCTAssertEqual(clean.observedSpend?[0].convertedUSD, 0)
+        XCTAssertEqual(clean.observedSpend?[0].conversionRateToUSD, 0)
+        XCTAssertEqual(clean.observedSpend?[0].conversionSource, "test")
+        XCTAssertEqual(clean.observedSpend?[0].observedAt, 0)
+        XCTAssertEqual(clean.convertedObservedSpendUSD, 0)
+        XCTAssertEqual(clean.catalogEquivalentUSD, 0)
+        XCTAssertEqual(clean.declaredMonthlyCostUSD, 20)
+        XCTAssertEqual(clean.pulse?.observedSpend?.rawValue, 0)
+        XCTAssertEqual(clean.pulse?.observedSpend?.baseline, 0)
+        XCTAssertEqual(clean.pulse?.observedSpend?.normalized, 0)
         XCTAssertEqual(clean.providerBreakdown[0].cost, 0)
         XCTAssertEqual(clean.toolBreakdown[0].cost, 0)
         XCTAssertEqual(clean.topRepos[0].cost, 0)
         XCTAssertEqual(clean.topRepos[0].added, 0)
         XCTAssertEqual(clean.topRepos[0].deleted, 2)
         XCTAssertEqual(clean.topRepos[0].cpl, 0)
+        XCTAssertEqual(clean.topRepos[0].commits, 0)
         XCTAssertEqual(clean.prediction?.monthProjected ?? -1, 0)
         XCTAssertEqual(clean.prediction?.dailyRate ?? -1, 3)
         XCTAssertEqual(clean.prediction?.daysRemaining ?? -1, 0)
@@ -68,11 +100,14 @@ final class SnapshotSanitizeTests: XCTestCase {
         XCTAssertEqual(clean.dailyStats[0].calls, 0)
         XCTAssertEqual(clean.dailyStats[0].tokens, 2)
         XCTAssertEqual(clean.dailyStats[0].netLines, 3)
+        XCTAssertEqual(clean.codeChanges[0].commits, 0)
         XCTAssertEqual(clean.balanceDaily[0].value, 0)
         XCTAssertEqual(clean.remainingBalances[0].balance, 0)
         XCTAssertEqual(clean.quotaStatus[0].utilization, 0)
         XCTAssertEqual(clean.quotaStatus[0].resetAt, 0)
         XCTAssertEqual(clean.quotaStatus[0].windowSeconds, 3600)
+        XCTAssertEqual(clean.quotaStatus[0].windowId, "5h")
+        XCTAssertEqual(clean.quotaStatus[0].updatedAt, 0)
         XCTAssertEqual(clean.toolDetails[0].conclusion.spend, 0)
         XCTAssertEqual(clean.toolDetails[0].conclusion.deltaPct, 0)
         XCTAssertEqual(clean.toolDetails[0].conclusion.avgCostPerSession, 0)
@@ -96,8 +131,6 @@ final class SnapshotSanitizeTests: XCTestCase {
         snap.rateSeries = [RateSeriesItem(
             toolId: "claude-code", label: "Claude Code",
             points: [RatePoint(ts: .nan, tokens: -1, cost: -.infinity)])]
-        snap.subscriptionStart = Date()
-        snap.subscriptionPeriodDays = -30
         snap.toolBreakdown = [NameCostItem(name: "ChatGPT", cost: 1, tokens: -7)]
         snap.topRepos = [RepoItem(name: "r", cost: 1, added: 1, deleted: 1, cpl: 1, tokens: -3)]
         snap.providerBreakdown = [ProviderItem(
@@ -111,7 +144,6 @@ final class SnapshotSanitizeTests: XCTestCase {
         XCTAssertEqual(clean.rateSeries[0].points[0].ts, 0)
         XCTAssertEqual(clean.rateSeries[0].points[0].tokens, 0)
         XCTAssertEqual(clean.rateSeries[0].points[0].cost, 0)
-        XCTAssertEqual(clean.subscriptionPeriodDays, 30)
         XCTAssertEqual(clean.toolBreakdown[0].tokens, 0)
         XCTAssertEqual(clean.topRepos[0].tokens, 0)
         XCTAssertEqual(clean.providerBreakdown[0].sourceKind, "balance")

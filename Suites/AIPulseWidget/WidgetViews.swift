@@ -8,17 +8,67 @@ struct AIPulseWidgetEntryView: View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        switch family {
-        case .systemSmall:
-            systemSmallView
-        case .systemMedium:
-            systemMediumView
-        case .accessoryCircular:
-            accessoryCircularView
-        case .accessoryRectangular:
-            accessoryRectangularView
-        default:
-            systemSmallView
+        if let pulse = entry.pulse {
+            pulseView(pulse)
+        } else {
+            switch family {
+            case .systemSmall:
+                systemSmallView
+            case .systemMedium:
+                systemMediumView
+            case .accessoryCircular:
+                accessoryCircularView
+            case .accessoryRectangular:
+                accessoryRectangularView
+            default:
+                systemSmallView
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pulseView(_ pulse: PulseSnapshot) -> some View {
+        let primary = pulse.primarySignal.flatMap { kind in
+            pulse.signals.first { $0.kind == kind }
+        }
+        let progress = min(max((primary?.normalized ?? 0) / 3, 0), 1)
+        if family == .accessoryCircular {
+            Gauge(value: progress) {
+                Image(systemName: "waveform.path.ecg")
+            } currentValueLabel: {
+                Text(String(pulse.tier.rawValue.prefix(1)).uppercased())
+                    .font(.caption.bold())
+            }
+            .gaugeStyle(.accessoryCircular)
+            .tint(pulseColor(pulse.tier))
+            .containerBackground(.fill.tertiary, for: .widget)
+        } else {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Image(systemName: "waveform.path.ecg")
+                    Text(I18n.pulseTier(pulse.tier)).fontWeight(.bold)
+                }
+                .foregroundStyle(pulseColor(pulse.tier))
+                Text(I18n.pulseReason(pulse))
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                if let money = entry.observedSpend {
+                    Text(money).font(.caption.monospacedDigit()).lineLimit(1)
+                }
+                Text(entry.updatedAt, format: .dateTime.hour().minute())
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding()
+            .containerBackground(.fill.tertiary, for: .widget)
+        }
+    }
+
+    private func pulseColor(_ tier: PulseTier) -> Color {
+        switch tier {
+        case .intense: .red
+        case .elevated: .orange
+        case .active: .yellow
+        case .resting: .secondary
         }
     }
 

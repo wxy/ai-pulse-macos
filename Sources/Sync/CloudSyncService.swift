@@ -8,7 +8,12 @@ import AIPulseShared
 final class CloudSyncService {
     static let shared = CloudSyncService()
 
-    private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
+    /// Do not construct CKContainer until a release build actually needs a
+    /// CloudKit operation. Debug builds disable writes and must not crash while
+    /// initializing an unavailable/misconfigured container.
+    private var database: CKDatabase {
+        CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
+    }
 
     private static let allowsCloudWrites: Bool = {
         #if DEBUG

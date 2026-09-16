@@ -25,6 +25,7 @@ struct RepoBreakdown: Identifiable {
     let cost: Double
     let added: Int
     let deleted: Int
+    let commits: Int
     var totalChanges: Int { added + deleted }
     let apiSources: [CPLSource]               // per-source CPLs (Claude Code, aider, etc.)
     let subscriptionSources: [CPLSource]      // editor→subscription CPLs (independent)
@@ -54,10 +55,69 @@ struct DailyCodeChange: Identifiable {
     let date: Date
     let added: Int
     let deleted: Int
+    let commits: Int
 }
 
 /// Pre-aggregated stats service for the Dashboard.
 enum StatsService {
+
+    private struct AuthorizedCodeChange {
+        let ts: Int64
+        let added: Int
+        let deleted: Int
+        let commitHash: String
+    }
+
+    /// Reads factual local Git output and applies the same repository boundary
+    /// as GitMonitor. This prevents historical rows from repos outside the
+    /// currently configured development directories from leaking into totals.
+    private static func authorizedCodeChanges(
+        sinceMs: Int64,
+        beforeMs: Int64? = nil
+    ) async throws -> [AuthorizedCodeChange] {
+        let rows = try await AppDatabase.shared.read { db -> [(Int64, String, Int, Int, String)] in
+            let rows: [Row]
+            if let beforeMs {
+                rows = try Row.fetchAll(db, sql: """
+                    SELECT ts, repo_path, COALESCE(added, 0) AS a,
+                           COALESCE(deleted, 0) AS d, commit_hash
+                    FROM code_change
+                    WHERE is_merge = 0 AND ts >= ? AND ts < ?
+                    ORDER BY ts
+                    """, arguments: [sinceMs, beforeMs])
+            } else {
+                rows = try Row.fetchAll(db, sql: """
+                    SELECT ts, repo_path, COALESCE(added, 0) AS a,
+                           COALESCE(deleted, 0) AS d, commit_hash
+                    FROM code_change
+                    WHERE is_merge = 0 AND ts >= ?
+                    ORDER BY ts
+                    """, arguments: [sinceMs])
+            }
+            return rows.map { row in
+                (row["ts"] as Int64? ?? 0,
+                 row["repo_path"] as String? ?? "",
+                 Int(row["a"] as Int64? ?? 0),
+                 Int(row["d"] as Int64? ?? 0),
+                 row["commit_hash"] as String? ?? "")
+            }
+        }
+        let roots = RepositoryScope.configuredRoots()
+        return rows.compactMap { ts, path, added, deleted, commitHash in
+            guard RepositoryScope.authorizedGitRoot(for: path, roots: roots) != nil else { return nil }
+            return AuthorizedCodeChange(ts: ts,
+                                        added: max(added, 0),
+                                        deleted: max(deleted, 0),
+                                        commitHash: commitHash)
+        }
+    }
+
+    static func authorizedCodeOutput(sinceMs: Int64) async throws -> (added: Int, deleted: Int, commits: Int) {
+        let rows = try await authorizedCodeChanges(sinceMs: sinceMs)
+        return (rows.reduce(0) { $0 + $1.added },
+                rows.reduce(0) { $0 + $1.deleted },
+                Set(rows.map(\.commitHash).filter { !$0.isEmpty }).count)
+    }
 
     // MARK: - Daily trend
 
@@ -81,7 +141,7 @@ enum StatsService {
                     SELECT (ts / 86400000) * 86400000 AS day_ts,
                            COALESCE(SUM(cost_usd), 0) AS c,
                            COUNT(*) AS cnt,
-                           COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok
+                           COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok
                     FROM usage_event
                     WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
                     GROUP BY day_ts ORDER BY day_ts
@@ -94,21 +154,17 @@ enum StatsService {
             }
 
             // Net lines per day
-            let lineRows = try await AppDatabase.shared.read { db -> [(day: Int64, nl: Int)] in
-                try Row.fetchAll(db, sql: """
-                    SELECT (ts / 86400000) * 86400000 AS day_ts,
-                           COALESCE(SUM(added - deleted), 0) AS nl
-                    FROM code_change
-                    WHERE is_merge = 0 AND ts >= ? AND ts < ?
-                    GROUP BY day_ts ORDER BY day_ts
-                    """, arguments: [startMs, todayMs + 86_400_000]).map { r in
-                    (day: r["day_ts"] as Int64? ?? 0, nl: r["nl"] as Int? ?? 0)
-                }
-            }
+            let codeRows = try await authorizedCodeChanges(
+                sinceMs: startMs,
+                beforeMs: todayMs + 86_400_000
+            )
 
             // Merge cost + lines by day
             var lineMap = [Int64: Int]()
-            for r in lineRows { lineMap[r.day] = r.nl }
+            for row in codeRows {
+                let day = (row.ts / 86_400_000) * 86_400_000
+                lineMap[day, default: 0] += row.added - row.deleted
+            }
 
             var result = [DailyStat]()
             for r in costRows {
@@ -126,6 +182,62 @@ enum StatsService {
         }
     }
 
+    /// Hourly usage facts for the current local calendar day. The timestamps
+    /// remain the real `usage_event.ts` buckets; no session is assigned wholesale
+    /// to its start hour and no context-window capacity is treated as consumption.
+    static func hourlyUsageStatsToday(now: Date = Date()) async throws -> [DailyStat] {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: now)
+        guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return [] }
+        let startMs = Int64(start.timeIntervalSince1970 * 1_000)
+        let endMs = Int64(end.timeIntervalSince1970 * 1_000)
+
+        do {
+            let rows = try await AppDatabase.shared.read { db -> [(ts: Int64, cost: Double, tokens: Int64)] in
+                try Row.fetchAll(db, sql: """
+                    SELECT ts, COALESCE(cost_usd, 0) AS c,
+                           \(TokenAccounting.observedTotalSQL) AS tok
+                    FROM usage_event
+                    WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
+                    ORDER BY ts
+                    """, arguments: [startMs, endMs]).map { row in
+                        (ts: row["ts"] as Int64? ?? 0,
+                         cost: row["c"] as Double? ?? 0,
+                         tokens: row["tok"] as Int64? ?? 0)
+                    }
+            }
+            AppHealthMonitor.shared.clearStatsError()
+            var buckets: [Date: (cost: Double, calls: Int, tokens: Int64)] = [:]
+            for row in rows {
+                let date = Date(timeIntervalSince1970: Double(row.ts) / 1_000)
+                guard let hour = cal.dateInterval(of: .hour, for: date)?.start else { continue }
+                buckets[hour, default: (0, 0, 0)].cost += row.cost
+                buckets[hour, default: (0, 0, 0)].calls += 1
+                buckets[hour, default: (0, 0, 0)].tokens += max(row.tokens, 0)
+            }
+            return buckets.map { hour, values in
+                DailyStat(
+                    date: hour,
+                    cost: values.cost,
+                    calls: values.calls,
+                    tokens: Int(clamping: values.tokens),
+                    netLines: 0,
+                    costPerLine: 0)
+            }.sorted { $0.date < $1.date }
+        } catch {
+            Logger.error("StatsService.hourlyUsageStatsToday error: \(error)")
+            AppHealthMonitor.shared.reportStatsError("hourlyUsageStatsToday: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    /// Dashboard buckets follow the selected horizon: hourly for Today and
+    /// daily for longer ranges.
+    static func dashboardUsageStats(days: Int) async throws -> [DailyStat] {
+        if days == 1 { return try await hourlyUsageStatsToday() }
+        return try await dailyStats(days: days)
+    }
+
     // MARK: - Repo breakdown
 
     static func repoBreakdown(days: Int = 7, editorMappings: [EditorDetector.Mapping] = [], sinceMs: Int64? = nil) async throws -> [RepoBreakdown] {
@@ -141,7 +253,7 @@ enum StatsService {
         let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
-            let costRows = try await AppDatabase.shared.read { db -> [(p: String, s: String, c: Double)] in
+            let rawCostRows = try await AppDatabase.shared.read { db -> [(p: String, s: String, c: Double)] in
                 try Row.fetchAll(db, sql: """
                     SELECT repo_path AS p, source AS s, COALESCE(SUM(cost_usd), 0) AS c
                     FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? AND ts < ?
@@ -150,20 +262,42 @@ enum StatsService {
                     (p: r["p"] ?? "", s: r["s"] ?? "unknown", c: r["c"] ?? 0)
                 }
             }
-            let lineRows = try await AppDatabase.shared.read { db -> [(p: String, a: Int, d: Int)] in
+            let rawLineRows = try await AppDatabase.shared.read { db -> [(p: String, a: Int, d: Int, commits: Int)] in
                 try Row.fetchAll(db, sql: """
                     SELECT repo_path AS p,
                            COALESCE(SUM(added), 0) AS a,
-                           COALESCE(SUM(deleted), 0) AS d
+                           COALESCE(SUM(deleted), 0) AS d,
+                           COUNT(DISTINCT commit_hash) AS commits
                     FROM code_change WHERE is_merge = 0 AND ts >= ? AND ts < ?
                     GROUP BY p
                     """, arguments: [startMs, todayMs + 86_400_000]).map { r in
-                    (p: r["p"] ?? "", a: Int(r["a"] as Int64? ?? 0), d: Int(r["d"] as Int64? ?? 0))
+                    (p: r["p"] ?? "", a: Int(r["a"] as Int64? ?? 0),
+                     d: Int(r["d"] as Int64? ?? 0), commits: r["commits"] ?? 0)
                 }
             }
-            var lineMap = [String: (added: Int, deleted: Int)]()
+            let roots = RepositoryScope.configuredRoots()
+            var normalizedCost: [String: (sourceCosts: [String: Double], total: Double)] = [:]
+            for row in rawCostRows {
+                guard let repo = RepositoryScope.authorizedGitRoot(for: row.p, roots: roots) else { continue }
+                normalizedCost[repo, default: ([:], 0)].sourceCosts[row.s, default: 0] += row.c
+                normalizedCost[repo, default: ([:], 0)].total += row.c
+            }
+            let costRows = normalizedCost.flatMap { repo, value in
+                value.sourceCosts.map { (p: repo, s: $0.key, c: $0.value) }
+            }
+            var normalizedLines: [String: (a: Int, d: Int, commits: Int)] = [:]
+            for row in rawLineRows {
+                guard let repo = RepositoryScope.authorizedGitRoot(for: row.p, roots: roots) else { continue }
+                normalizedLines[repo, default: (0, 0, 0)].a += row.a
+                normalizedLines[repo, default: (0, 0, 0)].d += row.d
+                normalizedLines[repo, default: (0, 0, 0)].commits += row.commits
+            }
+            let lineRows = normalizedLines.map {
+                (p: $0.key, a: $0.value.a, d: $0.value.d, commits: $0.value.commits)
+            }
+            var lineMap = [String: (added: Int, deleted: Int, commits: Int)]()
             for r in lineRows {
-                lineMap[r.p] = (r.a, r.d)
+                lineMap[r.p] = (r.a, r.d, r.commits)
             }
 
             // Build repo path → [(source, cost)] from per-source rows
@@ -201,12 +335,14 @@ enum StatsService {
                     continue
                 }
                 for r in repos {
-                    subRepoMap[r, default: []].append((cs.label, daily))
+                    guard let repo = RepositoryScope.authorizedGitRoot(for: r, roots: roots) else { continue }
+                    subRepoMap[repo, default: []].append((cs.label, daily))
                 }
             }
             // Also include editor-detected mappings
             for m in certainMappings {
-                subRepoMap[m.repoPath, default: []].append((m.toolName, m.dailySubscriptionCost))
+                guard let repo = RepositoryScope.authorizedGitRoot(for: m.repoPath, roots: roots) else { continue }
+                subRepoMap[repo, default: []].append((m.toolName, m.dailySubscriptionCost))
             }
 
             // Latest event timestamp per repo — used for stable recency-based sorting
@@ -222,16 +358,20 @@ enum StatsService {
                     }
                 }
                 for r in tsRows {
-                    latestEventMs[URL(fileURLWithPath: r.repoPath).lastPathComponent] = r.latest
+                    guard let repo = RepositoryScope.authorizedGitRoot(for: r.repoPath, roots: roots) else { continue }
+                    let name = URL(fileURLWithPath: repo).lastPathComponent
+                    latestEventMs[name] = max(latestEventMs[name] ?? 0, r.latest)
                 }
             } catch {
                 Logger.debug("StatsService.repoBreakdown: latestEventMs query failed, continuing without it")
             }
 
             AppHealthMonitor.shared.clearStatsError()
-            return costMap.compactMap { (p, sourceCosts) in
+            let repoPaths = Set(costMap.keys).union(lineMap.keys)
+            return repoPaths.map { p in
+                let sourceCosts = costMap[p] ?? []
                 let totalCost = sourceCosts.reduce(0.0) { $0 + $1.cost }
-                let (a, d) = lineMap[p] ?? (0, 0)
+                let (a, d, commits) = lineMap[p] ?? (0, 0, 0)
                 let total = a + d
 
                 // Per-source API CPLs
@@ -256,7 +396,7 @@ enum StatsService {
 
                 return RepoBreakdown(
                     repo: URL(fileURLWithPath: p).lastPathComponent,
-                    cost: totalCost, added: a, deleted: d,
+                    cost: totalCost, added: a, deleted: d, commits: commits,
                     apiSources: apiSources,
                     subscriptionSources: subSourceList
                 )
@@ -286,6 +426,21 @@ enum StatsService {
         case "JPY": return 0.0067
         default:    return 1.0
         }
+    }
+
+    /// Explicit provenance for semantic snapshot conversion. Unknown
+    /// currencies stay unconverted instead of silently falling back to 1:1.
+    static func semanticUSDConversion(currency: String) -> (rate: Double, source: String)? {
+        let rate: Double
+        switch currency.uppercased() {
+        case "USD": rate = 1.0
+        case "CNY": rate = 0.14
+        case "EUR": rate = 1.08
+        case "GBP": rate = 1.27
+        case "JPY": rate = 0.0067
+        default: return nil
+        }
+        return (rate, "internal-static-approximation-v1")
     }
 
     /// Map usage_event.source to a human-readable label for CPL display.
@@ -361,8 +516,19 @@ enum StatsService {
                 let fetched = try Row.fetchAll(db, sql: """
                     SELECT provider_id, ts, balance, currency FROM balance_snapshot
                     WHERE ts >= ? AND ts < ?
+                    UNION ALL
+                    SELECT boundary.provider_id, boundary.ts, boundary.balance, boundary.currency
+                    FROM balance_snapshot AS boundary
+                    WHERE boundary.id = (
+                        SELECT candidate.id
+                        FROM balance_snapshot AS candidate
+                        WHERE candidate.provider_id = boundary.provider_id
+                          AND candidate.ts < ?
+                        ORDER BY candidate.ts DESC, candidate.id DESC
+                        LIMIT 1
+                    )
                     ORDER BY provider_id, ts
-                    """, arguments: [startMs, todayMs + 86_400_000])
+                    """, arguments: [startMs, todayMs + 86_400_000, startMs])
                 return fetched.map { r in
                     let providerId: String = r["provider_id"] ?? ""
                     let ts: Int64 = r["ts"] ?? 0
@@ -381,7 +547,7 @@ enum StatsService {
                 let balance = r.balance
                 let currency = r.currency
 
-                if pid == currentPid, let prev = prevBalance, balance < prev {
+                if pid == currentPid, let prev = prevBalance, ts >= startMs, balance < prev {
                     // Balance decreased → spend occurred
                     let spend = (prev - balance) * toUSD(currency: currency)
                     let date = cal.startOfDay(for: Date(timeIntervalSince1970: Double(ts) / 1000))
@@ -416,6 +582,84 @@ enum StatsService {
             }
             return total
         }
+    }
+
+    /// Token × catalog-price reference for legacy/diagnostic surfaces. This is
+    /// not observed spend and must not be presented as a provider charge.
+    static func catalogEquivalentSpend(sinceMs: Int64) async -> Double {
+        let excluded = ProviderRegistry.all.filter { $0.canFetchBalance }.map { $0.id }
+        let exclusion = excluded.isEmpty
+            ? ""
+            : "AND (provider_id IS NULL OR provider_id NOT IN (\(excluded.map { _ in "?" }.joined(separator: ","))))"
+        do {
+            return try await AppDatabase.shared.read { db -> Double in
+                let row = try Row.fetchOne(db, sql: """
+                    SELECT COALESCE(SUM(cost_usd), 0) AS c FROM usage_event
+                    WHERE ts >= ? \(exclusion)
+                      AND (model IS NULL OR model != '<synthetic>')
+                    """, arguments: StatementArguments([sinceMs] + excluded))!
+                return row["c"] as Double? ?? 0
+            }
+        } catch {
+            Logger.error("StatsService.catalogEquivalentSpend: \(error)")
+            return 0
+        }
+    }
+
+    static func observedSpendUSD(sinceMs: Int64) async -> Double {
+        do {
+            return try await AppDatabase.shared.read { db in
+                try BurnRateEngine.fetchBalanceDeltas(in: db, sinceMs: sinceMs)
+                    .reduce(0.0) { $0 + $1.spend }
+            }
+        } catch {
+            Logger.error("StatsService.observedSpendUSD: \(error)")
+            return 0
+        }
+    }
+
+    static func observedSpendItems(sinceMs: Int64) async -> [ObservedSpendItem] {
+        do {
+            let deltas = try await AppDatabase.shared.read { db in
+                try BurnRateEngine.fetchBalanceDeltas(in: db, sinceMs: sinceMs)
+            }
+            struct Aggregate {
+                var nativeAmount = 0.0
+                var observedAt = 0.0
+            }
+            var totals: [String: Aggregate] = [:]
+            for delta in deltas {
+                let key = "\(delta.providerId)|\(delta.currency)"
+                var value = totals[key] ?? Aggregate()
+                value.nativeAmount += delta.nativeAmount
+                value.observedAt = max(value.observedAt, Double(delta.ts) / 1_000)
+                totals[key] = value
+            }
+            return totals.map { key, value in
+                let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
+                let currency = parts.count > 1 ? parts[1] : "USD"
+                let conversion = semanticUSDConversion(currency: currency)
+                return ObservedSpendItem(
+                    providerId: parts.first ?? "",
+                    amount: value.nativeAmount,
+                    currency: currency,
+                    convertedUSD: conversion.map { value.nativeAmount * $0.rate },
+                    conversionRateToUSD: conversion?.rate,
+                    conversionSource: conversion?.source,
+                    observedAt: value.observedAt)
+            }.sorted { ($0.convertedUSD ?? 0) > ($1.convertedUSD ?? 0) }
+        } catch {
+            Logger.error("StatsService.observedSpendItems: \(error)")
+            return []
+        }
+    }
+
+    /// Legacy A+B amount used by v2 perception surfaces. New callers should
+    /// consume the semantic components separately.
+    static func consumptionSpend(sinceMs: Int64) async -> Double {
+        async let catalog = catalogEquivalentSpend(sinceMs: sinceMs)
+        async let observed = observedSpendUSD(sinceMs: sinceMs)
+        return await catalog + observed
     }
 
     /// Combined spend (balance-derived API spend + subscription amortization) for all
@@ -484,20 +728,24 @@ enum StatsService {
         }
     }
 
-    /// Read subscription quota state (Claude / Copilot) from quota_status.
+    /// Read independent subscription quota windows with observation freshness.
     static func latestQuotaStatus() async -> [QuotaStatusItem] {
         do {
             let rows = try await AppDatabase.shared.read { db -> [QuotaStatusItem] in
                 try Row.fetchAll(db, sql: """
-                    SELECT tool_id, utilization, limit_status, reset_at, window_seconds
-                    FROM quota_status
+                    SELECT tool_id, window_id, utilization, limit_status,
+                           reset_at, window_seconds, updated_at
+                    FROM quota_window_status
+                    ORDER BY tool_id, window_seconds
                     """).map { r in
                     QuotaStatusItem(
                         toolId: r["tool_id"] as String? ?? "",
+                        windowId: r["window_id"] as String?,
                         utilization: r["utilization"] as Double? ?? 0,
                         limitStatus: r["limit_status"] as String? ?? "",
                         resetAt: r["reset_at"] as Double? ?? 0,
-                        windowSeconds: r["window_seconds"] as Double? ?? 0
+                        windowSeconds: r["window_seconds"] as Double? ?? 0,
+                        updatedAt: r["updated_at"] as Double?
                     )
                 }
             }
@@ -516,7 +764,7 @@ enum StatsService {
         let todayStart = cal.startOfDay(for: Date())
         guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
         let startMs = Int64(start.timeIntervalSince1970 * 1000)
-        let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
+        let todayMs = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
             let result: [ProviderDailyCost] = try await AppDatabase.shared.read { db in
@@ -554,32 +802,74 @@ enum StatsService {
         let todayStart = cal.startOfDay(for: Date())
         guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
         let startMs = Int64(start.timeIntervalSince1970 * 1000)
-        let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
             AppHealthMonitor.shared.clearStatsError()
-            return try await AppDatabase.shared.read { db in
-                let rows = try Row.fetchAll(db, sql: """
-                    SELECT (ts / 86400000) * 86400000 AS day_ts,
-                           COALESCE(SUM(added), 0) AS a,
-                           COALESCE(SUM(deleted), 0) AS d
-                    FROM code_change
-                    WHERE is_merge = 0 AND ts >= ? AND ts < ?
-                    GROUP BY day_ts ORDER BY day_ts
-                    """, arguments: [startMs, todayMs + 86_400_000])
-                return rows.compactMap { r in
-                    guard let day: Int64 = r["day_ts"] else { return nil }
-                    let a: Int64 = r["a"] ?? 0
-                    let d: Int64 = r["d"] ?? 0
-                    let date = Date(timeIntervalSince1970: Double(day) / 1000)
-                    return DailyCodeChange(date: date, added: Int(a), deleted: Int(d))
+            let end = cal.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
+            let rows = try await authorizedCodeChanges(
+                sinceMs: startMs,
+                beforeMs: Int64(end.timeIntervalSince1970 * 1_000)
+            )
+            var buckets: [Date: (added: Int, deleted: Int, commits: Set<String>)] = [:]
+            for row in rows {
+                let date = Date(timeIntervalSince1970: Double(row.ts) / 1_000)
+                let day = cal.startOfDay(for: date)
+                buckets[day, default: (0, 0, [])].added += row.added
+                buckets[day, default: (0, 0, [])].deleted += row.deleted
+                if !row.commitHash.isEmpty {
+                    buckets[day, default: (0, 0, [])].commits.insert(row.commitHash)
                 }
             }
+            return buckets.map { day, values in
+                DailyCodeChange(date: day, added: values.added, deleted: values.deleted,
+                                commits: values.commits.count)
+            }.sorted { $0.date < $1.date }
         } catch {
             Logger.error("StatsService.dailyCodeChanges error: \(error)")
             AppHealthMonitor.shared.reportStatsError("dailyCodeChanges: \(error.localizedDescription)")
             throw error
         }
+    }
+
+    /// Hourly added/deleted lines for the current local calendar day.
+    /// The dashboard uses real commit timestamps for the 24-hour rhythm; it
+    /// never spreads a daily total across invented hourly buckets.
+    static func hourlyCodeChangesToday(now: Date = Date()) async throws -> [DailyCodeChange] {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: now)
+        guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return [] }
+        let startMs = Int64(start.timeIntervalSince1970 * 1_000)
+        let endMs = Int64(end.timeIntervalSince1970 * 1_000)
+
+        do {
+            AppHealthMonitor.shared.clearStatsError()
+            let rows = try await authorizedCodeChanges(sinceMs: startMs, beforeMs: endMs)
+            var buckets: [Date: (added: Int, deleted: Int, commits: Set<String>)] = [:]
+            for row in rows {
+                let date = Date(timeIntervalSince1970: Double(row.ts) / 1_000)
+                guard let hour = cal.dateInterval(of: .hour, for: date)?.start else { continue }
+                buckets[hour, default: (0, 0, [])].added += row.added
+                buckets[hour, default: (0, 0, [])].deleted += row.deleted
+                if !row.commitHash.isEmpty {
+                    buckets[hour, default: (0, 0, [])].commits.insert(row.commitHash)
+                }
+            }
+            return buckets.map { hour, values in
+                DailyCodeChange(date: hour, added: values.added, deleted: values.deleted,
+                                commits: values.commits.count)
+            }.sorted { $0.date < $1.date }
+        } catch {
+            Logger.error("StatsService.hourlyCodeChangesToday error: \(error)")
+            AppHealthMonitor.shared.reportStatsError("hourlyCodeChangesToday: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    /// Dashboard buckets follow the selected horizon: hourly for Today and
+    /// daily for longer ranges.
+    static func dashboardCodeChanges(days: Int) async throws -> [DailyCodeChange] {
+        if days == 1 { return try await hourlyCodeChangesToday() }
+        return try await dailyCodeChanges(days: days)
     }
 
     // MARK: - Full snapshot builder (shared by DashboardView and Phase 4 timer)
@@ -636,27 +926,6 @@ enum StatsService {
         return map
     }
 
-    struct SubscriptionProgress {
-        let elapsedDays: Int
-        let totalDays: Int
-        let nextReset: Date?
-    }
-
-    /// Cycle progress for a user-entered subscription start date. Never
-    /// amortizes money — only tracks elapsed time within the billing cycle.
-    static func subscriptionProgress(start: Date?, periodDays: Int?, now: Date) -> SubscriptionProgress {
-        guard let start, let periodDays, periodDays > 0 else {
-            return SubscriptionProgress(elapsedDays: 0, totalDays: 30, nextReset: nil)
-        }
-        let cal = Calendar.current
-        let cycleStart = cal.startOfDay(for: start)
-        let today = cal.startOfDay(for: now)
-        let rawElapsed = cal.dateComponents([.day], from: cycleStart, to: today).day ?? 0
-        let elapsed = min(max(rawElapsed, 0), periodDays)
-        let nextReset = cal.date(byAdding: .day, value: periodDays, to: cycleStart)
-        return SubscriptionProgress(elapsedDays: elapsed, totalDays: periodDays, nextReset: nextReset)
-    }
-
     /// Await a throwing async value, logging the failure before returning the
     /// fallback. Replaces bare `try?` in dashboardSnapshot so a data-source
     /// failure is visible in logs instead of silently degrading.
@@ -698,13 +967,15 @@ enum StatsService {
         async let wcR = StatsService.combinedSpend(sinceMs: mondayStartMs)
         async let mcR = StatsService.combinedSpend(sinceMs: monthStartMs)
         async let ycR = StatsService.combinedSpend(sinceMs: yesterdayStartMs)
+        async let catalogEquivalentR = StatsService.catalogEquivalentSpend(sinceMs: rangeStartMs)
+        async let observedSpendItemsR = StatsService.observedSpendItems(sinceMs: rangeStartMs)
         // Each throwing source goes through resultOrLog so a failure is logged
         // (label + error) instead of being swallowed by bare `try?`.
-        async let stR = resultOrLog("dailyStats", []) { try await StatsService.dailyStats(days: days) }
+        async let stR = resultOrLog("dashboardUsageStats", []) { try await StatsService.dashboardUsageStats(days: days) }
         async let blR = resultOrLog("balanceDailySpend", []) { try await StatsService.balanceDailySpend(days: days, sinceMs: rangeStartMs) }
         // Query full 30 days of balance data + 14d lookback for provider breakdown
         async let bmR = resultOrLog("balanceDailySpend44", []) { try await StatsService.balanceDailySpend(days: 44, sinceMs: lookbackStartMs) }
-        async let cdR = resultOrLog("dailyCodeChanges", []) { try await StatsService.dailyCodeChanges(days: days) }
+        async let cdR = resultOrLog("dashboardCodeChanges", []) { try await StatsService.dashboardCodeChanges(days: days) }
         async let rpR = resultOrLog("repoBreakdown", []) { try await StatsService.repoBreakdown(days: days) }
         async let prR = StatsService.prediction()
         async let lbR = resultOrLog("latestRemainingBalances", []) { try await StatsService.latestRemainingBalances(sinceMs: lookbackStartMs) }
@@ -713,12 +984,12 @@ enum StatsService {
             try Row.fetchAll(db, sql: """
                 SELECT model AS m, COALESCE(provider_id, 'unknown') AS pid,
                        source AS s,
-                       COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok,
+                       COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok,
                        COUNT(*) AS cnt,
                        COALESCE(SUM(cost_usd), 0) AS c
                 FROM usage_event
                 WHERE ts >= ? AND model IS NOT NULL AND model != '<synthetic>'
-                GROUP BY m, pid
+                GROUP BY m, pid, s
                 """, arguments: [rangeStartMs]).map { r in
                     (m: r["m"] as String? ?? "",
                      pid: r["pid"] as String? ?? "unknown",
@@ -731,7 +1002,7 @@ enum StatsService {
         async let sourceAggR = resultOrLog("toolUsage", []) { try await AppDatabase.shared.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT source AS s,
-                       COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok,
+                       COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok,
                        COUNT(*) AS cnt
                 FROM usage_event WHERE ts >= ? GROUP BY s
                 """, arguments: [rangeStartMs]).map { r in
@@ -753,7 +1024,7 @@ enum StatsService {
         } }
         async let repoTokensR = resultOrLog("repoTokens", []) { try await AppDatabase.shared.read { db in
             try Row.fetchAll(db, sql: """
-                SELECT repo_path AS p, COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok
+                SELECT repo_path AS p, COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok
                 FROM usage_event WHERE ts >= ? AND repo_path IS NOT NULL
                 GROUP BY p
                 """, arguments: [rangeStartMs]).map { r in
@@ -763,16 +1034,17 @@ enum StatsService {
         async let sourceDailyR = resultOrLog("sourceDailyTokens", []) { try await AppDatabase.shared.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT source AS s, (ts / 86400000) * 86400000 AS day,
-                       COALESCE(SUM(in_tokens + out_tokens + cache_tokens), 0) AS tok
+                       COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok
                 FROM usage_event WHERE ts >= ? GROUP BY s, day
                 """, arguments: [rangeStartMs]).map { r in
                     (s: r["s"] as String? ?? "", day: r["day"] as Int64? ?? 0, tok: r["tok"] as Int64? ?? 0)
                 }
         } }
 
-        let (tc, wc, mc, yc, st, bl, bm, cd, rp, pr, lb, qs,
+        let (tc, wc, mc, yc, catalogEquivalent, observedSpendItems,
+             st, bl, bm, cd, rp, pr, lb, qs,
              modelRows, sourceAgg, usageByTool, repoTokens, sourceDaily) = await (
-            tcR, wcR, mcR, ycR,
+            tcR, wcR, mcR, ycR, catalogEquivalentR, observedSpendItemsR,
             stR, blR, bmR, cdR, rpR, prR, lbR, qsR,
             modelRowsR, sourceAggR, usageByToolR, repoTokensR, sourceDailyR
         )
@@ -783,6 +1055,11 @@ enum StatsService {
         ])
 
         let subAmort = subscriptionDailyAmortization()
+        let observedSpend: Double? = observedSpendItems.allSatisfy { $0.convertedUSD != nil }
+            ? observedSpendItems.compactMap(\.convertedUSD).reduce(0, +)
+            : nil
+        let daysInMonth = Double(cal.range(of: .day, in: .month, for: Date())?.count ?? 30)
+        let declaredMonthlyCost = subAmort * daysInMonth
 
         // Previous 30-day period spend (for 30d period-over-period badge)
         let prevPeriodApiSpend = bm.filter {
@@ -864,13 +1141,19 @@ enum StatsService {
         // Dividing then yields +Inf and poisons every RepoItem cost.
         let repoScale = logTotal > 0 && toolTotal > 0 ? apiSpend / logTotal : 1.0
         let subScale = logTotal > 0 ? subTotalAll / logTotal : 0.0
-        let repoTokenByName = StatsService.repoTokenByName(repoTokens.map { ($0.p, $0.tok) })
+        let repoRoots = RepositoryScope.configuredRoots()
+        var authorizedRepoTokens: [String: Int64] = [:]
+        for row in repoTokens {
+            guard let root = RepositoryScope.authorizedGitRoot(for: row.p, roots: repoRoots) else { continue }
+            authorizedRepoTokens[root, default: 0] += row.tok
+        }
+        let repoTokenByName = StatsService.repoTokenByName(authorizedRepoTokens.map { ($0.key, $0.value) })
         let repoItems: [RepoItem] = rp.map { r in
             let scaledCost = ChartMath.finite(r.cost * repoScale + r.cost * subScale, fallback: 0)
             let totalChanges = Int64(r.added) + Int64(r.deleted)
             return RepoItem(name: r.repo, cost: scaledCost, added: r.added, deleted: r.deleted,
                             cpl: totalChanges > 0 ? scaledCost * 1000 / Double(totalChanges) : 0,
-                            tokens: repoTokenByName[r.repo])
+                            tokens: repoTokenByName[r.repo], commits: r.commits)
         }
 
         // Per-model attribution (BYOK mixes), sanitized by the pure helper.
@@ -924,15 +1207,10 @@ enum StatsService {
             }
         }
 
-        // User-entered subscription cycle anchor (settings page).
-        let defaults = UserDefaults.standard
-        let subscriptionStart = defaults.object(forKey: "subscription_start") as? Date
-        let subscriptionPeriodDays = defaults.object(forKey: "subscription_period_days") as? Int
-
         // Daily/balance trend points
         let fmt = ISO8601DateFormatter(); fmt.formatOptions = [.withFullDate]
         let dailyPts = st.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: Int64($0.calls), tokens: Int64($0.tokens), netLines: $0.netLines) }
-        let codePts = cd.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: Double($0.added), calls: 0, tokens: 0, netLines: $0.added - $0.deleted, added: $0.added, deleted: $0.deleted) }
+        let codePts = cd.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: Double($0.added), calls: 0, tokens: 0, netLines: $0.added - $0.deleted, added: $0.added, deleted: $0.deleted, commits: $0.commits) }
         let balPts = Dictionary(grouping: bl, by: { $0.date }).compactMap { d, v in TrendPoint(ts: d.timeIntervalSince1970, value: v.reduce(0) { $0 + $1.spend }, calls: 0, tokens: 0, netLines: 0) }
         let todayCall = Int64(st.reduce(0) { $0 + $1.calls })
         let todayTok = Int64(st.reduce(0) { $0 + $1.tokens })
@@ -941,18 +1219,24 @@ enum StatsService {
             todayCost: tc, weekCost: wc, monthCost: mc,
             yesterdaySpend: yc, previousPeriodSpend: previousPeriodSpend,
             subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok,
+            observedSpend: observedSpendItems,
+            convertedObservedSpendUSD: observedSpend,
+            catalogEquivalentUSD: catalogEquivalent,
+            declaredMonthlyCostUSD: declaredMonthlyCost,
             providerBreakdown: providers, toolBreakdown: toolCosts, topRepos: repoItems,
             prediction: PredictionItem(monthProjected: pr.monthProjected, dailyRate: pr.dailyRate, daysRemaining: pr.daysRemaining, monthSoFar: pr.monthSoFar),
             dailyStats: dailyPts, codeChanges: codePts, balanceDaily: balPts,
             remainingBalances: lb, quotaStatus: qs,
             modelBreakdown: modelItems, rateSeries: rateSeries,
-            subscriptionStart: subscriptionStart,
-            subscriptionPeriodDays: subscriptionPeriodDays,
             updatedAt: Date()
         )
         snap.toolDetails = detailItems
         snap.payloadVersion = CKSchema.payloadVersion
         snap.writerAppVersion = CKSchema.writerAppVersion
+        // The single 2.0 contract syncs the native, unit-preserving Pulse.
+        if let pulse = await PulseEngine.shared.snapshot() {
+            snap.pulse = pulse
+        }
         // Sanitize at the source so every downstream consumer — local cache,
         // CloudKit sync, iOS/watchOS/widget decoders — can only ever receive
         // finite, non-negative values.

@@ -101,3 +101,51 @@ final class GitMonitorTests: XCTestCase {
         XCTAssertEqual(change.added - change.deleted, 120)
     }
 }
+
+// MARK: - WI-5: git trailer self-attribution (§4.6 信号一)
+
+final class GitMonitorAttributionTests: XCTestCase {
+
+    func testCoAuthoredByTrailer() {
+        let msg = """
+        Add feature X
+
+        Looks good to me.
+
+        Co-Authored-By: Claude <noreply@anthropic.com>
+        """
+        XCTAssertEqual(GitMonitor.attributedToolFromTrailer(msg), "Claude")
+    }
+
+    func testGeneratedWithTrailer() {
+        let msg = """
+        Fix bug
+
+        Generated-with: Cursor Agent
+        """
+        XCTAssertEqual(GitMonitor.attributedToolFromTrailer(msg), "Cursor Agent")
+    }
+
+    func testTrailerSearchScansFromBottom() {
+        let msg = """
+        Co-Authored-By: Someone Else <a@b.c>
+
+        Regular commit body mentioning Co-Authored-By: in prose
+
+        Co-Authored-By: Claude <noreply@anthropic.com>
+        """
+        XCTAssertEqual(GitMonitor.attributedToolFromTrailer(msg), "Claude", "last trailer wins")
+    }
+
+    func testNoTrailerMeansNoAttribution() {
+        XCTAssertNil(GitMonitor.attributedToolFromTrailer("Just a regular commit\nwith two lines"))
+        XCTAssertNil(GitMonitor.attributedToolFromTrailer(""))
+    }
+
+    func testEmailPartIsStripped() {
+        let msg = "x\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+        let tool = GitMonitor.attributedToolFromTrailer(msg)
+        XCTAssertEqual(tool, "Claude")
+        XCTAssertFalse(tool!.contains("<"), "email address must not leak into the tool name")
+    }
+}

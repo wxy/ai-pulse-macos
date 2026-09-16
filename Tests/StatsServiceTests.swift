@@ -2,6 +2,13 @@ import XCTest
 @testable import AIPulse
 
 final class StatsServiceTests: XCTestCase {
+    func testSemanticCurrencyConversionHasProvenanceAndRejectsUnknownCurrency() {
+        let cny = StatsService.semanticUSDConversion(currency: "CNY")
+        XCTAssertEqual(cny?.rate, 0.14)
+        XCTAssertEqual(cny?.source, "internal-static-approximation-v1")
+        XCTAssertNil(StatsService.semanticUSDConversion(currency: "UNKNOWN"))
+    }
+
 
     // MARK: - Methods that work without DB setup
 
@@ -64,27 +71,4 @@ final class StatsServiceTests: XCTestCase {
         XCTAssertFalse(DashboardView.shouldShowRepository(totalChanges: 0, tokens: 0))
     }
 
-    func testSubscriptionProgress() {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let start = cal.date(byAdding: .day, value: -15, to: today)!
-
-        let p = StatsService.subscriptionProgress(start: start, periodDays: 30, now: Date())
-
-        XCTAssertEqual(p.elapsedDays, 15)
-        XCTAssertEqual(p.totalDays, 30)
-        XCTAssertNotNil(p.nextReset)
-        XCTAssertEqual(cal.dateComponents([.day], from: start, to: p.nextReset!).day, 30)
-    }
-
-    func testSubscriptionProgressClampsToPeriod() {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let start = cal.date(byAdding: .day, value: -45, to: today)!
-
-        let p = StatsService.subscriptionProgress(start: start, periodDays: 30, now: Date())
-
-        XCTAssertEqual(p.elapsedDays, 30)
-        XCTAssertEqual(p.totalDays, 30)
-    }
 }

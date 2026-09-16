@@ -165,7 +165,7 @@ final class AppHealthMonitor: @unchecked Sendable {
         let content = UNMutableNotificationContent()
         content.title = I18n.t("app.name")
         content.body = message
-        content.sound = .default
+        content.sound = AppSoundControl.isMuted() ? nil : .default
         let req = UNNotificationRequest(
             identifier: "ai-pulse-health-critical",
             content: content, trigger: nil

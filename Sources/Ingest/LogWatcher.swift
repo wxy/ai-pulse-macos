@@ -303,7 +303,10 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
         var files = [(url: URL, modified: Date)]()
         for case let url as URL in enumerator
-        where url.lastPathComponent == "session.jsonl.zstd" {
+        where url.lastPathComponent.hasPrefix("session")
+            && url.lastPathComponent.hasSuffix(".jsonl.zstd") {
+            // Matches session.jsonl.zstd (journal v1/v2) AND session.v3.jsonl.zstd
+            // (v3, 2026-09) — prefix+suffix so future generations keep flowing.
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                 .contentModificationDate ?? .distantPast
             files.append((url, modified))
@@ -719,7 +722,20 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// row makes first launch fight itself for the database queue and UI.
     private func insertEvents(_ events: [UsageEvent]) {
         guard !events.isEmpty else { return }
-        let rows = events.map { event -> (event: UsageEvent, providerId: String, confidence: CostConfidence, csId: String, cost: Double?) in
+        let roots = RepositoryScope.configuredRoots()
+        var normalizedRepos: [String: String?] = [:]
+        let rows = events.map { rawEvent -> (event: UsageEvent, providerId: String, confidence: CostConfidence, csId: String, cost: Double?) in
+            let normalizedRepo: String? = rawEvent.repoPath.flatMap { path in
+                if let cached = normalizedRepos[path] { return cached }
+                let resolved = RepositoryScope.authorizedGitRoot(for: path, roots: roots)
+                normalizedRepos[path] = .some(resolved)
+                return resolved
+            }
+            let event = UsageEvent(
+                ts: rawEvent.ts, source: rawEvent.source, model: rawEvent.model,
+                inTokens: rawEvent.inTokens, outTokens: rawEvent.outTokens,
+                cacheTokens: rawEvent.cacheTokens, repoPath: normalizedRepo,
+                sessionId: rawEvent.sessionId, dedupeKey: rawEvent.dedupeKey)
             let providerId = PricingManager.shared.providerId(for: event.model) ?? "unknown"
 
         // CostSource arbitration
@@ -777,7 +793,19 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                             ])
                     }
                 }
-                DataRefreshCoordinator.shared.notifyPhaseIngest()
+                // v2 §3.2: report the batch's consumption totals so the coin
+                // sound is driven by money/tokens actually spent (WI-2).
+                let batchSpend = rows.compactMap { $0.cost }.reduce(0, +)
+                let batchTokens = rows.reduce(0) {
+                    $0 + TokenAccounting.observedTotal(
+                        input: $1.event.inTokens,
+                        output: $1.event.outTokens)
+                }
+                let event = ConsumptionEvent(
+                    spendUSD: batchSpend > 0 ? batchSpend : nil,
+                    tokens: batchTokens > 0 ? batchTokens : nil,
+                    source: rows.first?.event.source ?? "log")
+                DataRefreshCoordinator.shared.notifyPhaseIngest(event)
             } catch {
                 Logger.error("Failed to insert usage_event: \(error)")
             }

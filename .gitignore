@@ -20,3 +20,9 @@ dist/
 AIPulse/build/
 Packages/*/build/
 Suites/build/
+
+# Local sound assets: bundle locally, do not distribute raw audio in Git.
+/Resources/Sounds/**/*.mp3
+/Resources/Sounds/**/*.wav
+/Resources/*.mp3
+/Suites/iOS/Resources/*.mp3

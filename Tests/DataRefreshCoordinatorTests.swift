@@ -1,6 +1,24 @@
 import XCTest
 @testable import AIPulse
 
+private final class LockedNotificationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        value += 1
+        return value
+    }
+
+    func read() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
 final class DataRefreshCoordinatorTests: XCTestCase {
 
     var coordinator: DataRefreshCoordinator!
@@ -42,11 +60,11 @@ final class DataRefreshCoordinatorTests: XCTestCase {
         expectation.expectedFulfillmentCount = 1
         expectation.assertForOverFulfill = true
 
-        var notificationCount = 0
+        let notificationCount = LockedNotificationCounter()
         let observer = NotificationCenter.default.addObserver(
             forName: .dataDidChange, object: nil, queue: .main
         ) { _ in
-            notificationCount += 1
+            _ = notificationCount.increment()
             expectation.fulfill()
         }
 
@@ -59,23 +77,26 @@ final class DataRefreshCoordinatorTests: XCTestCase {
 
         // After 500ms debounce, only one notification should have fired
         // (but by the time we check, at most 1 should fire due to 3s min interval)
-        XCTAssertEqual(notificationCount, 1, "Rapid pushes should coalesce to one notification")
+        XCTAssertEqual(notificationCount.read(), 1, "Rapid pushes should coalesce to one notification")
 
         NotificationCenter.default.removeObserver(observer)
     }
 
-    // MARK: - Min-notify interval suppression
+    // MARK: - Min-notify interval delivery
 
-    func testMinNotifyIntervalSuppressesRapidNotifications() {
-        // Fire two notifications within the min interval — only the first should post
+    func testMinNotifyIntervalDelaysButDoesNotLoseSecondNotification() {
+        // Fire two notifications within the min interval. The second should wait,
+        // then arrive without requiring a third unrelated event.
         let firstExpectation = XCTestExpectation(description: "First .dataDidChange fires")
+        let secondExpectation = XCTestExpectation(description: "Delayed .dataDidChange fires")
 
-        var notificationCount = 0
+        let notificationCount = LockedNotificationCounter()
         let observer = NotificationCenter.default.addObserver(
             forName: .dataDidChange, object: nil, queue: .main
         ) { _ in
-            notificationCount += 1
-            firstExpectation.fulfill()
+            let count = notificationCount.increment()
+            if count == 1 { firstExpectation.fulfill() }
+            if count == 2 { secondExpectation.fulfill() }
         }
 
         // First push — should fire after 500ms debounce
@@ -83,20 +104,11 @@ final class DataRefreshCoordinatorTests: XCTestCase {
 
         wait(for: [firstExpectation], timeout: 2.0)
 
-        // Second push within the 3s min interval — should be suppressed
+        // Second push within the 3s min interval — should be delayed.
         coordinator.notifyPhaseGitScan()
 
-        // Wait a bit to ensure no extra notification fires
-        let waitExpectation = XCTestExpectation()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            waitExpectation.fulfill()
-        }
-        wait(for: [waitExpectation], timeout: 2.0)
-
-        // The second push should have been suppressed (within 3s interval)
-        // but 1s wait + 500ms debounce means it may or may not have fired yet.
-        // Key assertion: notificationCount should be 1 (the first one).
-        XCTAssertEqual(notificationCount, 1, "Second push within 3s should be suppressed")
+        wait(for: [secondExpectation], timeout: 4.0)
+        XCTAssertEqual(notificationCount.read(), 2, "Delayed push must eventually be delivered")
 
         NotificationCenter.default.removeObserver(observer)
     }

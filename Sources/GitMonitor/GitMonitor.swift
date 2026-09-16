@@ -8,6 +8,12 @@ struct CodeChange: Codable {
     let added: Int
     let deleted: Int
     let isMerge: Bool
+    /// AI tool that produced this change (v2 WI-5). nil = unattributed →
+    /// the row stays对照-only and never counts as consumption (§4.6 铁律).
+    var attributedTool: String?
+    /// "uncertain" for every attribution signal: a trailer or editor session
+    /// cannot prove line-level authorship.
+    var attribution: String?
 }
 
 /// Monitors git repositories for new commits and extracts net line changes
@@ -92,13 +98,41 @@ nonisolated final class GitMonitor: @unchecked Sendable {
 
     /// Start watching a git repo for new commits
     func watch(repoPath: String) {
+        let canonical = RepositoryScope.canonicalPath(repoPath)
+        guard RepositoryScope.authorizedGitRoot(for: canonical) == canonical else { return }
         lock.lock()
-        let inserted = watchedRepos.insert(repoPath).inserted
+        let inserted = watchedRepos.insert(canonical).inserted
         lock.unlock()
         guard inserted else { return }
         persistWatchedRepos()
         // Scan existing commits
-        scanRecentCommits(repo: repoPath)
+        scanRecentCommits(repo: canonical)
+    }
+
+    /// Stops polling repositories that are no longer under a configured
+    /// development root. Historical usage and code-change facts are untouched.
+    func pruneWatchedRepos(outside roots: [String]) {
+        lock.lock()
+        let removed = watchedRepos.filter { !RepositoryScope.isInsideConfiguredRoots($0, roots: roots) }
+        watchedRepos.subtract(removed)
+        for path in removed { lastSeenCommit.removeValue(forKey: path) }
+        let remainingRepos = Array(watchedRepos)
+        let remainingSeen = lastSeenCommit
+        lock.unlock()
+        guard !removed.isEmpty else { return }
+        UserDefaults.standard.set(remainingRepos, forKey: Self.watchedReposKey)
+        UserDefaults.standard.set(remainingSeen, forKey: Self.lastSeenKey)
+        Task {
+            do {
+                try await AppDatabase.shared.write { db in
+                    for path in removed {
+                        try db.execute(sql: "DELETE FROM gitmonitor_state WHERE repo_path = ?", arguments: [path])
+                    }
+                }
+            } catch {
+                Logger.error("GitMonitor: prune watched repos failed: \(error)")
+            }
+        }
     }
 
     /// Poll watched repos - called periodically or after log ingestion
@@ -132,10 +166,15 @@ nonisolated final class GitMonitor: @unchecked Sendable {
             for commit in commits {
                 guard let stats = gitRepo.diffTree(hash: commit.hash) else { continue }
                 if stats.added > 0 || stats.deleted > 0 {
+                    // Signal 1 (强): git trailer self-attribution — tools that
+                    // commit themselves sign their work (e.g. Co-Authored-By: Claude).
+                    let trailerTool = Self.attributedToolFromTrailer(commit.message)
                     changes.append(CodeChange(
                         commitHash: commit.hash, ts: commit.ts * 1000,
                         repoPath: repo, added: stats.added, deleted: stats.deleted,
-                        isMerge: commit.parentCount >= 2
+                        isMerge: commit.parentCount >= 2,
+                        attributedTool: trailerTool,
+                        attribution: trailerTool != nil ? "uncertain" : nil
                     ))
                 }
                 newHash = commit.hash
@@ -146,13 +185,48 @@ nonisolated final class GitMonitor: @unchecked Sendable {
             // Swift's isolation check and crashes on quit.
             DispatchQueue.main.async { [self, changes, newHash, repo, repoName] in
                 MainActor.assumeIsolated {
-                    for change in changes { insertChange(change) }
+                    // Signal 2 (中, uncertain): editor-session × timing — a change
+                    // landing while an AI editor has this repo open attributes to it.
+                    var sessionMappings: [EditorDetector.Mapping] = []
+                    if changes.contains(where: { $0.attributedTool == nil }) {
+                        sessionMappings = EditorDetector.detect()
+                    }
+                    let attributed = changes.map { change -> CodeChange in
+                        var c = change
+                        if c.attributedTool == nil,
+                           let m = sessionMappings.first(where: { $0.repoPath == repo }) {
+                            c.attributedTool = m.toolName
+                            c.attribution = "uncertain"
+                        }
+                        return c
+                    }
+                    for change in attributed { insertChange(change) }
                     if let h = newHash { lock.withLock { lastSeenCommit[repo] = h } }
                     persistLastSeen()
                     AppHealthMonitor.shared.clearAPIError(providerId: "git-\(repoName)")
                 }
             }
         }
+    }
+
+    /// git trailer self-attribution (WI-5 信号一): scan the message from the
+    /// bottom for tool-authored trailers. Returns the raw tool name, or nil.
+    static func attributedToolFromTrailer(_ message: String) -> String? {
+        for rawLine in message.split(separator: "\n", omittingEmptySubsequences: false).reversed() {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            let lower = line.lowercased()
+            if lower.hasPrefix("co-authored-by:") {
+                let value = line.dropFirst("co-authored-by:".count).trimmingCharacters(in: .whitespaces)
+                // "Claude <noreply@anthropic.com>" → "Claude"
+                let tool = value.split(separator: "<").first
+                    .map { $0.trimmingCharacters(in: .whitespaces) } ?? value
+                if !tool.isEmpty { return tool }
+            } else if lower.hasPrefix("generated-with:") {
+                let tool = line.dropFirst("generated-with:".count).trimmingCharacters(in: .whitespaces)
+                if !tool.isEmpty { return tool }
+            }
+        }
+        return nil
     }
 
     /// Check whether a file path matches exclusion patterns (lockfiles,
@@ -207,9 +281,9 @@ nonisolated final class GitMonitor: @unchecked Sendable {
             do {
                 try await AppDatabase.shared.write { db in
                     try db.execute(sql: """
-                        INSERT OR IGNORE INTO code_change (commit_hash, ts, repo_path, added, deleted, is_merge)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """, arguments: [change.commitHash, change.ts, change.repoPath, change.added, change.deleted, change.isMerge])
+                        INSERT OR IGNORE INTO code_change (commit_hash, ts, repo_path, added, deleted, is_merge, attributed_tool, attribution)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, arguments: [change.commitHash, change.ts, change.repoPath, change.added, change.deleted, change.isMerge, change.attributedTool, change.attribution])
                 }
                 DataRefreshCoordinator.shared.notifyPhaseGitScan()
             } catch {

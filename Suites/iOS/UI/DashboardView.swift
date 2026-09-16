@@ -42,6 +42,7 @@ struct DashboardView: View {
     }
 
     private var totalCost: Double {
+        if snap.pulse != nil { return snap.convertedObservedSpendUSD ?? 0 }
         switch timeRange {
         case .today:  return snap.todayCost
         case .week:   return snap.weekCost
@@ -55,6 +56,38 @@ struct DashboardView: View {
 
     private var subTotal: Double {
         snap.subDaily * Double(timeRange.days)
+    }
+
+    // ── Cross-platform Pulse headline ──
+
+    private struct PulseBanner {
+        let text: String
+        let color: Color
+    }
+
+    /// The 2.0 payload renders the same native Pulse state/reason as macOS.
+    private var burnBanner: PulseBanner? {
+        if let pulse = snap.pulse {
+            let color = pulseColor(pulse.tier)
+            let state = I18n.pulseTier(pulse.tier)
+            let reason = I18n.pulseReason(pulse)
+            let money = snap.observedSpend?
+                .filter { $0.amount > 0 }
+                .map { "\($0.currency.uppercased()) \(String(format: "%.2f", $0.amount))" }
+                .joined(separator: " + ")
+            let suffix = money.map { " · \($0) observed" } ?? ""
+            return PulseBanner(text: "\(state) · \(reason)\(suffix)", color: color)
+        }
+        return nil
+    }
+
+    private func pulseColor(_ tier: PulseTier) -> Color {
+        switch tier {
+        case .intense: return .red
+        case .elevated: return .orange
+        case .active: return .yellow
+        case .resting: return .secondary
+        }
     }
 
     var body: some View {
@@ -86,16 +119,16 @@ struct DashboardView: View {
                 VStack(spacing: 12) {
                     // Big total
                     VStack(spacing: 2) {
-                        Text(usd(totalCost))
+                        Text(snap.pulse != nil && snap.convertedObservedSpendUSD == nil ? "—" : usd(totalCost))
                             .font(.system(size: 40, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.deepRed)
                             .scaleEffect(0.8 + 0.2 * barProgress)
                             .overlay(alignment: .trailing) {
                                 HStack(spacing: 4) {
-                                    if timeRange == .today, snap.yesterdaySpend > 0.001 {
+                                    if snap.pulse == nil, timeRange == .today, snap.yesterdaySpend > 0.001 {
                                         comparisonBadge(current: totalCost, previous: snap.yesterdaySpend)
                                     }
-                                    if timeRange == .days30, snap.previousPeriodSpend > 0.001 {
+                                    if snap.pulse == nil, timeRange == .days30, snap.previousPeriodSpend > 0.001 {
                                         comparisonBadge(current: totalCost, previous: snap.previousPeriodSpend)
                                     }
                                 }
@@ -116,6 +149,19 @@ struct DashboardView: View {
                             }
                         }
                         .font(.caption2).foregroundColor(.secondary)
+                    }
+
+                    // ── v2 P2 全端感知: burn-rate banner (today tab) ──
+                    if timeRange == .today, let banner = burnBanner {
+                        HStack(spacing: 6) {
+                            Image(systemName: "flame.fill")
+                                .foregroundStyle(banner.color)
+                            Text(banner.text)
+                                .font(.caption.weight(.medium).monospacedDigit())
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 6).padding(.horizontal, 12)
+                        .background(banner.color.opacity(0.12), in: Capsule())
                     }
 
                     // Donuts + stats — centered
@@ -338,14 +384,19 @@ struct DashboardView: View {
                     }
                 }
                 // Subscription quotas (Claude / Copilot utilization + reset countdown)
-                ForEach(quotas, id: \.toolId) { q in
+                ForEach(quotas, id: \.stableId) { q in
                     HStack {
-                        Text(toolDisplayName(q.toolId))
+                        Text(toolDisplayName(q.toolId) + (q.windowId.map { " · \($0)" } ?? ""))
                             .font(.caption).foregroundColor(.secondary)
                         Spacer()
-                        Text((q.utilization / 100).formatted(.percent.precision(.fractionLength(0))))
-                            .font(.caption).monospacedDigit().foregroundColor(quotaColor(q.utilization))
-                        if q.resetAt > 0 {
+                        if q.isStale() {
+                            Text(I18n.t("dashboard.quota_stale"))
+                                .font(.caption2).foregroundColor(.secondary)
+                        } else {
+                            Text((q.utilization / 100).formatted(.percent.precision(.fractionLength(0))))
+                                .font(.caption).monospacedDigit().foregroundColor(quotaColor(q.utilization))
+                        }
+                        if !q.isStale(), q.resetAt > 0 {
                             Text(quotaCountdownText(q.resetAt))
                                 .font(.caption2).monospacedDigit().foregroundColor(.secondary)
                         }
@@ -633,7 +684,7 @@ struct DashboardView: View {
                 .background(Color.marsGreen.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
         }
     }
-    private func shortNum(_ n: Int) -> String { n >= 1000 ? "\(n / 1000)K" : "\(n)" }
+    private func shortNum(_ n: Int) -> String { ChartMath.compactCount(Int64(n)) }
     private static let usdFormatter: NumberFormatter = {
         let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = "USD"
         f.locale = Locale(identifier: "en_US"); return f
@@ -643,9 +694,7 @@ struct DashboardView: View {
     }
 
     private func tokenShort(_ n: Int64) -> String {
-        if n >= 1_000_000 { return "\(n / 1_000_000)M" }
-        if n >= 1000 { return "\(n / 1000)K" }
-        return "\(n)"
+        ChartMath.compactCount(n)
     }
 }
 

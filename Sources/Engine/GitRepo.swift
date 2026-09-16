@@ -32,7 +32,7 @@ struct GitRepo {
     ///   When filtering by author, `maxCount` is multiplied by 10 to ensure
     ///   we can walk past collaborator commits to find the user's own.
     nonisolated func log(since lastHash: String?, maxCount: Int = 20,
-             authorEmail: String? = nil) -> [(hash: String, ts: Int, parentCount: Int)] {
+             authorEmail: String? = nil) -> [(hash: String, ts: Int, parentCount: Int, message: String)] {
         let effectiveMax = authorEmail != nil ? maxCount * 10 : maxCount
         var repoPtr: OpaquePointer?
         guard git_repository_open(&repoPtr, path) == 0, let repo = repoPtr else { return [] }
@@ -49,7 +49,7 @@ struct GitRepo {
             git_revwalk_hide(walk, &oid)
         }
 
-        var results: [(String, Int, Int)] = []
+        var results: [(String, Int, Int, String)] = []
         var oid = git_oid()
         while git_revwalk_next(&oid, walk) == 0, results.count < effectiveMax {
             var commitPtr: OpaquePointer?
@@ -66,7 +66,8 @@ struct GitRepo {
             let hash = String(cString: git_oid_tostr_s(git_commit_id(commit)))
             let ts = Int(git_commit_time(commit))
             let parentCount = Int(git_commit_parentcount(commit))
-            results.append((hash, ts, parentCount))
+            let message = String(cString: git_commit_message(commit))
+            results.append((hash, ts, parentCount, message))
             // Stop early when we have enough matching commits
             if results.count >= maxCount { break }
         }
