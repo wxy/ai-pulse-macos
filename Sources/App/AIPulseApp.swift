@@ -7,7 +7,7 @@ import UserNotifications
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, @unchecked Sendable {
     private var securityScopedURLs: [URL] = []
     var menuBarController: MenuBarController?
-    private var windowSubmenu: NSMenu?
+    private var pulseSubmenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Present foreground notifications with sound; without a delegate macOS
@@ -87,8 +87,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // with change detection, 500ms debounce, and unified .dataDidChange notification.
         DataRefreshCoordinator.shared.start()
 
-        // Startup chime — lets the user know the app is alive, bypasses throttle.
-        CoinSound.playForDataChange(bypassThrottle: true)
+        // v2 §3.3: menu bar flame — the perception headline (default on).
+        StatusItemController.shared.start()
+
+        // Startup feedback is default-OFF in v2 (启动 ≠ 花钱); the user can
+        // enable a startup chime in Settings.
+        CoinSound.playStartupChimeIfEnabled()
 
         // Check for anomalies periodically (separate from data refresh — longer cycle)
         Timer.scheduledTimer(withTimeInterval: 3660, repeats: true) { _ in
@@ -102,12 +106,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             name: I18n.didChangeLanguage, object: nil
         )
         NotificationCenter.default.addObserver(
-            self, selector: #selector(refreshWindowMenuStats),
+            self, selector: #selector(refreshPulseMenuStats),
             name: .dataDidChange, object: nil
         )
         NotificationCenter.default.addObserver(
             self, selector: #selector(onDemoModeChange),
             name: .demoModeDidChange, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(refreshPulseMenuStats),
+            name: .soundMuteDidChange, object: nil
         )
     }
 
@@ -121,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        AppSoundControl.isMuted() ? [.banner] : [.banner, .sound]
     }
 
     // MARK: - Dock menu
@@ -240,35 +248,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         fileMenuItem.submenu = fileSubmenu
         mainMenu.addItem(fileMenuItem)
 
+        // --- Pulse Menu ---
+        // Consumption facts belong to a product menu, not macOS's Window menu.
+        let pulseMenuItem = NSMenuItem()
+        let pulseSubmenu = NSMenu(title: "AI Pulse")
+        pulseMenuItem.submenu = pulseSubmenu
+        mainMenu.addItem(pulseMenuItem)
+        self.pulseSubmenu = pulseSubmenu
+
         // --- Window Menu ---
-        // Contents are the shared dynamic stats menu (today/week lines + submenus),
-        // built from MenuBarController.statsMenuItems() and refreshed on .dataDidChange
-        // so the Window and Dock menus stay identical.
+        // Keep this menu conventional and limited to window management.
         let windowMenuItem = NSMenuItem()
         let windowSubmenu = NSMenu(title: "Window")
+        let dashboardItem = NSMenuItem(title: I18n.t("menu.dashboard"), action: #selector(openDashboardFromMenu), keyEquivalent: "1")
+        dashboardItem.target = self
+        windowSubmenu.addItem(dashboardItem)
+        windowSubmenu.addItem(.separator())
+        windowSubmenu.addItem(NSMenuItem(title: I18n.t("menu.minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m"))
         windowMenuItem.submenu = windowSubmenu
         mainMenu.addItem(windowMenuItem)
-        self.windowSubmenu = windowSubmenu
+        NSApp.windowsMenu = windowSubmenu
 
         NSApp.mainMenu = mainMenu
 
-        refreshWindowMenuStats()
+        refreshPulseMenuStats()
     }
 
-    /// Rebuild the Window menu from the shared stats source (same items as the Dock
-    /// right-click menu). Called on launch, language change, and every .dataDidChange.
+    /// Rebuild the Pulse menu from the shared factual stats source. Called on
+    /// launch, language change, and every `.dataDidChange`.
     @MainActor @objc
-    private func refreshWindowMenuStats() {
-        guard let sub = windowSubmenu else { return }
+    private func refreshPulseMenuStats() {
+        guard let sub = pulseSubmenu else { return }
         sub.removeAllItems()
         Task {
             let items = await menuBarController?.statsMenuItems() ?? []
             await MainActor.run {
-                guard let sub = windowSubmenu else { return }
+                guard let sub = pulseSubmenu else { return }
                 sub.removeAllItems()
                 for item in items { sub.addItem(item) }
             }
         }
+    }
+
+    @MainActor @objc private func openDashboardFromMenu() {
+        openDashboard()
     }
 
     @MainActor @objc private func showOnboardingFromMenu() {
@@ -342,7 +365,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// On first launch, auto-enable integrations that have data detected.
     private func migrateIntegrationDefaults() {
         let migratedKey = "integration_defaults_migrated"
-        guard !UserDefaults.standard.bool(forKey: migratedKey) else { return }
+        guard !UserDefaults.standard.bool(forKey: migratedKey) else {
+            prefillSubscriptionTiers()
+            return
+        }
         UserDefaults.standard.set(true, forKey: migratedKey)
 
         for i in IntegrationRegistry.all {
@@ -351,6 +377,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 cfg.enabled = true
                 IntegrationRegistry.setConfig(for: i.id, cfg)
             }
+        }
+        prefillSubscriptionTiers()
+    }
+
+    /// v2 §4.7 零配置: prefill the catalog's standard (first) plan for every
+    /// installed subscription-grade tool that has no tier chosen — new installs
+    /// and existing users who never picked one. The user can ignore, change,
+    /// or clear it; the fee only ever feeds the ledger, never the burn rate.
+    /// One-shot per install.
+    private func prefillSubscriptionTiers() {
+        let key = "subscription_tier_prefill_v1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+
+        for i in IntegrationRegistry.all {
+            guard i.detect().found else { continue }
+            var cfg = IntegrationRegistry.config(for: i.id)
+            guard cfg.subscriptionTier.isEmpty,
+                  let tool = SubscriptionRegistry.tool(forName: i.displayName),
+                  let standard = tool.tiers.first else { continue }
+            cfg.subscriptionTier = standard.label
+            IntegrationRegistry.setConfig(for: i.id, cfg)
+            Logger.info("Prefilled \(i.displayName) plan: \(standard.label)")
         }
     }
 }

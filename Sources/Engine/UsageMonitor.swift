@@ -21,10 +21,11 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
     /// Parse the Claude status cache JSON. Internal for testing.
     /// `reset5hAt`/`reset7dAt` are Unix timestamps (seconds) of the next
     /// 5-hour / 7-day quota reset.
-    static func parseClaudeStatusCache(_ json: [String: Any]) -> (utilization5h: Double, utilization7d: Double, limitStatus: String, reset5hAt: Double, reset7dAt: Double)? {
+    static func parseClaudeStatusCache(_ json: [String: Any]) -> (utilization5h: Double?, utilization7d: Double?, limitStatus: String, reset5hAt: Double, reset7dAt: Double)? {
         guard let usageData = json["usageData"] as? [String: Any] else { return nil }
-        let util5h = usageData["utilization5h"] as? Double ?? 0
-        let util7d = usageData["utilization7d"] as? Double ?? 0
+        let util5h = (usageData["utilization5h"] as? NSNumber)?.doubleValue
+        let util7d = (usageData["utilization7d"] as? NSNumber)?.doubleValue
+        guard util5h != nil || util7d != nil else { return nil }
         let limitStatus = usageData["limitStatus"] as? String ?? ""
         // Timestamps may arrive as Int or Double in JSON → use NSNumber to accept both.
         let reset5hAt = (usageData["reset5hAt"] as? NSNumber)?.doubleValue ?? 0
@@ -46,15 +47,6 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
             return
         }
 
-        // Clamp to 0-100 at ingestion: a corrupt status cache must never
-        // poison quota rendering or chart geometry downstream.
-        let usagePercent = min(max(max(status.utilization5h, status.utilization7d) * 100, 0), 100)
-        // Store the reset time of whichever window is more utilized, so the
-        // HUD's "distance to reset" matches the displayed utilization.
-        let use7d = status.utilization7d > status.utilization5h
-        let resetAt = use7d ? status.reset7dAt : status.reset5hAt
-        let windowSeconds = use7d ? 7.0 * 86_400 : 5.0 * 3600
-
         Task {
             // Only meaningful when Claude Code actually consumes an Anthropic
             // subscription. If routed through a third-party API (DeepSeek /
@@ -66,24 +58,28 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
             }
             do {
                 try await AppDatabase.shared.write { db in
-                    try db.execute(sql: """
-                        INSERT INTO quota_status (tool_id, utilization, limit_status, reset_at, window_seconds, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(tool_id) DO UPDATE SET
-                            utilization = excluded.utilization,
-                            limit_status = excluded.limit_status,
-                            reset_at = excluded.reset_at,
-                            window_seconds = excluded.window_seconds,
-                            updated_at = excluded.updated_at
-                        """, arguments: ["claude-code", usagePercent, status.limitStatus,
-                                         resetAt > 0 ? resetAt : nil, windowSeconds, Date().timeIntervalSince1970])
+                    let now = Date().timeIntervalSince1970
+                    if let utilization = status.utilization5h {
+                        try Self.upsertQuotaWindow(
+                            in: db, toolId: "claude-code", windowId: "5h",
+                            utilization: utilization * 100, limitStatus: status.limitStatus,
+                            resetAt: status.reset5hAt, windowSeconds: 5 * 3_600,
+                            updatedAt: now)
+                    }
+                    if let utilization = status.utilization7d {
+                        try Self.upsertQuotaWindow(
+                            in: db, toolId: "claude-code", windowId: "7d",
+                            utilization: utilization * 100, limitStatus: status.limitStatus,
+                            resetAt: status.reset7dAt, windowSeconds: 7 * 86_400,
+                            updatedAt: now)
+                    }
                 }
             } catch {
                 Logger.debug("UsageMonitor: claude status update failed: \(error)")
             }
         }
 
-        Logger.debug("UsageMonitor: Claude status 5h=\(String(format: "%.0f", status.utilization5h*100))% 7d=\(String(format: "%.0f", status.utilization7d*100))% limit=\(status.limitStatus)")
+        Logger.debug("UsageMonitor: Claude status 5h=\(status.utilization5h.map { String(format: "%.0f", $0 * 100) } ?? "--")% 7d=\(status.utilization7d.map { String(format: "%.0f", $0 * 100) } ?? "--")% limit=\(status.limitStatus)")
     }
 
     /// True if Claude Code's most recent logged events used Anthropic models
@@ -188,17 +184,11 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
                 do {
                     try await AppDatabase.shared.write { db in
                         let limitStatus = overageCount > 0 ? "overage" : "normal"
-                        try db.execute(sql: """
-                            INSERT INTO quota_status (tool_id, utilization, limit_status, reset_at, window_seconds, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                            ON CONFLICT(tool_id) DO UPDATE SET
-                                utilization = excluded.utilization,
-                                limit_status = excluded.limit_status,
-                                reset_at = excluded.reset_at,
-                                window_seconds = excluded.window_seconds,
-                                updated_at = excluded.updated_at
-                            """, arguments: ["copilot", usedPercent, limitStatus,
-                                             quotaResetAt > 0 ? quotaResetAt : nil, 30.0 * 86_400, Date().timeIntervalSince1970])
+                        try Self.upsertQuotaWindow(
+                            in: db, toolId: "copilot", windowId: "monthly",
+                            utilization: usedPercent, limitStatus: limitStatus,
+                            resetAt: quotaResetAt, windowSeconds: 30 * 86_400,
+                            updatedAt: Date().timeIntervalSince1970)
                     }
                 } catch {
                     DispatchQueue.main.async {
@@ -215,6 +205,32 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
                 }
             }
         }.resume()
+    }
+
+    static func upsertQuotaWindow(
+        in db: Database,
+        toolId: String,
+        windowId: String,
+        utilization: Double,
+        limitStatus: String,
+        resetAt: Double,
+        windowSeconds: Double,
+        updatedAt: Double
+    ) throws {
+        let safeUtilization = min(max(utilization, 0), 100)
+        try db.execute(sql: """
+            INSERT INTO quota_window_status
+              (tool_id, window_id, utilization, limit_status, reset_at,
+               window_seconds, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(tool_id, window_id) DO UPDATE SET
+                utilization = excluded.utilization,
+                limit_status = excluded.limit_status,
+                reset_at = excluded.reset_at,
+                window_seconds = excluded.window_seconds,
+                updated_at = excluded.updated_at
+            """, arguments: [toolId, windowId, safeUtilization, limitStatus,
+                             resetAt > 0 ? resetAt : nil, windowSeconds, updatedAt])
     }
 
     // MARK: - Token extraction

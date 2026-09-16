@@ -26,6 +26,63 @@ final class DatabaseSchemaTests: XCTestCase {
         }
     }
 
+    func testQuotaWindowTableSupportsMultipleWindowsPerTool() throws {
+        let dbQueue = try DatabaseQueue()
+        try dbQueue.write { db in
+            try AppDatabase.createAllTables(db)
+            for window in ["5h", "7d"] {
+                try db.execute(sql: """
+                    INSERT INTO quota_window_status
+                      (tool_id, window_id, utilization, updated_at)
+                    VALUES ('claude-code', ?, 50, 1)
+                    """, arguments: [window])
+            }
+            let count = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM quota_window_status WHERE tool_id = 'claude-code'")
+            XCTAssertEqual(count, 2)
+        }
+    }
+
+    func testLegacyQuotaMigrationIsIdempotent() throws {
+        let dbQueue = try DatabaseQueue()
+        try dbQueue.write { db in
+            try AppDatabase.createAllTables(db)
+            try db.execute(sql: """
+                INSERT INTO quota_status
+                  (tool_id, utilization, limit_status, reset_at, window_seconds, updated_at)
+                VALUES ('claude-code', 42, 'normal', 100, 18000, 10)
+                """)
+
+            try AppDatabase.migrateLegacyQuotaStatus(db)
+            try AppDatabase.migrateLegacyQuotaStatus(db)
+
+            let count = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM quota_window_status")
+            let window = try String.fetchOne(
+                db, sql: "SELECT window_id FROM quota_window_status WHERE tool_id = 'claude-code'")
+            XCTAssertEqual(count, 1)
+            XCTAssertEqual(window, "legacy")
+        }
+    }
+
+    func testAttributionNormalizationPreservesToolAndRows() throws {
+        let dbQueue = try DatabaseQueue()
+        try dbQueue.write { db in
+            try AppDatabase.createAllTables(db)
+            try db.execute(sql: """
+                INSERT INTO code_change
+                  (commit_hash, ts, repo_path, added, deleted, attributed_tool, attribution)
+                VALUES ('abc', 1, '/repo', 2, 1, 'Claude', 'exact')
+                """)
+
+            try AppDatabase.normalizeCodeAttributionConfidence(db)
+
+            let row = try Row.fetchOne(db, sql: "SELECT * FROM code_change WHERE commit_hash = 'abc'")!
+            XCTAssertEqual(row["attributed_tool"] as String?, "Claude")
+            XCTAssertEqual(row["attribution"] as String?, "uncertain")
+        }
+    }
+
     func testKnownProviderAttributionBackfill() throws {
         let dbQueue = try DatabaseQueue()
         try dbQueue.write { db in

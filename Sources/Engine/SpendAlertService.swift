@@ -220,7 +220,7 @@ final class SpendAlertService: @unchecked Sendable {
         let content = UNMutableNotificationContent()
         content.title = I18n.t("alert.l\(payload.level).title")
         content.body = alertBody(payload)
-        content.sound = .default
+        content.sound = AppSoundControl.isMuted() ? nil : .default
         content.interruptionLevel = .timeSensitive
 
         let request = UNNotificationRequest(

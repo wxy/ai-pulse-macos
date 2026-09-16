@@ -1,5 +1,86 @@
 import Foundation
 
+/// Cross-platform, unit-preserving description of the current AI-consumption
+/// pulse. Channels are normalized independently; consumers must never add raw
+/// values from different units together.
+public enum PulseTier: String, Codable, Sendable, Equatable, CaseIterable {
+    case resting
+    case active
+    case elevated
+    case intense
+}
+
+public enum PulseSignalKind: String, Codable, Sendable, Equatable, CaseIterable {
+    case activity
+    case observedSpend
+    case quota
+    case attributedOutput
+}
+
+public enum PulseFreshness: String, Codable, Sendable, Equatable {
+    case fresh
+    case aging
+    case stale
+    case unavailable
+}
+
+public enum PulseCompleteness: String, Codable, Sendable, Equatable {
+    case complete
+    case intervalNet
+    case providerWindow
+    case partial
+    case unknown
+}
+
+public struct PulseSignal: Codable, Sendable, Equatable {
+    public var kind: PulseSignalKind
+    public var rawValue: Double?
+    public var unit: String
+    public var baseline: Double?
+    public var normalized: Double
+    public var freshness: PulseFreshness
+    public var completeness: PulseCompleteness
+    public var observedAt: Date?
+    public var reason: String
+
+    public init(kind: PulseSignalKind, rawValue: Double?, unit: String,
+                baseline: Double?, normalized: Double,
+                freshness: PulseFreshness, completeness: PulseCompleteness,
+                observedAt: Date?, reason: String) {
+        self.kind = kind
+        self.rawValue = rawValue
+        self.unit = unit
+        self.baseline = baseline
+        self.normalized = normalized
+        self.freshness = freshness
+        self.completeness = completeness
+        self.observedAt = observedAt
+        self.reason = reason
+    }
+}
+
+public struct PulseSnapshot: Codable, Sendable, Equatable {
+    public var tier: PulseTier
+    public var primarySignal: PulseSignalKind?
+    public var reason: String
+    public var signals: [PulseSignal]
+    public var asOf: Date
+
+    public init(tier: PulseTier, primarySignal: PulseSignalKind?, reason: String,
+                signals: [PulseSignal], asOf: Date) {
+        self.tier = tier
+        self.primarySignal = primarySignal
+        self.reason = reason
+        self.signals = signals
+        self.asOf = asOf
+    }
+
+    public var activity: PulseSignal? { signals.first { $0.kind == .activity } }
+    public var observedSpend: PulseSignal? { signals.first { $0.kind == .observedSpend } }
+    public var quota: PulseSignal? { signals.first { $0.kind == .quota } }
+    public var attributedOutput: PulseSignal? { signals.first { $0.kind == .attributedOutput } }
+}
+
 /// Full dashboard snapshot — computed by macOS and synced via iCloud.
 /// iOS/watchOS read this structure to render their dashboards.
 public struct DashboardSnapshot: Codable, Sendable {
@@ -13,6 +94,16 @@ public struct DashboardSnapshot: Codable, Sendable {
     public var subDaily: Double = 0
     public var todayCalls: Int64 = 0
     public var todayTokens: Int64 = 0
+    /// Balance/usage API interval net spend in original currencies. nil for legacy.
+    public var observedSpend: [ObservedSpendItem]?
+    /// Converted sum of `observedSpend`; conversion is not a native-currency fact.
+    public var convertedObservedSpendUSD: Double?
+    /// Token × catalog price reference. Never an observed charge. nil for legacy.
+    public var catalogEquivalentUSD: Double?
+    /// User-entered or catalog-prefilled fixed monthly context. nil for legacy.
+    public var declaredMonthlyCostUSD: Double?
+    /// Native Pulse contract used by macOS, iOS, watchOS and widgets.
+    public var pulse: PulseSnapshot?
 
     public var providerBreakdown: [ProviderItem] = []
     public var toolBreakdown: [NameCostItem] = []
@@ -31,11 +122,6 @@ public struct DashboardSnapshot: Codable, Sendable {
     /// sources (exclusive provider ownership). Empty when nothing is
     /// attributable — clients show an explanatory placeholder instead.
     public var rateSeries: [RateSeriesItem] = []
-    /// User-entered subscription cycle anchor. nil until configured.
-    public var subscriptionStart: Date?
-    /// Subscription cycle length in days (30/90/365). nil until configured.
-    public var subscriptionPeriodDays: Int?
-
     /// Per-tool conclusion summary + session list. Optional/empty when
     /// produced by an older macOS app; old clients ignore this field.
     public var toolDetails: [ToolDetailItem] = []
@@ -59,6 +145,11 @@ public struct DashboardSnapshot: Codable, Sendable {
         subDaily: Double = 0,
         todayCalls: Int64 = 0,
         todayTokens: Int64 = 0,
+        observedSpend: [ObservedSpendItem]? = nil,
+        convertedObservedSpendUSD: Double? = nil,
+        catalogEquivalentUSD: Double? = nil,
+        declaredMonthlyCostUSD: Double? = nil,
+        pulse: PulseSnapshot? = nil,
         providerBreakdown: [ProviderItem] = [],
         toolBreakdown: [NameCostItem] = [],
         topRepos: [RepoItem] = [],
@@ -70,8 +161,6 @@ public struct DashboardSnapshot: Codable, Sendable {
         quotaStatus: [QuotaStatusItem] = [],
         modelBreakdown: [ModelCostItem] = [],
         rateSeries: [RateSeriesItem] = [],
-        subscriptionStart: Date? = nil,
-        subscriptionPeriodDays: Int? = nil,
         toolDetails: [ToolDetailItem] = [],
         payloadVersion: String? = nil,
         writerAppVersion: String? = nil,
@@ -86,6 +175,11 @@ public struct DashboardSnapshot: Codable, Sendable {
         self.subDaily = subDaily
         self.todayCalls = todayCalls
         self.todayTokens = todayTokens
+        self.observedSpend = observedSpend
+        self.convertedObservedSpendUSD = convertedObservedSpendUSD
+        self.catalogEquivalentUSD = catalogEquivalentUSD
+        self.declaredMonthlyCostUSD = declaredMonthlyCostUSD
+        self.pulse = pulse
         self.providerBreakdown = providerBreakdown
         self.toolBreakdown = toolBreakdown
         self.topRepos = topRepos
@@ -97,8 +191,6 @@ public struct DashboardSnapshot: Codable, Sendable {
         self.quotaStatus = quotaStatus
         self.modelBreakdown = modelBreakdown
         self.rateSeries = rateSeries
-        self.subscriptionStart = subscriptionStart
-        self.subscriptionPeriodDays = subscriptionPeriodDays
         self.toolDetails = toolDetails
         self.payloadVersion = payloadVersion
         self.writerAppVersion = writerAppVersion
@@ -128,6 +220,20 @@ public struct DashboardSnapshot: Codable, Sendable {
         clean.subDaily = Self.safeNonNegative(subDaily)
         clean.todayCalls = Self.safeNonNegative(todayCalls)
         clean.todayTokens = Self.safeNonNegative(todayTokens)
+        clean.observedSpend = observedSpend?.map {
+            ObservedSpendItem(
+                providerId: $0.providerId,
+                amount: Self.safeNonNegative($0.amount),
+                currency: $0.currency,
+                convertedUSD: $0.convertedUSD.map(Self.safeNonNegative),
+                conversionRateToUSD: $0.conversionRateToUSD.map(Self.safeNonNegative),
+                conversionSource: $0.conversionSource,
+                observedAt: Self.safeNonNegative($0.observedAt))
+        }
+        clean.convertedObservedSpendUSD = convertedObservedSpendUSD.map(Self.safeNonNegative)
+        clean.catalogEquivalentUSD = catalogEquivalentUSD.map(Self.safeNonNegative)
+        clean.declaredMonthlyCostUSD = declaredMonthlyCostUSD.map(Self.safeNonNegative)
+        clean.pulse = pulse.map(Self.sanitizedPulse)
 
         clean.providerBreakdown = providerBreakdown.map {
             ProviderItem(
@@ -150,7 +256,8 @@ public struct DashboardSnapshot: Codable, Sendable {
                 added: Self.safeNonNegative($0.added),
                 deleted: Self.safeNonNegative($0.deleted),
                 cpl: Self.safeNonNegative($0.cpl),
-                tokens: $0.tokens.map(Self.safeNonNegative))
+                tokens: $0.tokens.map(Self.safeNonNegative),
+                commits: Self.safeNonNegative($0.commits))
         }
         clean.prediction = prediction.map {
             PredictionItem(
@@ -172,10 +279,12 @@ public struct DashboardSnapshot: Codable, Sendable {
         clean.quotaStatus = quotaStatus.map {
             QuotaStatusItem(
                 toolId: $0.toolId,
+                windowId: $0.windowId,
                 utilization: Self.safeNonNegative($0.utilization),
                 limitStatus: $0.limitStatus,
                 resetAt: Self.safeNonNegative($0.resetAt),
-                windowSeconds: Self.safeNonNegative($0.windowSeconds))
+                windowSeconds: Self.safeNonNegative($0.windowSeconds),
+                updatedAt: $0.updatedAt.map(Self.safeNonNegative))
         }
         clean.modelBreakdown = modelBreakdown.map {
             ModelCostItem(
@@ -197,9 +306,6 @@ public struct DashboardSnapshot: Codable, Sendable {
                         tokens: Self.safeNonNegative($0.tokens),
                         cost: Self.safeNonNegative($0.cost))
                 })
-        }
-        clean.subscriptionPeriodDays = subscriptionPeriodDays.flatMap {
-            $0 > 0 ? $0 : 30
         }
         clean.toolDetails = toolDetails.map { detail in
             let c = detail.conclusion
@@ -235,6 +341,26 @@ public struct DashboardSnapshot: Codable, Sendable {
         return clean
     }
 
+    private static func sanitizedPulse(_ pulse: PulseSnapshot) -> PulseSnapshot {
+        PulseSnapshot(
+            tier: pulse.tier,
+            primarySignal: pulse.primarySignal,
+            reason: pulse.reason,
+            signals: pulse.signals.map { signal in
+                PulseSignal(
+                    kind: signal.kind,
+                    rawValue: signal.rawValue.map(safeNonNegative),
+                    unit: signal.unit,
+                    baseline: signal.baseline.map(safeNonNegative),
+                    normalized: safeNonNegative(signal.normalized),
+                    freshness: signal.freshness,
+                    completeness: signal.completeness,
+                    observedAt: signal.observedAt,
+                    reason: signal.reason)
+            },
+            asOf: pulse.asOf)
+    }
+
     private static func sanitizedTrendPoint(_ p: TrendPoint) -> TrendPoint {
         TrendPoint(
             ts: p.ts.isFinite ? p.ts : 0,
@@ -243,7 +369,8 @@ public struct DashboardSnapshot: Codable, Sendable {
             tokens: Self.safeNonNegative(p.tokens),
             netLines: Self.safeNonNegative(p.netLines),
             added: Self.safeNonNegative(p.added),
-            deleted: Self.safeNonNegative(p.deleted))
+            deleted: Self.safeNonNegative(p.deleted),
+            commits: Self.safeNonNegative(p.commits))
     }
 
     private static func safeNonNegative(_ v: Double) -> Double {
@@ -296,15 +423,18 @@ public struct RepoItem: Codable, Sendable {
     public var cost: Double
     public var added: Int
     public var deleted: Int
+    public var commits: Int
     public var cpl: Double
     /// Token usage attributed to this repo (JSONL fact). nil for legacy.
     public var tokens: Int64?
 
-    public init(name: String, cost: Double, added: Int, deleted: Int, cpl: Double, tokens: Int64? = nil) {
+    public init(name: String, cost: Double, added: Int, deleted: Int, cpl: Double,
+                tokens: Int64? = nil, commits: Int = 0) {
         self.name = name
         self.cost = cost
         self.added = added
         self.deleted = deleted
+        self.commits = commits
         self.cpl = cpl
         self.tokens = tokens
     }
@@ -396,6 +526,7 @@ public struct TrendPoint: Codable, Sendable {
     public var netLines: Int
     public var added: Int = 0
     public var deleted: Int = 0
+    public var commits: Int = 0
 
     public init(
         ts: Double,
@@ -404,7 +535,8 @@ public struct TrendPoint: Codable, Sendable {
         tokens: Int64,
         netLines: Int,
         added: Int = 0,
-        deleted: Int = 0
+        deleted: Int = 0,
+        commits: Int = 0
     ) {
         self.ts = ts
         self.value = value
@@ -413,6 +545,7 @@ public struct TrendPoint: Codable, Sendable {
         self.netLines = netLines
         self.added = added
         self.deleted = deleted
+        self.commits = commits
     }
 }
 
@@ -430,22 +563,78 @@ public struct RemainingBalanceItem: Codable, Sendable {
     }
 }
 
+/// Provider-reported balance/usage movement aggregated over one snapshot range.
+/// `amount` preserves the original currency; `convertedUSD` is a separate
+/// convenience conversion and must not be presented as native provider data.
+public struct ObservedSpendItem: Codable, Sendable, Equatable {
+    public var providerId: String
+    public var amount: Double
+    public var currency: String
+    /// Optional estimate. nil means no known conversion and must not be shown
+    /// as USD by assuming a 1:1 rate.
+    public var convertedUSD: Double?
+    public var conversionRateToUSD: Double?
+    /// Human-readable provenance for the rate, e.g. an internal static table.
+    public var conversionSource: String?
+    public var observedAt: Double
+
+    public init(
+        providerId: String,
+        amount: Double,
+        currency: String,
+        convertedUSD: Double?,
+        conversionRateToUSD: Double? = nil,
+        conversionSource: String? = nil,
+        observedAt: Double
+    ) {
+        self.providerId = providerId
+        self.amount = amount
+        self.currency = currency
+        self.convertedUSD = convertedUSD
+        self.conversionRateToUSD = conversionRateToUSD
+        self.conversionSource = conversionSource
+        self.observedAt = observedAt
+    }
+}
+
 /// Subscription quota state (Claude / Copilot window utilization + reset).
 /// Mirrors the macOS model so iCloud-synced snapshots decode identically.
 public struct QuotaStatusItem: Codable, Sendable {
     public var toolId: String
+    /// Stable provider window id such as "5h", "7d", or "monthly".
+    /// nil only when decoding a legacy snapshot.
+    public var windowId: String?
     public var utilization: Double
     public var limitStatus: String
     public var resetAt: Double
     public var windowSeconds: Double
+    /// Unix timestamp (seconds) when this quota value was observed.
+    public var updatedAt: Double?
 
-    public init(toolId: String, utilization: Double, limitStatus: String, resetAt: Double, windowSeconds: Double) {
+    public init(
+        toolId: String,
+        windowId: String? = nil,
+        utilization: Double,
+        limitStatus: String,
+        resetAt: Double,
+        windowSeconds: Double,
+        updatedAt: Double? = nil
+    ) {
         self.toolId = toolId
+        self.windowId = windowId
         self.utilization = utilization
         self.limitStatus = limitStatus
         self.resetAt = resetAt
         self.windowSeconds = windowSeconds
+        self.updatedAt = updatedAt
     }
+
+    public func isStale(asOf: Date = Date(), maxAge: TimeInterval = 2 * 3_600) -> Bool {
+        guard let updatedAt, updatedAt.isFinite, updatedAt > 0 else { return true }
+        return asOf.timeIntervalSince1970 - updatedAt > maxAge
+    }
+
+    public var stableId: String { "\(toolId)|\(windowId ?? "legacy")" }
 }
 
 public struct ToolDetailItem: Codable, Sendable {

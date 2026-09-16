@@ -30,8 +30,14 @@ final class AppDatabase: @unchecked Sendable {
         // Additive column migrations for existing installs
         // (create-ifNotExists won't add columns to tables that already exist).
         addColumnIfMissing("quota_status", "window_seconds", "REAL")
+        // v2 WI-5: AI attribution on code changes — NULL means unattributed
+        // (stays a对照-only row, never counted as consumption).
+        addColumnIfMissing("code_change", "attributed_tool", "TEXT")
+        addColumnIfMissing("code_change", "attribution", "TEXT")
         try dbQueue?.write { db in
             try Self.backfillKnownProviderAttribution(db)
+            try Self.migrateLegacyQuotaStatus(db)
+            try Self.normalizeCodeAttributionConfidence(db)
         }
 
         // The first DSH scan marked compressed journals complete before
@@ -94,6 +100,30 @@ final class AppDatabase: @unchecked Sendable {
         Logger.info("DB attributed \(updates.count) usage events to known providers")
     }
 
+    /// Preserve the last legacy quota observation when upgrading to the
+    /// multi-window schema. New observations use stable window ids (5h/7d/etc).
+    static func migrateLegacyQuotaStatus(_ db: Database) throws {
+        try db.execute(sql: """
+            INSERT OR IGNORE INTO quota_window_status
+              (tool_id, window_id, utilization, limit_status, reset_at,
+               window_seconds, updated_at)
+            SELECT tool_id, 'legacy', utilization, limit_status, reset_at,
+                   window_seconds, COALESCE(updated_at, 0)
+            FROM quota_status
+            """)
+    }
+
+    /// A commit trailer is a strong declaration signal, but it does not prove
+    /// that every changed line was authored by AI. Preserve the attribution and
+    /// normalize only its confidence label.
+    static func normalizeCodeAttributionConfidence(_ db: Database) throws {
+        try db.execute(sql: """
+            UPDATE code_change
+            SET attribution = 'uncertain'
+            WHERE attribution = 'exact'
+            """)
+    }
+
     /// Clear parser positions for the current user's DSH journals and derived
     /// dashboard rows. Exposed for a regression test; callers decide when the
     /// one-time replay runs.
@@ -140,6 +170,10 @@ final class AppDatabase: @unchecked Sendable {
                     t.column("added", .integer).defaults(to: 0)
                     t.column("deleted", .integer).defaults(to: 0)
                     t.column("is_merge", .boolean).defaults(to: false)
+                    // v2 WI-5 AI attribution (also added by migration for
+                    // existing installs; NULL = unattributed →对照-only row)
+                    t.column("attributed_tool", .text)
+                    t.column("attribution", .text)
                 }
                 try? db.create(indexOn: "code_change", columns: ["ts"])
                 try? db.create(indexOn: "code_change", columns: ["repo_path"])
@@ -199,6 +233,19 @@ final class AppDatabase: @unchecked Sendable {
                     t.column("window_seconds", .double)       // quota window length (for last-reset)
                     t.column("updated_at", .double)
                 }
+            }),
+            ("quota_window_status", { db in
+                try db.create(table: "quota_window_status", ifNotExists: true) { t in
+                    t.column("tool_id", .text).notNull()
+                    t.column("window_id", .text).notNull()
+                    t.column("utilization", .double).notNull()
+                    t.column("limit_status", .text)
+                    t.column("reset_at", .double)
+                    t.column("window_seconds", .double)
+                    t.column("updated_at", .double).notNull()
+                    t.primaryKey(["tool_id", "window_id"])
+                }
+                try? db.create(indexOn: "quota_window_status", columns: ["updated_at"])
             }),
             ("dashboard_cache", { db in
                 try db.create(table: "dashboard_cache", ifNotExists: true) { t in

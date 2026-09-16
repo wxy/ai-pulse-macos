@@ -62,13 +62,25 @@ struct DeepSeekHarnessParser {
     }
 
     static func parse(line: String, cwd: String?, model: String?, sessionId: String?) -> UsageEvent? {
-        guard let json = Self.json(line),
-              json["type"] as? String == "assistant/chunk",
-              let data = json["data"] as? [String: Any],
-              let chunk = data["chunk"] as? [String: Any],
-              chunk["type"] as? String == "usage",
-              let usage = chunk["usage"] as? [String: Any]
-        else { return nil }
+        guard let json = Self.json(line) else { return nil }
+
+        // Two journal generations carry usage differently (v3 shipped 2026-09):
+        // - v2: {"type":"assistant/chunk","data":{"chunk":{"type":"usage","usage":{…}}}}
+        // - v3: {"type":"assistant/message","data":{"usage":{…}}}  (camelCase fields;
+        //       model at data.message.source.model — already read by metadata(fromLine:))
+        let usage: [String: Any]?
+        if json["type"] as? String == "assistant/chunk",
+           let data = json["data"] as? [String: Any],
+           let chunk = data["chunk"] as? [String: Any],
+           chunk["type"] as? String == "usage" {
+            usage = chunk["usage"] as? [String: Any]
+        } else if json["type"] as? String == "assistant/message",
+                  let data = json["data"] as? [String: Any] {
+            usage = data["usage"] as? [String: Any]
+        } else {
+            usage = nil
+        }
+        guard let usage else { return nil }
 
         let inTokens = usage["inputTokens"] as? Int ?? 0
         let outTokens = usage["outputTokens"] as? Int ?? 0

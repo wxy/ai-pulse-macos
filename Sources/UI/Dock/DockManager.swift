@@ -1,17 +1,15 @@
 import AppKit
+import AIPulseShared
 
-/// Dock icon with a progress bar along the rounded-rect border that
-/// fills as daily spend grows. The bar colour reflects system health:
-/// green (ok), yellow (degraded), orange (impaired), red (critical).
-///
-/// The bar starts at the 3 o'clock position and fills clockwise; a full loop
-/// represents 3× the 30-day daily average.
+/// Dock icon with a ring driven by the current unit-free Pulse score. Money is
+/// intentionally absent: the Dock communicates pressure, not an inferred bill.
 final class DockManager: @unchecked Sendable {
     static let shared = DockManager()
     private var lastPulseTime: Date = .distantPast
     private let baseIcon: NSImage = AppIconLoader.load()
     private var dataChangeObserver: NSObjectProtocol?
     private var healthObserver: NSObjectProtocol?
+    private var pulseObserver: NSObjectProtocol?
     private var healthSeverity: AppHealthMonitor.Severity = .nominal
 
     func start() {
@@ -50,6 +48,11 @@ final class DockManager: @unchecked Sendable {
                 await self.setProgressIcon()
             }
         }
+        pulseObserver = NotificationCenter.default.addObserver(
+            forName: .pulseDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { [weak self] in await self?.refreshPulseAppearance() }
+        }
     }
 
     func stop() {
@@ -60,6 +63,10 @@ final class DockManager: @unchecked Sendable {
         if let token = healthObserver {
             NotificationCenter.default.removeObserver(token)
             healthObserver = nil
+        }
+        if let token = pulseObserver {
+            NotificationCenter.default.removeObserver(token)
+            pulseObserver = nil
         }
     }
 
@@ -73,6 +80,7 @@ final class DockManager: @unchecked Sendable {
     func pulseIcon() async {
         guard NSApp != nil else { return }
         guard healthSeverity < .critical else { return }
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         let now = Date()
         guard now.timeIntervalSince(lastPulseTime) >= 2.0 else { return }
         lastPulseTime = now
@@ -96,49 +104,70 @@ final class DockManager: @unchecked Sendable {
     // MARK: - Refresh
 
     @MainActor
+    private func refreshPulseAppearance() async {
+        // Pulse ticks include natural time decay. Recompute both colour and
+        // length so the Dock cannot retain a stale full ring between data writes.
+        await refresh()
+    }
+
+    @MainActor
     private func refresh() async {
         // Guard against test environment where NSApp may not be available
         guard NSApp != nil else { return }
-        let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-        let todayCost: Double
-        let dailyRate: Double
-        if DemoData.isActive {
-            let d = DemoData.data(for: .today)
-            todayCost = d.combinedSpend
-            dailyRate = DemoData.data(for: .days30).balanceSpend.reduce(0) { $0 + $1.spend } / 30.0
-        } else {
-            todayCost = await StatsService.combinedSpend(sinceMs: todayStartMs)
-            let pred = await StatsService.prediction()
-            dailyRate = pred.dailyRate
-        }
-
-        // Linear progress ring: 1.0 = 1× monthly daily rate = full circle.
-        // Matches the dashboard "today projected" prediction text.
-        let fillFraction = dailyRate > 0 ? CGFloat(todayCost / dailyRate) : 0
-        let lap = max(Int(floor(fillFraction - 0.0001)), 0)
-        Logger.debug("Dock progress: todayCost=\(String(format: "%.2f", todayCost)) dailyRate=\(String(format: "%.2f", dailyRate)) fillFraction=\(String(format: "%.2f", fillFraction)) lap=\(lap)")
+        let snapshot = await PulseEngine.shared.snapshot()
+        let ringColor = Self.tierRingColor(for: snapshot?.tier)
+        let fillFraction = Self.pulseFillFraction(snapshot)
+        Logger.debug("Dock pulse: tier=\(snapshot?.tier.rawValue ?? "resting") fillFraction=\(String(format: "%.2f", fillFraction))")
 
         let tile = NSApp.dockTile
-
-        guard todayCost > 0.001 else {
+        tile.badgeLabel = nil
+        guard fillFraction > 0.001 else {
             NSApp.applicationIconImage = AppIconLoader.load(healthDot: healthSeverity)
-            tile.badgeLabel = nil
             tile.display()
+            _cachedProgressFraction = 0
+            _cachedLap = 0
+            _cachedRingColor = ringColor
             return
         }
 
         NSApp.applicationIconImage = AppIconLoader.load(
-            progress: Double(fillFraction), lap: lap, healthDot: healthSeverity)
-        tile.badgeLabel = "$\(String(format: "%.2f", todayCost))"
+            progress: fillFraction, lap: 0, healthDot: healthSeverity,
+            ringColor: ringColor)
         tile.display()
-        Logger.debug("Dock badge set: \(tile.badgeLabel ?? "nil") todayCost=\(todayCost)")
 
-        _cachedProgressFraction = Double(fillFraction)
-        _cachedLap = lap
+        _cachedProgressFraction = fillFraction
+        _cachedLap = 0
+        _cachedRingColor = ringColor
+    }
+
+    /// The primary signal keeps all surfaces visually aligned while activity
+    /// remains the fallback when another channel is unavailable. Three times
+    /// baseline nearly closes the ring; a small gap remains so an intense Pulse
+    /// still reads as live progress instead of a permanent coloured border.
+    nonisolated static func pulseFillFraction(_ snapshot: PulseSnapshot?) -> Double {
+        guard let snapshot else { return 0 }
+        let primary = snapshot.primarySignal.flatMap { kind in
+            snapshot.signals.first { $0.kind == kind }
+        }
+        let score = primary?.normalized ?? snapshot.activity?.normalized ?? 0
+        guard score.isFinite else { return 0 }
+        return min(max(score / 3, 0), 0.92)
+    }
+
+    /// Dock ring colours (§3.3 绿→金→橙→红); cold keeps the legacy green so a
+    /// quiet day never renders the ring in alarm colours.
+    nonisolated private static func tierRingColor(for tier: PulseTier?) -> NSColor {
+        switch tier {
+        case .intense: return .systemRed
+        case .elevated: return .systemOrange
+        case .active: return .systemYellow
+        case .resting, .none: return .systemGreen
+        }
     }
 
     private var _cachedProgressFraction: Double = 0
     private var _cachedLap: Int = 0
+    @MainActor private var _cachedRingColor: NSColor = .systemGreen
 
     /// Re-render the progress icon after a pulse animation completes.
     @MainActor
@@ -148,7 +177,8 @@ final class DockManager: @unchecked Sendable {
         guard NSApp != nil else { return }
         if _cachedProgressFraction > 0.001 {
             NSApp.applicationIconImage = AppIconLoader.load(
-                progress: _cachedProgressFraction, lap: _cachedLap, healthDot: healthSeverity)
+                progress: _cachedProgressFraction, lap: _cachedLap, healthDot: healthSeverity,
+                ringColor: _cachedRingColor)
         } else {
             NSApp.applicationIconImage = AppIconLoader.load(healthDot: healthSeverity)
         }

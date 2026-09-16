@@ -355,13 +355,7 @@ struct ToolDetailOverlayView: View {
 
     /// Compact axis labels: 250000 → "250K", 1200000 → "1.2M".
     private static func abbrevTokens(_ tokens: Int) -> String {
-        if tokens >= 1_000_000 {
-            return String(format: "%.1fM", Double(tokens) / 1_000_000)
-        }
-        if tokens >= 1_000 {
-            return String(format: "%.0fK", Double(tokens) / 1_000)
-        }
-        return "\(tokens)"
+        ChartMath.compactCount(Int64(tokens))
     }
 
     private func occupancyBar(_ row: SessionRow) -> some View {

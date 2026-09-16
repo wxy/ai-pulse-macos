@@ -16,6 +16,9 @@ struct Provider: TimelineProvider {
             weeklyAvg: 35.0,
             monthProjected: 150.0,
             monthSoFar: 72.80,
+            pulse: PulseSnapshot(tier: .active, primarySignal: .activity,
+                                 reason: "recent_token_activity", signals: [], asOf: Date()),
+            observedSpend: "USD 3.50",
             updatedAt: Date()
         )
     }
@@ -57,6 +60,8 @@ struct Provider: TimelineProvider {
             weeklyAvg: dailyRate * 7,
             monthProjected: safe.prediction?.monthProjected ?? 600,
             monthSoFar: safe.prediction?.monthSoFar ?? 0,
+            pulse: safe.pulse,
+            observedSpend: Self.observedSpendText(safe.observedSpend),
             updatedAt: safe.updatedAt
         )
     }
@@ -67,8 +72,16 @@ struct Provider: TimelineProvider {
             yesterdaySpend: 0,
             dailyRate: 20, weeklyAvg: 140,
             monthProjected: 600, monthSoFar: 0,
+            pulse: nil, observedSpend: nil,
             updatedAt: Date()
         )
+    }
+
+    private static func observedSpendText(_ items: [ObservedSpendItem]?) -> String? {
+        let values = (items ?? []).filter { $0.amount > 0 }.map {
+            "\($0.currency.uppercased()) \(String(format: "%.2f", $0.amount))"
+        }
+        return values.isEmpty ? nil : values.joined(separator: " + ")
     }
 }
 
@@ -84,12 +97,14 @@ struct WidgetEntry: TimelineEntry {
     let weeklyAvg: Double
     let monthProjected: Double
     let monthSoFar: Double
+    let pulse: PulseSnapshot?
+    let observedSpend: String?
     let updatedAt: Date
 
     init(todayCost: Double, weekCost: Double, monthCost: Double,
          yesterdaySpend: Double,
          dailyRate: Double, weeklyAvg: Double, monthProjected: Double,
-         monthSoFar: Double, updatedAt: Date) {
+         monthSoFar: Double, pulse: PulseSnapshot?, observedSpend: String?, updatedAt: Date) {
         self.date = updatedAt
         self.todayCost = todayCost
         self.weekCost = weekCost
@@ -99,6 +114,8 @@ struct WidgetEntry: TimelineEntry {
         self.weeklyAvg = weeklyAvg
         self.monthProjected = monthProjected
         self.monthSoFar = monthSoFar
+        self.pulse = pulse
+        self.observedSpend = observedSpend
         self.updatedAt = updatedAt
     }
 }

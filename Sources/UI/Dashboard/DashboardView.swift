@@ -3,7 +3,7 @@ import Charts
 import GRDB
 import AIPulseShared
 
-enum TimeRange: Hashable {
+enum TimeRange: Hashable, CaseIterable {
     case today
     case thisWeek
     case days30
@@ -77,11 +77,12 @@ struct DashboardView: View {
     @State private var healthSeverity = AppHealthMonitor.Severity.nominal
     @State private var healthMessages: [String] = []
     @State private var showHealthDetails = false
-    @State private var usageData: [String: (percent: Double, limitStatus: String, resetAt: Double, windowSeconds: Double)] = [:]  // toolId → quota state
+    @State private var usageData: [QuotaStatusItem] = []
     @State private var i18nToken = 0  // bumped on language change to force re-render
     @State private var barProgress: CGFloat = 0  // 0→1 drives all entry animations
     @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
-    @State private var loadGeneration: Int = 0   // guards against stale concurrent loads
+    @State private var loadGenerationByRange: [TimeRange: Int] = [:]
+    @State private var rangeLoadTasks: [TimeRange: Task<Void, Never>] = [:]
     @State private var entryAnimationToken = 0   // cancels a stale zero→one entry run
     @State private var rangeChangeStartedAt: Date? = nil
     @State private var rangeSnapshots: [TimeRange: DashboardSnapshot] = [:]
@@ -160,7 +161,8 @@ struct DashboardView: View {
         (activeSnapshot?.codeChanges ?? []).map {
             DailyCodeChange(date: Date(timeIntervalSince1970: $0.ts),
                             added: $0.added,
-                            deleted: $0.deleted)
+                            deleted: $0.deleted,
+                            commits: $0.commits)
         }
     }
 
@@ -174,6 +176,7 @@ struct DashboardView: View {
                           cost: $0.cost,
                           added: $0.added,
                           deleted: $0.deleted,
+                          commits: $0.commits,
                           apiSources: [],
                           subscriptionSources: [])
         }
@@ -212,16 +215,69 @@ struct DashboardView: View {
         } ?? [:]
     }
 
+    private var periodSessionCount: Int {
+        activeSnapshot?.toolDetails.reduce(0) { $0 + $1.sessions.count } ?? 0
+    }
+
+    private var periodActiveDays: Int {
+        dailyStats.filter { $0.tokens > 0 || $0.calls > 0 }.count
+    }
+
+    private var periodCommitCount: Int {
+        codeChanges.reduce(0) { $0 + $1.commits }
+    }
+
+    /// Period-specific token density. The denominator is the complete visible
+    /// horizon (24 hours / 7 days / 30 days), matching the fixed rhythm slots;
+    /// this is an arithmetic display rate, not a provider-billing estimate.
+    private var rangeTokenRateText: String {
+        let total = dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
+        let divisor: Double
+        let zhUnit: String
+        let enUnit: String
+        switch timeRange {
+        case .today:
+            divisor = 24
+            zhUnit = "小时"
+            enUnit = "hour"
+        case .thisWeek:
+            divisor = 7
+            zhUnit = "日"
+            enUnit = "day"
+        case .days30:
+            divisor = 30
+            zhUnit = "日"
+            enUnit = "day"
+        }
+        let average = Int64((Double(total) / divisor).rounded())
+        let value = ChartMath.compactCount(average)
+        return pulseText("全周期均速 \(value) 词元/\(zhUnit)", "Full-period pace \(value) tokens/\(enUnit)")
+    }
+
+    private var hasPulseActivity: Bool {
+        (activeSnapshot?.todayTokens ?? 0) > 0 || periodSessionCount > 0 ||
+        !repos.isEmpty || !(activeSnapshot?.observedSpend ?? []).isEmpty
+    }
+
+    private func pulseText(_ zh: String, _ en: String) -> String {
+        I18n.resolvedLang() == "zh-Hans" ? zh : en
+    }
+
+    private func pulseColor(_ tier: PulseTier?) -> Color {
+        switch tier {
+        case .resting, .none: return .secondary
+        case .active: return .marsGreen
+        case .elevated: return .orange
+        case .intense: return .deepRed
+        }
+    }
+
     private var modelBreakdownItems: [ModelCostItem] {
         activeSnapshot?.modelBreakdown ?? []
     }
 
     private var rateSeriesItems: [RateSeriesItem] {
         activeSnapshot?.rateSeries ?? []
-    }
-
-    private var subscriptionCycle: (start: Date?, periodDays: Int?) {
-        (activeSnapshot?.subscriptionStart, activeSnapshot?.subscriptionPeriodDays)
     }
 
 
@@ -351,11 +407,11 @@ struct DashboardView: View {
                         .padding(.horizontal, 20).padding(.vertical, 8)
                         .background(Color.secondary.opacity(0.08))
                     }
-                    if hasActiveCostSources || !providerCosts.isEmpty || isDemoMode {
-                        // ── Robot head frame (face) — spending + output ──
+                    if hasActiveCostSources || !providerCosts.isEmpty || hasPulseActivity || isDemoMode {
+                        // ── Robot head frame — pulse, activity, distribution, output ──
                         VStack(spacing: 16) {
                             spendingOverview
-                            outputSection
+                            activityRhythmSection
                         }
                         .padding(20)
                         .background(
@@ -397,11 +453,8 @@ struct DashboardView: View {
 
                         // Body: one outer frame hosting trend/balance + repos
                         VStack(spacing: 12) {
-                            if timeRange != .today, loadedTimeRange == timeRange {
-                                trendSection
-                            } else {
-                                remainingBalanceSection
-                            }
+                            pulseFactsSection
+                            outputSection
                             repoListSection
                         }
                         .padding(20)
@@ -410,14 +463,7 @@ struct DashboardView: View {
                                 .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
                         )
                         .padding(.horizontal, 60)
-                        // Effective-rate chart — only when attributable data exists
-                        effectiveRateSection
-                            .padding(20)
-                            .background(
-                                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                    .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
-                            )
-                            .padding(.horizontal, 60).padding(.bottom, 60)
+                        Spacer().frame(height: 60)
                     } else {
                         emptyStateCard
                     }
@@ -431,7 +477,11 @@ struct DashboardView: View {
         .environment(\.locale, I18n.resolvedLocale)
         .task {
             await hydrateRangeSnapshotCache()
-            await load()
+            let selectedRange = timeRange
+            await load(range: selectedRange)
+            for range in TimeRange.allCases where range != selectedRange {
+                scheduleLoad(for: range)
+            }
             ApiPoller.shared.pollAll()
             triggerCloudSync()
         }
@@ -447,17 +497,17 @@ struct DashboardView: View {
             startEntryAnimation()
             costHoverDate = nil
             codeHoverDate = nil
-            Task { await load() }
+            scheduleLoad(for: newValue)
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             // Manual refresh / forceRefresh — immediate, no throttle
-            Task { await load() }
+            scheduleLoad(for: timeRange)
         }
         .onReceive(NotificationCenter.default.publisher(for: .dataDidChange)) { _ in
             // Background data change — throttle to avoid redundant work
             let now = Date()
             guard dataChangeThrottle.shouldLoad(now: now, minimumInterval: 15) else { return }
-            Task { await load() }
+            scheduleLoad(for: timeRange)
         }
         .onReceive(NotificationCenter.default.publisher(for: .appHealthDidChange)) { _ in
             let snap = AppHealthMonitor.shared.current
@@ -474,6 +524,10 @@ struct DashboardView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: I18n.didChangeLanguage)) { _ in
             i18nToken += 1
+        }
+        .onDisappear {
+            for task in rangeLoadTasks.values { task.cancel() }
+            rangeLoadTasks.removeAll()
         }
         .id(i18nToken)
         .overlay {
@@ -681,7 +735,7 @@ struct DashboardView: View {
         for offset in 0..<chartDays {
             guard let date = cal.date(byAdding: .day, value: offset, to: chartStart) else { continue }
             if let c = map[date] { result.append(c) }
-            else { result.append(DailyCodeChange(date: date, added: 0, deleted: 0)) }
+            else { result.append(DailyCodeChange(date: date, added: 0, deleted: 0, commits: 0)) }
         }
         return result
     }
@@ -776,19 +830,21 @@ struct DashboardView: View {
                     Spacer()
                 }
                 VStack(spacing: 0) {
-                    Text("+\(added)")
+                    Text("+\(ChartMath.compactCount(Int64(added)))")
                         .font(.caption2).fontWeight(.semibold).monospacedDigit()
                         .foregroundColor(.white)
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(Color.marsGreen.opacity(0.85), in: RoundedRectangle(cornerRadius: 5))
                     Spacer()
-                    Text(netLines >= 0 ? "+\(netLines)" : "\(netLines)")
+                    Text(netLines >= 0
+                         ? "+\(ChartMath.compactCount(Int64(netLines)))"
+                         : ChartMath.compactCount(Int64(netLines)))
                         .font(.system(size: 13, weight: .bold)).monospacedDigit()
                         .foregroundColor(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
                     Spacer()
-                    Text("-\(deleted)")
+                    Text("-\(ChartMath.compactCount(Int64(deleted)))")
                         .font(.caption2).fontWeight(.semibold).monospacedDigit()
                         .foregroundColor(.white)
                         .padding(.horizontal, 5).padding(.vertical, 1)
@@ -799,20 +855,19 @@ struct DashboardView: View {
         .frame(width: 64, height: 150)
     }
 
-    // MARK: - Head overview (forehead usage · eyes expense/output · nose lines)
+    // MARK: - Head overview (forehead activity · eyes distributions · nose output)
 
     var spendingOverview: some View {
         // Forehead: usage is the primary number — pure JSONL facts.
         let rangeTokens = dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
-        let rangeCalls = dailyStats.reduce(0) { $0 + $1.calls }
-        // Left eye: actual spend = balance deltas only (facts). Subscription is
-        // shown as a fixed-cycle label, never amortized into the number.
-        let actualSpend = ChartMath.finite(balanceSpend.reduce(0.0) { $0 + $1.spend }, fallback: 0)
-        let subDaily = ChartMath.finite(activeSnapshot?.subDaily ?? 0, fallback: 0)
-        let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        let subMonthly = subDaily * daysInMonth
+        let pulseTier = activeSnapshot?.pulse?.tier
 
         return VStack(spacing: 16) {
+            HStack(spacing: 6) {
+                Circle().fill(pulseColor(pulseTier)).frame(width: 8, height: 8)
+                Text(rangeTokenRateText)
+                    .font(.caption).foregroundColor(.secondary).lineLimit(1)
+            }
             // ── Forehead: usage ──
             VStack(spacing: 4) {
                 Text(tokenShort(Int(clamping: rangeTokens)))
@@ -821,7 +876,7 @@ struct DashboardView: View {
                     .scaleEffect(loadedTimeRange == timeRange ? (0.8 + 0.2 * barProgress) : 0.8)
                     .animation(.spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
                 HStack(spacing: 4) {
-                    Text("\(timeRange.label) · \(rangeCalls) \(I18n.t("dashboard.calls"))")
+                    Text("\(timeRange.label) · \(periodSessionCount) \(pulseText("个会话", "sessions")) · \(periodActiveDays) \(pulseText("个活跃日", "active days")) · \(pulseText("词元", "tokens"))")
                         .font(.caption).foregroundColor(.secondary)
                     Text(I18n.t("dashboard.source_logs"))
                         .font(.caption2).foregroundColor(.secondary)
@@ -835,11 +890,13 @@ struct DashboardView: View {
 
             // ── Eyes + nose ──
             HStack(alignment: .top, spacing: 12) {
-                providerExpenseDonut(actualSpend: actualSpend, subMonthly: subMonthly)
+                toolTokenDonut()
 
                 // Nose: code lines
                 VStack(spacing: 6) {
                     noseStatCards
+                    Text("\(ChartMath.compactCount(Int64(periodCommitCount))) \(I18n.t("dashboard.commits"))")
+                        .font(.caption2).foregroundColor(.secondary).monospacedDigit()
                 }
                 .frame(width: 100)
 
@@ -852,19 +909,15 @@ struct DashboardView: View {
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
-    /// Left eye: expense donut — balance deltas per provider (facts), with the
-    /// subscription fixed cost as the eyebrow label.
+    /// Left eye: observed token share by AI tool. Money and subscriptions do
+    /// not enter the robot face.
     @ViewBuilder
-    func providerExpenseDonut(actualSpend: Double, subMonthly: Double) -> some View {
-        // Subscription participates as a fixed-cycle share (like a balance
-        // delta) so the cost composition has both factual expense kinds.
-        let subscriptionSegment: [DonutItem] = subMonthly > 0.001
-            ? [DonutItem(label: I18n.t("dashboard.sub_label"), cost: subMonthly, pct: 0, color: .secondary)]
-            : []
-        let rawSegments = balanceSpend.map {
-            DonutItem(label: $0.name, cost: $0.spend, pct: 0, color: .secondary)
-        } + subscriptionSegment
-        let totalCost = actualSpend + subMonthly
+    func toolTokenDonut() -> some View {
+        let rawSegments = (activeSnapshot?.toolBreakdown ?? []).compactMap { item -> DonutItem? in
+            guard let tokens = item.tokens, tokens > 0 else { return nil }
+            return DonutItem(label: item.name, cost: Double(tokens), pct: 0, color: .secondary)
+        }
+        let totalCost = rawSegments.reduce(0) { $0 + $1.cost }
         let segments = Self.topSegments(
             Self.renderableDonutSegments(rawSegments)
         ).enumerated().map { i, s in
@@ -876,21 +929,20 @@ struct DashboardView: View {
             ZStack {
                 if !segments.isEmpty {
                     Chart(segments) { item in
-                        let isUsage = item.label == I18n.t("dashboard.sub_label")
-                            ? false
-                            : providerSourceKinds[providerId(for: item.label)] == "usage"
-                        SectorMark(angle: .value("Cost", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
-                            .foregroundStyle(item.color.opacity(isUsage ? 0.45 : 1))
+                        SectorMark(angle: .value("Tokens", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                            .foregroundStyle(item.color)
                     }
                     .chartLegend(.hidden)
                     .chartForegroundStyleScale(
                         domain: segments.map(\.label),
                         range: segments.map(\.color))
                     .frame(width: 120, height: 120)
+                    .id("tool-\(timeRange.cacheKey)")
+                    .transaction { $0.animation = nil }
                 } else {
                     emptyDonut()
                 }
-                Text("$\(String(format: "%.2f", totalCost))")
+                Text(tokenShort(Int(clamping: Int64(totalCost))))
                     .font(.system(size: Self.donutCenterFontSize(for: totalCost), weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.deepRed)
             }
@@ -907,7 +959,6 @@ struct DashboardView: View {
             }
         }
         .frame(maxWidth: 150)
-        .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.15), value: barProgress)
     }
 
     /// Right eye: usage donut — token share per repo (log facts). Users often
@@ -938,6 +989,8 @@ struct DashboardView: View {
                         domain: segments.map(\.label),
                         range: segments.map(\.color))
                     .frame(width: 120, height: 120)
+                    .id("repo-\(timeRange.cacheKey)")
+                    .transaction { $0.animation = nil }
                 } else {
                     emptyDonut()
                 }
@@ -958,7 +1011,6 @@ struct DashboardView: View {
             }
         }
         .frame(maxWidth: 150)
-        .animation(.spring(response: 0.55, dampingFraction: 0.7).delay(0.2), value: barProgress)
     }
 
     /// Canonical four-color donut palette (deepRed / marsGreen / deepRed2 /
@@ -1009,20 +1061,29 @@ struct DashboardView: View {
 
     /// A subscription quota row shown in the Today "remaining" block.
     /// e.g. "Claude ████░░ 45%  1h 20m" — utilization bar + countdown to next reset.
-    func quotaRow(toolId: String, data: (percent: Double, limitStatus: String, resetAt: Double, windowSeconds: Double)) -> some View {
-        let icon = toolId.contains("claude") ? "sparkles" : "bubble.left.and.bubble.right"
+    func quotaRow(data: QuotaStatusItem) -> some View {
+        let icon = data.toolId.contains("claude") ? "sparkles" : "bubble.left.and.bubble.right"
+        let stale = data.isStale()
+        let windowSuffix = data.windowId.map { " · \($0)" } ?? ""
         return HStack(spacing: 6) {
-            Image(systemName: icon).font(.caption2).foregroundColor(quotaColor(for: data.percent))
-            Text(toolDisplayName(toolId)).font(.caption).foregroundColor(.secondary).lineLimit(1)
+            Image(systemName: icon).font(.caption2)
+                .foregroundColor(stale ? .secondary : quotaColor(for: data.utilization))
+            Text(toolDisplayName(data.toolId) + windowSuffix)
+                .font(.caption).foregroundColor(.secondary).lineLimit(1)
             Spacer()
-            usageBarView(percent: data.percent)
-            if data.resetAt > 0 {
+            if stale {
+                Text(I18n.t("dashboard.quota_stale"))
+                    .font(.caption2).foregroundColor(.secondary)
+            } else {
+                usageBarView(percent: data.utilization)
+            }
+            if !stale, data.resetAt > 0 {
                 Text(resetCountdownText(data.resetAt))
                     .font(.caption2).monospacedDigit().foregroundColor(.secondary)
             }
         }
         .help(String(format: I18n.t("dashboard.quota_help"),
-                     (data.percent / 100).formatted(.percent.precision(.fractionLength(0))),
+                     (data.utilization / 100).formatted(.percent.precision(.fractionLength(0))),
                      data.limitStatus))
     }
 
@@ -1030,40 +1091,11 @@ struct DashboardView: View {
         IntegrationRegistry.toolDisplayName(for: toolId)
     }
 
-    /// Load subscription quota state (utilization + next reset) from quota_status.
+    /// Load independent subscription quota windows with observation freshness.
     /// Independent of whether the user configured a subscription tier.
     private func loadUsageData() async {
         guard !isDemoMode else { return }
-        do {
-            let rows = try await AppDatabase.shared.read { db -> [(String, Double, String, Double, Double)] in
-                try Row.fetchAll(db, sql: """
-                    SELECT tool_id, utilization, limit_status, reset_at, window_seconds
-                    FROM quota_status
-                    """).map { r in
-                    (r["tool_id"] as String? ?? "",
-                     r["utilization"] as Double? ?? 0,
-                     r["limit_status"] as String? ?? "",
-                     r["reset_at"] as Double? ?? 0,
-                     r["window_seconds"] as Double? ?? 0)
-                }
-            }
-            var map: [String: (percent: Double, limitStatus: String, resetAt: Double, windowSeconds: Double)] = [:]
-            for (id, pct, status, resetAt, window) in rows where !id.isEmpty {
-                map[id] = (pct, status, resetAt, window)
-            }
-            let unchanged = map.count == usageData.count && map.allSatisfy { key, next in
-                guard let current = usageData[key] else { return false }
-                return current.percent == next.percent
-                    && current.limitStatus == next.limitStatus
-                    && current.resetAt == next.resetAt
-                    && current.windowSeconds == next.windowSeconds
-            }
-            if !unchanged {
-                usageData = map
-            }
-        } catch {
-            Logger.debug("Dashboard: loadUsageData failed: \(error)")
-        }
+        usageData = await StatsService.latestQuotaStatus()
     }
 
     struct DonutItem: Identifiable {
@@ -1092,6 +1124,144 @@ struct DashboardView: View {
 
     private func toolIdToDisplay(_ id: String) -> String? {
         IntegrationRegistry.toolDisplayName(for: id)
+    }
+
+    // MARK: - Pulse rhythm and factual context
+
+    private var tokenRhythmValues: [Double] {
+        if timeRange == .today {
+            var hours = Array(repeating: 0.0, count: 24)
+            let cal = Calendar.current
+            let today = cal.startOfDay(for: Date())
+            for stat in dailyStats {
+                let date = stat.date
+                guard date >= today else { continue }
+                let hour = cal.component(.hour, from: date)
+                hours[hour] += Double(max(stat.tokens, 0))
+            }
+            return hours
+        }
+        return padStats(dailyStats, days: chartDays).map { Double(max($0.tokens, $0.calls, 0)) }
+    }
+
+    private var codeRhythmValues: [Double] {
+        if timeRange == .today {
+            var hours = Array(repeating: 0.0, count: 24)
+            let cal = Calendar.current
+            let today = cal.startOfDay(for: Date())
+            for change in codeChanges where cal.isDate(change.date, inSameDayAs: today) {
+                let hour = cal.component(.hour, from: change.date)
+                hours[hour] += Double(max(change.added + change.deleted, 0))
+            }
+            return hours
+        }
+        return paddedChanges.map { Double(max($0.added + $0.deleted, 0)) }
+    }
+
+    @ViewBuilder
+    private func rhythmRow(
+        label: String,
+        values: [Double],
+        color: Color,
+        growsDownward: Bool = false
+    ) -> some View {
+        let slotCount = timeRange == .today ? 24 : chartDays
+        let displayedValues = Array((values + Array(repeating: 0, count: slotCount)).prefix(slotCount))
+        let peak = max(displayedValues.max() ?? 0, 1)
+        VStack(alignment: .leading, spacing: 4) {
+            if growsDownward {
+                Text(label).font(.caption2).foregroundColor(.secondary)
+            }
+            HStack(alignment: growsDownward ? .top : .bottom, spacing: timeRange == .today ? 3 : 5) {
+                ForEach(Array(displayedValues.enumerated()), id: \.offset) { _, value in
+                    Capsule()
+                        .fill(value > 0 ? color : Color.secondary.opacity(0.14))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: max(3, 26 * value / peak))
+                }
+            }
+            .frame(height: 28, alignment: growsDownward ? .top : .bottom)
+            if !growsDownward {
+                Text(label).font(.caption2).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var activityRhythmSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(pulseText("消费节奏", "Consumption rhythm"))
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Text(timeRange == .today ? pulseText("按小时", "hourly") : pulseText("按天", "daily"))
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            rhythmRow(
+                label: pulseText("词元活动", "Token activity"),
+                values: tokenRhythmValues,
+                color: .marsGreen,
+                growsDownward: true)
+            rhythmRow(
+                label: pulseText("代码变化", "Code changes"),
+                values: codeRhythmValues,
+                color: .deepRed2)
+            if timeRange == .today {
+                let added = codeChanges.reduce(0) { $0 + $1.added }
+                let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
+                if added > 0 || deleted > 0 {
+                HStack {
+                    Text(pulseText("今日代码变化", "Code changes today"))
+                    Spacer()
+                    Text("+\(ChartMath.compactCount(Int64(added))) / -\(ChartMath.compactCount(Int64(deleted)))")
+                        .monospacedDigit()
+                }
+                .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private var pulseFactsSection: some View {
+        let observed = (activeSnapshot?.observedSpend ?? []).filter { $0.amount > 0 }
+        let freshQuotas = (activeSnapshot?.quotaStatus ?? usageData).filter { !$0.isStale() }
+        VStack(alignment: .leading, spacing: 10) {
+            Text(timeRange == .days30
+                 ? pulseText("近 30 天的订阅与工具使用", "Subscription and tool use · 30 days")
+                 : pulseText("已观察到的事实", "Observed facts"))
+                .font(.caption).foregroundColor(.secondary)
+
+            if timeRange == .days30 {
+                HStack(spacing: 14) {
+                    Label("\(periodActiveDays) \(pulseText("个活跃日", "active days"))", systemImage: "calendar")
+                    Label("\(periodSessionCount) \(pulseText("个会话", "sessions"))", systemImage: "bubble.left.and.bubble.right")
+                    Label("\(tokenShort(todayTokens)) \(pulseText("词元", "tokens"))", systemImage: "waveform.path.ecg")
+                }
+                .font(.caption).foregroundColor(.secondary)
+            }
+
+            ForEach(observed, id: \.providerId) { item in
+                HStack {
+                    Text(ProviderRegistry.byId(item.providerId)?.name ?? item.providerId)
+                    Spacer()
+                    Text("\(item.currency.uppercased()) \(String(format: "%.2f", item.amount))")
+                        .monospacedDigit()
+                }
+                .font(.caption)
+            }
+            ForEach(freshQuotas, id: \.stableId) { quota in quotaRow(data: quota) }
+
+            if observed.isEmpty && freshQuotas.isEmpty && timeRange != .days30 {
+                Text(pulseText("这个时段没有可确认的扣费或新鲜额度数据。", "No confirmed charge or fresh quota was observed in this period."))
+                    .font(.caption).foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - Output section
@@ -1127,19 +1297,21 @@ struct DashboardView: View {
         }
         let grandTotal = matrixRows.reduce(Int64(0)) { $0 + $1.tokens }
 
-        VStack(spacing: 12) {
-            // ── Tool × model matrix ("mouth") ──
-            if !matrixRows.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Grid(alignment: .trailing, horizontalSpacing: 1, verticalSpacing: 1) {
+        // ── Tool × model matrix ──
+        if !matrixRows.isEmpty {
+            VStack(spacing: 12) {
+                Text(I18n.t("dashboard.by_tool_model"))
+                    .font(.caption).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Grid(alignment: .trailing, horizontalSpacing: 1, verticalSpacing: 1) {
 	                        GridRow {
-	                            Text(I18n.t("dashboard.by_tool_model"))
+	                            Text(I18n.t("dashboard.model"))
 	                                .font(.caption2).bold().foregroundColor(.secondary)
-	                                .dashboardTableCell(isHeader: true)
+	                                .dashboardTableCell(isHeader: true, alignment: .leading)
 	                            ForEach(toolIds, id: \.self) { t in
 	                                Text(toolIdToDisplay(t) ?? t)
 	                                    .font(.caption2).bold().foregroundColor(.secondary).lineLimit(1)
-	                                    .dashboardTableCell(isHeader: true, alignment: .leading)
+	                                    .dashboardTableCell(isHeader: true, alignment: .trailing)
 	                                    .contentShape(Rectangle())
 	                                    .onTapGesture { selectedToolForOverlay = t }
 	                                    .pointingHandCursor()
@@ -1184,26 +1356,14 @@ struct DashboardView: View {
 	                                .font(.caption).bold().monospacedDigit()
 	                                .dashboardTableCell(rowIndex: modelNames.count)
 	                            }
-	                    }
-                    .frame(maxWidth: .infinity)
                 }
-                .padding(12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .frame(maxWidth: .infinity)
             }
-
-            // ── Mouth line — short horizontal connector ──
-            HStack(spacing: 0) {
-                Spacer()
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.marsGreen.opacity(0.2))
-                    .frame(width: 60, height: 3)
-                Spacer()
-            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.separator.opacity(0.15), lineWidth: 0.5))
         }
-        .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
     // MARK: - Body sections
@@ -1226,13 +1386,16 @@ struct DashboardView: View {
                         Text(I18n.t("dashboard.repo"))
                             .font(.caption2).bold().foregroundColor(.secondary)
                             .dashboardTableCell(isHeader: true, alignment: .leading)
-                        Text("Token")
+                        Text(I18n.t("dashboard.chart_tokens"))
                             .font(.caption2).bold().foregroundColor(.secondary)
                             .dashboardTableCell(isHeader: true)
                         Text(I18n.t("dashboard.code_added"))
                             .font(.caption2).bold().foregroundColor(.secondary)
                             .dashboardTableCell(isHeader: true)
                         Text(I18n.t("dashboard.code_deleted"))
+                            .font(.caption2).bold().foregroundColor(.secondary)
+                            .dashboardTableCell(isHeader: true)
+                        Text(I18n.t("dashboard.commits"))
                             .font(.caption2).bold().foregroundColor(.secondary)
                             .dashboardTableCell(isHeader: true)
                     }
@@ -1249,6 +1412,9 @@ struct DashboardView: View {
                                 .dashboardTableCell(rowIndex: idx)
                             Text("-\(r.deleted)")
                                 .font(.caption).monospacedDigit().foregroundColor(.red)
+                                .dashboardTableCell(rowIndex: idx)
+                            Text(ChartMath.compactCount(Int64(r.commits)))
+                                .font(.caption).monospacedDigit()
                                 .dashboardTableCell(rowIndex: idx)
                         }
                     }
@@ -1381,25 +1547,6 @@ struct DashboardView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
             }
-            // Subscription cycle — fixed cost + time position, never amortized.
-            if let start = subscriptionCycle.start, let period = subscriptionCycle.periodDays {
-                let progress = StatsService.subscriptionProgress(start: start, periodDays: period, now: Date())
-                let subDaily = ChartMath.finite(StatsService.subscriptionDailyAmortization(), fallback: 0)
-                let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-                let subMonthly = subDaily * daysInMonth
-                let resetText = progress.nextReset.map {
-                    $0.formatted(.dateTime.month(.abbreviated).day())
-                } ?? "—"
-                HStack(spacing: 6) {
-                    Text("\(I18n.t("dashboard.sub_label")) \(String(format: "$%.0f", subMonthly))/\(I18n.t("dashboard.month"))")
-                        .font(.caption).fontWeight(.medium)
-                    Spacer()
-                    Text(String(format: I18n.t("dashboard.cycle_progress"), progress.elapsedDays, progress.totalDays))
-                        .font(.caption2).foregroundColor(.secondary)
-                    Text(String(format: I18n.t("dashboard.cycle_reset"), resetText))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-            }
             // API balances — bar length is relative to the largest balance in the
             // list (balances have no limit to derive a % from).
             ForEach(balances, id: \.providerId) { item in
@@ -1425,10 +1572,8 @@ struct DashboardView: View {
                 }
             }
             // Subscription quotas (Claude / Copilot window utilization + reset)
-            ForEach(Array(usageData.keys.sorted()), id: \.self) { toolId in
-                if let d = usageData[toolId] {
-                    quotaRow(toolId: toolId, data: d)
-                }
+            ForEach(usageData, id: \.stableId) { data in
+                quotaRow(data: data)
             }
         }
     }
@@ -1801,19 +1946,12 @@ struct DashboardView: View {
 
     /// Format integer to short form (e.g. "1K", "15K", "1M", "980").
     func shortNum(_ n: Int) -> String {
-        if n >= 1_000_000 { return "\(n / 1_000_000)M" }
-        if n >= 1_000     { return "\(n / 1_000)K" }
-        return "\(n)"
+        ChartMath.compactCount(Int64(n))
     }
 
     /// Format token count to short human-readable form (e.g. "12.3K", "1.2M").
     static func formattedTokenCount(_ tokens: Int) -> String {
-        if tokens >= 1_000_000 {
-            return String(format: "%.1fM", Double(tokens) / 1_000_000)
-        } else if tokens >= 1_000 {
-            return String(format: "%.1fK", Double(tokens) / 1_000)
-        }
-        return "\(tokens)"
+        ChartMath.compactCount(Int64(tokens))
     }
 
     func tokenShort(_ tokens: Int) -> String {
@@ -1932,6 +2070,15 @@ struct DashboardView: View {
         startEntryAnimation()
     }
 
+    /// Each range owns its own task. Switching tabs only changes which snapshot
+    /// is projected by `activeSnapshot`; it never cancels or overwrites another
+    /// range's in-memory data.
+    @MainActor
+    private func scheduleLoad(for range: TimeRange) {
+        rangeLoadTasks[range]?.cancel()
+        rangeLoadTasks[range] = Task { await load(range: range) }
+    }
+
     @MainActor
     private func startEntryAnimation() {
         entryAnimationToken += 1
@@ -1977,8 +2124,12 @@ struct DashboardView: View {
             await storeSnapshot(snap, for: item.range)
         }
         triggerCloudSync()
-        // Invalidate any in-flight load so the cache we just wrote is used
-        loadGeneration += 1
+        // Invalidate only each range's own older request. The three snapshots
+        // remain independent and resident in memory.
+        for range in TimeRange.allCases {
+            rangeLoadTasks[range]?.cancel()
+            loadGenerationByRange[range, default: 0] += 1
+        }
         NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
     }
 
@@ -2026,7 +2177,8 @@ struct DashboardView: View {
                        tokens: 0,
                        netLines: $0.added - $0.deleted,
                        added: $0.added,
-                       deleted: $0.deleted)
+                       deleted: $0.deleted,
+                       commits: $0.commits)
         }
         let balanceDaily = data.dailyBalanceSpend.map { date, spend in
             TrendPoint(ts: date.timeIntervalSince1970,
@@ -2057,7 +2209,8 @@ struct DashboardView: View {
                                 cost: repo.cost,
                                 added: repo.added,
                                 deleted: repo.deleted,
-                                cpl: totalChanges > 0 ? repo.cost * 1000 / Double(totalChanges) : 0)
+                                cpl: totalChanges > 0 ? repo.cost * 1000 / Double(totalChanges) : 0,
+                                commits: repo.commits)
             },
             prediction: PredictionItem(monthProjected: data.prediction.monthProjected,
                                        dailyRate: data.prediction.dailyRate,
@@ -2070,17 +2223,15 @@ struct DashboardView: View {
     }
 
     @MainActor
-    func load() async {
-        // Every request runs (tab switch / refresh / data-change) — a hard
-        // isLoading mutex would drop the newest tab's request while a slow load
-        // is in flight, stranding the dashboard on the previous range. Instead
-        // loadGeneration is the only gate: a stale generation discards itself.
-        loadGeneration += 1
-        let myGen = loadGeneration
-        let requestedRange = timeRange  // capture this request's range so data can't drift tabs
+    func load(range requestedRange: TimeRange) async {
+        // Today / Week / 30d are three independent in-memory channels. A newer
+        // request invalidates only an older request for the same range.
+        loadGenerationByRange[requestedRange, default: 0] += 1
+        let myGen = loadGenerationByRange[requestedRange, default: 0]
 
-        await loadUsageData()
-        guard myGen == loadGeneration else { return }
+        if requestedRange == timeRange { await loadUsageData() }
+        guard !Task.isCancelled,
+              myGen == loadGenerationByRange[requestedRange, default: 0] else { return }
 
         // ── Cache check — skip on initial load to avoid stale-data flash ──
         // Max age matches Phase 4 refresh intervals: today=5min, week=1h, 30d=12h
@@ -2088,7 +2239,8 @@ struct DashboardView: View {
             switch requestedRange { case .today: return 300; case .thisWeek: return 3600; default: return 43200 }
         }()
         if let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: cacheMaxAge) {
-            guard myGen == loadGeneration else { return }
+            guard !Task.isCancelled,
+                  myGen == loadGenerationByRange[requestedRange, default: 0] else { return }
             // Debounce data-change reloads only when staying on the same range;
             // a tab switch must always apply the new range's snapshot.
             if loadedTimeRange == requestedRange,
@@ -2096,7 +2248,7 @@ struct DashboardView: View {
                 // Hydration can restore the current range before this first
                 // load runs; show it immediately instead of leaving entry
                 // progress at zero.
-                animateBarIfNeeded()
+                if requestedRange == timeRange { animateBarIfNeeded() }
                 return
             }
             await storeSnapshot(cached, for: requestedRange)
@@ -2109,22 +2261,24 @@ struct DashboardView: View {
         if demoActive {
             let d = DemoData.data(for: requestedRange)
             let snap = Self.demoSnapshot(d, for: requestedRange)
-            guard myGen == loadGeneration else { return }
+            guard !Task.isCancelled,
+                  myGen == loadGenerationByRange[requestedRange, default: 0] else { return }
             rangeSnapshots[requestedRange] = snap
             demoRanges.insert(requestedRange)
-            animateBarIfNeeded()
+            if requestedRange == timeRange { animateBarIfNeeded() }
             return
         }
         
         // ── Real data: use shared StatsService builder ──
         let snap = await StatsService.dashboardSnapshot(days: requestedRange.days)
 
-        guard myGen == loadGeneration else { return }
+        guard !Task.isCancelled,
+              myGen == loadGenerationByRange[requestedRange, default: 0] else { return }
 
         await storeSnapshot(snap, for: requestedRange)
 
         // ── Trigger entry animations (only when bars were reset by tab switch) ──
-        animateBarIfNeeded()
+        if requestedRange == timeRange { animateBarIfNeeded() }
     }
 
     @MainActor

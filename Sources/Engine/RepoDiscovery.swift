@@ -8,15 +8,14 @@ enum RepoDiscovery {
     /// - Returns: Number of newly discovered (and registered) repos.
     @discardableResult
     static func scan() -> Int {
-        let dirs = UserDefaults.standard.stringArray(forKey: "repo_search_dirs")
-            ?? ["~/dev", "~/projects", "~/code"]
+        let dirs = RepositoryScope.configuredRoots()
+        GitMonitor.shared.pruneWatchedRepos(outside: dirs)
         let known = GitMonitor.shared.watchedRepoPaths
         var found = 0
 
         for dir in dirs {
-            let expanded = NSString(string: dir).expandingTildeInPath
-            guard FileManager.default.fileExists(atPath: expanded) else { continue }
-            found += scanDirectory(URL(fileURLWithPath: expanded), known: known)
+            guard FileManager.default.fileExists(atPath: dir) else { continue }
+            found += scanDirectory(URL(fileURLWithPath: dir), known: known)
         }
         return found
     }

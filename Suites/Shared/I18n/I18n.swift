@@ -1,4 +1,5 @@
 import Foundation
+import AIPulseShared
 
 /// Multi-language i18n for iOS/watchOS — 10 languages matching macOS.
 enum I18n {
@@ -81,7 +82,7 @@ enum I18n {
             "time.today": "今日", "time.week": "本周", "time.30d": "30 天",
             "dashboard.total": "合计", "dashboard.net_lines": "净增行",
             "dashboard.added": "新增行", "dashboard.deleted": "删除行",
-            "dashboard.calls": "请求次数", "dashboard.tokens": "Token",
+            "dashboard.calls": "请求次数", "dashboard.tokens": "词元",
             "dashboard.sub_vs_api": "订阅 · API", "dashboard.by_tool": "按开发工具",
             "dashboard.by_repo": "按仓库", "dashboard.by_provider": "按供应商",
             "dashboard.daily_trend": "每日趋势", "dashboard.no_data": "暂无数据",
@@ -725,5 +726,42 @@ enum I18n {
     static func t(_ key: String) -> String {
         let dict = strings[lang] ?? strings["en"]!
         return dict[key] ?? strings["en"]?[key] ?? key
+    }
+
+    static func pulseTier(_ tier: PulseTier) -> String {
+        guard lang == "zh-Hans" else { return tier.rawValue.capitalized }
+        switch tier {
+        case .resting: return "平静"
+        case .active: return "活跃"
+        case .elevated: return "升高"
+        case .intense: return "强烈"
+        }
+    }
+
+    static func pulseReason(_ pulse: PulseSnapshot) -> String {
+        let reason = pulse.reason
+        if let factor = multiplier(in: reason, prefix: "token_rate_") {
+            return lang == "zh-Hans" ? "词元速率为平时的 \(factor) 倍" : "Token rate is \(factor)× your usual pace"
+        }
+        if reason.hasPrefix("quota_"), reason.hasSuffix("_percent") {
+            let value = reason.dropFirst(6).dropLast(8).split(separator: "_").first ?? "0"
+            return lang == "zh-Hans" ? "额度已使用 \(value)%" : "Quota is \(value)% used"
+        }
+        switch pulse.primarySignal {
+        case .activity: return lang == "zh-Hans" ? "AI 活动高于平时节奏" : "AI activity is above your usual pace"
+        case .observedSpend: return lang == "zh-Hans" ? "真实消费高于平时节奏" : "Observed spend is above your usual pace"
+        case .quota: return lang == "zh-Hans" ? "服务商额度正在承受压力" : "A provider quota is under pressure"
+        case .attributedOutput: return lang == "zh-Hans" ? "归因产出高于平时节奏" : "Attributed output is above your usual pace"
+        case .none: return lang == "zh-Hans" ? "近期没有 AI 活动" : "No recent AI activity"
+        }
+    }
+
+    private static func multiplier(in reason: String, prefix: String) -> String? {
+        guard reason.hasPrefix(prefix), reason.hasSuffix("x") else { return nil }
+        let raw = String(reason.dropFirst(prefix.count).dropLast())
+            .replacingOccurrences(of: "cold_start_", with: "")
+        let pieces = raw.split(separator: "_")
+        guard pieces.count == 2, pieces.allSatisfy({ Int($0) != nil }) else { return nil }
+        return "\(pieces[0]).\(pieces[1])"
     }
 }

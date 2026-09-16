@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import AIPulseShared
+import GRDB
 
 /// Injected phase-1 ingestion actions so tests can drive the coordinator
 /// without touching real log directories, repository scans, or status caches.
@@ -22,6 +23,16 @@ struct IngestActions: Sendable {
     )
 }
 
+/// One newly observed AI activity occurrence. It gates sound playback; amounts
+/// are retained for factual context but no longer grade the sound.
+struct ConsumptionEvent {
+    var spendUSD: Double?
+    var tokens: Int?
+    var source: String
+
+    var isEmpty: Bool { (spendUSD ?? 0) <= 0 && (tokens ?? 0) <= 0 }
+}
+
 /// Centralized scheduler that replaces scattered independent timers.
 ///
 /// Three ingestion phases run at staggered intervals:
@@ -41,17 +52,16 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     private var phase2Timer: DispatchSourceTimer?
     private var phase3Timer: DispatchSourceTimer?
     private var phase4Timer: DispatchSourceTimer?
+    private var pulseTimer: DispatchSourceTimer?
     private var pendingNotifyWorkItem: DispatchWorkItem?
-    private var pendingPlaySound = false  // sticky: true if any caller wants sound
+    /// Consumption events accumulated across debounce/suppression windows.
+    /// Main-thread only: every writer hops through DispatchQueue.main.async.
+    private var pendingEvents: [ConsumptionEvent] = []
     private var lastNotifyTime: Date = .distantPast
     private let notifyQueue = DispatchQueue(label: "com.wxy.aipulse.coordinator", qos: .utility)
     private var screenSleepObserver: NSObjectProtocol?
     private var screenWakeObserver: NSObjectProtocol?
     private var stopped = false
-    /// Formatted today spend at the last sound-triggered notification.
-    /// Compared against the current formatted value so the coin sound only
-    /// plays when the dock badge label would actually change.
-    private var lastSoundBadgeLabel: String = ""
 
     /// Minimum interval between consecutive .dataDidChange posts.
     /// Prevents the staggered startup phases (5s/10s/15s) and rapid
@@ -99,7 +109,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         screenSleepObserver = nil; screenWakeObserver = nil
         cancelAllTimers()
         stopped = true
-        pendingPlaySound = false
+        pendingEvents.removeAll()
         lastNotifyTime = .distantPast
         Logger.info("DataRefreshCoordinator: stopped")
     }
@@ -129,6 +139,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         phase2Timer?.cancel(); phase2Timer = nil
         phase3Timer?.cancel(); phase3Timer = nil
         phase4Timer?.cancel(); phase4Timer = nil
+        pulseTimer?.cancel(); pulseTimer = nil
         pendingNotifyWorkItem?.cancel(); pendingNotifyWorkItem = nil
         notifyTask?.cancel(); notifyTask = nil
     }
@@ -147,6 +158,12 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         }
         phase4Timer = makeTimer(interval: .seconds(300), firstDeadline: .now() + 20) { [weak self] in
             DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.runPhase4() } }
+        }
+        // Pulse decay is time-based. This cheap tick only invalidates the
+        // derived snapshot and refreshes perception consumers; it never scans
+        // sources or plays sound.
+        pulseTimer = makeTimer(interval: .seconds(30), firstDeadline: .now() + 30) { [weak self] in
+            DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.runPulseTick() } }
         }
     }
 
@@ -173,6 +190,57 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
             Logger.info("RepoDiscovery: found \(discovered) new repo(s)")
         }
         // LogWatcher.insertEvent() pushes notifyPhaseIngest() with playSound: true
+        maybeRingClosingBell()
+    }
+
+    // MARK: - WI-7: closing bell (日终收盘)
+
+    /// Lazy daily check riding the 30s phase-1 tick — no new timer. Fires at
+    /// most once per calendar day, and only when something was actually spent.
+    private func maybeRingClosingBell() {
+        let d = UserDefaults.standard
+        guard d.object(forKey: "closing_bell_enabled") as? Bool ?? true else { return }
+        let now = Date()
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: now)
+        let dayKey = String(Int64(dayStart.timeIntervalSince1970 * 1000))
+        guard d.string(forKey: "closing_bell_last_fired") != dayKey else { return }
+        let minutesNow = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
+        let closingMinutes = SoundSettings.parseHM(d.string(forKey: "closing_bell_time") ?? "21:30")
+            ?? 21 * 60 + 30
+        guard minutesNow >= closingMinutes else { return }
+        Task { @MainActor in
+            let todayStartMs = Int64(dayStart.timeIntervalSince1970 * 1000)
+            async let observed = StatsService.observedSpendItems(sinceMs: todayStartMs)
+            async let quota = StatsService.latestQuotaStatus()
+            async let counts = AppDatabase.shared.read { db in
+                let tokens = try Int64.fetchOne(db, sql: """
+                    SELECT COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0)
+                    FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
+                    """, arguments: [todayStartMs]) ?? 0
+                let lines = try Int.fetchOne(db, sql: """
+                    SELECT COALESCE(SUM(MAX(added, 0) + MAX(deleted, 0)), 0)
+                    FROM code_change WHERE ts >= ? AND attribution IS NOT NULL
+                    """, arguments: [todayStartMs]) ?? 0
+                return (tokens, lines)
+            }
+            let pulse = await PulseEngine.shared.snapshot()
+            let (spend, quotas, output) = await (observed, quota, try? counts)
+            let freshQuota = quotas.filter {
+                guard let updatedAt = $0.updatedAt else { return false }
+                return now.timeIntervalSince1970 - updatedAt <= PulseEngine.quotaMaxAge
+            }.map(\.utilization).max()
+            let summary = ClosingBellSummary(
+                tier: pulse?.tier ?? .resting,
+                reason: pulse?.reason ?? "no_recent_signal",
+                activityTokens: output?.0 ?? 0,
+                observedSpend: spend,
+                quotaPercent: freshQuota,
+                attributedLines: output?.1 ?? 0)
+            guard summary.hasActivity else { return }
+            d.set(dayKey, forKey: "closing_bell_last_fired")
+            await ClosingBell.fire(summary: summary, at: now)
+        }
     }
 
     private func runPhase2() {
@@ -223,75 +291,110 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         }
     }
 
+    private func runPulseTick() {
+        guard !stopped else { return }
+        Task { @MainActor in
+            await PulseEngine.shared.invalidate()
+            NotificationCenter.default.post(name: .pulseDidChange, object: nil)
+        }
+    }
+
     // MARK: - Push-change notification (called by ingestion modules)
 
-    /// Called by LogWatcher after a usage_event row is inserted.
-    func notifyPhaseIngest() {
+    /// Called by LogWatcher after usage_event rows are inserted, carrying the
+    /// batch's consumption totals — the coin sound's only log-side trigger.
+    func notifyPhaseIngest(_ event: ConsumptionEvent? = nil) {
         DiagnosticJournal.log("cache_invalidate", [
             "reason": .string("usage_event"),
         ])
         Task { await DashboardCache.invalidateAll() }
-        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify(playSound: true) } }
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                self?.appendEvent(event)
+                self?.scheduleUINotify()
+            }
+        }
     }
 
-    /// Called by GitMonitor after a code_change row is inserted.
+    /// Called by GitMonitor after a code_change row is inserted. Code changes
+    /// are not consumption events (v2 §4.2 — unattributed output never burns),
+    /// so this only refreshes UI.
     func notifyPhaseGitScan() {
-        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify(playSound: true) } }
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify() } }
     }
 
-    /// Called by ApiPoller after a balance_snapshot row is inserted.
+    /// Called by ApiPoller after a balance_snapshot row is inserted, optionally
+    /// carrying the detected spend delta.
     ///
     /// Balance deltas feed API spend in every dashboard range, but the cached
     /// snapshots refresh at different rates (today=5min, week=1h, 30d=12h).
     /// Without invalidation a new API delta would appear on Today within
     /// minutes while This Week keeps showing the pre-poll snapshot for up to
     /// an hour. Drop the caches so the next load recomputes from the new row.
-    func notifyPhaseBalance() {
+    func notifyPhaseBalance(_ event: ConsumptionEvent? = nil) {
         DiagnosticJournal.log("cache_invalidate", [
             "reason": .string("balance_snapshot"),
         ])
         Task { await DashboardCache.invalidateAll() }
-        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify(playSound: true) } }
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                self?.appendEvent(event)
+                self?.scheduleUINotify()
+            }
+        }
+    }
+
+    /// Main-thread only (all callers hop through DispatchQueue.main.async).
+    private func appendEvent(_ event: ConsumptionEvent?) {
+        guard let event, !event.isEmpty else { return }
+        // Quiet-time observations still update facts and pulse state, but they
+        // never enter the sound queue and therefore cannot replay in the
+        // morning if UI notification delivery was delayed.
+        let settings = SoundSettings.current()
+        guard !CoinSound.isQuietTime(Date(), settings: settings) else { return }
+        pendingEvents.append(event)
     }
 
     // MARK: - Debounce & dispatch
 
     private var notifyTask: Task<Void, Never>?
 
-    private func scheduleUINotify(playSound: Bool = false) {
+    private func scheduleUINotify() {
         guard !stopped else { return }
-        if playSound { pendingPlaySound = true }
         notifyTask?.cancel()
-        let shouldPlay = pendingPlaySound
         notifyTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
             guard let self, !Task.isCancelled else { return }
-            self.pendingPlaySound = false
-            self.notifyConsumers(playSound: shouldPlay)
+            self.notifyConsumers()
         }
     }
 
-    private func notifyConsumers(playSound: Bool = false) {
+    private func notifyConsumers() {
         let now = Date()
-        guard now.timeIntervalSince(lastNotifyTime) >= minNotifyInterval else {
-            Logger.debug("DataRefreshCoordinator: suppressing notify (last was \(String(format: "%.1f", now.timeIntervalSince(lastNotifyTime)))s ago)")
+        let elapsed = now.timeIntervalSince(lastNotifyTime)
+        guard elapsed >= minNotifyInterval else {
+            let delay = max(minNotifyInterval - elapsed, 0)
+            Logger.debug("DataRefreshCoordinator: delaying notify by \(String(format: "%.1f", delay))s")
+            // Keep the pending consumption events and guarantee delivery after
+            // the minimum interval. Previously they waited for an unrelated
+            // future event, which could make a legitimate coin beat disappear.
+            notifyTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self, !Task.isCancelled else { return }
+                self.notifyConsumers()
+            }
             return
         }
         lastNotifyTime = now
-        Logger.debug("DataRefreshCoordinator: posting .dataDidChange\(playSound ? " + sound" : "")")
-        NotificationCenter.default.post(name: .dataDidChange, object: nil)
-
-        guard playSound else { return }
+        Logger.debug("DataRefreshCoordinator: posting .dataDidChange (\(pendingEvents.count) consumption event(s))")
+        let events = pendingEvents
+        pendingEvents.removeAll()
         Task { @MainActor in
-            let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-            let spend = await StatsService.combinedSpend(sinceMs: todayStartMs)
-            let label = "$\(String(format: "%.2f", spend))"
-            if label != lastSoundBadgeLabel {
-                lastSoundBadgeLabel = label
-                CoinSound.playForDataChange()
-            } else {
-                Logger.debug("DataRefreshCoordinator: suppressing sound — badge unchanged at \(label)")
-            }
+            await PulseEngine.shared.invalidate()
+            NotificationCenter.default.post(name: .dataDidChange, object: nil)
+            guard !events.isEmpty else { return }
+            let pulse = await PulseEngine.shared.snapshot()
+            CoinSound.play(events: events, pulse: pulse)
         }
     }
 

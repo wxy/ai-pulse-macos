@@ -120,7 +120,9 @@ enum DemoData {
             let base = dailyBase(offset: -i)
             let added = Int(base * 55) + (isWeekend(d) ? 0 : Int(base * 8))
             let deleted = Int(base * 18) + (isWeekend(d) ? 0 : Int(base * 3))
-            return DailyCodeChange(date: d, added: max(0, added), deleted: max(0, deleted))
+            let commits = added + deleted > 0 ? max(1, (added + deleted) / 500) : 0
+            return DailyCodeChange(date: d, added: max(0, added), deleted: max(0, deleted),
+                                   commits: commits)
         }
     }()
 
@@ -141,6 +143,7 @@ enum DemoData {
         return repoData.map { r in
             RepoBreakdown(
                 repo: r.repo, cost: r.cost, added: r.added, deleted: r.deleted,
+                commits: max(1, (r.added + r.deleted) / 500),
                 apiSources: r.apiSources.map { CPLSource(label: $0.0, cpl: $0.1) },
                 subscriptionSources: r.subSources.map { CPLSource(label: $0.0, cpl: $0.1) }
             )

@@ -243,7 +243,11 @@ nonisolated final class ApiPoller: @unchecked Sendable {
             "usage_type": .bool(isUsageType),
         ])
 
-        // Play coin sound for detected spend
+        // Detected spend goes through the coordinator's consumption-event bus
+        // (WI-2) so the global throttle/quiet-hours rules apply to B-grade too.
+        // The event is delivered together with the snapshot insert's cache
+        // invalidation below; here we only surface the detected amounts.
+        var detectedConsumption: [ConsumptionEvent] = []
         for entry in safeEntries {
             let detected: Bool = if isUsageType {
                 (prevBalance.map { entry.totalBalance > $0 } ?? false)
@@ -252,7 +256,8 @@ nonisolated final class ApiPoller: @unchecked Sendable {
             }
             if detected, let prev = prevBalance {
                 let spend = isUsageType ? (entry.totalBalance - prev) : (prev - entry.totalBalance)
-                DispatchQueue.main.async { CoinSound.play(for: spend) }
+                detectedConsumption.append(ConsumptionEvent(
+                    spendUSD: spend > 0 ? spend : nil, tokens: nil, source: "balance:\(pid)"))
             }
         }
 
@@ -274,6 +279,7 @@ nonisolated final class ApiPoller: @unchecked Sendable {
 
         if !balancesToRecord.isEmpty {
             let shouldNotify = detectedSpend
+            let consumption = detectedConsumption
             Task {
                 for entry in balancesToRecord {
                     do {
@@ -292,7 +298,13 @@ nonisolated final class ApiPoller: @unchecked Sendable {
                     }
                 }
                 if shouldNotify {
-                    DataRefreshCoordinator.shared.notifyPhaseBalance()
+                    // Deliver at most one consumption event per poll (the sums),
+                    // after the snapshots actually landed.
+                    let total = consumption.compactMap { $0.spendUSD }.reduce(0, +)
+                    let event = ConsumptionEvent(
+                        spendUSD: total > 0 ? total : nil, tokens: nil,
+                        source: consumption.first?.source ?? "balance:\(pid)")
+                    DataRefreshCoordinator.shared.notifyPhaseBalance(event)
                 }
             }
         }

@@ -3,6 +3,14 @@ import XCTest
 import AIPulseShared
 
 final class ChartMathTests: XCTestCase {
+    func testCompactCountUsesKThroughTWithOneDecimal() {
+        XCTAssertEqual(ChartMath.compactCount(999), "999")
+        XCTAssertEqual(ChartMath.compactCount(1_000), "1.0K")
+        XCTAssertEqual(ChartMath.compactCount(1_250_000), "1.2M")
+        XCTAssertEqual(ChartMath.compactCount(2_700_000_000), "2.7G")
+        XCTAssertEqual(ChartMath.compactCount(3_000_000_000_000), "3.0T")
+        XCTAssertEqual(ChartMath.compactCount(-12_500), "-12.5K")
+    }
     @MainActor
     func testChartXDomainProvidesExplicitSpanForSingleDate() {
         let start = Calendar.current.startOfDay(for: Date())

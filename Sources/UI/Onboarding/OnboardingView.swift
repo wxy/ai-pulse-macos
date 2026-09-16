@@ -19,9 +19,10 @@ struct OnboardingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Step indicator
+            // Step indicator (v2 §4.7: 4 steps → 3 — tools auto-enable on
+            // detection, keys/plans live in Settings → 增强)
             HStack(spacing: 4) {
-                ForEach(0..<4, id: \.self) { i in
+                ForEach(0..<3, id: \.self) { i in
                     Circle()
                         .fill(i <= step ? Color.accentColor : Color.secondary.opacity(0.3))
                         .frame(width: 8, height: 8)
@@ -32,8 +33,6 @@ struct OnboardingView: View {
                 switch step {
                 case 0: welcomeStep
                 case 1: authorizeStep
-                case 2: devToolsStep
-                case 3: apiProvidersStep
                 default: doneStep
                 }
             }
@@ -50,7 +49,7 @@ struct OnboardingView: View {
                     Button(I18n.t("onboarding.back")) { step -= 1 }
                 }
                 Spacer()
-                if step < 4 {
+                if step < 2 {
                     Button(I18n.t("onboarding.next")) { step += 1 }
                 } else {
                     Button(I18n.t("onboarding.close")) { close() }
@@ -147,98 +146,9 @@ struct OnboardingView: View {
         runDetection()
     }
 
-    // MARK: - Step 1: Detection results
-
-    /// Step 1: AI providers — every supported apiKey integration, whether or
-    /// not a key is set yet (so the user can configure them here).
-    var apiProvidersStep: some View {
-        let items = detectionResults.filter {
-            IntegrationCategory.category(for: $0.0) == .apiKeys
-        }
-        return detectionList(title: I18n.t("settings.integrations_api"),
-                             hint: I18n.t("integrations.group_api_key_desc"),
-                             items: items)
-    }
-
-    /// Step 2: Dev tools — every supported tool (log/subscription). Home-based
-    /// tools report immediately; aider reads the shared scan cache. The live repo
-    /// count reflects the background fast scan of the dev directory.
-    var devToolsStep: some View {
-        let items = detectionResults.filter {
-            IntegrationCategory.category(for: $0.0) == .devTools
-        }
-        return VStack(alignment: .leading, spacing: 12) {
-            Text(I18n.t("settings.integrations_devtools")).font(.title3).fontWeight(.semibold)
-            Text(I18n.t("integrations.group_editors_desc"))
-                .font(.caption).foregroundColor(.secondary)
-
-            repoCountView
-
-            ScrollView {
-                VStack(spacing: 12) {
-                    ForEach(items, id: \.0.id) { (integration, result) in
-                        IntegrationRow(integration: integration, detected: result)
-                    }
-                    if items.isEmpty {
-                        Text(I18n.t("onboarding.no_tools"))
-                            .foregroundColor(.secondary).padding()
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 24)
-        .onReceive(NotificationCenter.default.publisher(for: RepoScanCache.didChange)) { _ in
-            runDetection()   // re-evaluate aider once the fast scan lands
-        }
-    }
-
-    @ViewBuilder
-    private var repoCountView: some View {
-        if let dev = selectedDevDir {
-            if let scan = RepoScanCache.shared.cachedScan(for: dev) {
-                // Fresh cache entry (even 0 repos) → terminal count state.
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
-                    Text(String(format: I18n.t("onboarding.repos_found"), scan.repos.count))
-                        .font(.caption)
-                    Spacer()
-                }
-                .padding(10)
-                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            } else {
-                // No fresh cache entry yet → scan still in flight.
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text(I18n.t("onboarding.repos_scanning")).font(.caption)
-                    Spacer()
-                }
-                .padding(10)
-                .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            }
-        }
-    }
-
-    private func detectionList(title: String, hint: String,
-                               items: [(any Detectable, DetectionResult)]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.title3).fontWeight(.semibold)
-            Text(hint).font(.caption).foregroundColor(.secondary)
-            ScrollView {
-                VStack(spacing: 12) {
-                    ForEach(items, id: \.0.id) { (integration, result) in
-                        IntegrationRow(integration: integration, detected: result)
-                    }
-                    if items.isEmpty {
-                        Text(I18n.t("onboarding.no_tools"))
-                            .foregroundColor(.secondary).padding()
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 24)
-    }
-
-    // MARK: - Step 3: Done
+    // MARK: - Step 2: Done
+    // v2 §4.7: the old devTools/apiProviders steps are gone — tools auto-enable
+    // on detection (zero-config), and keys/plans live in Settings → 增强.
 
     var doneStep: some View {
         let totalRepos = RepoScanCache.shared.totalRepos(
@@ -260,6 +170,17 @@ struct OnboardingView: View {
             if hasLogSource {
                 Text(I18n.t("onboarding.done_cpl"))
                     .font(.caption).foregroundColor(.secondary)
+            }
+            // v2 §4.7 盲区诚实化: direct-API usage leaves no local logs — say so
+            // once, and point at the optional (collapsed) enhancement section.
+            let hasApiKeyData = detectionResults.contains { r in
+                r.1.found && IntegrationCategory.category(for: r.0) == .apiKeys
+            }
+            if !hasApiKeyData {
+                Text(I18n.t("onboarding.blindspot_hint"))
+                    .font(.caption).foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
             }
             // Demo mode notice — shown when nothing was configured
             if !hasAnyConfig {

@@ -1,4 +1,5 @@
 import XCTest
+import GRDB
 @testable import AIPulse
 
 final class UsageMonitorTests: XCTestCase {
@@ -34,9 +35,7 @@ final class UsageMonitorTests: XCTestCase {
     func testParseClaudeStatusCacheEmptyUsage() {
         let json: [String: Any] = ["usageData": [:]]
         let result = UsageMonitor.parseClaudeStatusCache(json)
-        XCTAssertNotNil(result)
-        XCTAssertEqual(result?.utilization5h, 0.0)
-        XCTAssertEqual(result?.utilization7d, 0.0)
+        XCTAssertNil(result, "missing utilization is unknown, not observed zero")
     }
 
     func testParseClaudeStatusCacheMaxPicksHigher() {
@@ -52,8 +51,8 @@ final class UsageMonitorTests: XCTestCase {
         // UsageMonitor uses max(5h, 7d), verify both values are available
         XCTAssertEqual(result?.utilization5h, 0.9)
         XCTAssertEqual(result?.utilization7d, 0.3)
-        let pct = max(result!.utilization5h, result!.utilization7d) * 100
-        XCTAssertEqual(pct, 90.0)
+        XCTAssertEqual(result?.utilization5h, 0.9)
+        XCTAssertEqual(result?.utilization7d, 0.3)
     }
 
     // MARK: - Copilot API response parsing
@@ -117,5 +116,30 @@ final class UsageMonitorTests: XCTestCase {
         let result = UsageMonitor.parseCopilotResponse(json)
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.usedPercent, 100.0)
+    }
+
+    func testQuotaWindowsRemainIndependentAndClampUtilization() throws {
+        let dbQueue = try DatabaseQueue()
+        try dbQueue.write { db in
+            try AppDatabase.createAllTables(db)
+            try UsageMonitor.upsertQuotaWindow(
+                in: db, toolId: "claude-code", windowId: "5h",
+                utilization: 120, limitStatus: "limited", resetAt: 100,
+                windowSeconds: 18_000, updatedAt: 10)
+            try UsageMonitor.upsertQuotaWindow(
+                in: db, toolId: "claude-code", windowId: "7d",
+                utilization: 40, limitStatus: "normal", resetAt: 200,
+                windowSeconds: 604_800, updatedAt: 11)
+
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT window_id, utilization FROM quota_window_status
+                    WHERE tool_id = 'claude-code' ORDER BY window_id
+                    """)
+            XCTAssertEqual(rows.count, 2)
+            XCTAssertEqual(rows[0]["utilization"] as Double?, 100)
+            XCTAssertEqual(rows[1]["utilization"] as Double?, 40)
+        }
     }
 }

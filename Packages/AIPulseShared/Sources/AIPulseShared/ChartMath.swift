@@ -8,6 +8,22 @@ import Foundation
 /// every returned value is finite, and rendering values are non-negative.
 /// Shared by macOS, iOS, watchOS and the widget targets.
 public enum ChartMath {
+    /// Compact, unit-safe count formatting shared by every surface.
+    /// K/M/G/T values always keep one decimal place; smaller values stay exact.
+    public static func compactCount(_ value: Int64) -> String {
+        let magnitude = abs(Double(value))
+        let units: [(threshold: Double, suffix: String)] = [
+            (1_000_000_000_000, "T"),
+            (1_000_000_000, "G"),
+            (1_000_000, "M"),
+            (1_000, "K"),
+        ]
+        for unit in units where magnitude >= unit.threshold {
+            return String(format: "%.1f%@", Double(value) / unit.threshold, unit.suffix)
+        }
+        return String(value)
+    }
+
     /// Returns `value` when finite; otherwise returns a finite fallback.
     public static func finite(_ value: Double, fallback: Double) -> Double {
         guard value.isFinite, fallback.isFinite else {

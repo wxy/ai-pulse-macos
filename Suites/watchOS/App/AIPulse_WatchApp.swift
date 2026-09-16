@@ -21,6 +21,9 @@ struct AIPulse_WatchApp: App {
 struct SpendView: View {
     @EnvironmentObject var cloudData: CloudDataService
     @State private var refreshTrigger = 0
+    /// v2 P2: last seen today cost — a rise while the app is front fires the
+    /// coin haptic (the watch-side heartbeat).
+    @State private var lastSeenTodayCost: Double = 0
 
     private var snap: DashboardSnapshot { cloudData.snapshot ?? DashboardSnapshot() }
     private var dailyRate: Double { max(snap.prediction?.dailyRate ?? 20, 0.01) }
@@ -58,6 +61,7 @@ struct SpendView: View {
                         Text(formatUSD(snap.todayCost))
                             .font(.system(size: 32, weight: .bold, design: .rounded))
                             .minimumScaleFactor(0.5).lineLimit(1)
+                        burnLabel
                         if let updated = cloudData.lastUpdated {
                             Text(updated, format: .dateTime.hour().minute())
                                 .font(.system(size: 10)).foregroundColor(.secondary)
@@ -86,8 +90,65 @@ struct SpendView: View {
         .onTapGesture {
             WKInterfaceDevice.current().play(.click)
             refreshTrigger += 1
-            Task { await cloudData.refresh() }
+            Task {
+                await cloudData.refresh()
+                celebrateIfSpent()
+            }
         }
+        .task {
+            await cloudData.refresh()
+            celebrateIfSpent()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: WKApplication.didBecomeActiveNotification)) { _ in
+            Task {
+                await cloudData.refresh()
+                celebrateIfSpent()
+            }
+        }
+    }
+
+    /// v2 P2: coin haptic when today's spend rose since the last look — the
+    /// watch feels the heartbeat without lifting the Mac lid.
+    private func celebrateIfSpent() {
+        let cost = cloudData.snapshot?.todayCost ?? 0
+        if cost - lastSeenTodayCost > 0.005 {
+            WKInterfaceDevice.current().play(.notification)
+        }
+        lastSeenTodayCost = cost
+    }
+
+    /// Denomination fallback mirrors the Mac (§3.1): money → tokens → lines.
+    @ViewBuilder
+    private var burnLabel: some View {
+        let color: Color = {
+            switch snap.pulse?.tier {
+            case .intense: return Color.red
+            case .elevated: return Color.orange
+            case .active: return Color.yellow
+            default: return Color.secondary
+            }
+        }()
+        Group {
+            if let pulse = snap.pulse,
+               let kind = pulse.primarySignal,
+               let signal = pulse.signals.first(where: { $0.kind == kind }),
+               let value = signal.rawValue, value > 0 {
+                switch kind {
+                case .observedSpend:
+                    Text(verbatim: "🔥 \(String(format: "%.2f", value)) \(signal.unit)")
+                case .activity:
+                    Text(verbatim: "🔥 \(ChartMath.compactCount(Int64(value))) \(I18n.t("dashboard.tokens"))/h")
+                case .attributedOutput:
+                    Text(verbatim: "🔥 \(ChartMath.compactCount(Int64(value))) lines/h")
+                case .quota:
+                    Text(verbatim: "🔥 \(Int(value.rounded()))%")
+                }
+            } else {
+                EmptyView()
+            }
+        }
+        .font(.system(size: 11, weight: .medium, design: .rounded))
+        .foregroundColor(color)
     }
 
     private var todayLabel: some View {

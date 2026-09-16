@@ -15,6 +15,10 @@
 		C096F525301CAC1D004D0062 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C096F524301CAC1D004D0062 /* Localizable.xcstrings */; };
 		C096F526301CAC1D004D0062 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C096F524301CAC1D004D0062 /* Localizable.xcstrings */; };
 		C096F527301CAC1D004D0062 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C096F524301CAC1D004D0062 /* Localizable.xcstrings */; };
+		C0CB1FE33055005B00440E51 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C096EA853014F1C5004D0062 /* WidgetKit.framework */; };
+		C0CB1FE43055005B00440E51 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C096EA873014F1C5004D0062 /* SwiftUI.framework */; };
+		C0CB1FF13055005C00440E51 /* AIPulseWatchWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0CB1FE23055005A00440E51 /* AIPulseWatchWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C0CB1FF83055009400440E51 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = C0CB1FF73055009400440E51 /* AIPulseShared */; };
 		CE2D79B34B28423D9734A713 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = 6B4AC1157397447497F084ED /* AIPulseShared */; };
 		E0EB9D6835BE46DB830B8074 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = A22C196E89294272AAC893E2 /* AIPulseShared */; };
 /* End PBXBuildFile section */
@@ -33,6 +37,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = C096EA833014F1C5004D0062;
 			remoteInfo = AIPulseWidgetExtension;
+		};
+		C0CB1FEF3055005C00440E51 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0D7701330090D2E00BC1E54 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0CB1FE13055005A00440E51;
+			remoteInfo = AIPulseWatchWidgetExtension;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -58,6 +69,17 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0CB1FF23055005C00440E51 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C0CB1FF13055005C00440E51 /* AIPulseWatchWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -69,6 +91,8 @@
 		C096EA873014F1C5004D0062 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		C096EAA53014F331004D0062 /* AIPulseWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPulseWidgetExtension.entitlements; sourceTree = "<group>"; };
 		C096F524301CAC1D004D0062 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; name = Localizable.xcstrings; path = ../Sources/Localizable.xcstrings; sourceTree = SOURCE_ROOT; };
+		C0CB1FE23055005A00440E51 /* AIPulseWatchWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AIPulseWatchWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0CB1FF9305500BB00440E51 /* AIPulseWatchWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPulseWatchWidgetExtension.entitlements; sourceTree = "<group>"; };
 		C0D7701B30090D2E00BC1E54 /* AIPulse_iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIPulse_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0D7703030090F0600BC1E54 /* AIPulse_watchOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AIPulse_watchOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -94,6 +118,13 @@
 				Info.plist,
 			);
 			target = C096EA833014F1C5004D0062 /* AIPulseWidgetExtension */;
+		};
+		C0CB1FF63055005C00440E51 /* Exceptions for "AIPulseWatchWidget" folder in "AIPulseWatchWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C0CB1FE13055005A00440E51 /* AIPulseWatchWidgetExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -127,6 +158,14 @@
 			path = AIPulseWidget;
 			sourceTree = "<group>";
 		};
+		C0CB1FE53055005B00440E51 /* AIPulseWatchWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0CB1FF63055005C00440E51 /* Exceptions for "AIPulseWatchWidget" folder in "AIPulseWatchWidgetExtension" target */,
+			);
+			path = AIPulseWatchWidget;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -137,6 +176,16 @@
 				C096EA883014F1C5004D0062 /* SwiftUI.framework in Frameworks */,
 				C096EA863014F1C5004D0062 /* WidgetKit.framework in Frameworks */,
 				AD4082F6DF06482AAF6F1D76 /* AIPulseShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0CB1FDF3055005A00440E51 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0CB1FF83055009400440E51 /* AIPulseShared in Frameworks */,
+				C0CB1FE43055005B00440E51 /* SwiftUI.framework in Frameworks */,
+				C0CB1FE33055005B00440E51 /* WidgetKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -171,6 +220,7 @@
 		C0D7701230090D2E00BC1E54 = {
 			isa = PBXGroup;
 			children = (
+				C0CB1FF9305500BB00440E51 /* AIPulseWatchWidgetExtension.entitlements */,
 				C096F524301CAC1D004D0062 /* Localizable.xcstrings */,
 				C096EAA53014F331004D0062 /* AIPulseWidgetExtension.entitlements */,
 				C05A703C300A545F00B99D6F /* Assets.xcassets */,
@@ -180,6 +230,7 @@
 				C05A700E300925D200B99D6F /* AIPulse_watchOS.entitlements */,
 				C05A700830091E2A00B99D6F /* AIPulse_iOS.entitlements */,
 				C096EA893014F1C5004D0062 /* AIPulseWidget */,
+				C0CB1FE53055005B00440E51 /* AIPulseWatchWidget */,
 				C05F66EB300E50C300D40121 /* Frameworks */,
 				C0D7701C30090D2E00BC1E54 /* Products */,
 			);
@@ -191,6 +242,7 @@
 				C0D7701B30090D2E00BC1E54 /* AIPulse_iOS.app */,
 				C0D7703030090F0600BC1E54 /* AIPulse_watchOS.app */,
 				C096EA843014F1C5004D0062 /* AIPulseWidgetExtension.appex */,
+				C0CB1FE23055005A00440E51 /* AIPulseWatchWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -220,6 +272,29 @@
 			);
 			productName = AIPulseWidgetExtension;
 			productReference = C096EA843014F1C5004D0062 /* AIPulseWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		C0CB1FE13055005A00440E51 /* AIPulseWatchWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0CB1FF53055005C00440E51 /* Build configuration list for PBXNativeTarget "AIPulseWatchWidgetExtension" */;
+			buildPhases = (
+				C0CB1FDE3055005A00440E51 /* Sources */,
+				C0CB1FDF3055005A00440E51 /* Frameworks */,
+				C0CB1FE03055005A00440E51 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0CB1FE53055005B00440E51 /* AIPulseWatchWidget */,
+			);
+			name = AIPulseWatchWidgetExtension;
+			packageProductDependencies = (
+				C0CB1FF73055009400440E51 /* AIPulseShared */,
+			);
+			productName = AIPulseWatchWidgetExtension;
+			productReference = C0CB1FE23055005A00440E51 /* AIPulseWatchWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		C0D7701A30090D2E00BC1E54 /* AIPulse_iOS */ = {
@@ -257,10 +332,12 @@
 				C0D7702A30090F0600BC1E54 /* Sources */,
 				C0D7702B30090F0600BC1E54 /* Frameworks */,
 				C0D7702C30090F0600BC1E54 /* Resources */,
+				C0CB1FF23055005C00440E51 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C0CB1FF03055005C00440E51 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C05A70163009E26B00B99D6F /* Shared */,
@@ -285,6 +362,9 @@
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					C096EA833014F1C5004D0062 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					C0CB1FE13055005A00440E51 = {
 						CreatedOnToolsVersion = 26.6;
 					};
 					C0D7701A30090D2E00BC1E54 = {
@@ -312,6 +392,7 @@
 				C0D7701A30090D2E00BC1E54 /* AIPulse_iOS */,
 				C0D7702930090F0600BC1E54 /* AIPulse_watchOS */,
 				C096EA833014F1C5004D0062 /* AIPulseWidgetExtension */,
+				C0CB1FE13055005A00440E51 /* AIPulseWatchWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -322,6 +403,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				C096F525301CAC1D004D0062 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0CB1FE03055005A00440E51 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,6 +433,13 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		C096EA803014F1C5004D0062 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0CB1FDE3055005A00440E51 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -377,6 +472,11 @@
 			isa = PBXTargetDependency;
 			target = C096EA833014F1C5004D0062 /* AIPulseWidgetExtension */;
 			targetProxy = C096EA973014F1C7004D0062 /* PBXContainerItemProxy */;
+		};
+		C0CB1FF03055005C00440E51 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0CB1FE13055005A00440E51 /* AIPulseWatchWidgetExtension */;
+			targetProxy = C0CB1FEF3055005C00440E51 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -444,6 +544,74 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C0CB1FF33055005C00440E51 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = AIPulseWatchWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 32;
+				DEVELOPMENT_TEAM = YUUWV9L8M8;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AIPulseWatchWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = AIPulseWatchWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 2.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse.watchkitapp.AIPulseWatchWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Debug;
+		};
+		C0CB1FF43055005C00440E51 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = AIPulseWatchWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 32;
+				DEVELOPMENT_TEAM = YUUWV9L8M8;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AIPulseWatchWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = AIPulseWatchWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 2.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse.watchkitapp.AIPulseWatchWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Release;
 		};
@@ -750,6 +918,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		C0CB1FF53055005C00440E51 /* Build configuration list for PBXNativeTarget "AIPulseWatchWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0CB1FF33055005C00440E51 /* Debug */,
+				C0CB1FF43055005C00440E51 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		C0D7701630090D2E00BC1E54 /* Build configuration list for PBXProject "AIPulse_Suites" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -798,6 +975,11 @@
 			productName = AIPulseShared;
 		};
 		A22C196E89294272AAC893E2 /* AIPulseShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "../Packages/AIPulseShared" */;
+			productName = AIPulseShared;
+		};
+		C0CB1FF73055009400440E51 /* AIPulseShared */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = B94C6D5C79AE479F859E0221 /* XCLocalSwiftPackageReference "../Packages/AIPulseShared" */;
 			productName = AIPulseShared;

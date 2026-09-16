@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import GRDB
+import AIPulseShared
 
 final class SettingsWindowManager: @unchecked Sendable {
     static let shared = SettingsWindowManager()
@@ -62,6 +63,14 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             self, selector: #selector(onDataChanged),
             name: .dataDidChange, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onPulseChanged),
+            name: .pulseDidChange, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onSoundMuteChanged),
+            name: .soundMuteDidChange, object: nil
+        )
         refreshStats()
     }
 
@@ -74,14 +83,57 @@ final class MenuBarController: NSObject, @unchecked Sendable {
         refreshStats()
     }
 
+    @objc private func onPulseChanged() {
+        Task {
+            let snapshot = await PulseEngine.shared.snapshot()
+            await MainActor.run {
+                guard self.menu.items.count >= 2 else { return }
+                self.menu.items[0].title = StatusItemController.headline(snapshot: snapshot)
+                self.menu.items[1].title = StatusItemController.detail(snapshot: snapshot)
+            }
+        }
+    }
+
+    @objc private func onSoundMuteChanged() {
+        refreshStats()
+    }
+
     /// Rebuild the entire menu from scratch each refresh.
     /// Sections appear only when they have content.
     private func refreshStats() {
         Task {
             let demoActive = DemoData.isActive
             let statsItems = await statsMenuItems()
+            let snapshot = await PulseEngine.shared.snapshot()
+            let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+            let observedSpend = await StatsService.observedSpendItems(sinceMs: todayStartMs)
+
             DispatchQueue.main.async {
                 self.menu.removeAllItems()
+
+                let headline = NSMenuItem(
+                    title: StatusItemController.headline(snapshot: snapshot),
+                    action: nil, keyEquivalent: "")
+                headline.isEnabled = false
+                self.menu.addItem(headline)
+                let detail = NSMenuItem(
+                    title: StatusItemController.detail(snapshot: snapshot),
+                    action: nil, keyEquivalent: "")
+                detail.isEnabled = false
+                self.menu.addItem(detail)
+                if let money = StatusItemController.observedSpendLine(observedSpend) {
+                    let item = NSMenuItem(title: money, action: nil, keyEquivalent: "")
+                    item.isEnabled = false
+                    self.menu.addItem(item)
+                }
+                if let summary = ClosingBell.lastSummary() {
+                    let item = NSMenuItem(
+                        title: "\(I18n.t("pulse.closing_summary")) \(summary)",
+                        action: nil, keyEquivalent: "")
+                    item.isEnabled = false
+                    self.menu.addItem(item)
+                }
+                self.menu.addItem(.separator())
 
                 // Demo mode indicator
                 if demoActive {
@@ -108,7 +160,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
                     self.menu.addItem(.separator())
                 }
 
-                // Stats — today/week lines + by-tool/provider/repo submenus (shared source)
+                // Factual activity — today/week headlines plus repository output.
                 for item in statsItems { self.menu.addItem(item) }
 
                 self.menu.addItem(.separator())
@@ -118,9 +170,8 @@ final class MenuBarController: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Build the stats menu items (today/week lines + this-week by-tool / by-provider /
-    /// by-repo submenus). Single source of truth shared by the Dock right-click menu
-    /// (via refreshStats) and the main Window menu so the two never drift apart.
+    /// Build factual activity items shared by the Dock right-click menu and the
+    /// main Pulse menu so the two never drift apart.
     func statsMenuItems() async -> [NSMenuItem] {
         let stats = DemoData.isActive ? Self.demoStats() : await fetchStats()
         var items: [NSMenuItem] = []
@@ -140,42 +191,11 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             items.append(item)
         }
 
-        // Stats submenus — only shown if they have items
-        if !stats.repos.isEmpty || !stats.providerCosts.isEmpty || !stats.toolCosts.isEmpty {
+        // Repository output is the only detailed breakdown kept in persistent
+        // menus. Provider/tool money attribution belongs in the dashboard,
+        // where provenance can be explained.
+        if !stats.repos.isEmpty {
             items.append(.separator())
-        }
-
-        // Tool submenu — by dev tool
-        if !stats.toolCosts.isEmpty {
-            let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_tool"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
-            m.target = self
-            let s = NSMenu()
-            for tc in stats.toolCosts {
-                let item = NSMenuItem(
-                    title: "\(tc.name) · $\(String(format: "%.2f", tc.cost))",
-                    action: #selector(self.openDashboard(_:)), keyEquivalent: ""
-                )
-                item.target = self
-                s.addItem(item)
-            }
-            m.submenu = s; items.append(m)
-        }
-
-        // Provider submenu — consumption from DB (USD)
-        if !stats.providerCosts.isEmpty {
-            let m = NSMenuItem(title: "\(I18n.t("menu.this_week"))\(I18n.t("menu.by_provider"))", action: #selector(self.openDashboard(_:)), keyEquivalent: "")
-            m.target = self
-            let s = NSMenu()
-            for pc in stats.providerCosts {
-                let name = IntegrationRegistry.all.first(where: { $0.id == pc.providerId })?.displayName ?? pc.providerId
-                let item = NSMenuItem(
-                    title: "\(name) · $\(String(format: "%.2f", pc.cost))",
-                    action: #selector(self.openDashboard(_:)), keyEquivalent: ""
-                )
-                item.target = self
-                s.addItem(item)
-            }
-            m.submenu = s; items.append(m)
         }
 
         // Repo submenu
@@ -191,15 +211,25 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             m.submenu = s; items.append(m)
         }
 
+        items.append(.separator())
+        let mute = NSMenuItem(
+            title: I18n.t("perception.mute_all"),
+            action: #selector(self.toggleMute),
+            keyEquivalent: "")
+        mute.target = self
+        mute.state = AppSoundControl.isMuted() ? .on : .off
+        items.append(mute)
+
         return items
     }
 
     // MARK: - Data
 
-    private struct RepoStat { let name: String; let added: Int; let deleted: Int; let cost: Double
-        var summary: String { "$\(String(format: "%.2f", cost)) · +\(added)/-\(deleted) \(I18n.t("menu.lines"))" } }
-    private struct ToolCost { let name: String; let cost: Double }
-    private struct Stats { let todaySummary: String?; let weekSummary: String?; let repos: [RepoStat]; let providerCosts: [(providerId: String, cost: Double)]; let toolCosts: [ToolCost]; let hasActivity: Bool }
+    private struct RepoStat { let name: String; let added: Int; let deleted: Int; let commits: Int
+        var summary: String {
+            "+\(ChartMath.compactCount(Int64(added)))/-\(ChartMath.compactCount(Int64(deleted))) \(I18n.t("menu.lines")) · \(ChartMath.compactCount(Int64(commits))) \(I18n.t("menu.commits"))"
+        } }
+    private struct Stats { let todaySummary: String?; let weekSummary: String?; let repos: [RepoStat] }
 
     private func fetchStats() async -> Stats {
         do {
@@ -209,139 +239,66 @@ final class MenuBarController: NSObject, @unchecked Sendable {
 
             // --- Today ---
             let todayCnt: Int = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart]) ?? 0
+                try Int.fetchOne(db, sql: "SELECT COUNT(DISTINCT session_id) FROM usage_event WHERE ts >= ? AND session_id IS NOT NULL AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart]) ?? 0
             }
-            // Combined spend (API balance spend + subscription amortization) — matches Dashboard.
-            let todayCst = await StatsService.combinedSpend(sinceMs: Int64(todayStart))
-            let todayAdded: Int = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [todayStart]) ?? 0
+            let todayTokens: Int64 = try await AppDatabase.shared.read { db in
+                try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(\(TokenAccounting.observedTotalSQL)),0) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart]) ?? 0
             }
-            let todayDeleted: Int = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(deleted),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [todayStart]) ?? 0
-            }
+            let todayCode = try await StatsService.authorizedCodeOutput(sinceMs: Int64(todayStart))
 
             // --- This week ---
             let weekCnt: Int = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart]) ?? 0
+                try Int.fetchOne(db, sql: "SELECT COUNT(DISTINCT session_id) FROM usage_event WHERE ts >= ? AND session_id IS NOT NULL AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart]) ?? 0
             }
-            let weekAdded: Int = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(added),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [weekStart]) ?? 0
+            let weekTokens: Int64 = try await AppDatabase.shared.read { db in
+                try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(\(TokenAccounting.observedTotalSQL)),0) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart]) ?? 0
             }
-            let weekDeleted: Int = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(deleted),0) FROM code_change WHERE is_merge = 0 AND ts >= ?", arguments: [weekStart]) ?? 0
-            }
+            let weekCode = try await StatsService.authorizedCodeOutput(sinceMs: Int64(weekStart))
 
             // --- Submenu breakdowns (this week) ---
             // Repo added/deleted per repo
-            let repoAddDel = try await AppDatabase.shared.read { db -> [String: (Int, Int)] in
-                let rows = try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(added),0) AS a, COALESCE(SUM(deleted),0) AS d FROM code_change WHERE is_merge = 0 AND ts >= ? GROUP BY repo_path", arguments: [weekStart])
-                var result: [String: (Int, Int)] = [:]
+            let repoAddDel = try await AppDatabase.shared.read { db -> [String: (Int, Int, Int)] in
+                let rows = try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(added),0) AS a, COALESCE(SUM(deleted),0) AS d, COUNT(DISTINCT commit_hash) AS commits FROM code_change WHERE is_merge = 0 AND ts >= ? GROUP BY repo_path", arguments: [weekStart])
+                let roots = RepositoryScope.configuredRoots()
+                var result: [String: (Int, Int, Int)] = [:]
                 for r in rows {
                     let path: String = r["p"] ?? ""
+                    guard let repo = RepositoryScope.authorizedGitRoot(for: path, roots: roots) else { continue }
                     let a: Int64 = r["a"] ?? 0
                     let d: Int64 = r["d"] ?? 0
-                    result[path] = (Int(a), Int(d))
+                    let commits: Int = r["commits"] ?? 0
+                    let old = result[repo] ?? (0, 0, 0)
+                    result[repo] = (old.0 + Int(a), old.1 + Int(d), old.2 + commits)
                 }
                 return result
             }
 
-            // Per-provider spend this week from balance snapshots. Query 14
-            // days before Monday (same lookback as combinedSpend) so the first
-            // delta at the week boundary is measured against a prior snapshot
-            // instead of being silently dropped for the whole week.
-            let weekDays = max((Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: Calendar.current.startOfDay(for: Date())).day ?? 0) + 1, 1)
-            let monday = Calendar.mondayOfWeek()
-            let lookbackStart = cal.date(byAdding: .day, value: -14, to: monday) ?? monday
-            let lookbackStartMs = Int64(lookbackStart.timeIntervalSince1970 * 1000)
-            let rawSpend = ((try? await StatsService.balanceDailySpend(days: 1, sinceMs: lookbackStartMs)) ?? [])
-                .filter { $0.date.timeIntervalSince1970 >= monday.timeIntervalSince1970 }
-            // --- Unified cost computation ---
-            // API total: from balance deltas, filtered to active providers
-            var spendByProvider: [String: Double] = [:]
-            for s in rawSpend { spendByProvider[s.providerId, default: 0] += s.spend }
-            let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
-                if case .apiKey(let pid) = cs.kind { return pid }; return nil
-            })
-            var providerCosts: [(providerId: String, cost: Double)] = []
-            var apiSpend = 0.0
-            for (pid, cost) in spendByProvider where cost > 0.001 {
-                if enabledB.contains(pid) { providerCosts.append((pid, cost)); apiSpend += cost }
-            }
-            providerCosts.sort { $0.cost > $1.cost }
-            let subAmortization = StatsService.subscriptionDailyAmortization()
-            let weekSubTotal = subAmortization * Double(weekDays)
-            let weekCst = apiSpend + weekSubTotal
-
-            // --- Repo breakdown: scaled API + subscription ---
-            var cbr: [String: Double] = [:]
-            let rcRows = try await AppDatabase.shared.read { db -> [(p: String, c: Double)] in
-                try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? GROUP BY repo_path", arguments: [weekStart]).map { r in
-                    (p: r["p"] ?? "", c: r["c"] ?? 0)
-                }
-            }
-            var logTotal: Double = 0
-            for r in rcRows { if !r.p.isEmpty { cbr[r.p] = r.c; logTotal += r.c } }
-            let apiScale = logTotal > 0 ? apiSpend / logTotal : 1.0
-            let subScale = logTotal > 0 ? weekSubTotal / logTotal : 0.0
-
-            var repos: [RepoStat] = []
-            for (path, logCost) in cbr {
-                let (a, d) = repoAddDel[path] ?? (0, 0)
-                let cost = logCost * apiScale + logCost * subScale
-                guard a > 0 || d > 0 || cost > 0.001 else { continue }
-                repos.append(RepoStat(name: URL(fileURLWithPath: path).lastPathComponent, added: a, deleted: d, cost: cost))
-            }
-
-            // Per-tool cost: same unified scaling as repos (API + subscription from usage_event proportions)
-            let toolRows = try await AppDatabase.shared.read { db -> [(s: String, c: Double)] in
-                try Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [weekStart]).map { r in
-                    (s: r["s"] ?? "", c: r["c"] ?? 0)
-                }
-            }
-            let toolAPITotal = toolRows.reduce(0.0) { $0 + $1.c }
-            let toolApiScale = toolAPITotal > 0 ? apiSpend / toolAPITotal : 1.0
-            let toolSubScale = toolAPITotal > 0 ? weekSubTotal / toolAPITotal : 0.0
-
-            var toolCostMap: [String: Double] = [:]
-            for r in toolRows {
-                if r.c > 0 {
-                    toolCostMap[r.s] = r.c * toolApiScale + r.c * toolSubScale
-                }
-            }
-            var toolCosts: [ToolCost] = toolCostMap.compactMap { (key, cost) in
-                guard cost > 0.001 else { return nil }
-                let label = IntegrationRegistry.toolDisplayName(for: key)
-                return ToolCost(name: label, cost: cost)
-            }
-            toolCosts.sort { $0.cost > $1.cost }
+            let repos = repoAddDel.map { path, changes in
+                RepoStat(name: URL(fileURLWithPath: path).lastPathComponent,
+                         added: changes.0, deleted: changes.1, commits: changes.2)
+            }.sorted { ($0.added + $0.deleted) > ($1.added + $1.deleted) }
 
             // --- Helper to format a stats line ---
-            func makeSummary(cnt: Int, cost: Double, added: Int, deleted: Int, label: String, vsAvg: Double? = nil) -> String? {
-                guard cnt > 0 || added > 0 || deleted > 0 || cost > 0.0001 else { return nil }
-                let cS = cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : I18n.t("menu.approx_zero")
-                let linesStr = "+\(added)/-\(deleted) \(I18n.t("menu.lines"))"
-                var result = "\(label) · \(cS) · \(linesStr)"
-                if let avg = vsAvg, avg > 0.001, cost > 0.001 {
-                    let pct = Int(round(cost / avg * 100))
-                    result += " (" + pct.formatted(.percent) + ")"
-                }
-                return result
+            func makeSummary(tokens: Int64, cnt: Int, added: Int, deleted: Int, commits: Int, label: String) -> String? {
+                guard tokens > 0 || cnt > 0 || added > 0 || deleted > 0 || commits > 0 else { return nil }
+                let tokenLabel = I18n.t("dashboard.chart_tokens")
+                let tokensStr = "\(ChartMath.compactCount(tokens)) \(tokenLabel)"
+                let linesStr = "+\(ChartMath.compactCount(Int64(added)))/-\(ChartMath.compactCount(Int64(deleted))) \(I18n.t("menu.lines"))"
+                return "\(label) · \(tokensStr) · \(linesStr) · \(ChartMath.compactCount(Int64(commits))) \(I18n.t("menu.commits"))"
             }
 
-            // 7-day average for percentage comparison
-            _ = cal.startOfDay(for: cal.date(byAdding: .day, value: -6, to: Date()) ?? Date()).timeIntervalSince1970 * 1000
-            let weekAvgCst = (apiSpend + subAmortization * 7.0) / 7.0
+            let todaySum = makeSummary(tokens: todayTokens, cnt: todayCnt, added: todayCode.added, deleted: todayCode.deleted, commits: todayCode.commits, label: I18n.t("menu.today"))
+            let weekSum  = makeSummary(tokens: weekTokens, cnt: weekCnt, added: weekCode.added, deleted: weekCode.deleted, commits: weekCode.commits, label: I18n.t("menu.this_week"))
 
-            let todaySum = makeSummary(cnt: todayCnt, cost: todayCst, added: todayAdded, deleted: todayDeleted, label: I18n.t("menu.today"), vsAvg: weekAvgCst)
-            let weekSum  = makeSummary(cnt: weekCnt,  cost: weekCst,  added: weekAdded,  deleted: weekDeleted,  label: I18n.t("menu.this_week"))
-
-            let hasActivity = weekCnt > 0 || !repos.isEmpty || weekAdded > 0 || weekDeleted > 0 || weekCst > 0.0001
+            let hasActivity = weekTokens > 0 || weekCnt > 0 || !repos.isEmpty || weekCode.added > 0 || weekCode.deleted > 0 || weekCode.commits > 0
             if !hasActivity {
-                return Stats(todaySummary: nil, weekSummary: nil, repos: [], providerCosts: [], toolCosts: [], hasActivity: false)
+                return Stats(todaySummary: nil, weekSummary: nil, repos: [])
             }
-            return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos, providerCosts: providerCosts, toolCosts: toolCosts, hasActivity: true)
+            // The persistent menu is a factual pulse surface. Estimated
+            // provider/tool allocations stay in the deeper dashboard only.
+            return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos)
         } catch {
-            return Stats(todaySummary: I18n.t("menu.unavailable"), weekSummary: nil, repos: [], providerCosts: [], toolCosts: [], hasActivity: false)
+            return Stats(todaySummary: I18n.t("menu.unavailable"), weekSummary: nil, repos: [])
         }
     }
 
@@ -352,38 +309,31 @@ final class MenuBarController: NSObject, @unchecked Sendable {
         let todayData = DemoData.data(for: .today)
         let weekData = DemoData.data(for: .thisWeek)
 
-        func makeSummary(cnt: Int, cost: Double, a: Int, d: Int, label: String) -> String? {
-            guard cnt > 0 || a > 0 || d > 0 || cost > 0.0001 else { return nil }
-            let cS = cost > 0.0001 ? "$\(String(format: "%.2f", cost))" : I18n.t("menu.approx_zero")
-            return "\(label) · \(cS) · +\(a)/-\(d) \(I18n.t("menu.lines"))"
+        func makeSummary(tokens: Int64, cnt: Int, a: Int, d: Int, commits: Int, label: String) -> String? {
+            guard tokens > 0 || cnt > 0 || a > 0 || d > 0 || commits > 0 else { return nil }
+            return "\(label) · \(ChartMath.compactCount(tokens)) \(I18n.t("dashboard.chart_tokens")) · +\(ChartMath.compactCount(Int64(a)))/-\(ChartMath.compactCount(Int64(d))) \(I18n.t("menu.lines")) · \(ChartMath.compactCount(Int64(commits))) \(I18n.t("menu.commits"))"
         }
 
-        let todayCst = todayData.combinedSpend
         let todayCnt = todayData.todayCalls
         let todayAdded = todayData.codeChanges.reduce(0) { $0 + $1.added }
         let todayDeleted = todayData.codeChanges.reduce(0) { $0 + $1.deleted }
+        let todayCommits = todayData.codeChanges.reduce(0) { $0 + $1.commits }
 
-        let weekCst = weekData.combinedSpend
         let weekCnt = weekData.dailyStats.reduce(0) { $0 + $1.calls }
         let weekAdded = weekData.codeChanges.reduce(0) { $0 + $1.added }
         let weekDeleted = weekData.codeChanges.reduce(0) { $0 + $1.deleted }
+        let weekCommits = weekData.codeChanges.reduce(0) { $0 + $1.commits }
 
-        let todaySum = makeSummary(cnt: todayCnt, cost: todayCst, a: todayAdded, d: todayDeleted, label: I18n.t("menu.today"))
-        let weekSum = makeSummary(cnt: weekCnt, cost: weekCst, a: weekAdded, d: weekDeleted, label: I18n.t("menu.this_week"))
+        let todaySum = makeSummary(tokens: Int64(todayData.todayTokens), cnt: todayCnt, a: todayAdded, d: todayDeleted, commits: todayCommits, label: I18n.t("menu.today"))
+        let weekTokens = weekData.dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
+        let weekSum = makeSummary(tokens: weekTokens, cnt: weekCnt, a: weekAdded, d: weekDeleted, commits: weekCommits, label: I18n.t("menu.this_week"))
 
         let repos: [RepoStat] = weekData.repos.map { r in
             RepoStat(name: URL(fileURLWithPath: "/\(r.repo)").lastPathComponent,
-                     added: r.added, deleted: r.deleted, cost: r.cost)
+                     added: r.added, deleted: r.deleted, commits: r.commits)
         }
 
-        let providerCosts: [(providerId: String, cost: Double)] = weekData.balanceSpend.map {
-            ($0.providerId, $0.spend)
-        }
-
-        let toolCosts: [ToolCost] = weekData.toolCostBreakdown.map { ToolCost(name: $0.name, cost: $0.cost) }
-
-        return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos,
-                     providerCosts: providerCosts, toolCosts: toolCosts, hasActivity: true)
+        return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos)
     }
 
     @MainActor @objc private func openDashboard(_ sender: NSMenuItem) {
@@ -396,6 +346,9 @@ final class MenuBarController: NSObject, @unchecked Sendable {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 420), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         w.title = I18n.t("settings.title"); w.contentView = NSHostingView(rootView: SettingsView()); w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
         SettingsWindowManager.shared.window = w
+    }
+    @MainActor @objc private func toggleMute() {
+        AppSoundControl.toggle()
     }
     @MainActor @objc private func quit() { NSApplication.shared.terminate(nil) }
 }

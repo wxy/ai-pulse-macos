@@ -49,3 +49,39 @@ final class DeepSeekHarnessParserTests: XCTestCase {
         )
     }
 }
+
+// MARK: - Journal v3 (2026-09): usage carried on assistant/message
+
+extension DeepSeekHarnessParserTests {
+
+    func testV3MessageUsageBecomesUsageEvent() {
+        let line = """
+        {"type":"assistant/message","seq":17,"time":1789171723019,"data":{"turn":1,"step":1,"usage":{"inputTokens":9145,"outputTokens":131,"totalTokens":9276,"cacheReadTokens":64,"reasoningTokens":50},"message":{"role":"assistant","source":{"model":"glm-5.3-flash"}}}}
+        """
+        let event = DeepSeekHarnessParser.parse(
+            line: line,
+            cwd: "/tmp/repo",
+            model: "glm-5.3-flash",
+            sessionId: "session-v3")
+
+        XCTAssertEqual(event?.source, "deepseek-harness")
+        XCTAssertEqual(event?.model, "glm-5.3-flash")
+        XCTAssertEqual(event?.inTokens, 9145)
+        XCTAssertEqual(event?.outTokens, 181, "outputTokens + reasoningTokens")
+        XCTAssertEqual(event?.cacheTokens, 64)
+        XCTAssertEqual(event?.dedupeKey.hasPrefix("deepseek-harness|"), true)
+    }
+
+    func testV3MessageWithoutUsageIsIgnored() {
+        let line = """
+        {"type":"assistant/message","seq":3,"time":1789171723019,"data":{"message":{"role":"assistant","source":{"model":"glm-5.3-flash"}}}}
+        """
+        XCTAssertNil(DeepSeekHarnessParser.parse(
+            line: line, cwd: nil, model: "glm-5.3-flash", sessionId: nil))
+    }
+
+    func testV3TurnEndStillDetected() {
+        XCTAssertTrue(DeepSeekHarnessParser.isComplete(
+            fromLine: #"{"type":"turn/end","seq":99,"data":{"reason":{"kind":"completed"}}}"#))
+    }
+}

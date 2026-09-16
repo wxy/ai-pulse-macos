@@ -23,14 +23,17 @@ enum AppIconLoader {
     private static let baseTile: NSImage = renderBase()
 
     /// Load the icon with a linear progress ring, optional lap counter and health dot.
-    /// - Parameter progress: 0+ (1.0 = 1× daily average = full circle).
+    /// - Parameter progress: 0...1 fraction of the rounded-rectangle perimeter.
     /// - Parameter lap: number of completed laps (first lap = 0). Shown as a small
     ///   digit in the bottom-left corner when ≥ 1.
     /// - Parameter healthDot: nil → no dot; non-nil → coloured dot at bottom-right.
+    /// - Parameter ringColor: progress ring stroke colour (v2 §3.3: burn tier
+    ///   green→yellow→orange→red; defaults to the legacy systemGreen).
     static func load(progress: Double = 0, lap: Int = 0,
-                     healthDot: AppHealthMonitor.Severity? = nil) -> NSImage {
+                     healthDot: AppHealthMonitor.Severity? = nil,
+                     ringColor: NSColor = .systemGreen) -> NSImage {
         return renderProgress(fraction: CGFloat(max(progress, 0)),
-                              lap: lap, healthDot: healthDot)
+                              lap: lap, healthDot: healthDot, ringColor: ringColor)
     }
 
     /// Render a pulse frame: artwork scaled up with a gold overlay.
@@ -162,19 +165,21 @@ enum AppIconLoader {
         path.fill()
     }
 
-    /// Draw a single-colour linear progress ring (100% = full circle = 1× daily
-    /// average), an optional lap-counter digit in the bottom-left corner (when
-    /// lap ≥ 1), and an optional health dot at the bottom-right corner.
+    /// Draw a single-colour Pulse ring, an optional lap-counter digit in the
+    /// bottom-left corner, and an optional health dot at the bottom-right.
     private static func renderProgress(fraction: CGFloat,
                                        lap: Int,
                                        healthDot: AppHealthMonitor.Severity?,
-                                       ringWidth: CGFloat = 22) -> NSImage {
+                                       ringColor: NSColor = .systemGreen,
+                                       ringWidth: CGFloat = 14) -> NSImage {
         let img = NSImage(size: NSSize(width: size, height: size))
         img.lockFocus()
         baseTile.draw(in: canvasRect)
 
         // ── Progress ring ──
-        let inset: CGFloat = 10 + ringWidth / 2
+        // Keep the stroke close to the icon body's perimeter while leaving a
+        // few pixels inside the edge for clean antialiasing at every Dock size.
+        let inset: CGFloat = 4 + ringWidth / 2
         let barRect = bodyRect.insetBy(dx: inset, dy: inset)
         let barCr = max(cornerRadius - inset, 0)
         // Use remainder so lap 2 starts fresh from 0% instead of staying at 100%
@@ -184,7 +189,7 @@ enum AppIconLoader {
         if ringFraction > 0.001 {
             let path = progressPath(rect: barRect, cornerRadius: barCr,
                                     fraction: ringFraction)
-            NSColor.systemGreen.setStroke()
+            ringColor.setStroke()
             path.lineWidth = ringWidth
             path.lineCapStyle = .round
             path.lineJoinStyle = .round
@@ -244,7 +249,7 @@ enum AppIconLoader {
     // MARK: - Progress bar along the rounded-rect perimeter
 
     /// Build a polyline that walks the rounded-rect border starting at the
-    /// 3 o'clock position (right edge, vertically centered) and running clockwise,
+    /// 12 o'clock position (top edge, horizontally centered) and running clockwise,
     /// cut off at `fraction` of the total perimeter. Sampling the corners as short
     /// line segments avoids the winding-direction ambiguity of `appendArc`, which
     /// is where earlier attempts went wrong.
@@ -279,13 +284,11 @@ enum AppIconLoader {
         return path
     }
 
-    /// Ordered points tracing the rounded rectangle clockwise from the 3 o'clock
-    /// position (right edge, vertically centered). In this non-flipped bitmap
-    /// context y increases upward, so "clockwise" starts by heading down the
-    /// right edge toward the bottom.
+    /// Ordered points tracing the rounded rectangle clockwise from the 12 o'clock
+    /// position. In this non-flipped bitmap context y increases upward.
     private static func perimeterPoints(rect: CGRect, cornerRadius cr: CGFloat) -> [CGPoint] {
         let minX = rect.minX, maxX = rect.maxX, minY = rect.minY, maxY = rect.maxY
-        let midY = rect.midY
+        let midX = rect.midX
         let steps = 24  // samples per corner
         var pts: [CGPoint] = []
 
@@ -296,16 +299,16 @@ enum AppIconLoader {
             }
         }
 
-        pts.append(CGPoint(x: maxX, y: midY))                 // start: 3 o'clock (right-middle)
+        pts.append(CGPoint(x: midX, y: maxY))                 // start: 12 o'clock (top-middle)
+        pts.append(CGPoint(x: maxX - cr, y: maxY))            // top edge →
+        arc(center: CGPoint(x: maxX - cr, y: maxY - cr), from: 90, to: 0)     // top-right
         pts.append(CGPoint(x: maxX, y: minY + cr))            // right edge ↓
         arc(center: CGPoint(x: maxX - cr, y: minY + cr), from: 0, to: -90)    // bottom-right
         pts.append(CGPoint(x: minX + cr, y: minY))            // bottom edge ←
         arc(center: CGPoint(x: minX + cr, y: minY + cr), from: -90, to: -180) // bottom-left
         pts.append(CGPoint(x: minX, y: maxY - cr))            // left edge ↑
         arc(center: CGPoint(x: minX + cr, y: maxY - cr), from: 180, to: 90)   // top-left
-        pts.append(CGPoint(x: maxX - cr, y: maxY))            // top edge →
-        arc(center: CGPoint(x: maxX - cr, y: maxY - cr), from: 90, to: 0)     // top-right
-        pts.append(CGPoint(x: maxX, y: midY))                 // right edge ↓ back to start
+        pts.append(CGPoint(x: midX, y: maxY))                 // top edge → back to start
         return pts
     }
 

@@ -1,8 +1,6 @@
 import SwiftUI
 import GRDB
 import AppKit
-import ServiceManagement
-import UserNotifications
 import CloudKit
 import AIPulseShared
 
@@ -23,6 +21,7 @@ struct SettingsView: View {
     func labelFor(_ key: String) -> String {
         switch key {
         case "General": return I18n.t("settings.general")
+        case "Notifications": return I18n.t("general.group_notifications")
         case "Integrations": return I18n.t("settings.integrations")
         case "integrations": return I18n.t("settings.integrations")
         case "integrations.api": return I18n.t("settings.integrations_api")
@@ -38,6 +37,8 @@ struct SettingsView: View {
             List(selection: $selectedTab) {
                 Label(labelFor("General"), systemImage: "gear")
                     .tag("General")
+                Label(labelFor("Notifications"), systemImage: "bell.badge")
+                    .tag("Notifications")
                 // Parent "Integrations" is clickable (shows an overview in the
                 // detail pane) and expands into its two sub-tabs.
                 DisclosureGroup(isExpanded: $integrationsExpanded) {
@@ -60,6 +61,7 @@ struct SettingsView: View {
             Group {
                 switch selectedTab {
                 case "General":         GeneralTab(lang: langBinding).id("general.\(lang)")
+                case "Notifications":   NotificationsTab().id("notifications.\(lang)")
                 case "integrations":    IntegrationsOverviewTab().id("integrations.\(lang)")
                 case "integrations.api": ApiProvidersTab().id("integrations.api.\(lang)")
                 case "integrations.dev": DevToolsTab().id("integrations.dev.\(lang)")
@@ -246,296 +248,6 @@ struct IntegrationGroupedTab: View {
         guard BookmarkManager.requestHomeAccess(message: I18n.t("bookmark.home_message")) != nil
         else { return }
         reDetect()
-    }
-}
-
-// MARK: - General
-
-struct GeneralTab: View {
-    @Binding var lang: String
-    @State private var coinSoundEnabled = UserDefaults.standard.bool(forKey: "coin_sound_enabled")
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @State private var demoActive = DemoData.isActive
-    @State private var spendAlertsEnabled = SpendAlertSettings.current().master
-    @State private var systemNotificationsEnabled = SystemNotifications.isEnabled
-    @State private var notificationAuthorization: UNAuthorizationStatus = .notDetermined
-    @State private var subscriptionStart: Date = UserDefaults.standard
-        .object(forKey: "subscription_start") as? Date ?? Date()
-    @State private var subscriptionPeriodDays: Int = UserDefaults.standard
-        .object(forKey: "subscription_period_days") as? Int ?? 30
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(I18n.t("general.title")).font(.title3).fontWeight(.semibold)
-                Text(I18n.t("general.desc")).font(.caption).foregroundColor(.secondary)
-
-                settingsGroup(I18n.t("general.group_general")) {
-                    HStack {
-                        Text(I18n.t("general.language_label"))
-                            .frame(width: 140, alignment: .leading)
-                        Picker("", selection: $lang) {
-                            ForEach(I18n.supportedLanguages, id: \.code) { lang in
-                                if lang.code == "auto" {
-                                    Text(I18n.t("settings.language_auto")).tag("auto")
-                                } else {
-                                    Text(lang.label).tag(lang.code)
-                                }
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 200)
-                        Spacer()
-                    }
-                }
-
-                settingsGroup(I18n.t("general.group_notifications")) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(I18n.t("general.system_notifications")).font(.body)
-                            Text(I18n.t("general.system_notifications_desc"))
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Toggle("", isOn: $systemNotificationsEnabled)
-                            .toggleStyle(.switch)
-                            .onChange(of: systemNotificationsEnabled) { _, v in
-                                SystemNotifications.setEnabled(v)
-                                if v { requestNotificationAuthorizationIfNeeded() }
-                            }
-                    }
-
-                    Divider()
-
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(I18n.t("general.spend_alerts")).font(.body)
-                            Text(I18n.t("general.spend_alerts_desc"))
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Toggle("", isOn: $spendAlertsEnabled)
-                            .toggleStyle(.switch)
-                            .disabled(!systemNotificationsEnabled)
-                            .onChange(of: spendAlertsEnabled) { _, v in
-                                UserDefaults.standard.set(v, forKey: SpendAlertSettings.masterKey)
-                            }
-                    }
-                    .opacity(systemNotificationsEnabled ? 1 : 0.55)
-
-                    Divider()
-
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(I18n.t("general.coin_sound")).font(.body)
-                            Text(I18n.t("general.coin_sound_desc"))
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Toggle("", isOn: $coinSoundEnabled)
-                            .toggleStyle(.switch)
-                            .onChange(of: coinSoundEnabled) { _, v in
-                                UserDefaults.standard.set(v, forKey: "coin_sound_enabled")
-                            }
-                    }
-
-                    Divider()
-
-                    notificationPermissionRow
-                }
-
-                settingsGroup(I18n.t("general.group_startup")) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(I18n.t("general.launch_at_login")).font(.body)
-                            Text(I18n.t("general.launch_at_login_desc"))
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Toggle("", isOn: $launchAtLogin)
-                            .toggleStyle(.switch)
-                            .onChange(of: launchAtLogin) { _, v in
-                                do {
-                                    if v { try SMAppService.mainApp.register() }
-                                    else { try SMAppService.mainApp.unregister() }
-                                } catch {
-                                    launchAtLogin = SMAppService.mainApp.status == .enabled
-                                }
-                            }
-                    }
-
-                    Divider()
-
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(demoActive ? I18n.t("demo.exit") : I18n.t("demo.enter"))
-                                .font(.body)
-                            Text(I18n.t("demo.onboarding_msg"))
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Button(demoActive ? I18n.t("demo.exit") : I18n.t("demo.enter")) {
-                            if DemoData.isActive {
-                                DemoData.isManual = false
-                                DemoData.isSuppressed = true
-                            } else {
-                                DemoData.isSuppressed = false
-                                DemoData.isManual = true
-                            }
-                            NotificationCenter.default.post(name: .demoModeDidChange, object: nil)
-                            NotificationCenter.default.post(name: .dataDidChange, object: nil)
-                        }
-                    }
-
-                    Divider()
-
-                    Text(I18n.t("general.rerun_welcome_desc"))
-                        .font(.caption).foregroundColor(.secondary)
-                    Button(I18n.t("general.rerun_welcome")) {
-                        UserDefaults.standard.removeObject(forKey: "onboarding_completed")
-                        if let w = OnboardingWindowManager.shared.window { w.close() }
-                        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
-                                         styleMask: [.titled, .closable], backing: .buffered, defer: false)
-                        w.title = I18n.t("onboarding.window_title")
-                        w.contentView = NSHostingView(rootView: OnboardingView())
-                        w.center(); w.makeKeyAndOrderFront(nil); w.isReleasedWhenClosed = false
-                        OnboardingWindowManager.shared.window = w
-                    }
-                }
-
-                settingsGroup(I18n.t("general.subscription_cycle")) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(I18n.t("general.subscription_period")).font(.body)
-                            Text(I18n.t("general.subscription_cycle_desc"))
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Picker("", selection: $subscriptionPeriodDays) {
-                            Text(I18n.t("general.subscription_30")).tag(30)
-                            Text(I18n.t("general.subscription_90")).tag(90)
-                            Text(I18n.t("general.subscription_365")).tag(365)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 200)
-                        .labelsHidden()
-                        .onChange(of: subscriptionPeriodDays) { _, v in
-                            UserDefaults.standard.set(v, forKey: "subscription_period_days")
-                            NotificationCenter.default.post(name: .dataDidChange, object: nil)
-                        }
-                    }
-
-                    Divider()
-
-                    HStack {
-                        Text(I18n.t("general.subscription_start")).font(.body)
-                        Spacer()
-                        DatePicker("", selection: $subscriptionStart, displayedComponents: .date)
-                            .labelsHidden()
-                            .onChange(of: subscriptionStart) { _, v in
-                                UserDefaults.standard.set(v, forKey: "subscription_start")
-                                NotificationCenter.default.post(name: .dataDidChange, object: nil)
-                            }
-                    }
-                }
-
-            }
-            .padding(.trailing, 16)
-        }
-        .onAppear {
-            refreshNotificationPermission()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .demoModeDidChange)) { _ in
-            demoActive = DemoData.isActive
-        }
-    }
-
-    private func settingsGroup<Content: View>(
-        _ title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.headline)
-            content()
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-        )
-    }
-
-    private var notificationPermissionRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: notificationPermissionIcon)
-                .foregroundColor(notificationPermissionColor)
-            Text(notificationPermissionText)
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Spacer()
-            Button(I18n.t("general.open_notification_settings")) {
-                openNotificationSettings()
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-        }
-    }
-
-    private var notificationPermissionIcon: String {
-        switch notificationAuthorization {
-        case .authorized, .provisional, .ephemeral: return "checkmark.circle.fill"
-        case .denied: return "xmark.circle.fill"
-        default: return "questionmark.circle.fill"
-        }
-    }
-
-    private var notificationPermissionColor: Color {
-        switch notificationAuthorization {
-        case .authorized, .provisional, .ephemeral: return .green
-        case .denied: return .red
-        default: return .secondary
-        }
-    }
-
-    private var notificationPermissionText: String {
-        switch notificationAuthorization {
-        case .authorized, .provisional, .ephemeral:
-            return I18n.t("general.notification_status_authorized")
-        case .denied:
-            return I18n.t("general.notification_status_denied")
-        default:
-            return I18n.t("general.notification_status_not_determined")
-        }
-    }
-
-    private func refreshNotificationPermission() {
-        Task {
-            let settings = await UNUserNotificationCenter.current().notificationSettings()
-            notificationAuthorization = settings.authorizationStatus
-        }
-    }
-
-    private func requestNotificationAuthorizationIfNeeded() {
-        Task {
-            let center = UNUserNotificationCenter.current()
-            let settings = await center.notificationSettings()
-            if settings.authorizationStatus == .notDetermined {
-                _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
-            }
-            let updated = await center.notificationSettings()
-            notificationAuthorization = updated.authorizationStatus
-        }
-    }
-
-    private func openNotificationSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
-        else { return }
-        NSWorkspace.shared.open(url)
     }
 }
 
