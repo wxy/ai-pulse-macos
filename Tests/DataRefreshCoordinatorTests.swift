@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 @testable import AIPulse
 
 private final class LockedNotificationCounter: @unchecked Sendable {
@@ -44,6 +45,30 @@ final class DataRefreshCoordinatorTests: XCTestCase {
         coordinator.start()
         coordinator.start()
         coordinator.stop()
+    }
+
+    @MainActor
+    func testSleepStopRestartResetsSuspensionAndIgnoresNotificationsAfterStop() {
+        let center = NSWorkspace.shared.notificationCenter
+        coordinator.start()
+        coordinator.start()
+        XCTAssertTrue(coordinator.isRunning)
+        center.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        XCTAssertTrue(coordinator.isSuspended)
+        coordinator.stop()
+        XCTAssertFalse(coordinator.isRunning)
+        XCTAssertFalse(coordinator.isSuspended)
+        center.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        XCTAssertFalse(coordinator.isRunning)
+        coordinator.start()
+        XCTAssertFalse(coordinator.isSuspended)
+        center.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        XCTAssertTrue(coordinator.isSuspended)
+        center.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        XCTAssertFalse(coordinator.isSuspended)
+        coordinator.stop()
+        center.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        XCTAssertFalse(coordinator.isSuspended)
     }
 
     // MARK: - Trigger ingest

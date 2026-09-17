@@ -65,6 +65,8 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     private var screenSleepObserver: NSObjectProtocol?
     private var screenWakeObserver: NSObjectProtocol?
     private var stopped = false
+    private(set) var isRunning = false
+    var isSuspended: Bool { timersSuspended }
 
     /// Minimum interval between consecutive .dataDidChange posts.
     /// Prevents the staggered startup phases (5s/10s/15s) and rapid
@@ -84,7 +86,10 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     // MARK: - Public
 
     func start() {
+        guard !isRunning else { return }
+        isRunning = true
         stopped = false
+        timersSuspended = false
         // One-time session metadata backfill for logs that predate the
         // session_info table (runs once, guarded internally).
         SessionInfoBackfill.runIfNeeded()
@@ -117,6 +122,8 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         screenSleepObserver = nil; screenWakeObserver = nil
         cancelAllTimers()
         stopped = true
+        isRunning = false
+        timersSuspended = false
         pendingEvents.removeAll()
         pendingConsumptionBeat = false
         lastNotifyTime = .distantPast
@@ -128,7 +135,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     private var timersSuspended = false
 
     private func suspendTimers() {
-        guard !timersSuspended else { return }
+        guard isRunning, !timersSuspended else { return }
         timersSuspended = true
         cancelAllTimers()
         Logger.debug("DataRefreshCoordinator: timers suspended (system sleeping)")
@@ -136,7 +143,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     }
 
     private func resumeTimers() {
-        guard timersSuspended else { return }
+        guard isRunning, timersSuspended else { return }
         timersSuspended = false
         recreateTimers()
         Logger.info("DataRefreshCoordinator: timers resumed (system woke)")
