@@ -3,6 +3,49 @@ import XCTest
 import AIPulseShared
 
 final class ClosingBellTests: XCTestCase {
+    @MainActor func testCompetingDailyClaimsOnlyOneWinsWithoutPlayingSound() async {
+        let domain = "ClosingBellClaims.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: domain)!
+        defer { defaults.removePersistentDomain(forName: domain) }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 17, hour: 22))!
+        let day = calendar.startOfDay(for: now)
+        let capturedCalendar = calendar
+        let winners = await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<64 {
+                group.addTask { @MainActor in
+                    ClosingBell.claimDailyDelivery(for: day, at: now, calendar: capturedCalendar,
+                                                   defaults: UserDefaults(suiteName: domain)!)
+                }
+            }
+            var count = 0
+            for await won in group { if won { count += 1 } }
+            return count
+        }
+        XCTAssertEqual(winners, 1)
+    }
+
+    @MainActor func testStaleDayOrChangedClosingSettingsDoNotClaimDelivery() {
+        let domain = "ClosingBellBoundaries.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: domain)!
+        defer { defaults.removePersistentDomain(forName: domain) }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 17, hour: 22))!
+        let day = calendar.startOfDay(for: now)
+        let nextDay = calendar.date(byAdding: .day, value: 1, to: now)!
+        XCTAssertFalse(ClosingBell.claimDailyDelivery(for: day, at: nextDay, calendar: calendar, defaults: defaults))
+        defaults.set("23:00", forKey: "closing_bell_time")
+        XCTAssertFalse(ClosingBell.claimDailyDelivery(for: day, at: now, calendar: calendar, defaults: defaults))
+        defaults.set("21:30", forKey: "closing_bell_time")
+        defaults.set(false, forKey: "closing_bell_enabled")
+        XCTAssertFalse(ClosingBell.claimDailyDelivery(for: day, at: now, calendar: calendar, defaults: defaults))
+        XCTAssertNil(defaults.string(forKey: "closing_bell_last_fired"))
+        defaults.set(true, forKey: "closing_bell_enabled")
+        XCTAssertTrue(ClosingBell.claimDailyDelivery(for: day, at: now, calendar: calendar, defaults: defaults))
+    }
+
     func testCommitOnlyOutputIsActivityWithoutInventingTokensOrAIAttribution() {
         let summary = ClosingBellSummary(tier: .resting, reason: "no_recent_signal",
                                          activityTokens: nil, observedSpend: [], quotaPercent: nil,

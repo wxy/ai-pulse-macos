@@ -23,6 +23,23 @@ enum ClosingBell {
     static let lastSummaryDataKey = "closing_bell_last_summary_v2_facts"
     static let lastSummaryDateKey = "closing_bell_last_summary_date"
 
+    /// Claim immediately before delivery, after asynchronous reads finish.
+    /// Main-actor serialization prevents competing tasks from both winning.
+    @MainActor static func claimDailyDelivery(for dayStart: Date, at now: Date = Date(),
+                                              calendar: Calendar = .current,
+                                              defaults: UserDefaults = .standard) -> Bool {
+        guard calendar.startOfDay(for: now) == dayStart,
+              defaults.object(forKey: "closing_bell_enabled") as? Bool ?? true else { return false }
+        let closingMinutes = SoundSettings.parseHM(defaults.string(forKey: "closing_bell_time") ?? "21:30")
+            ?? 21 * 60 + 30
+        let minutesNow = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
+        guard minutesNow >= closingMinutes else { return false }
+        let key = String(Int64(dayStart.timeIntervalSince1970 * 1000))
+        guard defaults.string(forKey: "closing_bell_last_fired") != key else { return false }
+        defaults.set(key, forKey: "closing_bell_last_fired")
+        return true
+    }
+
     static func body(_ summary: ClosingBellSummary) -> String {
         var parts = ["\(I18n.t("pulse.tier.\(summary.tier.rawValue)")) · \(PulseCopy.localizedReason(summary.reason))"]
         if let tokens = summary.activityTokens, tokens > 0 {

@@ -247,9 +247,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
             guard summary.hasActivity else { return }
             // Concurrent slow reads may finish after another daily task. Claim
             // on the main actor immediately before firing, without an await.
-            guard d.object(forKey: "closing_bell_enabled") as? Bool ?? true,
-                  d.string(forKey: "closing_bell_last_fired") != dayKey else { return }
-            d.set(dayKey, forKey: "closing_bell_last_fired")
+            guard ClosingBell.claimDailyDelivery(for: dayStart) else { return }
             await ClosingBell.fire(summary: summary, at: now)
         }
     }
