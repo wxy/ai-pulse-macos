@@ -2,6 +2,22 @@ import XCTest
 @testable import AIPulse
 
 final class AppHealthStatsTests: XCTestCase {
+    func testWholeFileRetryClearsStableFailureWithoutClearingAnotherFile() {
+        let monitor = AppHealthMonitor()
+        let first = "/qa/first.jsonl"
+        let second = "/qa/second.jsonl"
+        LogWatcher.recordFileScanResult(path: first, error: JSONLCheckpoint.Failure.persistenceFailed, monitor: monitor)
+        LogWatcher.recordFileScanResult(path: second, error: JSONLCheckpoint.Failure.persistenceFailed, monitor: monitor)
+        XCTAssertEqual(monitor.failingIngestSources, ["Log.file.\(first)", "Log.file.\(second)"])
+        // Completion belongs to the file, not the retry's changed batch size.
+        LogWatcher.recordFileScanResult(path: first, error: nil, monitor: monitor)
+        XCTAssertEqual(monitor.failingIngestSources, ["Log.file.\(second)"])
+        XCTAssertEqual(monitor.current.severity, .impaired)
+        LogWatcher.recordFileScanResult(path: second, error: nil, monitor: monitor)
+        XCTAssertTrue(monitor.failingIngestSources.isEmpty)
+        XCTAssertEqual(monitor.current.severity, .nominal)
+    }
+
     func testSameNamedRepositoryRecoveryDoesNotClearAnotherGitScanFailure() {
         let monitor = AppHealthMonitor()
         let first = "Git.scan./development/first/app"

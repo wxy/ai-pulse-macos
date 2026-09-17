@@ -308,11 +308,11 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             }
         } catch {
             Logger.warning("LogWatcher: DSH scan failed for \(path): \(error.localizedDescription)")
-            AppHealthMonitor.shared.reportIngestError("DSH scan failed: \(path)", source: "Log.file.\(path)")
+            Self.recordFileScanResult(path: path, error: error)
             return
         }
 
-        AppHealthMonitor.shared.clearIngestError(source: "Log.file.\(path)")
+        Self.recordFileScanResult(path: path, error: nil)
         if let sessionId = result.sessionId, result.maxTs > 0 {
             upsertSessionInfo(SessionInfoRecord(
                 source: "deepseek-harness", sessionId: sessionId,
@@ -583,7 +583,9 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
     private func insertOpenCodeFile(_ file: URL) {
         guard let event = OpenCodeParser.parseFile(file, cwd: nil) else { return }
-        insertEvent(event)
+        let saved = insertEvents([event])
+        Self.recordFileScanResult(path: file.path,
+                                  error: saved ? nil : JSONLCheckpoint.Failure.persistenceFailed)
         Logger.debug("LogWatcher: parsed opencode event from \(file.path)")
     }
 
@@ -654,10 +656,10 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                 })
             filePositions[path] = checkpoint
             persistPositions(filePositions)
-            AppHealthMonitor.shared.clearIngestError(source: "log.file.\(path)")
+            Self.recordFileScanResult(path: path, error: nil)
         } catch {
             Logger.error("LogWatcher: file scan did not advance checkpoint: \(error)")
-            AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "log.file.\(path)")
+            Self.recordFileScanResult(path: path, error: error)
         }
     }
 
@@ -676,8 +678,15 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         GitRepoScanner.enumerate(in: dir, handler)
     }
 
-    private func insertEvent(_ event: UsageEvent) {
-        insertEvents([event])
+    /// A retry may contain different batches after the log grows. Track the
+    /// stable file identity, clearing only after its whole scan succeeds.
+    static func recordFileScanResult(path: String, error: Error?, monitor: AppHealthMonitor = .shared) {
+        let source = "Log.file.\(path)"
+        if let error {
+            monitor.reportIngestError(error.localizedDescription, source: source)
+        } else {
+            monitor.clearIngestError(source: source)
+        }
     }
 
     /// Batch all events read from one file into a single SQLite transaction.
@@ -708,14 +717,12 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             return (event, providerId)
         }
 
-        let batchHealthKey = "log.batch.\(rows.count).\(rows.first?.event.dedupeKey ?? "unknown").\(rows.last?.event.dedupeKey ?? "unknown")"
             do {
                 let nowMs = Int64(Date().timeIntervalSince1970 * 1_000)
                 let batchTokens = try AppDatabase.shared.writeSynchronously { db in
                     try Self.persistObservedEvents(in: db, rows: rows, nowMs: nowMs,
                                                    liveSinceMs: liveObservationStartMs)
                 }
-                AppHealthMonitor.shared.clearIngestError(source: batchHealthKey)
                 let event: ConsumptionEvent? = batchTokens > 0 && !suppressConsumptionEvents
                     ? ConsumptionEvent(spendUSD: nil, tokens: Int(clamping: batchTokens),
                                        source: rows.first?.event.source ?? "log")
@@ -724,8 +731,6 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                 return true
             } catch {
                 Logger.error("Failed to insert usage_event: \(error)")
-                AppHealthMonitor.shared.reportIngestError(error.localizedDescription,
-                    source: batchHealthKey)
                 return false
             }
     }
