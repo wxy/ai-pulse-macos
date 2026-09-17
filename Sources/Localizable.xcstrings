@@ -12141,6 +12141,21 @@
       },
       "shouldTranslate" : false
     },
+    "dashboard.refresh" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Daten aktualisieren" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh data" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Actualizar datos" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Actualiser les données" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "データを更新" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "데이터 새로고침" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizar dados" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新数据" } },
+        "zh-Hant-HK" : { "stringUnit" : { "state" : "translated", "value" : "重新整理資料" } },
+        "zh-Hant-TW" : { "stringUnit" : { "state" : "translated", "value" : "重新整理資料" } }
+      }
+    },
     "general.refreshing" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -1579,19 +1579,22 @@ struct DashboardView: View {
                         .font(.caption2).foregroundColor(.secondary)
                 }
             }
+            Button {
+                guard !isRefreshing else { return }
+                isRefreshing = true
+                Task {
+                    await forceRefresh()
+                    isRefreshing = false
+                }
+            } label: {
+                Label(I18n.t("dashboard.refresh"), systemImage: "arrow.clockwise")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .disabled(isRefreshing)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16).padding(.horizontal, 20)
-        .contentShape(Rectangle())
-        .pointingHandCursor()
-        .onTapGesture {
-            guard !isRefreshing else { return }
-            isRefreshing = true
-            Task {
-                await forceRefresh()
-                isRefreshing = false
-            }
-        }
     }
 
     @MainActor
@@ -1643,37 +1646,32 @@ struct DashboardView: View {
 
     @MainActor
     private func forceRefresh() async {
-        // Recompute and cache all three time ranges.
-        // Then post a dashboardRefresh notification — the onReceive handler
-        // calls load(), which reads the fresh cache. Single code path, no races.
-        let sTodayStart = Calendar.current.startOfDay(for: Date())
-        let weekDays = max((Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: sTodayStart).day ?? 0) + 1, 1)
-        let ranges: [(range: TimeRange, days: Int)] = [
-            (.today, 1),
-            (.thisWeek, weekDays),
-            (.days30, 30),
-        ]
+        // Invalidate before computing, not after publishing. A tab selection
+        // during the refresh then reads fresh facts, never the old cache.
+        await DashboardCache.invalidateAll()
+        let ranges = TimeRange.allCases
+        for range in ranges {
+            rangeLoadTasks[range]?.cancel()
+            loadGenerationByRange[range, default: 0] += 1
+        }
+        let generations = loadGenerationByRange
 
         if DemoData.isActive {
-            for item in ranges {
-                let demo = DemoData.data(for: item.range)
-                rangeSnapshots[item.range] = Self.demoSnapshot(demo, for: item.range)
-                demoRanges.insert(item.range)
+            for range in ranges {
+                let demo = DemoData.data(for: range)
+                rangeSnapshots[range] = Self.demoSnapshot(demo, for: range)
+                demoRanges.insert(range)
             }
             return
         }
 
-        for item in ranges {
-            let snap = await StatsService.dashboardSnapshot(period: item.range.periodKind)
-            await storeSnapshot(snap, for: item.range)
+        for range in ranges {
+            let snap = await StatsService.dashboardSnapshot(period: range.periodKind)
+            guard !Task.isCancelled,
+                  generations[range] == loadGenerationByRange[range] else { continue }
+            await storeSnapshot(snap, for: range)
         }
         triggerCloudSync()
-        // Invalidate only each range's own older request. The three snapshots
-        // remain independent and resident in memory.
-        for range in TimeRange.allCases {
-            rangeLoadTasks[range]?.cancel()
-            loadGenerationByRange[range, default: 0] += 1
-        }
         NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
     }
 
