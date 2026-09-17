@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import Charts
 import GRDB
 import AIPulseShared
@@ -7,6 +8,14 @@ enum TimeRange: Hashable, CaseIterable {
     case today
     case thisWeek
     case days30
+
+    var periodKind: DashboardPeriodKind {
+        switch self {
+        case .today: return .today
+        case .thisWeek: return .week
+        case .days30: return .days30
+        }
+    }
 
     var days: Int {
         switch self {
@@ -54,6 +63,7 @@ private final class DashboardLoadThrottle {
 }
 
 struct DashboardView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
     }
@@ -86,6 +96,8 @@ struct DashboardView: View {
     @State private var entryAnimationToken = 0   // cancels a stale zero→one entry run
     @State private var rangeChangeStartedAt: Date? = nil
     @State private var rangeSnapshots: [TimeRange: DashboardSnapshot] = [:]
+    @State private var currentPulse: PulseSnapshot?
+    @State private var pulseRefreshGeneration = 0
     @State private var demoRanges: Set<TimeRange> = []
     @State private var toolsExpanded = false
     @State private var claudeDetailExpanded = false
@@ -93,6 +105,7 @@ struct DashboardView: View {
     @State private var selectedToolForOverlay: String? = nil
     @State private var reposExpanded = false
     @State private var isImportingHistory = LogWatcher.backfill.isActive
+    @State private var localScanStatus = LogScanObservation.Status.inactive
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -121,33 +134,18 @@ struct DashboardView: View {
         demoRanges.contains(timeRange)
     }
 
-    private var providerCosts: [ProviderDailyCost] {
-        guard let snapshot = activeSnapshot else { return [] }
-        return snapshot.providerBreakdown.map {
-            ProviderDailyCost(date: snapshot.updatedAt,
-                              providerId: $0.providerId,
-                              cost: $0.cost)
-        }
-    }
-
     private var balanceSpend: [(providerId: String, name: String, spend: Double)] {
         (activeSnapshot?.providerBreakdown ?? []).map {
             (providerId: $0.providerId, name: $0.name, spend: $0.cost)
         }
     }
 
-    private var toolCostBreakdown: [(name: String, cost: Double)] {
-        (activeSnapshot?.toolBreakdown ?? []).map { (name: $0.name, cost: $0.cost) }
-    }
-
     private var dailyStats: [DailyStat] {
         (activeSnapshot?.dailyStats ?? []).map {
             DailyStat(date: Date(timeIntervalSince1970: $0.ts),
-                      cost: $0.value,
                       calls: Int($0.calls),
                       tokens: Int($0.tokens),
-                      netLines: $0.netLines,
-                      costPerLine: 0)
+                      netLines: $0.netLines)
         }
     }
 
@@ -170,57 +168,29 @@ struct DashboardView: View {
         Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
     }
 
-    private var repos: [RepoBreakdown] {
-        (activeSnapshot?.topRepos ?? []).map {
-            RepoBreakdown(repo: $0.name,
-                          cost: $0.cost,
-                          added: $0.added,
-                          deleted: $0.deleted,
-                          commits: $0.commits,
-                          apiSources: [],
-                          subscriptionSources: [])
-        }
-    }
-
-    private var prediction: Prediction? {
-        activeSnapshot?.prediction.map {
-            Prediction(monthProjected: $0.monthProjected,
-                       dailyRate: $0.dailyRate,
-                       daysRemaining: $0.daysRemaining,
-                       monthSoFar: $0.monthSoFar)
-        }
-    }
+    private var repos: [RepoItem] { activeSnapshot?.topRepos ?? [] }
 
     private var remainingBalances: [RemainingBalanceItem] {
         activeSnapshot?.remainingBalances ?? []
     }
 
-    private var todayCombinedSpend: Double { activeSnapshot?.todayCost ?? 0 }
-    private var weekCombinedSpend: Double { activeSnapshot?.weekCost ?? 0 }
-    private var monthCombinedSpend: Double { activeSnapshot?.monthCost ?? 0 }
     private var todayCalls: Int { Int(activeSnapshot?.todayCalls ?? 0) }
     private var todayTokens: Int { Int(activeSnapshot?.todayTokens ?? 0) }
-    private var yesterdaySpend: Double { activeSnapshot?.yesterdaySpend ?? 0 }
-    private var previousPeriodSpend: Double { activeSnapshot?.previousPeriodSpend ?? 0 }
 
-    private var providerSourceKinds: [String: String] {
-        Dictionary(activeSnapshot?.providerBreakdown.map {
-            ($0.providerId, $0.sourceKind ?? "balance")
-        } ?? [], uniquingKeysWith: { _, latest in latest })
-    }
 
     private var repoTokens: [String: Int64] {
         activeSnapshot?.topRepos.reduce(into: [String: Int64]()) { map, repo in
-            map[repo.name, default: 0] += repo.tokens ?? 0
+            map[repo.repoPath, default: 0] += repo.tokens ?? 0
         } ?? [:]
     }
 
     private var periodSessionCount: Int {
-        activeSnapshot?.toolDetails.reduce(0) { $0 + $1.sessions.count } ?? 0
+        Int(clamping: activeSnapshot?.periodSessions ?? 0)
     }
 
     private var periodActiveDays: Int {
-        dailyStats.filter { $0.tokens > 0 || $0.calls > 0 }.count
+        Set(dailyStats.filter { $0.tokens > 0 || $0.calls > 0 }
+            .map { Calendar.current.startOfDay(for: $0.date) }).count
     }
 
     private var periodCommitCount: Int {
@@ -231,6 +201,9 @@ struct DashboardView: View {
     /// horizon (24 hours / 7 days / 30 days), matching the fixed rhythm slots;
     /// this is an arithmetic display rate, not a provider-billing estimate.
     private var rangeTokenRateText: String {
+        guard activeSnapshot?.readFailures.contains("dashboardUsageStats") != true else {
+            return pulseText("词元均速不可用", "Token pace unavailable")
+        }
         let total = dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
         let divisor: Double
         let zhUnit: String
@@ -259,6 +232,27 @@ struct DashboardView: View {
         !repos.isEmpty || !(activeSnapshot?.observedSpend ?? []).isEmpty
     }
 
+    private var localScanStatusText: String {
+        I18n.t("source.local_scan.\(localScanStatusKey)")
+    }
+
+    private var localScanStatusKey: String {
+        switch localScanStatus {
+        case .inactive: return "inactive"
+        case .scanning: return "scanning"
+        case .available: return "available"
+        case .stale: return "stale"
+        case .failed: return "failed"
+        }
+    }
+
+    private func refreshLocalScanStatus() {
+        let failed = AppHealthMonitor.shared.failingIngestSources.contains {
+            $0.lowercased().hasPrefix("log.")
+        }
+        localScanStatus = LogScanObservation.shared.status(hasReadFailure: failed)
+    }
+
     private func pulseText(_ zh: String, _ en: String) -> String {
         I18n.resolvedLang() == "zh-Hans" ? zh : en
     }
@@ -272,12 +266,8 @@ struct DashboardView: View {
         }
     }
 
-    private var modelBreakdownItems: [ModelCostItem] {
+    private var modelBreakdownItems: [ModelActivityItem] {
         activeSnapshot?.modelBreakdown ?? []
-    }
-
-    private var rateSeriesItems: [RateSeriesItem] {
-        activeSnapshot?.rateSeries ?? []
     }
 
 
@@ -292,8 +282,8 @@ struct DashboardView: View {
 
     /// A repository is a dashboard subject when either fact stream saw it:
     /// code changes or attributed token usage. Usage-only days must not vanish.
-    nonisolated static func shouldShowRepository(totalChanges: Int, tokens: Int64) -> Bool {
-        totalChanges > 0 || tokens > 0
+    nonisolated static func shouldShowRepository(totalChanges: Int, tokens: Int64, commits: Int = 0) -> Bool {
+        totalChanges > 0 || tokens > 0 || commits > 0
     }
 
     private func earView(width: CGFloat, height: CGFloat) -> some View {
@@ -307,12 +297,28 @@ struct DashboardView: View {
     }
 
     var body: some View {
+        ZStack {
+            dashboardContent
+                .disabled(selectedToolForOverlay != nil)
+                .allowsHitTesting(selectedToolForOverlay == nil)
+                .accessibilityHidden(selectedToolForOverlay != nil)
+            if let toolId = selectedToolForOverlay {
+                ToolDetailOverlayView(
+                    toolId: toolId,
+                    sinceMs: rangeSinceMs(),
+                    onClose: { selectedToolForOverlay = nil })
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    private var dashboardContent: some View {
         VStack(spacing: 0) {
             // Error banner — visible when health is not nominal
             if healthSeverity >= .degraded {
                 VStack(spacing: 0) {
                     Button {
-                        withAnimation { showHealthDetails.toggle() }
+                        withAnimation(reduceMotion ? nil : .default) { showHealthDetails.toggle() }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: healthSeverity == .critical
@@ -407,7 +413,13 @@ struct DashboardView: View {
                         .padding(.horizontal, 20).padding(.vertical, 8)
                         .background(Color.secondary.opacity(0.08))
                     }
-                    if hasActiveCostSources || !providerCosts.isEmpty || hasPulseActivity || isDemoMode {
+                    if !isDemoMode {
+                        Text(localScanStatusText)
+                            .font(.caption2).foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 20).padding(.vertical, 8)
+                    }
+                    if hasActiveCostSources || !balanceSpend.isEmpty || hasPulseActivity || isDemoMode {
                         // ── Robot head frame — pulse, activity, distribution, output ──
                         VStack(spacing: 16) {
                             spendingOverview
@@ -475,7 +487,18 @@ struct DashboardView: View {
         .frame(width: 700, height: 660)
         .background(Color(nsColor: .windowBackgroundColor))
         .environment(\.locale, I18n.resolvedLocale)
+        .transaction {
+            if reduceMotion {
+                $0.animation = nil
+                $0.disablesAnimations = true
+            }
+        }
+        .onChange(of: reduceMotion) { _, enabled in
+            if enabled { startEntryAnimation() }
+        }
         .task {
+            refreshLocalScanStatus()
+            await refreshCurrentPulse()
             await hydrateRangeSnapshotCache()
             let selectedRange = timeRange
             await load(range: selectedRange)
@@ -503,19 +526,45 @@ struct DashboardView: View {
             // Manual refresh / forceRefresh — immediate, no throttle
             scheduleLoad(for: timeRange)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .demoModeDidChange)) { _ in
+            // A mode change invalidates all three channels, not only the visible
+            // one. Never flash fictional activity while real data is loading.
+            for range in TimeRange.allCases {
+                rangeLoadTasks[range]?.cancel()
+                loadGenerationByRange[range, default: 0] += 1
+            }
+            rangeSnapshots.removeAll()
+            demoRanges.removeAll()
+            selectedToolForOverlay = nil
+            for range in TimeRange.allCases { scheduleLoad(for: range) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .dataDidChange)) { _ in
+            Task { await refreshCurrentPulse() }
             // Background data change — throttle to avoid redundant work
             let now = Date()
             guard dataChangeThrottle.shouldLoad(now: now, minimumInterval: 15) else { return }
             scheduleLoad(for: timeRange)
         }
         .onReceive(NotificationCenter.default.publisher(for: .appHealthDidChange)) { _ in
+            refreshLocalScanStatus()
             let snap = AppHealthMonitor.shared.current
             healthSeverity = snap.severity
             healthMessages = snap.messages
         }
+        .onReceive(NotificationCenter.default.publisher(for: .pulseDidChange)) { _ in
+            refreshLocalScanStatus()
+            Task { await refreshCurrentPulse() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: IngestionBackfillState.changeNotification)) { _ in
             isImportingHistory = LogWatcher.backfill.isActive
+        }
+        .onReceive(NotificationCenter.default.publisher(for: LogScanObservation.didChange)) { _ in
+            refreshLocalScanStatus()
+        }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            // Expiration must remain visible even when a stalled collector
+            // produces no new notifications. This does not refresh source time.
+            refreshLocalScanStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardSwitchTab)) { notification in
             if let tr = notification.userInfo?["timeRange"] as? TimeRange, tr != timeRange {
@@ -530,15 +579,6 @@ struct DashboardView: View {
             rangeLoadTasks.removeAll()
         }
         .id(i18nToken)
-        .overlay {
-            if let toolId = selectedToolForOverlay {
-                ToolDetailOverlayView(
-                    toolId: toolId,
-                    sinceMs: rangeSinceMs(),
-                    onClose: { selectedToolForOverlay = nil })
-                    .transition(.opacity)
-            }
-        }
     }
 
     // MARK: - Health banner helpers
@@ -561,50 +601,6 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - CPL guidance (no A-grade)
-
-    var cplGuidanceCard: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "chart.line.uptrend.xyaxis").font(.system(size: 32)).foregroundColor(.secondary)
-            Text(I18n.t("dashboard.cpl_unavailable_title")).font(.headline)
-            Text(I18n.t("dashboard.cpl_unavailable_desc"))
-                .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
-            HStack(spacing: 16) {
-                Text(I18n.t("dashboard.cpl_claude_path")).font(.caption2).foregroundColor(.secondary)
-                Text(I18n.t("dashboard.cpl_aider_path")).font(.caption2).foregroundColor(.secondary)
-            }
-        }
-        .padding(24).frame(maxWidth: .infinity)
-        .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
-        .cornerRadius(10)
-    }
-
-    /// Per-provider spend from balance API (single source of truth).
-    var apiBreakdownCard: some View {
-        guard !balanceSpend.isEmpty else { return AnyView(EmptyView()) }
-        let total = balanceSpend.reduce(0.0) { $0 + $1.spend }
-        return AnyView(
-            VStack(alignment: .leading, spacing: 8) {
-                Text(I18n.t("dashboard.api_total_title")).font(.headline)
-                HStack {
-                    Text(I18n.t("dashboard.total")).font(.body)
-                    Spacer()
-                    Text("$\(String(format: "%.2f", total))").font(.callout).monospacedDigit().fontWeight(.semibold)
-                }
-                Divider()
-                ForEach(balanceSpend, id: \.providerId) { item in
-                    HStack {
-                        Text(item.name).font(.caption)
-                        Spacer()
-                        Text("$\(String(format: "%.2f", item.spend))").font(.caption).monospacedDigit()
-                    }
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity)
-            .background(Color(nsColor: .quaternarySystemFill).opacity(0.3)).cornerRadius(10)
-        )
-    }
 
 
     func providerDisplayName(_ pid: String) -> String {
@@ -645,28 +641,6 @@ struct DashboardView: View {
         .help(clamped > 90 ? I18n.t("dashboard.usage_help") : I18n.t("dashboard.usage_percent"))
     }
 
-    func confidenceBadge(_ c: CostConfidence) -> some View {
-        let (label, color): (String, Color) = switch c {
-        case .exact:       ("", .marsGreen)
-        case .estimated:   ("~", .marsGreen2)
-        case .amortized:   ("", .deepRed)
-        case .uncertain:   ("?", .deepRed2)
-        case .incomplete:  ("…", .deepRed)
-        }
-        return Text(label)
-            .font(.caption2).fontWeight(.bold).foregroundColor(color)
-            .frame(width: 16)
-    }
-
-    func confidenceColor(_ c: CostConfidence) -> Color {
-        switch c {
-        case .exact:       return .marsGreen
-        case .estimated:   return .secondary
-        case .amortized:   return .secondary
-        case .uncertain:   return .secondary
-        case .incomplete:  return .deepRed
-        }
-    }
 
     func smallCard(title: String, value: String, color: Color) -> some View {
         VStack(spacing: 2) {
@@ -749,61 +723,6 @@ struct DashboardView: View {
         .padding(6).background(.regularMaterial).cornerRadius(6)
     }
 
-    // MARK: - CPL info card (demoted from trend chart to small window)
-
-    var cplInfoCard: some View {
-        let cplRepos = repos.filter { $0.totalChanges > 0 && !$0.allSources.isEmpty }
-        return VStack(alignment: .leading, spacing: 8) {
-            Text(I18n.t("dashboard.cpl_card")).font(.headline)
-            if cplRepos.isEmpty {
-                Text(I18n.t("dashboard.no_cpl_data"))
-                    .font(.caption).foregroundColor(.secondary)
-            } else {
-                ForEach(cplRepos.prefix(5)) { r in
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack {
-                            Text(r.repo).font(.caption).fontWeight(.medium).lineLimit(1)
-                            Text("+\(r.added)/-\(r.deleted)").font(.caption2).foregroundColor(.secondary).monospacedDigit()
-                            Spacer()
-                        }
-                        // Show CPL contribution per source
-                        ForEach(r.allSources) { src in
-                            HStack {
-                                Text(src.label).font(.caption2).foregroundColor(.secondary)
-                                Spacer()
-                                Text("\(confidencePrefixForCPLLabel(src.label))$\(String(format: "%.2f", src.cpl))\(I18n.t("menu.per_line"))")
-                                    .font(.caption2).foregroundColor(.secondary).monospacedDigit()
-                            }
-                            .padding(.leading, 8)
-                        }
-                    }
-                    if r.id != cplRepos.prefix(5).last?.id {
-                        Divider()
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity)
-        .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
-        .cornerRadius(10)
-    }
-
-    /// Show confidence prefix for CPL source labels.
-    func confidencePrefixForCPLLabel(_ label: String) -> String {
-        // Check if this source has estimated/anortized confidence
-        let sources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
-        if let cs = sources.first(where: { label.contains($0.label) || $0.label.contains(label) }) {
-            switch cs.confidence {
-            case .estimated: return "~"
-            case .amortized: return ""
-            case .incomplete: return ""
-            default: return ""
-            }
-        }
-        return ""
-    }
-
     /// Nose: vertical overlapping bars. Added runs top-down, deleted runs
     /// bottom-up; the overlap is the net line change. Max height is the larger
     /// of the two, so the visible difference is exactly |added−deleted|/max.
@@ -860,23 +779,27 @@ struct DashboardView: View {
     var spendingOverview: some View {
         // Forehead: usage is the primary number — pure JSONL facts.
         let rangeTokens = dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
-        let pulseTier = activeSnapshot?.pulse?.tier
+        let pulseTier = currentPulse?.isCurrent() == true ? currentPulse?.tier : nil
 
         return VStack(spacing: 16) {
             HStack(spacing: 6) {
                 Circle().fill(pulseColor(pulseTier)).frame(width: 8, height: 8)
+                    .help(currentPulse?.isCurrent() == true
+                          ? StatusItemController.detail(snapshot: currentPulse)
+                          : I18n.t("pulse.reason.unavailable"))
                 Text(rangeTokenRateText)
                     .font(.caption).foregroundColor(.secondary).lineLimit(1)
             }
             // ── Forehead: usage ──
             VStack(spacing: 4) {
-                Text(tokenShort(Int(clamping: rangeTokens)))
+                Text(activeSnapshot?.readFailures.contains("dashboardUsageStats") == true
+                     ? "—" : tokenShort(Int(clamping: rangeTokens)))
                     .font(.system(size: 48, weight: .bold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.marsGreen)
                     .scaleEffect(loadedTimeRange == timeRange ? (0.8 + 0.2 * barProgress) : 0.8)
-                    .animation(.spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
+                    .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
                 HStack(spacing: 4) {
-                    Text("\(timeRange.label) · \(periodSessionCount) \(pulseText("个会话", "sessions")) · \(periodActiveDays) \(pulseText("个活跃日", "active days")) · \(pulseText("词元", "tokens"))")
+                    Text("\(timeRange.label) · \(activeSnapshot?.readFailures.contains("toolUsage") == true ? "—" : String(periodSessionCount)) \(pulseText("个会话", "sessions")) · \(activeSnapshot?.readFailures.contains("dashboardUsageStats") == true ? "—" : String(periodActiveDays)) \(pulseText("个活跃日", "active days")) · \(pulseText("词元", "tokens"))")
                         .font(.caption).foregroundColor(.secondary)
                     Text(I18n.t("dashboard.source_logs"))
                         .font(.caption2).foregroundColor(.secondary)
@@ -915,21 +838,21 @@ struct DashboardView: View {
     func toolTokenDonut() -> some View {
         let rawSegments = (activeSnapshot?.toolBreakdown ?? []).compactMap { item -> DonutItem? in
             guard let tokens = item.tokens, tokens > 0 else { return nil }
-            return DonutItem(label: item.name, cost: Double(tokens), pct: 0, color: .secondary)
+            return DonutItem(label: item.name, tokens: Double(tokens), pct: 0, color: .secondary)
         }
-        let totalCost = rawSegments.reduce(0) { $0 + $1.cost }
+        let totalTokens = rawSegments.reduce(0) { $0 + $1.tokens }
         let segments = Self.topSegments(
             Self.renderableDonutSegments(rawSegments)
         ).enumerated().map { i, s in
-            DonutItem(label: s.label, cost: s.cost,
-                      pct: totalCost > 0 ? s.cost / totalCost * 100 : 0,
+            DonutItem(label: s.label, tokens: s.tokens,
+                      pct: totalTokens > 0 ? s.tokens / totalTokens * 100 : 0,
                       color: Self.donutPalette[i % Self.donutPalette.count])
         }
         VStack(spacing: 6) {
             ZStack {
                 if !segments.isEmpty {
                     Chart(segments) { item in
-                        SectorMark(angle: .value("Tokens", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                        SectorMark(angle: .value("Tokens", item.tokens), innerRadius: .ratio(0.5), angularInset: 1)
                             .foregroundStyle(item.color)
                     }
                     .chartLegend(.hidden)
@@ -942,8 +865,8 @@ struct DashboardView: View {
                 } else {
                     emptyDonut()
                 }
-                Text(tokenShort(Int(clamping: Int64(totalCost))))
-                    .font(.system(size: Self.donutCenterFontSize(for: totalCost), weight: .semibold, design: .rounded)).monospacedDigit()
+                Text(tokenShort(Int(clamping: Int64(totalTokens))))
+                    .font(.system(size: Self.donutCenterFontSize(for: totalTokens), weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(Color.deepRed)
             }
             VStack(spacing: 2) {
@@ -966,22 +889,23 @@ struct DashboardView: View {
     /// split than tool. Center shows the attributed token total.
     @ViewBuilder
     func repoTokenDonut() -> some View {
+        let labels = RepositoryLabels.make(for: Array(repoTokens.keys))
         let items = repoTokens.compactMap { (name, tokens) -> DonutItem? in
             guard tokens > 0 else { return nil }
-            return DonutItem(label: name, cost: Double(tokens), pct: 0, color: .secondary)
+            return DonutItem(label: labels[name] ?? name, tokens: Double(tokens), pct: 0, color: .secondary, id: name)
         }
-        let totalTokens = items.reduce(0.0) { $0 + $1.cost }
+        let totalTokens = items.reduce(0.0) { $0 + $1.tokens }
         let segments = Self.topSegments(items).enumerated().map { i, s in
-            DonutItem(label: s.label, cost: s.cost,
-                      pct: totalTokens > 0 ? s.cost / totalTokens * 100 : 0,
-                      color: Self.donutPalette[i % Self.donutPalette.count])
+            DonutItem(label: s.label, tokens: s.tokens,
+                      pct: totalTokens > 0 ? s.tokens / totalTokens * 100 : 0,
+                      color: Self.donutPalette[i % Self.donutPalette.count], id: s.id)
         }
         let centerText = tokenShort(Int(clamping: Int64(totalTokens)))
         VStack(spacing: 6) {
             ZStack {
                 if !segments.isEmpty {
                     Chart(segments) { item in
-                        SectorMark(angle: .value("Tokens", item.cost), innerRadius: .ratio(0.5), angularInset: 1)
+                        SectorMark(angle: .value("Tokens", item.tokens), innerRadius: .ratio(0.5), angularInset: 1)
                             .foregroundStyle(item.color)
                     }
                     .chartLegend(.hidden)
@@ -1003,6 +927,7 @@ struct DashboardView: View {
                     HStack(spacing: 4) {
                         Circle().fill(item.color).frame(width: 6, height: 6)
                         Text(item.label).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+                            .help(repoTokens[item.id] == nil ? item.label : item.id)
                         Spacer()
                         Text(verbatim: ChartMath.safeInt(item.pct).formatted(.percent))
                             .font(.caption2).monospacedDigit().foregroundColor(.secondary)
@@ -1023,17 +948,13 @@ struct DashboardView: View {
     /// Keeps at most `limit` largest segments and folds the rest into an
     /// "Other" slice so donut legends stay readable.
     static func topSegments(_ items: [DonutItem], limit: Int = 3) -> [DonutItem] {
-        let sorted = items.sorted { $0.cost > $1.cost }
+        let sorted = items.sorted { $0.tokens > $1.tokens }
         guard sorted.count > limit else { return sorted }
         let top = Array(sorted.prefix(limit))
-        let otherCost = sorted.dropFirst(limit).reduce(0.0) { $0 + $1.cost }
-        return top + [DonutItem(label: I18n.t("dashboard.other"), cost: otherCost, pct: 0, color: .secondary)]
+        let otherTokens = sorted.dropFirst(limit).reduce(0.0) { $0 + $1.tokens }
+        return top + [DonutItem(label: I18n.t("dashboard.other"), tokens: otherTokens, pct: 0, color: .secondary)]
     }
 
-    /// Reverse lookup from a donut label back to a provider id.
-    private func providerId(for label: String) -> String {
-        balanceSpend.first(where: { $0.name == label })?.providerId ?? label
-    }
 
     // MARK: - Quota (subscription remaining)
 
@@ -1099,18 +1020,18 @@ struct DashboardView: View {
     }
 
     struct DonutItem: Identifiable {
-        // Labels are unique within each donut. Stable identity avoids turning
-        // every refresh into a destroy/create transition for ring geometry.
+        // Identity may differ from the display label (canonical repository root).
+        // Stable IDs avoid destroy/create transitions on every refresh.
         let id: String
         let label: String
-        let cost: Double
+        let tokens: Double
         let pct: Double
         let color: Color
 
-        init(label: String, cost: Double, pct: Double, color: Color) {
-            self.id = label
+        init(label: String, tokens: Double, pct: Double, color: Color, id: String? = nil) {
+            self.id = id ?? label
             self.label = label
-            self.cost = cost
+            self.tokens = tokens
             self.pct = pct
             self.color = color
         }
@@ -1119,7 +1040,7 @@ struct DashboardView: View {
     /// SectorMark receives only positive, finite angles. All-zero/error entries
     /// stay out of chart geometry and are represented by the caller's placeholder.
     static func renderableDonutSegments(_ segments: [DonutItem]) -> [DonutItem] {
-        segments.filter { $0.cost.isFinite && $0.cost > 0.001 }
+        segments.filter { $0.tokens.isFinite && $0.tokens > 0.001 }
     }
 
     private func toolIdToDisplay(_ id: String) -> String? {
@@ -1234,6 +1155,27 @@ struct DashboardView: View {
                  : pulseText("已观察到的事实", "Observed facts"))
                 .font(.caption).foregroundColor(.secondary)
 
+            if !isDemoMode {
+                if let failures = activeSnapshot?.readFailures, !failures.isEmpty {
+                    Label(pulseText("部分统计读取失败，空图和零值不代表没有活动。", "Some statistics could not be read; empty charts and zero values do not mean no activity."),
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundColor(.orange)
+                        .help(failures.joined(separator: ", "))
+                }
+                if activeSnapshot?.activityCoverage.isPartial == true {
+                    Text(pulseText("部分日志缺少词元分项，当前总量只包含可确认部分，可能偏低。",
+                                   "Some logs lack token components. Totals include confirmed components only and may be lower."))
+                        .font(.caption2).foregroundColor(.secondary)
+                } else if activeSnapshot?.activityCoverage.isPartial == nil {
+                    Text(pulseText("观察完整性暂不可用，不能据此判断没有活动。",
+                                   "Observation completeness is unavailable; this does not mean there was no activity."))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+                Text(pulseText("词元来自支持的本地工具日志，不代表整个 AI 账户用量或账单。",
+                               "Tokens come from supported local tool logs—not entire-account usage or billing."))
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+
             if timeRange == .days30 {
                 HStack(spacing: 14) {
                     Label("\(periodActiveDays) \(pulseText("个活跃日", "active days"))", systemImage: "calendar")
@@ -1243,25 +1185,43 @@ struct DashboardView: View {
                 .font(.caption).foregroundColor(.secondary)
             }
 
-            ForEach(observed, id: \.providerId) { item in
+            if !observed.isEmpty {
+                Text(pulseText("以下为采样间余额净下降，可能包含充值、退款及其他活动的影响，并非逐笔账单。",
+                               "Net balance decreases between samples, affected by top-ups, refunds and other activity—not itemized bills."))
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+            ForEach(observed, id: \.stableId) { item in
                 HStack {
                     Text(ProviderRegistry.byId(item.providerId)?.name ?? item.providerId)
                     Spacer()
-                    Text("\(item.currency.uppercased()) \(String(format: "%.2f", item.amount))")
+                    Text("\(item.currency.uppercased()) \(String(format: "%.1f", item.amount))")
                         .monospacedDigit()
                 }
                 .font(.caption)
+                .help(observedAmountIntervalHelp(item))
             }
             ForEach(freshQuotas, id: \.stableId) { quota in quotaRow(data: quota) }
 
             if observed.isEmpty && freshQuotas.isEmpty && timeRange != .days30 {
-                Text(pulseText("这个时段没有可确认的扣费或新鲜额度数据。", "No confirmed charge or fresh quota was observed in this period."))
+                Text(pulseText("这个时段没有观察到余额净下降或新鲜额度数据。", "No net balance decrease or fresh quota was observed in this period."))
                     .font(.caption).foregroundColor(.secondary)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func observedAmountIntervalHelp(_ item: ObservedSpendItem) -> String {
+        guard let start = item.intervalStart, let end = item.intervalEnd,
+              start.isFinite, end.isFinite, start <= end else {
+            return pulseText("采样区间未知", "Sampling interval unavailable")
+        }
+        let first = Date(timeIntervalSince1970: start).formatted(date: .abbreviated, time: .shortened)
+        let last = Date(timeIntervalSince1970: end).formatted(date: .abbreviated, time: .shortened)
+        return pulseText("采样区间：", "Sampling interval: ") + first + " – " + last + "\n"
+            + pulseText("按后一次观察归入所选时段；基准采样可能早于所选时段。",
+                        "Assigned by the later observation; the baseline may precede the selected period.")
     }
 
     // MARK: - Output section
@@ -1272,30 +1232,13 @@ struct DashboardView: View {
         // token usage of that tool for that model. Row/column totals plus the
         // grand total make both dimensions readable. Calls are not shown.
         let matrixRows = modelBreakdownItems
-        let toolIds = Array(Set(matrixRows.compactMap(\.toolId)))
-            .sorted { a, b in
-                let ta = matrixRows.filter { $0.toolId == a }.reduce(Int64(0)) { $0 + $1.tokens }
-                let tb = matrixRows.filter { $0.toolId == b }.reduce(Int64(0)) { $0 + $1.tokens }
-                return ta > tb
-            }
-            .prefix(6)
-        let modelNames = Array(Set(matrixRows.map(\.model)))
-            .sorted { a, b in
-                let ta = matrixRows.filter { $0.model == a }.reduce(Int64(0)) { $0 + $1.tokens }
-                let tb = matrixRows.filter { $0.model == b }.reduce(Int64(0)) { $0 + $1.tokens }
-                return ta > tb
-            }
-            .prefix(8)
-        let cellTokens: (String, String) -> Int64 = { model, tool in
-            matrixRows.first { $0.model == model && $0.toolId == tool }?.tokens ?? 0
-        }
-        let toolTokens: (String) -> Int64 = { tool in
-            matrixRows.filter { $0.toolId == tool }.reduce(Int64(0)) { $0 + $1.tokens }
-        }
-        let modelTokens: (String) -> Int64 = { model in
-            matrixRows.filter { $0.model == model }.reduce(Int64(0)) { $0 + $1.tokens }
-        }
-        let grandTotal = matrixRows.reduce(Int64(0)) { $0 + $1.tokens }
+        let matrix = ActivityMatrix(matrixRows)
+        let toolIds = matrix.tools
+        let modelNames = matrix.models
+        let cellTokens = { (model: ActivityMatrix.ModelKey, tool: String) in matrix.tokens(model: model, tool: tool) }
+        let toolTokens = { (tool: String) in matrix.tokens(tool: tool) }
+        let modelTokens = { (model: ActivityMatrix.ModelKey) in matrix.tokens(model: model) }
+        let grandTotal = matrix.grandTotal
 
         // ── Tool × model matrix ──
         if !matrixRows.isEmpty {
@@ -1303,17 +1246,30 @@ struct DashboardView: View {
                 Text(I18n.t("dashboard.by_tool_model"))
                     .font(.caption).foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                HStack {
+                    Text(I18n.t("panel.detail_entry_hint"))
+                        .font(.caption2).foregroundColor(.secondary)
+                    Spacer()
+                    Menu(I18n.t("panel.view_tool_details")) {
+                        ForEach(Array(Set(matrixRows.compactMap(\.toolId))).sorted(), id: \.self) { tool in
+                            Button(toolIdToDisplay(tool) ?? tool) { selectedToolForOverlay = tool }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+                ScrollView(.horizontal) {
                 Grid(alignment: .trailing, horizontalSpacing: 1, verticalSpacing: 1) {
 	                        GridRow {
 	                            Text(I18n.t("dashboard.model"))
 	                                .font(.caption2).bold().foregroundColor(.secondary)
 	                                .dashboardTableCell(isHeader: true, alignment: .leading)
 	                            ForEach(toolIds, id: \.self) { t in
-	                                Text(toolIdToDisplay(t) ?? t)
+	                                Text(t.isEmpty ? I18n.t("dashboard.unattributed_tool") : (toolIdToDisplay(t) ?? t))
 	                                    .font(.caption2).bold().foregroundColor(.secondary).lineLimit(1)
 	                                    .dashboardTableCell(isHeader: true, alignment: .trailing)
 	                                    .contentShape(Rectangle())
-	                                    .onTapGesture { selectedToolForOverlay = t }
+	                                    .onTapGesture { if !t.isEmpty { selectedToolForOverlay = t } }
 	                                    .pointingHandCursor()
 	                            }
 	                            Text(I18n.t("dashboard.total"))
@@ -1322,11 +1278,12 @@ struct DashboardView: View {
 	                        }
 	                        ForEach(Array(modelNames.enumerated()), id: \.element) { idx, m in
 	                            GridRow {
-	                                Text(m).font(.caption).lineLimit(1)
+	                                Text((m.model.isEmpty ? I18n.t("dashboard.unknown_model") : m.model) + " · " + m.provider)
+	                                    .font(.caption).lineLimit(1)
 	                                    .dashboardTableCell(rowIndex: idx, alignment: .leading)
 	                                    .contentShape(Rectangle())
 	                                    .onTapGesture {
-	                                        if let tool = matrixRows.first(where: { $0.model == m })?.toolId {
+	                                        if let tool = matrixRows.first(where: { $0.model == m.model && $0.providerId == m.provider })?.toolId {
 	                                            selectedToolForOverlay = tool
 	                                        }
 	                                    }
@@ -1358,6 +1315,7 @@ struct DashboardView: View {
 	                            }
                 }
                 .frame(maxWidth: .infinity)
+                }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1375,7 +1333,7 @@ struct DashboardView: View {
         let shownRepos = repos.filter {
             Self.shouldShowRepository(
                 totalChanges: $0.totalChanges,
-                tokens: repoTokens[$0.repo] ?? 0)
+                tokens: $0.tokens ?? 0, commits: $0.commits)
         }
         if !shownRepos.isEmpty {
             let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
@@ -1401,10 +1359,10 @@ struct DashboardView: View {
                     }
                     ForEach(Array(shown.enumerated()), id: \.element.id) { idx, r in
                         GridRow {
-                            Text(r.repo)
+                            Text(r.name).help(r.repoPath)
                                 .font(.caption).fontWeight(.medium).lineLimit(1)
                                 .dashboardTableCell(rowIndex: idx, alignment: .leading)
-                            Text(tokenShort(Int(clamping: repoTokens[r.repo] ?? 0)))
+                            Text(tokenShort(Int(clamping: r.tokens ?? 0)))
                                 .font(.caption).monospacedDigit()
                                 .dashboardTableCell(rowIndex: idx)
                             Text("+\(r.added)")
@@ -1422,7 +1380,7 @@ struct DashboardView: View {
                 .frame(maxWidth: .infinity)
                 if shownRepos.count > 5 {
                     Button(reposExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
-                        withAnimation { reposExpanded.toggle() }
+                        withAnimation(reduceMotion ? nil : .default) { reposExpanded.toggle() }
                     }
                     .font(.caption2)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -1433,434 +1391,6 @@ struct DashboardView: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(.separator.opacity(0.15), lineWidth: 0.5))
         }
-    }
-
-    /// Effective-price chart: X = time, Y = $ per million tokens. Only
-    /// attributable (exclusive-provider) tools produce lines, so both
-    /// coordinates stay facts.
-    @ViewBuilder
-    private var effectiveRateSection: some View {
-        if rateSeriesItems.isEmpty {
-            // No attributable balance source — this is a data boundary, not an
-            // error. Hide the whole section instead of explaining absence.
-            EmptyView()
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(I18n.t("dashboard.effective_rate")).font(.headline)
-                Chart {
-                    ForEach(rateSeriesItems, id: \.toolId) { series in
-                        ForEach(series.points, id: \.ts) { point in
-                            let perM = point.tokens > 0
-                                ? point.cost / Double(point.tokens) * 1_000_000
-                                : 0
-                            LineMark(
-                                x: .value("Date", Date(timeIntervalSince1970: point.ts)),
-                                y: .value("Rate", perM)
-                            )
-                            .foregroundStyle(by: .value("Tool", series.label))
-                        }
-                    }
-                }
-                .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                        AxisValueLabel(format: dateLabelFormat, orientation: .horizontal)
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading) { value in
-                        AxisGridLine()
-                        if let v = value.as(Double.self) {
-                            AxisValueLabel("$\(String(format: "%.2f", v))/M")
-                        }
-                    }
-                }
-                .frame(height: 160)
-                Text(I18n.t("dashboard.effective_rate_note"))
-                    .font(.caption2).foregroundColor(.secondary)
-            }
-        }
-    }
-
-    // MARK: - Trend section
-
-    /// Target grid-line count — both axes share the same number of sections.
-    private let targetGrid = 4.0
-
-    private struct TrendAxes {
-        let spend: (max: Double, step: Double, values: [Double], sections: Int)
-        let code: (max: Double, step: Double, values: [Double], scale: Double)
-    }
-
-    private func makeTrendAxes(
-        paddedStats: [DailyStat],
-        paddedCode: [DailyCodeChange],
-        balanceSpendByDay: [Date: Double]
-    ) -> TrendAxes {
-        let cal = Calendar.current
-        let subDaily = ChartMath.finite(activeSnapshot?.subDaily ?? 0, fallback: 0)
-        let rawSpendMax = paddedStats.map { s -> Double in
-            let d = cal.startOfDay(for: s.date)
-            return (balanceSpendByDay[d] ?? 0) + subDaily  // stacked total
-        }.max() ?? 5
-        let safeRawMax = ChartMath.axisMax(rawSpendMax, fallback: 5)
-        let step = ChartMath.niceStep(safeRawMax / targetGrid)
-        let max = ChartMath.axisMax(ceil(safeRawMax / step) * step, fallback: step)
-        let sections = Swift.max(1, Int((max / step).rounded(.toNearestOrEven)))
-        var spendValues = [Double]()
-        var spendValue = 0.0
-        while spendValue <= max + step / 2 {
-            spendValues.append(ChartMath.finite(spendValue, fallback: max))
-            spendValue += step
-        }
-
-        let rawCodeMax = Double(paddedCode.map { $0.added + $0.deleted }.max() ?? 1)
-        let codeSections = Double(sections)
-        var codeStep = ChartMath.niceStep(rawCodeMax / codeSections)
-        while codeStep * codeSections < rawCodeMax { codeStep = ChartMath.nextNiceStep(codeStep) }
-        let codeMax = codeStep * codeSections
-        var codeValues = [Double]()
-        var codeValue = 0.0
-        while codeValue <= codeMax + codeStep / 2 {
-            codeValues.append(ChartMath.finite(codeValue, fallback: codeMax))
-            codeValue += codeStep
-        }
-
-        let spend = (max: max, step: step, values: spendValues, sections: sections)
-        let code = (
-            max: codeMax,
-            step: codeStep,
-            values: codeValues,
-            scale: ChartMath.scale(max, denominator: codeMax, fallback: 1)
-        )
-        return TrendAxes(spend: spend, code: code)
-    }
-
-    var remainingBalanceSection: some View {
-        // Hide providers with no usable balance (missing/invalid key) — same
-        // filter iOS applies, so 0.00 rows never render.
-        let balances = remainingBalances.filter { $0.balance > 0.001 }
-        let maxBalance = balances.map(\.balance).max() ?? 0
-        let hasAny = !balances.isEmpty || !usageData.isEmpty
-        return VStack(spacing: 12) {
-            if hasAny {
-                Text(I18n.t("dashboard.remaining_balance")).font(.headline)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-            }
-            // API balances — bar length is relative to the largest balance in the
-            // list (balances have no limit to derive a % from).
-            ForEach(balances, id: \.providerId) { item in
-                VStack(spacing: 3) {
-                    HStack {
-                        Text(item.displayName)
-                            .font(.caption).foregroundColor(.secondary)
-                        Spacer()
-                        Text(balanceString(item.balance, currency: item.currency))
-                            .font(.caption).fontWeight(.semibold).monospacedDigit()
-                    }
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color(nsColor: .quaternarySystemFill))
-                                .frame(height: 5)
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.marsGreen)
-                                .frame(width: max(geo.size.width * (maxBalance > 0 ? item.balance / maxBalance : 0), 2), height: 5)
-                        }
-                    }
-                    .frame(height: 5)
-                }
-            }
-            // Subscription quotas (Claude / Copilot window utilization + reset)
-            ForEach(usageData, id: \.stableId) { data in
-                quotaRow(data: data)
-            }
-        }
-    }
-
-    var trendSection: some View {
-        let dataReady = loadedTimeRange == timeRange
-        guard dataReady else { return AnyView(EmptyView()) }
-
-        let dataPreparationStartedAt = Date()
-        let padStats = padStats(dailyStats, days: timeRange.days)
-        let padCode = Self.padChanges(codeChanges, chartStart: chartStart, chartDays: chartDays)
-        let balanceSpendByDay = dailyBalanceSpend
-        let axes = makeTrendAxes(
-            paddedStats: padStats,
-            paddedCode: padCode,
-            balanceSpendByDay: balanceSpendByDay
-        )
-        let spendAxis = axes.spend
-        let codeAxis = axes.code
-        let scale = ChartMath.finite(codeAxis.scale, fallback: 1)
-        let leftMax = ChartMath.axisMax(spendAxis.max, fallback: 10)
-        let leftValues = spendAxis.values
-        let rightMax = ChartMath.axisMax(codeAxis.max, fallback: 10)
-        let tokenMax = ChartMath.axisMax(Double(padStats.map(\.tokens).max() ?? 0), fallback: 1)
-        let tokenStep = ChartMath.niceStep(tokenMax / 4)
-        var tokenVals: [Double] = []
-        var tv = 0.0
-        while tv <= tokenMax + tokenStep / 2 {
-            tokenVals.append(tv)
-            tv += tokenStep
-        }
-        let tokenScale = ChartMath.finite(leftMax / tokenMax, fallback: 1)
-        let chartJournalKey = [
-            timeRange.cacheKey,
-            String(padStats.count),
-            String(padCode.count),
-            String(Int((lastUpdated?.timeIntervalSince1970 ?? 0) * 1000)),
-            String(leftMax),
-        ].joined(separator: "|")
-        let dataPreparationMs = Date().timeIntervalSince(dataPreparationStartedAt) * 1_000
-
-        return AnyView(VStack(spacing: 12) {
-            Text(I18n.t("dashboard.daily_trend")).font(.headline)
-            let subDaily = ChartMath.finite(activeSnapshot?.subDaily ?? 0, fallback: 0)
-                let now = Date()
-
-                Chart {
-                    // API spend bars
-                    ForEach(padStats) { s in
-                        let cal = Calendar.current; let d = cal.startOfDay(for: s.date)
-                        let spend = ChartMath.barValue(
-                            base: balanceSpendByDay[d] ?? 0,
-                            progress: 1
-                        )
-                        BarMark(x: .value("Date", s.date, unit: .day), y: .value("Spend", spend))
-                            .foregroundStyle(Color.marsGreen)
-                            .position(by: .value("Series", I18n.t("dashboard.chart_cost")))
-                    }
-                    // Subscription bars (only up to today)
-                    ForEach(padStats.filter { $0.date <= now }) { s in
-                        BarMark(
-                            x: .value("Date", s.date, unit: .day),
-                            y: .value("Sub", ChartMath.barValue(base: subDaily, progress: 1))
-                        )
-                            .foregroundStyle(Color.marsGreenLight)
-                            .position(by: .value("Series", I18n.t("dashboard.chart_cost")))
-                    }
-                    // Added lines
-                    ForEach(padCode) { c in
-                        BarMark(
-                            x: .value("Date", c.date, unit: .day),
-                            y: .value("Added", ChartMath.barValue(base: Double(c.added), progress: 1, scale: scale))
-                        )
-                            .foregroundStyle(Color.deepRed2)
-                            .position(by: .value("Series", I18n.t("dashboard.chart_code")))
-                    }
-                    // Deleted lines
-                    ForEach(padCode) { c in
-                        BarMark(
-                            x: .value("Date", c.date, unit: .day),
-                            y: .value("Deleted", ChartMath.barValue(base: Double(c.deleted), progress: 1, scale: scale))
-                        )
-                            .foregroundStyle(Color.deepRed.opacity(0.35))
-                            .position(by: .value("Series", I18n.t("dashboard.chart_code")))
-                    }
-                    // Token usage is a log fact and uses the right-hand axis.
-                    ForEach(padStats) { s in
-                        LineMark(
-                            x: .value("Date", s.date, unit: .day),
-                            y: .value("Tokens", ChartMath.barValue(base: Double(s.tokens), progress: 1, scale: tokenScale))
-                        )
-                            .foregroundStyle(Color.marsGreenLight)
-                            .lineStyle(StrokeStyle(lineWidth: 1.5))
-                            .interpolationMethod(.catmullRom)
-                            .position(by: .value("Series", I18n.t("dashboard.chart_tokens")))
-                    }
-                }
-                .chartXAxis {
-                    AxisMarks(values: dateStride) { _ in
-                        AxisValueLabel(format: dateLabelFormat, orientation: .horizontal)
-                    }
-                }
-                .chartXScale(domain: Self.chartXDomain(start: chartStart, days: chartDays))
-                .chartYScale(domain: 0...leftMax)
-                .chartYAxis {
-                    AxisMarks(position: .leading, values: leftValues) { value in
-                        AxisGridLine()
-                        if let v = value.as(Double.self) { AxisValueLabel("$\(String(format: "%.1f", v))") }
-                    }
-                    AxisMarks(position: .trailing,
-                              values: tokenVals.map { $0 * leftMax / tokenMax }) { value in
-                        let idx = value.index
-                        if idx < tokenVals.count {
-                            AxisValueLabel(shortNum(ChartMath.safeInt(tokenVals[idx])))
-                        }
-                    }
-                }
-                .chartOverlay { proxy in
-                    TrendChartOverlay(
-                        proxy: proxy,
-                        stats: padStats,
-                        codeChanges: padCode,
-                        subDaily: subDaily,
-                        now: now,
-                        tokenFormatter: Self.formattedTokenCount
-                    )
-                }
-                .frame(height: 180)
-                .id(timeRange)
-                .transaction { $0.animation = nil }
-                .task(id: chartJournalKey) {
-                    guard dataReady, lastChartJournalKey != chartJournalKey else { return }
-                    lastChartJournalKey = chartJournalKey
-                    let now = Date()
-                    DiagnosticJournal.log("chart_render", [
-                        "range": .string(timeRange.cacheKey),
-                        "daily_count": .int(padStats.count),
-                        "code_count": .int(padCode.count),
-                        "data_preparation_ms": .double(dataPreparationMs.isFinite ? dataPreparationMs : 0),
-                        "range_to_chart_task_ms": .double(
-                            rangeChangeStartedAt.map { max(0, now.timeIntervalSince($0) * 1_000) } ?? 0
-                        ),
-                        "spend_axis_max": .double(leftMax),
-                        "code_axis_max": .double(rightMax),
-                        "progress": .double(1),
-                        "all_finite": .bool(
-                            leftMax.isFinite && rightMax.isFinite
-                                && scale.isFinite
-                        ),
-                    ])
-                }
-                // Legend
-                HStack(spacing: 16) {
-                    HStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 2).fill(Color.marsGreen).frame(width: 10, height: 10)
-                        Text(I18n.t("dashboard.api_spend_label")).font(.caption).foregroundColor(.secondary)
-                    }
-                    HStack(spacing: 4) {
-                        Capsule().fill(Color.marsGreenLight).frame(width: 10, height: 3)
-                        Text(I18n.t("dashboard.chart_tokens")).font(.caption).foregroundColor(.secondary)
-                    }
-                    HStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 2).fill(Color.deepRed2).frame(width: 10, height: 10)
-                        Text(I18n.t("dashboard.added_lines")).font(.caption).foregroundColor(.secondary)
-                    }
-                    HStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 2).fill(Color.deepRed).frame(width: 10, height: 10)
-                        Text(I18n.t("dashboard.deleted_lines")).font(.caption).foregroundColor(.secondary)
-                    }
-                }
-        }
-        .padding(16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
-        .opacity(Double(barProgress))
-        .scaleEffect(0.98 + 0.02 * Double(barProgress))
-        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: barProgress))
-    }
-
-    /// Keeps cursor tracking local so hover changes in a 30-day chart cannot
-    /// invalidate the whole dashboard while the page is being scrolled.
-    private struct TrendChartOverlay: View {
-        let proxy: ChartProxy
-        let stats: [DailyStat]
-        let codeChanges: [DailyCodeChange]
-        let subDaily: Double
-        let now: Date
-        let tokenFormatter: (Int) -> String
-
-        @State private var hoverDate: Date? = nil
-        @State private var hoverX: CGFloat = 0
-        @State private var hoverY: CGFloat = 0
-        @State private var plotFrame: CGRect = .zero
-
-        var body: some View {
-            GeometryReader { geo in
-                Color.clear
-                    .onContinuousHover { phase in
-                        if case .active(let loc) = phase,
-                           let frame = proxy.plotFrame {
-                            let pf = geo[frame]
-                            let x = loc.x - pf.origin.x
-                            let y = loc.y - pf.origin.y
-                            guard x >= 0, x <= pf.width else {
-                                hoverDate = nil
-                                return
-                            }
-                            hoverX = x
-                            hoverY = y
-                            plotFrame = pf
-                            hoverDate = proxy.value(atX: x)
-                        } else {
-                            hoverDate = nil
-                        }
-                    }
-                    .overlay(alignment: .topLeading) {
-                        if let date = hoverDate,
-                           let stat = stats.first(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }),
-                           let code = codeChanges.first(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }),
-                           stat.cost > 0 || code.added > 0 || code.deleted > 0 {
-                            tooltip(
-                                for: date,
-                                stat: stat,
-                                code: code,
-                                tokenText: tokenFormatter(stat.tokens)
-                            )
-                        }
-                    }
-            }
-        }
-
-        private func tooltip(
-            for date: Date,
-            stat: DailyStat,
-            code: DailyCodeChange,
-            tokenText: String
-        ) -> some View {
-            let subCost = date <= now ? subDaily : 0
-            let tipWidth: CGFloat = 120
-            let tipHeight: CGFloat = 82
-            let gap: CGFloat = 8
-            let fitsRight = hoverX + gap + tipWidth <= plotFrame.width
-            let rawX = fitsRight
-                ? hoverX + gap
-                : hoverX - tipWidth - gap
-            let fitsAbove = hoverY - tipHeight - gap >= 0
-            let rawY = fitsAbove
-                ? hoverY - tipHeight - gap
-                : hoverY + gap
-            let x = plotFrame.origin.x + max(0, min(rawX, plotFrame.width - tipWidth))
-            let y = plotFrame.origin.y + max(0, min(rawY, plotFrame.height - tipHeight))
-
-            return VStack(alignment: .leading, spacing: 2) {
-                Text(date, format: .dateTime.month(.abbreviated).day()).font(.caption).fontWeight(.semibold)
-                Text(String(format: I18n.t("dashboard.tooltip_api"), String(format: "%.2f", stat.cost))).font(.caption2).monospacedDigit()
-                Text(String(format: I18n.t("dashboard.tooltip_tokens"), tokenText)).font(.caption2).monospacedDigit()
-                Text(String(format: I18n.t("dashboard.tooltip_sub"), String(format: "%.2f", subCost))).font(.caption2).monospacedDigit()
-                Text(String(format: I18n.t("dashboard.tooltip_added"), code.added)).font(.caption2).monospacedDigit()
-                Text(String(format: I18n.t("dashboard.tooltip_deleted"), code.deleted)).font(.caption2).monospacedDigit()
-            }
-            .padding(6).background(.regularMaterial).cornerRadius(6)
-            .offset(x: max(0, x), y: max(0, y))
-        }
-    }
-
-    // MARK: - Axis helpers
-
-    func niceStep(_ rough: Double) -> Double {
-        let magnitude = pow(10, floor(log10(max(rough, 1))))
-        let normalized = rough / magnitude
-        let nice: Double
-        if normalized <= 1.5 { nice = 1 }
-        else if normalized <= 3 { nice = 2 }
-        else if normalized <= 7 { nice = 5 }
-        else { nice = 10 }
-        return nice * magnitude
-    }
-
-    func nextNiceStep(_ step: Double) -> Double {
-        let niceSteps: [Double] = [1, 2, 5, 10]
-        let magnitude = pow(10, floor(log10(max(step, 1))))
-        let mantissa = step / magnitude
-        if let idx = niceSteps.firstIndex(where: { $0 > mantissa + 0.001 }) {
-            return niceSteps[idx] * magnitude
-        }
-        return 10 * magnitude
     }
 
     // MARK: - Empty state (no integrations)
@@ -1934,7 +1464,7 @@ struct DashboardView: View {
             if let s = map[date] {
                 result.append(s)
             } else {
-                result.append(DailyStat(date: date, cost: 0, calls: 0, tokens: 0, netLines: 0, costPerLine: 0))
+                result.append(DailyStat(date: date, calls: 0, tokens: 0, netLines: 0))
             }
         }
         return result
@@ -2080,8 +1610,23 @@ struct DashboardView: View {
     }
 
     @MainActor
+    private func refreshCurrentPulse() async {
+        pulseRefreshGeneration &+= 1
+        let generation = pulseRefreshGeneration
+        let snapshot = await PulseEngine.shared.snapshot()
+        guard generation == pulseRefreshGeneration, !Task.isCancelled else { return }
+        currentPulse = snapshot?.isCurrent() == true ? snapshot : nil
+    }
+
+    @MainActor
     private func startEntryAnimation() {
         entryAnimationToken += 1
+        if reduceMotion {
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { barProgress = 1 }
+            return
+        }
         let token = entryAnimationToken
         barProgress = 0
 
@@ -2090,7 +1635,7 @@ struct DashboardView: View {
         // all actual movement is driven by the spring below.
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_000_000)
-            guard entryAnimationToken == token, barProgress == 0 else { return }
+            guard entryAnimationToken == token, barProgress == 0, !reduceMotion else { return }
             withAnimation(.spring(response: 0.65, dampingFraction: 0.7)) {
                 barProgress = 1
             }
@@ -2120,7 +1665,7 @@ struct DashboardView: View {
         }
 
         for item in ranges {
-            let snap = await StatsService.dashboardSnapshot(days: item.days)
+            let snap = await StatsService.dashboardSnapshot(period: item.range.periodKind)
             await storeSnapshot(snap, for: item.range)
         }
         triggerCloudSync()
@@ -2139,13 +1684,8 @@ struct DashboardView: View {
         rangeSnapshots[range] = snap
         demoRanges.remove(range)
 
-        let scalarValues = [
-            snap.todayCost, snap.weekCost, snap.monthCost,
-            snap.yesterdaySpend, snap.previousPeriodSpend,
-        ]
         let trendValues = (snap.dailyStats + snap.balanceDaily).map(\.value)
-        let allFinite = scalarValues.allSatisfy(\.isFinite)
-            && trendValues.allSatisfy(\.isFinite)
+        let allFinite = trendValues.allSatisfy(\.isFinite)
             && snap.balanceDaily.allSatisfy { $0.ts.isFinite }
             && snap.dailyStats.allSatisfy { $0.ts.isFinite }
         DiagnosticJournal.log("store_snapshot", [
@@ -2163,63 +1703,7 @@ struct DashboardView: View {
     }
 
     private static func demoSnapshot(_ data: DemoData.RangeData, for range: TimeRange) -> DashboardSnapshot {
-        let dailyStats = data.dailyStats.map {
-            TrendPoint(ts: $0.date.timeIntervalSince1970,
-                       value: $0.cost,
-                       calls: Int64($0.calls),
-                       tokens: Int64($0.tokens),
-                       netLines: $0.netLines)
-        }
-        let codeChanges = data.codeChanges.map {
-            TrendPoint(ts: $0.date.timeIntervalSince1970,
-                       value: Double($0.added),
-                       calls: 0,
-                       tokens: 0,
-                       netLines: $0.added - $0.deleted,
-                       added: $0.added,
-                       deleted: $0.deleted,
-                       commits: $0.commits)
-        }
-        let balanceDaily = data.dailyBalanceSpend.map { date, spend in
-            TrendPoint(ts: date.timeIntervalSince1970,
-                       value: spend,
-                       calls: 0,
-                       tokens: 0,
-                       netLines: 0)
-        }.sorted { $0.ts < $1.ts }
-
-        return DashboardSnapshot(
-            todayCost: range == .today ? data.combinedSpend : 0,
-            weekCost: range == .thisWeek ? data.combinedSpend : 0,
-            monthCost: range == .days30 ? data.combinedSpend : 0,
-            yesterdaySpend: data.yesterdaySpend,
-            previousPeriodSpend: data.previousPeriodSpend,
-            subDaily: 0.67,
-            todayCalls: Int64(data.todayCalls),
-            todayTokens: Int64(data.todayTokens),
-            providerBreakdown: data.balanceSpend.map {
-                ProviderItem(providerId: $0.providerId, name: $0.name, cost: $0.spend)
-            },
-            toolBreakdown: data.toolCostBreakdown.map {
-                NameCostItem(name: $0.name, cost: $0.cost)
-            },
-            topRepos: data.repos.map { repo in
-                let totalChanges = repo.totalChanges
-                return RepoItem(name: repo.repo,
-                                cost: repo.cost,
-                                added: repo.added,
-                                deleted: repo.deleted,
-                                cpl: totalChanges > 0 ? repo.cost * 1000 / Double(totalChanges) : 0,
-                                commits: repo.commits)
-            },
-            prediction: PredictionItem(monthProjected: data.prediction.monthProjected,
-                                       dailyRate: data.prediction.dailyRate,
-                                       daysRemaining: data.prediction.daysRemaining,
-                                       monthSoFar: data.prediction.monthSoFar),
-            dailyStats: dailyStats,
-            codeChanges: codeChanges,
-            balanceDaily: balanceDaily
-        ).sanitized()
+        DemoData.snapshot(data)
     }
 
     @MainActor
@@ -2238,7 +1722,8 @@ struct DashboardView: View {
         let cacheMaxAge: TimeInterval = {
             switch requestedRange { case .today: return 300; case .thisWeek: return 3600; default: return 43200 }
         }()
-        if let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: cacheMaxAge) {
+        if !DemoData.isActive,
+           let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: cacheMaxAge) {
             guard !Task.isCancelled,
                   myGen == loadGenerationByRange[requestedRange, default: 0] else { return }
             // Debounce data-change reloads only when staying on the same range;
@@ -2270,7 +1755,7 @@ struct DashboardView: View {
         }
         
         // ── Real data: use shared StatsService builder ──
-        let snap = await StatsService.dashboardSnapshot(days: requestedRange.days)
+        let snap = await StatsService.dashboardSnapshot(period: requestedRange.periodKind)
 
         guard !Task.isCancelled,
               myGen == loadGenerationByRange[requestedRange, default: 0] else { return }
@@ -2283,6 +1768,7 @@ struct DashboardView: View {
 
     @MainActor
     private func hydrateRangeSnapshotCache() async {
+        guard !DemoData.isActive else { return }
         let ranges: [(range: TimeRange, maxAge: TimeInterval)] = [
             (.today, 300),
             (.thisWeek, 3600),

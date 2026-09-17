@@ -14,9 +14,12 @@ struct OpenCodeParser {
         let input = (tokens["input"] as? NSNumber)?.intValue ?? 0
         let output = (tokens["output"] as? NSNumber)?.intValue ?? 0
         let cache = ((tokens["cache"] as? [String: Any])?["read"] as? NSNumber)?.intValue ?? 0
+        let cacheWrite = ((tokens["cache"] as? [String: Any])?["write"] as? NSNumber)?.intValue
+        let reasoning = (tokens["reasoning"] as? NSNumber)?.intValue
 
         // Only assistant messages with actual usage produce an event.
-        guard (role == "assistant" || role == nil), input + output > 0 else { return nil }
+        guard (role == "assistant" || role == nil),
+              [input, output, cache, cacheWrite ?? 0, reasoning ?? 0].contains(where: { $0 > 0 }) else { return nil }
 
         let model = json["model"] as? String
         let id = json["id"] as? String ?? ""
@@ -42,7 +45,10 @@ struct OpenCodeParser {
             cacheTokens: cache,
             repoPath: cwd,
             sessionId: id.isEmpty ? nil : id,
-            dedupeKey: dedupeKey
+            dedupeKey: dedupeKey,
+            cacheCreationTokens: cacheWrite,
+            reportedOutputTokens: output,
+            reasoningTokens: reasoning
         )
     }
 

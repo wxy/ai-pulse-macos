@@ -6,6 +6,8 @@ extension Notification.Name {
     /// Posted when new data has been ingested (logs, commits, or balance snapshots).
     /// UI consumers (MenuBar, Dashboard, Dock) should refresh in response.
     static let dataDidChange = Notification.Name("AIPulseDataDidChange")
+    /// A nonempty observed consumption batch; never a generic cache refresh.
+    static let consumptionDidOccur = Notification.Name("AIPulseConsumptionDidOccur")
 
     /// Posted by the lightweight time tick because pulse intensity can decay
     /// without any database write. This is never a new-activity notification.

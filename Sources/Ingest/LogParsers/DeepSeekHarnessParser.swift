@@ -92,11 +92,14 @@ struct DeepSeekHarnessParser {
             source: "deepseek-harness",
             model: model,
             inTokens: inTokens,
-            outTokens: outTokens + reasoningTokens,
+            outTokens: outTokens,
             cacheTokens: cacheTokens,
             repoPath: cwd,
             sessionId: sessionId,
-            dedupeKey: "deepseek-harness|\(stableHash(line))")
+            dedupeKey: "deepseek-harness|\(stableHash(line))",
+            cacheCreationTokens: usage["cacheWriteTokens"] as? Int,
+            reportedOutputTokens: outTokens,
+            reasoningTokens: reasoningTokens)
     }
 
     private static func json(_ line: String) -> [String: Any]? {

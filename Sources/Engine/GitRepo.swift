@@ -1,6 +1,23 @@
 import Foundation
 import Clibgit2
 
+struct GitCommitSummary: Sendable {
+    let hash: String
+    let ts: Int
+    let parentCount: Int
+    let message: String
+    let authorEmail: String
+}
+
+struct GitLogBatch: Sendable {
+    let headHash: String?
+    let commits: [GitCommitSummary]
+}
+
+enum GitReadError: Error {
+    case operation(String, Int32)
+}
+
 /// libgit2-backed Git repository reader.
 /// Replaces `Process("git", ...)` calls for sandbox compatibility.
 struct GitRepo {
@@ -14,64 +31,75 @@ struct GitRepo {
     /// Find the git repository root containing the given path.
     /// Returns nil if the path is not inside a git repository.
     static func findRoot(containing path: String) -> String? {
-        var current = path.hasPrefix("/") ? path : "/\(path)"
-        while current != "/" {
-            let gitPath = "\(current)/.git"
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: gitPath, isDirectory: &isDir) {
-                return current
-            }
-            current = (current as NSString).deletingLastPathComponent
-        }
-        return nil
+        RepositoryScope.gitRoot(containing: path)
     }
 
-    /// Get recent commits with (hash, timestamp, parent count).
-    /// - Parameter authorEmail: If non-nil, only commits whose author email
-    ///   matches are returned. Used to exclude collaborators' commits.
-    ///   When filtering by author, `maxCount` is multiplied by 10 to ensure
-    ///   we can walk past collaborator commits to find the user's own.
-    nonisolated func log(since lastHash: String?, maxCount: Int = 20,
-             authorEmail: String? = nil) -> [(hash: String, ts: Int, parentCount: Int, message: String)] {
-        let effectiveMax = authorEmail != nil ? maxCount * 10 : maxCount
+    /// Validate a candidate working tree, including linked worktrees. Opening
+    /// is read-only and does not rely on a subprocess or a marker's existence.
+    static func verifiedWorkingRoot(at path: String) -> String? {
+        guard git_libgit2_init() > 0 else { return nil }
+        defer { git_libgit2_shutdown() }
+        var pointer: OpaquePointer?
+        guard git_repository_open(&pointer, path) == 0, let repository = pointer else { return nil }
+        defer { git_repository_free(repository) }
+        guard let workdir = git_repository_workdir(repository) else { return nil }
+        let root = RepositoryScope.canonicalPath(String(cString: workdir))
+        return root == RepositoryScope.canonicalPath(path) ? root : nil
+    }
+
+    /// Walk the captured HEAD completely; no fixed 20-commit cap. A failed
+    /// read throws so the monitor cannot advance its cursor past missing data.
+    nonisolated func log(since lastHash: String?, sinceTimestamp: Int? = nil,
+                        authorEmail: String? = nil) throws -> GitLogBatch {
         var repoPtr: OpaquePointer?
-        guard git_repository_open(&repoPtr, path) == 0, let repo = repoPtr else { return [] }
+        let opened = git_repository_open(&repoPtr, path)
+        guard opened == 0, let repo = repoPtr else { throw GitReadError.operation("open", opened) }
         defer { git_repository_free(repo) }
-
+        var reference: OpaquePointer?
+        let headStatus = git_repository_head(&reference, repo)
+        if headStatus == GIT_EUNBORNBRANCH.rawValue || headStatus == GIT_ENOTFOUND.rawValue {
+            return GitLogBatch(headHash: nil, commits: [])
+        }
+        guard headStatus == 0, let head = reference else { throw GitReadError.operation("HEAD", headStatus) }
+        defer { git_reference_free(head) }
+        guard let target = git_reference_target(head) else { throw GitReadError.operation("HEAD target", -1) }
+        let headHash = String(cString: git_oid_tostr_s(target))
         var walker: OpaquePointer?
-        guard git_revwalk_new(&walker, repo) == 0, let walk = walker else { return [] }
+        let created = git_revwalk_new(&walker, repo)
+        guard created == 0, let walk = walker else { throw GitReadError.operation("revwalk", created) }
         defer { git_revwalk_free(walk) }
-
-        git_revwalk_push_head(walk)
+        git_revwalk_sorting(walk, GIT_SORT_TOPOLOGICAL.rawValue | GIT_SORT_TIME.rawValue)
+        let pushed = git_revwalk_push(walk, target)
+        guard pushed == 0 else { throw GitReadError.operation("push", pushed) }
         if let lastHash {
-            var oid = git_oid()
-            git_oid_fromstr(&oid, lastHash)
-            git_revwalk_hide(walk, &oid)
-        }
-
-        var results: [(String, Int, Int, String)] = []
-        var oid = git_oid()
-        while git_revwalk_next(&oid, walk) == 0, results.count < effectiveMax {
-            var commitPtr: OpaquePointer?
-            guard git_commit_lookup(&commitPtr, repo, &oid) == 0, let commit = commitPtr else { continue }
-            defer { git_commit_free(commit) }
-
-            // Filter by author email when specified (exclude collaborators)
-            if let authorEmail {
-                guard let sig = git_commit_author(commit) else { continue }
-                let email = String(cString: sig.pointee.email)
-                if email != authorEmail { continue }
+            var previous = git_oid()
+            if git_oid_fromstr(&previous, lastHash) == 0 {
+                // A removed/unavailable cursor causes an idempotent rescan.
+                _ = git_revwalk_hide(walk, &previous)
             }
-
-            let hash = String(cString: git_oid_tostr_s(git_commit_id(commit)))
-            let ts = Int(git_commit_time(commit))
-            let parentCount = Int(git_commit_parentcount(commit))
-            let message = String(cString: git_commit_message(commit))
-            results.append((hash, ts, parentCount, message))
-            // Stop early when we have enough matching commits
-            if results.count >= maxCount { break }
         }
-        return results
+        var results: [GitCommitSummary] = []
+        var oid = git_oid()
+        var status = git_revwalk_next(&oid, walk)
+        while status == 0 {
+            var commitPtr: OpaquePointer?
+            let lookedUp = git_commit_lookup(&commitPtr, repo, &oid)
+            guard lookedUp == 0, let commit = commitPtr else { throw GitReadError.operation("commit", lookedUp) }
+            defer { git_commit_free(commit) }
+            let timestamp = Int(git_commit_time(commit))
+            let email = git_commit_author(commit).flatMap { $0.pointee.email }.map { String(cString: $0) } ?? ""
+            if (sinceTimestamp == nil || timestamp >= sinceTimestamp!) &&
+                (authorEmail == nil || email.caseInsensitiveCompare(authorEmail!) == .orderedSame) {
+                results.append(GitCommitSummary(
+                    hash: String(cString: git_oid_tostr_s(git_commit_id(commit))),
+                    ts: timestamp, parentCount: Int(git_commit_parentcount(commit)),
+                    message: git_commit_message(commit).map { String(cString: $0) } ?? "",
+                    authorEmail: email))
+            }
+            status = git_revwalk_next(&oid, walk)
+        }
+        guard status == GIT_ITEROVER.rawValue else { throw GitReadError.operation("walk", status) }
+        return GitLogBatch(headHash: headHash, commits: results)
     }
 
     /// Read the git `user.email` for this repository.
@@ -115,12 +143,11 @@ struct GitRepo {
         var parentTree: OpaquePointer? = nil
         if git_commit_parentcount(commit) > 0 {
             var parentPtr: OpaquePointer?
-            if git_commit_parent(&parentPtr, commit, 0) == 0, let parent = parentPtr {
-                defer { git_commit_free(parent) }
-                var ptPtr: OpaquePointer?
-                git_commit_tree(&ptPtr, parent)
-                parentTree = ptPtr
-            }
+            guard git_commit_parent(&parentPtr, commit, 0) == 0, let parent = parentPtr else { return nil }
+            defer { git_commit_free(parent) }
+            var ptPtr: OpaquePointer?
+            guard git_commit_tree(&ptPtr, parent) == 0, let pt = ptPtr else { return nil }
+            parentTree = pt
         }
         defer { if let pt = parentTree { git_tree_free(pt) } }
 
@@ -136,18 +163,20 @@ struct GitRepo {
         let deltas = git_diff_num_deltas(diff)
         for i in 0..<deltas {
             let rawDelta = git_diff_get_delta(diff, i)
-            guard let delta = rawDelta else { continue }
+            guard let delta = rawDelta else { return nil }
             let file = String(cString: delta.pointee.new_file.path)
             if Self.isExcluded(file: file) { continue }
 
             // Get per-file patch to count lines
             var patchPtr: OpaquePointer?
-            guard git_patch_from_diff(&patchPtr, diff, i) == 0, let patch = patchPtr else { continue }
+            guard git_patch_from_diff(&patchPtr, diff, i) == 0 else { return nil }
+            // Binary changes legitimately have no text patch or line counts.
+            guard let patch = patchPtr else { continue }
             defer { git_patch_free(patch) }
 
             var fileAdded: Int = 0
             var fileDeleted: Int = 0
-            git_patch_line_stats(&fileAdded, &fileDeleted, nil, patch)
+            guard git_patch_line_stats(&fileAdded, &fileDeleted, nil, patch) == 0 else { return nil }
             added += fileAdded
             deleted += fileDeleted
         }

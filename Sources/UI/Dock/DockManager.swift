@@ -10,6 +10,7 @@ final class DockManager: @unchecked Sendable {
     private var dataChangeObserver: NSObjectProtocol?
     private var healthObserver: NSObjectProtocol?
     private var pulseObserver: NSObjectProtocol?
+    private var consumptionObserver: NSObjectProtocol?
     private var healthSeverity: AppHealthMonitor.Severity = .nominal
 
     func start() {
@@ -42,10 +43,6 @@ final class DockManager: @unchecked Sendable {
                 guard let self else { return }
                 // Refresh first to compute the latest progress icon
                 await self.refresh()
-                // Pulse the freshly-set progress icon
-                await self.pulseIcon()
-                // Restore progress icon after pulse animation finishes
-                await self.setProgressIcon()
             }
         }
         pulseObserver = NotificationCenter.default.addObserver(
@@ -53,9 +50,22 @@ final class DockManager: @unchecked Sendable {
         ) { [weak self] _ in
             Task { [weak self] in await self?.refreshPulseAppearance() }
         }
+        consumptionObserver = NotificationCenter.default.addObserver(
+            forName: .consumptionDidOccur, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { [weak self] in
+                guard let self else { return }
+                await self.pulseIcon()
+                await self.setProgressIcon()
+            }
+        }
     }
 
     func stop() {
+        if let token = consumptionObserver {
+            NotificationCenter.default.removeObserver(token)
+            consumptionObserver = nil
+        }
         if let token = dataChangeObserver {
             NotificationCenter.default.removeObserver(token)
             dataChangeObserver = nil

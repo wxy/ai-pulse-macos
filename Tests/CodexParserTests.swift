@@ -13,7 +13,7 @@ final class CodexParserTests: XCTestCase {
         XCTAssertEqual(event?.model, "gpt-5-codex")
         XCTAssertEqual(event?.repoPath, "/Users/test/repo")
         XCTAssertEqual(event?.inTokens, 100)
-        XCTAssertEqual(event?.outTokens, 50)  // output + reasoning
+        XCTAssertEqual(event?.outTokens, 40)  // reasoning is an output subset
         XCTAssertEqual(event?.cacheTokens, 30)
         XCTAssertEqual(event?.sessionId, "abc")
         XCTAssertTrue(event?.dedupeKey.hasPrefix("codex|") ?? false)
@@ -36,7 +36,7 @@ final class CodexParserTests: XCTestCase {
         XCTAssertEqual(event?.repoPath, "/Users/test/repo")
         XCTAssertEqual(event?.sessionId, "thread-1")
         XCTAssertEqual(event?.inTokens, 22364)
-        XCTAssertEqual(event?.outTokens, 1138)  // output + reasoning
+        XCTAssertEqual(event?.outTokens, 669)  // reasoning is an output subset
         XCTAssertEqual(event?.cacheTokens, 9728)
     }
 

@@ -64,6 +64,50 @@ final class GitRepoScannerTests: XCTestCase {
         XCTAssertEqual(scan(), [])
     }
 
+    func testSelectedRepositoryRootIsReportedOnceWithoutNestedRepos() {
+        makeGitRepo("")
+        makeGitRepo("nested")
+        XCTAssertEqual(scan(), [tempDir.lastPathComponent])
+    }
+
+    func testSelectedWorktreeRootIsReported() throws {
+        try "gitdir: ../main/.git/worktrees/test".write(
+            to: tempDir.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(scan(), [tempDir.lastPathComponent])
+    }
+
+    func testSelectedRootHonorsExpiredDeadline() {
+        makeGitRepo("")
+        var found: [URL] = []
+        XCTAssertTrue(GitRepoScanner.enumerate(in: tempDir, deadline: .distantPast) {
+            found.append($0)
+        })
+        XCTAssertTrue(found.isEmpty)
+    }
+
+    func testSelectedPlainChildDoesNotDiscoverAncestorRepository() {
+        makeGitRepo("")
+        makePlainDir("child")
+        var found: [URL] = []
+        GitRepoScanner.enumerate(in: tempDir.appendingPathComponent("child")) {
+            found.append($0)
+        }
+        XCTAssertTrue(found.isEmpty)
+    }
+
+    func testActualSelectedRepositoryRootWhenExplicitlyEnabled() throws {
+        guard let path = ProcessInfo.processInfo.environment["AIPULSE_QA_REPO_ROOT"] else {
+            throw XCTSkip("Set AIPULSE_QA_REPO_ROOT for read-only real repository verification")
+        }
+        let root = URL(fileURLWithPath: path).standardizedFileURL
+        XCTAssertEqual(GitRepo.verifiedWorkingRoot(at: root.path), root.path)
+        var found: [URL] = []
+        XCTAssertFalse(GitRepoScanner.enumerate(in: root, deadline: Date().addingTimeInterval(2)) {
+            found.append($0.standardizedFileURL)
+        })
+        XCTAssertEqual(found, [root])
+    }
+
     func testSkipsHeavyDirectories() {
         makeGitRepo("node_modules/fake-repo")
         makeGitRepo("Pods/lib/foo")

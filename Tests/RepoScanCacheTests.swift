@@ -54,6 +54,18 @@ final class RepoScanCacheTests: XCTestCase {
         XCTAssertEqual(cache2.cachedScan(for: tempDir.path)?.repos.count, 1)
     }
 
+    func testSelectedRepositoryRootPersistsCountAndAiderMarker() async {
+        makeRepo("", aider: true)
+        makeRepo("nested")
+        await cache.scan(dir: tempDir.path)
+        let scan = cache.cachedScan(for: tempDir.path)
+        XCTAssertEqual(scan?.repos.count, 1)
+        XCTAssertEqual(scan?.repos.first?.path, tempDir.path)
+        XCTAssertEqual(scan?.repos.first?.hasAiderMarkers, true)
+        XCTAssertEqual(scan?.truncated, false)
+        XCTAssertEqual(RepoScanCache(store: store).totalRepos(in: [tempDir.path]), 1)
+    }
+
     func testInvalidateRemovesEntry() async {
         makeRepo("gone")
         await cache.scan(dir: tempDir.path)

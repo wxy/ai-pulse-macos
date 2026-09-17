@@ -338,11 +338,11 @@ struct NotificationsTab: View {
     private func previewButton(_ title: String, decision: SoundDecision) -> some View {
         Button {
             var settings = SoundSettings.current()
-            // Preview is deliberate: do not require automatic spend sounds.
+            // Preview is deliberate: ignore automatic cue toggles and quiet hours.
             // The global mute remains authoritative.
             settings.enabled = true
             settings.pack = soundPack
-            CoinSound.playDecision(decision, settings: settings)
+            CoinSound.playDecision(decision, settings: settings, isPreview: true)
         } label: {
             Label(title, systemImage: "play.fill")
                 .frame(maxWidth: .infinity)

@@ -6,48 +6,9 @@ import AIPulseShared
 struct DailyStat: Identifiable {
     var id: Date { date }
     let date: Date
-    let cost: Double
     let calls: Int
     let tokens: Int
     let netLines: Int
-    let costPerLine: Double
-}
-
-struct CPLSource: Identifiable {
-    var id: String { "\(label)-\(String(format: "%.4f", cpl))" }
-    let label: String        // "Claude Code", "GitHub Copilot"
-    let cpl: Double          // cost per 1000 lines, independent per source
-}
-
-struct RepoBreakdown: Identifiable {
-    var id: String { repo }
-    let repo: String
-    let cost: Double
-    let added: Int
-    let deleted: Int
-    let commits: Int
-    var totalChanges: Int { added + deleted }
-    let apiSources: [CPLSource]               // per-source CPLs (Claude Code, aider, etc.)
-    let subscriptionSources: [CPLSource]      // editor→subscription CPLs (independent)
-    var allSources: [CPLSource] {
-        var srcs = apiSources
-        srcs.append(contentsOf: subscriptionSources)
-        return srcs.filter { $0.cpl > 0 }
-    }
-}
-
-struct Prediction {
-    let monthProjected: Double
-    let dailyRate: Double
-    let daysRemaining: Int
-    let monthSoFar: Double
-}
-
-struct ProviderDailyCost: Identifiable {
-    var id: String { "\(providerId)-\(Int(date.timeIntervalSince1970))" }
-    let date: Date
-    let providerId: String
-    let cost: Double
 }
 
 struct DailyCodeChange: Identifiable {
@@ -66,6 +27,7 @@ enum StatsService {
         let added: Int
         let deleted: Int
         let commitHash: String
+        let repoPath: String
     }
 
     /// Reads factual local Git output and applies the same repository boundary
@@ -104,27 +66,54 @@ enum StatsService {
         }
         let roots = RepositoryScope.configuredRoots()
         return rows.compactMap { ts, path, added, deleted, commitHash in
-            guard RepositoryScope.authorizedGitRoot(for: path, roots: roots) != nil else { return nil }
+            guard let root = RepositoryScope.authorizedGitRoot(for: path, roots: roots) else { return nil }
             return AuthorizedCodeChange(ts: ts,
                                         added: max(added, 0),
                                         deleted: max(deleted, 0),
-                                        commitHash: commitHash)
+                                        commitHash: commitHash,
+                                        repoPath: root)
         }
     }
 
-    static func authorizedCodeOutput(sinceMs: Int64) async throws -> (added: Int, deleted: Int, commits: Int) {
-        let rows = try await authorizedCodeChanges(sinceMs: sinceMs)
+    private struct AuthorizedCommit {
+        let ts: Int64
+        let repoPath: String
+        let commitHash: String
+        var identity: String { repoPath + "|" + commitHash }
+    }
+
+    /// Commits are independent facts, including merges and zero-line commits.
+    private static func authorizedCommits(sinceMs: Int64, beforeMs: Int64? = nil) async throws -> [AuthorizedCommit] {
+        let rows = try await AppDatabase.shared.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT ts, repo_path, commit_hash FROM git_commit
+                WHERE ts >= ? AND ts < ? ORDER BY ts
+                """, arguments: [sinceMs, beforeMs ?? Int64.max]).map { row in
+                (ts: row["ts"] as Int64? ?? 0, path: row["repo_path"] as String? ?? "",
+                 hash: row["commit_hash"] as String? ?? "")
+            }
+        }
+        let roots = RepositoryScope.configuredRoots()
+        return rows.compactMap { row in
+            guard !row.hash.isEmpty,
+                  let root = RepositoryScope.authorizedGitRoot(for: row.path, roots: roots) else { return nil }
+            return AuthorizedCommit(ts: row.ts, repoPath: root, commitHash: row.hash)
+        }
+    }
+
+    static func authorizedCodeOutput(sinceMs: Int64, beforeMs: Int64? = nil) async throws -> (added: Int, deleted: Int, commits: Int) {
+        let rows = try await authorizedCodeChanges(sinceMs: sinceMs, beforeMs: beforeMs)
+        let commits = try await authorizedCommits(sinceMs: sinceMs, beforeMs: beforeMs)
         return (rows.reduce(0) { $0 + $1.added },
                 rows.reduce(0) { $0 + $1.deleted },
-                Set(rows.map(\.commitHash).filter { !$0.isEmpty }).count)
+                Set(commits.map(\.identity)).count)
     }
 
     // MARK: - Daily trend
 
     /// Daily cost + netLines for the last `days` calendar days, or from `sinceMs` if provided.
-    static func dailyStats(days: Int, sinceMs: Int64? = nil) async throws -> [DailyStat] {
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: Date())
+    static func dailyStats(days: Int, sinceMs: Int64? = nil, now: Date = Date(), calendar cal: Calendar = .current) async throws -> [DailyStat] {
+        let todayStart = cal.startOfDay(for: now)
         let startMs: Int64
         if let s = sinceMs {
             startMs = s
@@ -132,22 +121,21 @@ enum StatsService {
             guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
             startMs = Int64(start.timeIntervalSince1970 * 1000)
         }
-        let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
+        guard let end = cal.date(byAdding: .day, value: 1, to: todayStart) else { return [] }
+        let endMs = ObservationBounds.upperExclusive(now: now, periodEnd: end)
 
         do {
-            // Cost per day
-            let costRows = try await AppDatabase.shared.read { db -> [(day: Int64, c: Double, cnt: Int, tok: Int64)] in
+            // Observed activity, independent of historical price estimates.
+            let usageRows = try await AppDatabase.shared.read { db -> [(day: Int64, cnt: Int, tok: Int64)] in
                 try Row.fetchAll(db, sql: """
-                    SELECT (ts / 86400000) * 86400000 AS day_ts,
-                           COALESCE(SUM(cost_usd), 0) AS c,
+                    SELECT ts AS day_ts,
                            COUNT(*) AS cnt,
                            COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok
                     FROM usage_event
                     WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
                     GROUP BY day_ts ORDER BY day_ts
-                    """, arguments: [startMs, todayMs + 86_400_000]).map { r in
+                    """, arguments: [startMs, endMs]).map { r in
                     (day: r["day_ts"] as Int64? ?? 0,
-                     c: r["c"] as Double? ?? 0,
                      cnt: r["cnt"] as Int? ?? 0,
                      tok: r["tok"] as Int64? ?? 0)
                 }
@@ -156,28 +144,33 @@ enum StatsService {
             // Net lines per day
             let codeRows = try await authorizedCodeChanges(
                 sinceMs: startMs,
-                beforeMs: todayMs + 86_400_000
+                beforeMs: endMs
             )
 
-            // Merge cost + lines by day
+            // Merge activity + lines by day
             var lineMap = [Int64: Int]()
             for row in codeRows {
-                let day = (row.ts / 86_400_000) * 86_400_000
+                let day = cal.localDayTimestamp(milliseconds: row.ts)
                 lineMap[day, default: 0] += row.added - row.deleted
             }
 
-            var result = [DailyStat]()
-            for r in costRows {
-                let nl = lineMap[r.day] ?? 0
-                let cpl = nl > 0 ? r.c * 1000 / Double(nl) : 0  // per 1K lines
-                let date = Date(timeIntervalSince1970: Double(r.day) / 1000)
-                result.append(DailyStat(date: date, cost: r.c, calls: r.cnt, tokens: Int(r.tok), netLines: nl, costPerLine: cpl))
+            // Calendar days are not fixed 24-hour UTC intervals. Use the same
+            // local boundaries as the code-change chart, including DST days.
+            var usageMap: [Int64: (calls: Int, tokens: Int64)] = [:]
+            for r in usageRows {
+                let day = cal.localDayTimestamp(milliseconds: r.day)
+                usageMap[day, default: (0, 0)].calls += r.cnt
+                usageMap[day, default: (0, 0)].tokens += r.tok
             }
-            AppHealthMonitor.shared.clearStatsError()
+            let result = Set(usageMap.keys).union(lineMap.keys).sorted().map { day in
+                let usage = usageMap[day] ?? (calls: 0, tokens: 0)
+                let nl = lineMap[day] ?? 0
+                return DailyStat(date: Date(timeIntervalSince1970: Double(day) / 1000),
+                                 calls: usage.calls, tokens: Int(clamping: usage.tokens), netLines: nl)
+            }
             return result
         } catch {
             Logger.error("StatsService.dailyStats error: \(error)")
-            AppHealthMonitor.shared.reportStatsError("dailyStats: \(error.localizedDescription)")
             throw error
         }
     }
@@ -185,48 +178,41 @@ enum StatsService {
     /// Hourly usage facts for the current local calendar day. The timestamps
     /// remain the real `usage_event.ts` buckets; no session is assigned wholesale
     /// to its start hour and no context-window capacity is treated as consumption.
-    static func hourlyUsageStatsToday(now: Date = Date()) async throws -> [DailyStat] {
-        let cal = Calendar.current
+    static func hourlyUsageStatsToday(now: Date = Date(), calendar cal: Calendar = .current) async throws -> [DailyStat] {
         let start = cal.startOfDay(for: now)
         guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return [] }
         let startMs = Int64(start.timeIntervalSince1970 * 1_000)
-        let endMs = Int64(end.timeIntervalSince1970 * 1_000)
+        let endMs = ObservationBounds.upperExclusive(now: now, periodEnd: end)
 
         do {
-            let rows = try await AppDatabase.shared.read { db -> [(ts: Int64, cost: Double, tokens: Int64)] in
+            let rows = try await AppDatabase.shared.read { db -> [(ts: Int64, tokens: Int64)] in
                 try Row.fetchAll(db, sql: """
-                    SELECT ts, COALESCE(cost_usd, 0) AS c,
+                    SELECT ts,
                            \(TokenAccounting.observedTotalSQL) AS tok
                     FROM usage_event
                     WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
                     ORDER BY ts
                     """, arguments: [startMs, endMs]).map { row in
                         (ts: row["ts"] as Int64? ?? 0,
-                         cost: row["c"] as Double? ?? 0,
                          tokens: row["tok"] as Int64? ?? 0)
                     }
             }
-            AppHealthMonitor.shared.clearStatsError()
-            var buckets: [Date: (cost: Double, calls: Int, tokens: Int64)] = [:]
+            var buckets: [Date: (calls: Int, tokens: Int64)] = [:]
             for row in rows {
                 let date = Date(timeIntervalSince1970: Double(row.ts) / 1_000)
                 guard let hour = cal.dateInterval(of: .hour, for: date)?.start else { continue }
-                buckets[hour, default: (0, 0, 0)].cost += row.cost
-                buckets[hour, default: (0, 0, 0)].calls += 1
-                buckets[hour, default: (0, 0, 0)].tokens += max(row.tokens, 0)
+                buckets[hour, default: (0, 0)].calls += 1
+                buckets[hour, default: (0, 0)].tokens += max(row.tokens, 0)
             }
             return buckets.map { hour, values in
                 DailyStat(
                     date: hour,
-                    cost: values.cost,
                     calls: values.calls,
                     tokens: Int(clamping: values.tokens),
-                    netLines: 0,
-                    costPerLine: 0)
+                    netLines: 0)
             }.sorted { $0.date < $1.date }
         } catch {
             Logger.error("StatsService.hourlyUsageStatsToday error: \(error)")
-            AppHealthMonitor.shared.reportStatsError("hourlyUsageStatsToday: \(error.localizedDescription)")
             throw error
         }
     }
@@ -236,196 +222,6 @@ enum StatsService {
     static func dashboardUsageStats(days: Int) async throws -> [DailyStat] {
         if days == 1 { return try await hourlyUsageStatsToday() }
         return try await dailyStats(days: days)
-    }
-
-    // MARK: - Repo breakdown
-
-    static func repoBreakdown(days: Int = 7, editorMappings: [EditorDetector.Mapping] = [], sinceMs: Int64? = nil) async throws -> [RepoBreakdown] {
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: Date())
-        let startMs: Int64
-        if let s = sinceMs {
-            startMs = s
-        } else {
-            guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
-            startMs = Int64(start.timeIntervalSince1970 * 1000)
-        }
-        let todayMs  = Int64(todayStart.timeIntervalSince1970 * 1000)
-
-        do {
-            let rawCostRows = try await AppDatabase.shared.read { db -> [(p: String, s: String, c: Double)] in
-                try Row.fetchAll(db, sql: """
-                    SELECT repo_path AS p, source AS s, COALESCE(SUM(cost_usd), 0) AS c
-                    FROM usage_event WHERE repo_path IS NOT NULL AND ts >= ? AND ts < ?
-                    GROUP BY p, s
-                    """, arguments: [startMs, todayMs + 86_400_000]).map { r in
-                    (p: r["p"] ?? "", s: r["s"] ?? "unknown", c: r["c"] ?? 0)
-                }
-            }
-            let rawLineRows = try await AppDatabase.shared.read { db -> [(p: String, a: Int, d: Int, commits: Int)] in
-                try Row.fetchAll(db, sql: """
-                    SELECT repo_path AS p,
-                           COALESCE(SUM(added), 0) AS a,
-                           COALESCE(SUM(deleted), 0) AS d,
-                           COUNT(DISTINCT commit_hash) AS commits
-                    FROM code_change WHERE is_merge = 0 AND ts >= ? AND ts < ?
-                    GROUP BY p
-                    """, arguments: [startMs, todayMs + 86_400_000]).map { r in
-                    (p: r["p"] ?? "", a: Int(r["a"] as Int64? ?? 0),
-                     d: Int(r["d"] as Int64? ?? 0), commits: r["commits"] ?? 0)
-                }
-            }
-            let roots = RepositoryScope.configuredRoots()
-            var normalizedCost: [String: (sourceCosts: [String: Double], total: Double)] = [:]
-            for row in rawCostRows {
-                guard let repo = RepositoryScope.authorizedGitRoot(for: row.p, roots: roots) else { continue }
-                normalizedCost[repo, default: ([:], 0)].sourceCosts[row.s, default: 0] += row.c
-                normalizedCost[repo, default: ([:], 0)].total += row.c
-            }
-            let costRows = normalizedCost.flatMap { repo, value in
-                value.sourceCosts.map { (p: repo, s: $0.key, c: $0.value) }
-            }
-            var normalizedLines: [String: (a: Int, d: Int, commits: Int)] = [:]
-            for row in rawLineRows {
-                guard let repo = RepositoryScope.authorizedGitRoot(for: row.p, roots: roots) else { continue }
-                normalizedLines[repo, default: (0, 0, 0)].a += row.a
-                normalizedLines[repo, default: (0, 0, 0)].d += row.d
-                normalizedLines[repo, default: (0, 0, 0)].commits += row.commits
-            }
-            let lineRows = normalizedLines.map {
-                (p: $0.key, a: $0.value.a, d: $0.value.d, commits: $0.value.commits)
-            }
-            var lineMap = [String: (added: Int, deleted: Int, commits: Int)]()
-            for r in lineRows {
-                lineMap[r.p] = (r.a, r.d, r.commits)
-            }
-
-            // Build repo path → [(source, cost)] from per-source rows
-            var costMap = [String: [(source: String, cost: Double)]]()
-            for r in costRows {
-                guard !r.p.isEmpty else { continue }
-                costMap[r.p, default: []].append((r.s, r.c))
-            }
-
-            // Build repo path → subscription sources from certain editor detections
-            let certainMappings = editorMappings.filter { $0.confidence == .certain && $0.dailySubscriptionCost > 0 }
-
-            // Collect CostSource subscription attribution: which repos does each sub tool touch?
-            let subSources = IntegrationRegistry.activeCostSources(editorMappings: editorMappings)
-                .filter { if case .subscription = $0.kind { return true }; return false }
-            var subRepoMap = [String: [(label: String, dailyCost: Double)]]()
-            for cs in subSources {
-                guard case .subscription(let toolId, _, let monthlyFee) = cs.kind, monthlyFee > 0 else { continue }
-                let daily = monthlyFee / Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-                // Subscription tools (Cursor/Copilot/Windsurf) don't have
-                // their own usage_event.source entries — only log-parsers
-                // (Claude Code, aider) write those. Attribute subscription
-                // cost across all repos that had any usage in the period.
-                let repos: [String]
-                do {
-                    repos = try await AppDatabase.shared.read { db in
-                        try String.fetchAll(db, sql: """
-                            SELECT DISTINCT repo_path FROM usage_event
-                            WHERE repo_path IS NOT NULL
-                            AND ts >= ? AND ts < ?
-                            """, arguments: [startMs, todayMs + 86_400_000])
-                    }
-                } catch {
-                    Logger.error("StatsService.repoBreakdown: subscription repo query failed for \(toolId): \(error)")
-                    continue
-                }
-                for r in repos {
-                    guard let repo = RepositoryScope.authorizedGitRoot(for: r, roots: roots) else { continue }
-                    subRepoMap[repo, default: []].append((cs.label, daily))
-                }
-            }
-            // Also include editor-detected mappings
-            for m in certainMappings {
-                guard let repo = RepositoryScope.authorizedGitRoot(for: m.repoPath, roots: roots) else { continue }
-                subRepoMap[repo, default: []].append((m.toolName, m.dailySubscriptionCost))
-            }
-
-            // Latest event timestamp per repo — used for stable recency-based sorting
-            var latestEventMs: [String: Int64] = [:]
-            do {
-                let tsRows = try await AppDatabase.shared.read { db -> [(repoPath: String, latest: Int64)] in
-                    try Row.fetchAll(db, sql: """
-                        SELECT repo_path, MAX(ts) AS latest
-                        FROM usage_event WHERE repo_path IS NOT NULL
-                        GROUP BY repo_path
-                    """).map { r in
-                        (repoPath: r["repo_path"] ?? "", latest: r["latest"] ?? 0)
-                    }
-                }
-                for r in tsRows {
-                    guard let repo = RepositoryScope.authorizedGitRoot(for: r.repoPath, roots: roots) else { continue }
-                    let name = URL(fileURLWithPath: repo).lastPathComponent
-                    latestEventMs[name] = max(latestEventMs[name] ?? 0, r.latest)
-                }
-            } catch {
-                Logger.debug("StatsService.repoBreakdown: latestEventMs query failed, continuing without it")
-            }
-
-            AppHealthMonitor.shared.clearStatsError()
-            let repoPaths = Set(costMap.keys).union(lineMap.keys)
-            return repoPaths.map { p in
-                let sourceCosts = costMap[p] ?? []
-                let totalCost = sourceCosts.reduce(0.0) { $0 + $1.cost }
-                let (a, d, commits) = lineMap[p] ?? (0, 0, 0)
-                let total = a + d
-
-                // Per-source API CPLs
-                let apiSources: [CPLSource] = sourceCosts.compactMap { sc in
-                    let cpl = total > 0 ? sc.cost * 1000 / Double(total) : 0.0
-                    guard cpl > 0 else { return nil }
-                    return CPLSource(label: sourceLabel(sc.source), cpl: cpl)
-                }
-
-                // Subscription CPLs for this repo (fuzzy match on path)
-                var subEntries: [(label: String, dailyCost: Double)] = []
-                for (rpath, entries) in subRepoMap {
-                    if p.hasSuffix(rpath) || rpath.hasSuffix(p) || p == rpath {
-                        subEntries.append(contentsOf: entries)
-                    }
-                }
-                let subSourceList: [CPLSource] = subEntries.compactMap { entry in
-                    let subCPL = total > 0 ? entry.dailyCost * Double(days) * 1000 / Double(total) : 0.0
-                    guard subCPL > 0 else { return nil }
-                    return CPLSource(label: entry.label, cpl: subCPL)
-                }
-
-                return RepoBreakdown(
-                    repo: URL(fileURLWithPath: p).lastPathComponent,
-                    cost: totalCost, added: a, deleted: d, commits: commits,
-                    apiSources: apiSources,
-                    subscriptionSources: subSourceList
-                )
-            }
-            // Sort by latest activity — repos with recent usage rise to the top.
-            // Sort by total changes descending as tiebreaker for repos without usage events.
-            .sorted { a, b in
-                let aLast = latestEventMs[a.repo] ?? 0
-                let bLast = latestEventMs[b.repo] ?? 0
-                if aLast != bLast { return aLast > bLast }
-                return a.totalChanges > b.totalChanges
-            }
-        } catch {
-            Logger.error("StatsService.repoBreakdown error: \(error)")
-            AppHealthMonitor.shared.reportStatsError("repoBreakdown: \(error.localizedDescription)")
-            throw error
-        }
-    }
-
-    /// Simple currency → USD conversion (approximate rates, updated periodically).
-    static func toUSD(currency: String) -> Double {
-        switch currency.uppercased() {
-        case "USD": return 1.0
-        case "CNY": return 0.14
-        case "EUR": return 1.08
-        case "GBP": return 1.27
-        case "JPY": return 0.0067
-        default:    return 1.0
-        }
     }
 
     /// Explicit provenance for semantic snapshot conversion. Unknown
@@ -444,188 +240,58 @@ enum StatsService {
     }
 
     /// Map usage_event.source to a human-readable label for CPL display.
-    private static func sourceLabel(_ source: String) -> String {
-        switch source {
-        case "claude-code": return "Claude Code"
-        case "aider": return "aider"
-        default: return source
-        }
-    }
-
-    // MARK: - Prediction
-
-    /// Rolling 30-day projection — matches the 30d tab logic, not the natural month.
-    /// `dailyRate` = last-30-day average; `monthProjected` = dailyRate × 30.
-    /// `monthSoFar` stays as calendar-month spend (used in the 30d tab prediction text).
-    /// `daysRemaining` = calendar days left in this month.
-    static func prediction() async -> Prediction {
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: Date())
-
-        // Calendar month for "spent X this month" and "remaining Z days" display
-        guard let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: Date())) else {
-            return Prediction(monthProjected: 0, dailyRate: 0, daysRemaining: 0, monthSoFar: 0)
-        }
-        let daysElapsed = max(1, (cal.dateComponents([.day], from: monthStart, to: todayStart).day ?? 0) + 1)
-        let totalDays = cal.range(of: .day, in: .month, for: Date())?.count ?? 30
-        let daysRemaining = totalDays - daysElapsed
-
-        // Rolling 30-day window for stable daily rate
-        let rollingStart = cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
-        let rollingMs = Int64(rollingStart.timeIntervalSince1970 * 1000)
-        let monthMs = Int64(monthStart.timeIntervalSince1970 * 1000)
-
-        do {
-            async let rollingSpent: Double = AppDatabase.shared.read { db in
-                try Double.fetchOne(db, sql: """
-                    SELECT COALESCE(SUM(cost_usd), 0) FROM usage_event
-                    WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
-                    """, arguments: [rollingMs]) ?? 0
-            }
-            async let monthSpent: Double = AppDatabase.shared.read { db in
-                try Double.fetchOne(db, sql: """
-                    SELECT COALESCE(SUM(cost_usd), 0) FROM usage_event
-                    WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
-                    """, arguments: [monthMs]) ?? 0
-            }
-            let (rs, ms_) = try await (rollingSpent, monthSpent)
-            let dailyRate = rs / 30.0
-            let projected = dailyRate * Double(totalDays)
-            return Prediction(monthProjected: projected, dailyRate: dailyRate, daysRemaining: daysRemaining, monthSoFar: ms_)
-        } catch {
-            Logger.error("StatsService.prediction: query failed — \(error)")
-            return Prediction(monthProjected: 0, dailyRate: 0, daysRemaining: 0, monthSoFar: 0)
-        }
-    }
-
     // MARK: - Balance spend (daily deltas, top-up filtered)
 
     /// Daily spend from balance snapshots. Filters out top-ups (balance increases).
     /// Returns per-provider daily spend estimates, converted to USD.
-    static func balanceDailySpend(days: Int, sinceMs: Int64? = nil) async throws -> [(providerId: String, date: Date, spend: Double)] {
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: Date())
+    static func balanceDailySpend(days: Int, sinceMs: Int64? = nil, now: Date = Date(), calendar cal: Calendar = .current) async throws -> [(providerId: String, date: Date, spend: Double)] {
+        let todayStart = cal.startOfDay(for: now)
         let startMs: Int64 = sinceMs ?? {
             guard let s = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return 0 }
             return Int64(s.timeIntervalSince1970 * 1000)
         }()
-        let todayMs = Int64(todayStart.timeIntervalSince1970 * 1000)
 
         do {
-            let rows = try await AppDatabase.shared.read { db -> [(providerId: String, ts: Int64, balance: Double, currency: String)] in
-                let fetched = try Row.fetchAll(db, sql: """
-                    SELECT provider_id, ts, balance, currency FROM balance_snapshot
-                    WHERE ts >= ? AND ts < ?
-                    UNION ALL
-                    SELECT boundary.provider_id, boundary.ts, boundary.balance, boundary.currency
-                    FROM balance_snapshot AS boundary
-                    WHERE boundary.id = (
-                        SELECT candidate.id
-                        FROM balance_snapshot AS candidate
-                        WHERE candidate.provider_id = boundary.provider_id
-                          AND candidate.ts < ?
-                        ORDER BY candidate.ts DESC, candidate.id DESC
-                        LIMIT 1
-                    )
-                    ORDER BY provider_id, ts
-                    """, arguments: [startMs, todayMs + 86_400_000, startMs])
-                return fetched.map { r in
-                    let providerId: String = r["provider_id"] ?? ""
-                    let ts: Int64 = r["ts"] ?? 0
-                    let balance: Double = r["balance"] ?? 0
-                    let currency: String = r["currency"] ?? "USD"
-                    return (providerId: providerId, ts: ts, balance: balance, currency: currency)
-                }
+            let deltas = try await AppDatabase.shared.read { db in
+                try BalanceObservation.fetchBalanceDeltas(in: db, sinceMs: startMs,
+                                                         beforeMs: Int64(now.timeIntervalSince1970 * 1_000))
             }
-            // Group by provider_id and compute positive deltas, converting to USD
-            var results: [(String, Date, Double)] = []
-            var currentPid: String? = nil
-            var prevBalance: Double? = nil
-            for r in rows {
-                let pid = r.providerId
-                let ts = r.ts
-                let balance = r.balance
-                let currency = r.currency
-
-                if pid == currentPid, let prev = prevBalance, ts >= startMs, balance < prev {
-                    // Balance decreased → spend occurred
-                    let spend = (prev - balance) * toUSD(currency: currency)
-                    let date = cal.startOfDay(for: Date(timeIntervalSince1970: Double(ts) / 1000))
-                    results.append((pid, date, spend))
-                }
-                currentPid = pid
-                prevBalance = balance
+            let results: [(String, Date, Double)] = deltas.compactMap { delta in
+                guard let conversion = semanticUSDConversion(currency: delta.currency) else { return nil }
+                let date = cal.startOfDay(for: Date(timeIntervalSince1970: Double(delta.ts) / 1_000))
+                return (delta.providerId, date, delta.nativeAmount * conversion.rate)
             }
-            AppHealthMonitor.shared.clearStatsError()
             return results
         } catch {
             Logger.error("StatsService.balanceDailySpend error: \(error)")
-            AppHealthMonitor.shared.reportStatsError("balanceDailySpend: \(error.localizedDescription)")
             throw error
         }
     }
 
-    // MARK: - Combined spend (API balance spend + subscription amortization)
+    // MARK: - Observed amounts and declared context
 
-    /// Per-day subscription amortization: Σ (monthlyFee / daysInMonth) across
-    /// active subscription CostSources.
-    static func subscriptionDailyAmortization() -> Double {
-        let subSources = IntegrationRegistry.activeCostSources().filter {
-            if case .subscription(_, _, let fee) = $0.kind, fee > 0 { return true }
-            return false
-        }
-        guard !subSources.isEmpty else { return 0 }
-        let daysInMonth = Double(Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        return subSources.reduce(0.0) { total, cs in
-            if case .subscription(_, _, let fee) = cs.kind {
-                return total + fee / daysInMonth
+    /// Declared monthly context; never amortized into observed consumption.
+    static func declaredMonthlyCostUSD() -> Double {
+        IntegrationRegistry.activeCostSources().reduce(0.0) { total, source in
+            if case .subscription(_, _, let fee) = source.kind, fee.isFinite, fee > 0 {
+                return total + fee
             }
             return total
         }
     }
 
-    /// Token × catalog-price reference for legacy/diagnostic surfaces. This is
-    /// not observed spend and must not be presented as a provider charge.
-    static func catalogEquivalentSpend(sinceMs: Int64) async -> Double {
-        let excluded = ProviderRegistry.all.filter { $0.canFetchBalance }.map { $0.id }
-        let exclusion = excluded.isEmpty
-            ? ""
-            : "AND (provider_id IS NULL OR provider_id NOT IN (\(excluded.map { _ in "?" }.joined(separator: ","))))"
-        do {
-            return try await AppDatabase.shared.read { db -> Double in
-                let row = try Row.fetchOne(db, sql: """
-                    SELECT COALESCE(SUM(cost_usd), 0) AS c FROM usage_event
-                    WHERE ts >= ? \(exclusion)
-                      AND (model IS NULL OR model != '<synthetic>')
-                    """, arguments: StatementArguments([sinceMs] + excluded))!
-                return row["c"] as Double? ?? 0
-            }
-        } catch {
-            Logger.error("StatsService.catalogEquivalentSpend: \(error)")
-            return 0
-        }
-    }
 
-    static func observedSpendUSD(sinceMs: Int64) async -> Double {
-        do {
-            return try await AppDatabase.shared.read { db in
-                try BurnRateEngine.fetchBalanceDeltas(in: db, sinceMs: sinceMs)
-                    .reduce(0.0) { $0 + $1.spend }
-            }
-        } catch {
-            Logger.error("StatsService.observedSpendUSD: \(error)")
-            return 0
-        }
-    }
 
-    static func observedSpendItems(sinceMs: Int64) async -> [ObservedSpendItem] {
+    static func observedSpendItems(sinceMs: Int64, now: Date = Date()) async -> [ObservedSpendItem] {
         do {
             let deltas = try await AppDatabase.shared.read { db in
-                try BurnRateEngine.fetchBalanceDeltas(in: db, sinceMs: sinceMs)
+                try BalanceObservation.fetchBalanceDeltas(in: db, sinceMs: sinceMs,
+                                                         beforeMs: Int64(now.timeIntervalSince1970 * 1_000))
             }
             struct Aggregate {
                 var nativeAmount = 0.0
                 var observedAt = 0.0
+                var intervalStart = Double.greatestFiniteMagnitude
             }
             var totals: [String: Aggregate] = [:]
             for delta in deltas {
@@ -633,8 +299,10 @@ enum StatsService {
                 var value = totals[key] ?? Aggregate()
                 value.nativeAmount += delta.nativeAmount
                 value.observedAt = max(value.observedAt, Double(delta.ts) / 1_000)
+                value.intervalStart = min(value.intervalStart, Double(delta.startMs) / 1_000)
                 totals[key] = value
             }
+            clearObservationFailure("observedSpend")
             return totals.map { key, value in
                 let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
                 let currency = parts.count > 1 ? parts[1] : "USD"
@@ -646,46 +314,18 @@ enum StatsService {
                     convertedUSD: conversion.map { value.nativeAmount * $0.rate },
                     conversionRateToUSD: conversion?.rate,
                     conversionSource: conversion?.source,
-                    observedAt: value.observedAt)
+                    observedAt: value.observedAt,
+                    intervalStart: value.intervalStart,
+                    intervalEnd: value.observedAt)
             }.sorted { ($0.convertedUSD ?? 0) > ($1.convertedUSD ?? 0) }
         } catch {
             Logger.error("StatsService.observedSpendItems: \(error)")
+            await recordObservationFailure("observedSpend", error: error)
             return []
         }
     }
 
-    /// Legacy A+B amount used by v2 perception surfaces. New callers should
-    /// consume the semantic components separately.
-    static func consumptionSpend(sinceMs: Int64) async -> Double {
-        async let catalog = catalogEquivalentSpend(sinceMs: sinceMs)
-        async let observed = observedSpendUSD(sinceMs: sinceMs)
-        return await catalog + observed
-    }
 
-    /// Combined spend (balance-derived API spend + subscription amortization) for all
-    /// days on/after `sinceMs`, matching the Dashboard "Spend" chart total.
-    ///
-    /// The balance query looks back an extra 14 days before `sinceMs` so the first
-    /// in-range daily delta is measured against a prior snapshot (otherwise it would
-    /// be silently dropped and undercount the boundary day, e.g. "today").
-    static func combinedSpend(sinceMs: Int64) async -> Double {
-        let cal = Calendar.current
-        let filterDay = cal.startOfDay(for: Date(timeIntervalSince1970: Double(sinceMs) / 1000))
-        let queryStart = cal.date(byAdding: .day, value: -14, to: filterDay) ?? filterDay
-        let queryStartMs = Int64(queryStart.timeIntervalSince1970 * 1000)
-
-        let rows = (try? await balanceDailySpend(days: 1, sinceMs: queryStartMs)) ?? []
-        let filterDayStart = filterDay.timeIntervalSince1970
-        let api = rows
-            .filter { $0.date.timeIntervalSince1970 >= filterDayStart }
-            .reduce(0.0) { $0 + $1.spend }
-
-        let today = cal.startOfDay(for: Date())
-        let dayCount = max((cal.dateComponents([.day], from: filterDay, to: today).day ?? 0) + 1, 1)
-        let total = api + subscriptionDailyAmortization() * Double(dayCount)
-        Logger.debug("combinedSpend(sinceMs=\(sinceMs)): rows=\(rows.count) api=\(api) dayCount=\(dayCount) total=\(total)")
-        return total
-    }
 
     // MARK: - Remaining balance
 
@@ -702,13 +342,13 @@ enum StatsService {
                 INNER JOIN (
                     SELECT provider_id, MAX(ts) AS max_ts
                     FROM balance_snapshot
-                    WHERE ts >= ?
+                    WHERE ts >= ? AND ts <= ?
                     GROUP BY provider_id
                 ) latest ON bs.provider_id = latest.provider_id AND bs.ts = latest.max_ts
-                """, arguments: [sinceMs])
+                """, arguments: [sinceMs, Int64(Date().timeIntervalSince1970 * 1_000)])
             return rows.compactMap { row in
                 guard let pid: String = row["provider_id"],
-                      let storedBal: Double = row["balance"],
+                      let storedBal: Double = row["balance"], storedBal.isFinite,
                       let cur: String = row["currency"],
                       balanceTrackedIds.contains(pid),
                       // Only show providers with a key configured — a provider
@@ -717,12 +357,11 @@ enum StatsService {
                 else { return nil }
                 let provider = ProviderRegistry.byId(pid)
                 let rawBalance = provider?.balanceType == .usage ? -storedBal : storedBal
-                let usdBalance = rawBalance * toUSD(currency: cur)
                 return RemainingBalanceItem(
                     providerId: pid,
                     displayName: names[pid] ?? pid,
-                    balance: usdBalance,
-                    currency: "USD"
+                    balance: rawBalance,
+                    currency: cur.uppercased()
                 )
             }
         }
@@ -749,66 +388,29 @@ enum StatsService {
                     )
                 }
             }
+            clearObservationFailure("quotaStatus")
             return rows.filter { !$0.toolId.isEmpty }
         } catch {
             Logger.error("StatsService.latestQuotaStatus: \(error)")
+            await recordObservationFailure("quotaStatus", error: error)
             return []
-        }
-    }
-
-    // MARK: - Provider daily cost
-
-    /// Daily cost grouped by provider_id for the cost chart.
-    static func providerDailyCosts(days: Int) async throws -> [ProviderDailyCost] {
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: Date())
-        guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
-        let startMs = Int64(start.timeIntervalSince1970 * 1000)
-        let todayMs = Int64(todayStart.timeIntervalSince1970 * 1000)
-
-        do {
-            let result: [ProviderDailyCost] = try await AppDatabase.shared.read { db in
-                let rows = try Row.fetchAll(db, sql: """
-                    SELECT (ts / 86400000) * 86400000 AS day_ts,
-                           COALESCE(provider_id, 'unknown') AS pid,
-                           COALESCE(SUM(cost_usd), 0) AS c
-                    FROM usage_event
-                    WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
-                    GROUP BY day_ts, pid ORDER BY day_ts, c DESC
-                    """, arguments: [startMs, todayMs + 86_400_000])
-                return rows.compactMap { r in
-                    guard let day: Int64 = r["day_ts"],
-                          let pid: String = r["pid"],
-                          let c: Double = r["c"],
-                          c > 0 else { return nil }
-                    let date = Date(timeIntervalSince1970: Double(day) / 1000)
-                    return ProviderDailyCost(date: date, providerId: pid, cost: c)
-                }
-            }
-            AppHealthMonitor.shared.clearStatsError()
-            return result
-        } catch {
-            Logger.error("StatsService.providerDailyCosts error: \(error)")
-            AppHealthMonitor.shared.reportStatsError("providerDailyCosts: \(error.localizedDescription)")
-            throw error
         }
     }
 
     // MARK: - Daily code changes
 
     /// Daily added/deleted lines (separate, not net) for the code-change chart.
-    static func dailyCodeChanges(days: Int) async throws -> [DailyCodeChange] {
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: Date())
+    static func dailyCodeChanges(days: Int, now: Date = Date(), calendar cal: Calendar = .current) async throws -> [DailyCodeChange] {
+        let todayStart = cal.startOfDay(for: now)
         guard let start = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) else { return [] }
         let startMs = Int64(start.timeIntervalSince1970 * 1000)
 
         do {
-            AppHealthMonitor.shared.clearStatsError()
             let end = cal.date(byAdding: .day, value: 1, to: todayStart) ?? todayStart
+            let endMs = ObservationBounds.upperExclusive(now: now, periodEnd: end)
             let rows = try await authorizedCodeChanges(
                 sinceMs: startMs,
-                beforeMs: Int64(end.timeIntervalSince1970 * 1_000)
+                beforeMs: endMs
             )
             var buckets: [Date: (added: Int, deleted: Int, commits: Set<String>)] = [:]
             for row in rows {
@@ -816,9 +418,10 @@ enum StatsService {
                 let day = cal.startOfDay(for: date)
                 buckets[day, default: (0, 0, [])].added += row.added
                 buckets[day, default: (0, 0, [])].deleted += row.deleted
-                if !row.commitHash.isEmpty {
-                    buckets[day, default: (0, 0, [])].commits.insert(row.commitHash)
-                }
+            }
+            for commit in try await authorizedCommits(sinceMs: startMs, beforeMs: endMs) {
+                let day = cal.startOfDay(for: Date(timeIntervalSince1970: Double(commit.ts) / 1_000))
+                buckets[day, default: (0, 0, [])].commits.insert(commit.identity)
             }
             return buckets.map { day, values in
                 DailyCodeChange(date: day, added: values.added, deleted: values.deleted,
@@ -826,7 +429,6 @@ enum StatsService {
             }.sorted { $0.date < $1.date }
         } catch {
             Logger.error("StatsService.dailyCodeChanges error: \(error)")
-            AppHealthMonitor.shared.reportStatsError("dailyCodeChanges: \(error.localizedDescription)")
             throw error
         }
     }
@@ -834,15 +436,13 @@ enum StatsService {
     /// Hourly added/deleted lines for the current local calendar day.
     /// The dashboard uses real commit timestamps for the 24-hour rhythm; it
     /// never spreads a daily total across invented hourly buckets.
-    static func hourlyCodeChangesToday(now: Date = Date()) async throws -> [DailyCodeChange] {
-        let cal = Calendar.current
+    static func hourlyCodeChangesToday(now: Date = Date(), calendar cal: Calendar = .current) async throws -> [DailyCodeChange] {
         let start = cal.startOfDay(for: now)
         guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return [] }
         let startMs = Int64(start.timeIntervalSince1970 * 1_000)
-        let endMs = Int64(end.timeIntervalSince1970 * 1_000)
+        let endMs = ObservationBounds.upperExclusive(now: now, periodEnd: end)
 
         do {
-            AppHealthMonitor.shared.clearStatsError()
             let rows = try await authorizedCodeChanges(sinceMs: startMs, beforeMs: endMs)
             var buckets: [Date: (added: Int, deleted: Int, commits: Set<String>)] = [:]
             for row in rows {
@@ -850,9 +450,11 @@ enum StatsService {
                 guard let hour = cal.dateInterval(of: .hour, for: date)?.start else { continue }
                 buckets[hour, default: (0, 0, [])].added += row.added
                 buckets[hour, default: (0, 0, [])].deleted += row.deleted
-                if !row.commitHash.isEmpty {
-                    buckets[hour, default: (0, 0, [])].commits.insert(row.commitHash)
-                }
+            }
+            for commit in try await authorizedCommits(sinceMs: startMs, beforeMs: endMs) {
+                let date = Date(timeIntervalSince1970: Double(commit.ts) / 1_000)
+                guard let hour = cal.dateInterval(of: .hour, for: date)?.start else { continue }
+                buckets[hour, default: (0, 0, [])].commits.insert(commit.identity)
             }
             return buckets.map { hour, values in
                 DailyCodeChange(date: hour, added: values.added, deleted: values.deleted,
@@ -860,7 +462,6 @@ enum StatsService {
             }.sorted { $0.date < $1.date }
         } catch {
             Logger.error("StatsService.hourlyCodeChangesToday error: \(error)")
-            AppHealthMonitor.shared.reportStatsError("hourlyCodeChangesToday: \(error.localizedDescription)")
             throw error
         }
     }
@@ -874,179 +475,206 @@ enum StatsService {
 
     // MARK: - Full snapshot builder (shared by DashboardView and Phase 4 timer)
 
-    /// One row of per-model usage aggregation.
-    struct ModelBreakdownRow {
-        let model: String
-        let providerId: String
-        let toolId: String?
-        let tokens: Int64
-        let calls: Int
-        let cost: Double
-    }
-
-    /// Builds per-model attribution items from DB aggregation rows, coercing
-    /// every count to non-negative and dropping non-finite costs to nil.
-    static func modelBreakdown(
-        rows: [(model: String, providerId: String, toolId: String?, tokens: Int64, calls: Int, cost: Double)]
-    ) -> [ModelCostItem] {
-        rows.map { row in
-            let safeCost: Double? = row.cost.isFinite && row.cost >= 0 ? row.cost : nil
-            return ModelCostItem(
-                model: row.model,
-                providerId: row.providerId,
-                toolId: row.toolId,
-                tokens: max(row.tokens, 0),
-                calls: max(row.calls, 0),
-                cost: safeCost,
-                costIsEstimate: safeCost == nil ? nil : false)
+    /// Inputs have already passed repository authorization. Identity remains
+    /// the Git root even when different roots have the same basename.
+    static func repositoryActivities(
+        tokensByRoot: [String: Int64],
+        changes: [(repoPath: String, added: Int, deleted: Int, commitHash: String)],
+        commits: [(repoPath: String, commitHash: String)] = []
+    ) -> [RepoItem] {
+        let codeByRoot = Dictionary(grouping: changes, by: \.repoPath)
+        let commitsByRoot = Dictionary(grouping: commits, by: \.repoPath)
+        return Set(tokensByRoot.keys).union(codeByRoot.keys).union(commitsByRoot.keys).sorted().map { root in
+            let code = codeByRoot[root] ?? []
+            return RepoItem(repoPath: root, name: URL(fileURLWithPath: root).lastPathComponent,
+                            added: code.reduce(0) { $0 + max($1.added, 0) },
+                            deleted: code.reduce(0) { $0 + max($1.deleted, 0) },
+                            tokens: max(tokensByRoot[root] ?? 0, 0),
+                            commits: Set((commitsByRoot[root] ?? []).map(\.commitHash).filter { !$0.isEmpty }).count)
+        }.sorted {
+            if ($0.tokens ?? 0) != ($1.tokens ?? 0) { return ($0.tokens ?? 0) > ($1.tokens ?? 0) }
+            if $0.totalChanges != $1.totalChanges { return $0.totalChanges > $1.totalChanges }
+            return $0.repoPath < $1.repoPath
         }
     }
 
-    /// Providers whose balance is consumed by exactly one tool. Only these can
-    /// expose per-tool/per-model spend as fact instead of an estimate.
-    static func exclusiveProviders(usageByTool: [String: Set<String>]) -> Set<String> {
-        var providerTools: [String: Set<String>] = [:]
-        for (tool, providers) in usageByTool {
-            for provider in providers {
-                providerTools[provider, default: []].insert(tool)
+    /// Builds unit-preserving activity from observed rows.
+    /// Path groups are canonicalized and authorized by the caller.
+    static func repositoryTokenActivity(in db: Database, sinceMs: Int64, beforeMs: Int64) throws -> [(path: String, tokens: Int64)] {
+        try Row.fetchAll(db, sql: """
+            SELECT repo_path AS p, COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok
+            FROM usage_event
+            WHERE ts >= ? AND ts < ? AND repo_path IS NOT NULL
+              AND (model IS NULL OR model != '<synthetic>')
+            GROUP BY p
+            """, arguments: [sinceMs, beforeMs]).map {
+                (path: $0["p"] as String? ?? "", tokens: $0["tok"] as Int64? ?? 0)
             }
-        }
-        return Set(providerTools.filter { $0.value.count == 1 }.keys)
     }
 
-    /// Aggregates token usage by repo basename. Distinct paths can share a
-    /// basename (e.g. /a/new-chat and /b/new-chat), so collisions are summed
-    /// instead of crashing a unique-key dictionary.
-    static func repoTokenByName(_ rows: [(path: String, tokens: Int64)]) -> [String: Int64] {
-        var map: [String: Int64] = [:]
-        for row in rows {
-            let name = URL(fileURLWithPath: row.path).lastPathComponent
-            map[name, default: 0] += row.tokens
+    static func modelActivity(in db: Database, sinceMs: Int64, beforeMs: Int64) throws -> [ModelActivityItem] {
+        let rows = try Row.fetchAll(db, sql: """
+                SELECT COALESCE(model, '') AS m, COALESCE(provider_id, 'unknown') AS pid,
+                       source AS s,
+                       COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok,
+                       COUNT(*) AS cnt
+                FROM usage_event
+                WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
+                GROUP BY m, pid, s
+                """, arguments: [sinceMs, beforeMs]).map { r in
+                    (m: r["m"] as String? ?? "",
+                     pid: r["pid"] as String? ?? "unknown",
+                     s: r["s"] as String? ?? "",
+                     tok: r["tok"] as Int64? ?? 0,
+                     cnt: r["cnt"] as Int? ?? 0)
+                }
+        return modelBreakdown(rows: rows.map {
+            (model: $0.m, providerId: $0.pid, toolId: $0.s.isEmpty ? nil : $0.s, tokens: $0.tok, calls: $0.cnt)
+        })
+    }
+
+    static func modelBreakdown(
+        rows: [(model: String, providerId: String, toolId: String?, tokens: Int64, calls: Int)]
+    ) -> [ModelActivityItem] {
+        rows.map { row in
+            ModelActivityItem(model: row.model.trimmingCharacters(in: .whitespacesAndNewlines),
+                              providerId: row.providerId, toolId: row.toolId,
+                              tokens: max(row.tokens, 0), calls: max(row.calls, 0))
         }
-        return map
     }
 
     /// Await a throwing async value, logging the failure before returning the
     /// fallback. Replaces bare `try?` in dashboardSnapshot so a data-source
     /// failure is visible in logs instead of silently degrading.
-    private static func resultOrLog<T>(_ label: String, _ fallback: T, _ body: () async throws -> T) async -> T {
+    @TaskLocal static var observationFailures: ObservationFailures?
+    @TaskLocal static var observationPeriod: DashboardPeriodKind?
+
+    /// Menus must distinguish an empty observation from a failed read.
+    static func observedValue<Value>(source: String, operation: () async -> Value) async -> Value? {
+        let failures = ObservationFailures()
+        let value = await $observationFailures.withValue(failures) { await operation() }
+        guard await failures.snapshot().isEmpty else {
+            AppHealthMonitor.shared.reportStatsError("Observation unavailable", source: source)
+            return nil
+        }
+        AppHealthMonitor.shared.clearStatsError(source: source)
+        return value
+    }
+
+    static func observedSpendForMenu(sinceMs: Int64) async -> [ObservedSpendItem]? {
+        await observedValue(source: "menu.observedSpend") {
+            await observedSpendItems(sinceMs: sinceMs)
+        }
+    }
+
+    private static func clearObservationFailure(_ label: String) {
+        if let period = observationPeriod {
+            AppHealthMonitor.shared.clearStatsError(source: "dashboard.\(period.rawValue).\(label)")
+        }
+    }
+
+    private static func recordObservationFailure(_ label: String, error: Error) async {
+        await observationFailures?.record(label)
+        if let period = observationPeriod {
+            AppHealthMonitor.shared.reportStatsError(error.localizedDescription,
+                source: "dashboard.\(period.rawValue).\(label)")
+        }
+    }
+
+    static func resultOrLog<T>(_ label: String, _ fallback: T, _ body: () async throws -> T) async -> T {
         do {
-            return try await body()
+            let value = try await body()
+            clearObservationFailure(label)
+            return value
         } catch {
             Logger.error("StatsService.dashboardSnapshot: \(label) failed: \(error)")
+            await recordObservationFailure(label, error: error)
             return fallback
         }
     }
 
     /// Computes everything needed for a complete DashboardSnapshot for `days`.
     /// Used by both live Dashboard loading and background cache refresh.
-    static func dashboardSnapshot(days: Int) async -> DashboardSnapshot {
+    static func dashboardSnapshot(period: DashboardPeriodKind) async -> DashboardSnapshot {
+        let failures = ObservationFailures()
+        return await $observationFailures.withValue(failures) {
+            await $observationPeriod.withValue(period) {
+                await buildDashboardSnapshot(period: period)
+            }
+        }
+    }
+
+    private static func buildDashboardSnapshot(period: DashboardPeriodKind) async -> DashboardSnapshot {
         let snapshotStartedAt = Date()
         let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: Date())
-        let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: todayStart) ?? todayStart
+        let horizon = DashboardPeriod(kind: period, now: snapshotStartedAt, calendar: cal)
+        let days = horizon.elapsedDays
+        let todayStart = cal.startOfDay(for: snapshotStartedAt)
+        let rangeStart = horizon.start
         let rangeStartMs = Int64(rangeStart.timeIntervalSince1970 * 1000)
-        let todayStartMs = Int64(todayStart.timeIntervalSince1970 * 1000)
+        let rangeEndMs = ObservationBounds.upperExclusive(now: snapshotStartedAt, periodEnd: horizon.end)
         // 30-day window + 14d lookback for correct balance delta computation.
         let monthStart = cal.date(byAdding: .day, value: -29, to: todayStart) ?? todayStart
-        let monthStartMs = Int64(monthStart.timeIntervalSince1970 * 1000)
         let lookbackStart = cal.date(byAdding: .day, value: -14, to: monthStart) ?? monthStart
         let lookbackStartMs = Int64(lookbackStart.timeIntervalSince1970 * 1000)
 
-        // Monday of this week (for unified week cost)
-        let mondayStartMs = Int64(Calendar.mondayOfWeek().timeIntervalSince1970 * 1000)
-        let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
-        let yesterdayStartMs = Int64(yesterdayStart.timeIntervalSince1970 * 1000)
-        // Previous 30-day window for period-over-period comparison
-        let prevPeriodStart = cal.date(byAdding: .day, value: -30, to: todayStart) ?? todayStart
-
-        //
-        // ── Unified cost computation: all three ranges use combinedSpend ──
-        // combinedSpend = balance API (with 14d lookback) + subscription × days
-        async let tcR = StatsService.combinedSpend(sinceMs: todayStartMs)
-        async let wcR = StatsService.combinedSpend(sinceMs: mondayStartMs)
-        async let mcR = StatsService.combinedSpend(sinceMs: monthStartMs)
-        async let ycR = StatsService.combinedSpend(sinceMs: yesterdayStartMs)
-        async let catalogEquivalentR = StatsService.catalogEquivalentSpend(sinceMs: rangeStartMs)
-        async let observedSpendItemsR = StatsService.observedSpendItems(sinceMs: rangeStartMs)
+        async let observedSpendItemsR = StatsService.observedSpendItems(sinceMs: rangeStartMs, now: snapshotStartedAt)
+        async let coverageR = resultOrLog("activityCoverage", ActivityCoverage()) {
+            try await AppDatabase.shared.read { db in
+                let row = try Row.fetchOne(db, sql: """
+                    SELECT COUNT(*) AS events,
+                           COALESCE(SUM(CASE WHEN \(TokenAccounting.missingComponentsSQL) THEN 1 ELSE 0 END), 0) AS incomplete
+                    FROM usage_event WHERE ts >= ? AND ts < ?
+                      AND (model IS NULL OR model != '<synthetic>')
+                    """, arguments: [rangeStartMs, rangeEndMs])!
+                return ActivityCoverage(observedEvents: row["events"] as Int64? ?? 0,
+                                        incompleteEvents: row["incomplete"] as Int64? ?? 0)
+            }
+        }
         // Each throwing source goes through resultOrLog so a failure is logged
         // (label + error) instead of being swallowed by bare `try?`.
-        async let stR = resultOrLog("dashboardUsageStats", []) { try await StatsService.dashboardUsageStats(days: days) }
-        async let blR = resultOrLog("balanceDailySpend", []) { try await StatsService.balanceDailySpend(days: days, sinceMs: rangeStartMs) }
+        async let stR: [DailyStat] = resultOrLog("dashboardUsageStats", []) {
+            if horizon.isHourly { return try await StatsService.hourlyUsageStatsToday(now: snapshotStartedAt, calendar: cal) }
+            return try await StatsService.dailyStats(days: days, sinceMs: rangeStartMs, now: snapshotStartedAt, calendar: cal)
+        }
+        async let blR = resultOrLog("balanceDailySpend", []) { try await StatsService.balanceDailySpend(days: days, sinceMs: rangeStartMs, now: snapshotStartedAt, calendar: cal) }
         // Query full 30 days of balance data + 14d lookback for provider breakdown
-        async let bmR = resultOrLog("balanceDailySpend44", []) { try await StatsService.balanceDailySpend(days: 44, sinceMs: lookbackStartMs) }
-        async let cdR = resultOrLog("dashboardCodeChanges", []) { try await StatsService.dashboardCodeChanges(days: days) }
-        async let rpR = resultOrLog("repoBreakdown", []) { try await StatsService.repoBreakdown(days: days) }
-        async let prR = StatsService.prediction()
+        async let bmR = resultOrLog("balanceDailySpend44", []) { try await StatsService.balanceDailySpend(days: 44, sinceMs: lookbackStartMs, now: snapshotStartedAt, calendar: cal) }
+        async let cdR: [DailyCodeChange] = resultOrLog("dashboardCodeChanges", []) {
+            if horizon.isHourly { return try await StatsService.hourlyCodeChangesToday(now: snapshotStartedAt, calendar: cal) }
+            return try await StatsService.dailyCodeChanges(days: days, now: snapshotStartedAt, calendar: cal)
+        }
+        async let repoCodeR = resultOrLog("repositoryCode", []) { try await authorizedCodeChanges(sinceMs: rangeStartMs, beforeMs: rangeEndMs) }
+        async let repoCommitsR = resultOrLog("repositoryCommits", []) { try await authorizedCommits(sinceMs: rangeStartMs, beforeMs: rangeEndMs) }
         async let lbR = resultOrLog("latestRemainingBalances", []) { try await StatsService.latestRemainingBalances(sinceMs: lookbackStartMs) }
         async let qsR = StatsService.latestQuotaStatus()
         async let modelRowsR = resultOrLog("modelBreakdown", []) { try await AppDatabase.shared.read { db in
-            try Row.fetchAll(db, sql: """
-                SELECT model AS m, COALESCE(provider_id, 'unknown') AS pid,
-                       source AS s,
-                       COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok,
-                       COUNT(*) AS cnt,
-                       COALESCE(SUM(cost_usd), 0) AS c
-                FROM usage_event
-                WHERE ts >= ? AND model IS NOT NULL AND model != '<synthetic>'
-                GROUP BY m, pid, s
-                """, arguments: [rangeStartMs]).map { r in
-                    (m: r["m"] as String? ?? "",
-                     pid: r["pid"] as String? ?? "unknown",
-                     s: r["s"] as String? ?? "",
-                     tok: r["tok"] as Int64? ?? 0,
-                     cnt: r["cnt"] as Int? ?? 0,
-                     c: r["c"] as Double? ?? 0)
-                }
+            try modelActivity(in: db, sinceMs: rangeStartMs, beforeMs: rangeEndMs)
         } }
         async let sourceAggR = resultOrLog("toolUsage", []) { try await AppDatabase.shared.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT source AS s,
                        COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok,
-                       COUNT(*) AS cnt
-                FROM usage_event WHERE ts >= ? GROUP BY s
-                """, arguments: [rangeStartMs]).map { r in
+                       COUNT(*) AS cnt,
+                       COUNT(DISTINCT NULLIF(session_id, '')) AS sessions
+                FROM usage_event WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>') GROUP BY s
+                """, arguments: [rangeStartMs, rangeEndMs]).map { r in
                     (s: r["s"] as String? ?? "",
                      tok: r["tok"] as Int64? ?? 0,
-                     cnt: r["cnt"] as Int? ?? 0)
-                }
-        } }
-        async let usageByToolR = resultOrLog("toolProviders", [:]) { try await AppDatabase.shared.read { db in
-            try Row.fetchAll(db, sql: """
-                SELECT source AS s, COALESCE(provider_id, 'unknown') AS pid
-                FROM usage_event WHERE ts >= ? AND provider_id IS NOT NULL
-                GROUP BY s, pid
-                """, arguments: [rangeStartMs]).reduce(into: [String: Set<String>]()) { map, r in
-                    let s: String = r["s"] ?? ""
-                    let pid: String = r["pid"] ?? "unknown"
-                    if !s.isEmpty { map[s, default: []].insert(pid) }
+                     cnt: r["cnt"] as Int? ?? 0,
+                     sessions: r["sessions"] as Int64? ?? 0)
                 }
         } }
         async let repoTokensR = resultOrLog("repoTokens", []) { try await AppDatabase.shared.read { db in
-            try Row.fetchAll(db, sql: """
-                SELECT repo_path AS p, COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok
-                FROM usage_event WHERE ts >= ? AND repo_path IS NOT NULL
-                GROUP BY p
-                """, arguments: [rangeStartMs]).map { r in
-                    (p: r["p"] as String? ?? "", tok: r["tok"] as Int64? ?? 0)
-                }
+            try repositoryTokenActivity(in: db, sinceMs: rangeStartMs,
+                                        beforeMs: rangeEndMs)
         } }
-        async let sourceDailyR = resultOrLog("sourceDailyTokens", []) { try await AppDatabase.shared.read { db in
-            try Row.fetchAll(db, sql: """
-                SELECT source AS s, (ts / 86400000) * 86400000 AS day,
-                       COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS tok
-                FROM usage_event WHERE ts >= ? GROUP BY s, day
-                """, arguments: [rangeStartMs]).map { r in
-                    (s: r["s"] as String? ?? "", day: r["day"] as Int64? ?? 0, tok: r["tok"] as Int64? ?? 0)
-                }
-        } }
-
-        let (tc, wc, mc, yc, catalogEquivalent, observedSpendItems,
-             st, bl, bm, cd, rp, pr, lb, qs,
-             modelRows, sourceAgg, usageByTool, repoTokens, sourceDaily) = await (
-            tcR, wcR, mcR, ycR, catalogEquivalentR, observedSpendItemsR,
-            stR, blR, bmR, cdR, rpR, prR, lbR, qsR,
-            modelRowsR, sourceAggR, usageByToolR, repoTokensR, sourceDailyR
+        let (observedSpendItems, activityCoverage,
+             st, bl, bm, cd, repoCode, repoCommits, lb, qs,
+             modelRows, sourceAgg, repoTokens) = await (
+            observedSpendItemsR, coverageR,
+            stR, blR, bmR, cdR, repoCodeR, repoCommitsR, lbR, qsR,
+            modelRowsR, sourceAggR, repoTokensR
         )
         DiagnosticJournal.log("dashboard_snapshot_stage", [
             "stage": .string("core_data"),
@@ -1054,20 +682,10 @@ enum StatsService {
             "elapsed_ms": .double(Date().timeIntervalSince(snapshotStartedAt) * 1_000),
         ])
 
-        let subAmort = subscriptionDailyAmortization()
-        let observedSpend: Double? = observedSpendItems.allSatisfy { $0.convertedUSD != nil }
+        let observedSpend: Double? = !observedSpendItems.isEmpty && observedSpendItems.allSatisfy { $0.convertedUSD != nil }
             ? observedSpendItems.compactMap(\.convertedUSD).reduce(0, +)
             : nil
-        let daysInMonth = Double(cal.range(of: .day, in: .month, for: Date())?.count ?? 30)
-        let declaredMonthlyCost = subAmort * daysInMonth
-
-        // Previous 30-day period spend (for 30d period-over-period badge)
-        let prevPeriodApiSpend = bm.filter {
-            let ts = $0.date.timeIntervalSince1970
-            return ts >= prevPeriodStart.timeIntervalSince1970 && ts < todayStart.timeIntervalSince1970
-        }.reduce(0.0) { $0 + $1.spend }
-        let prevPeriodDays = Double(min(30, cal.dateComponents([.day], from: prevPeriodStart, to: todayStart).day ?? 30))
-        let previousPeriodSpend = prevPeriodApiSpend + subAmort * prevPeriodDays
+        let declaredMonthlyCost = declaredMonthlyCostUSD()
 
         // Provider breakdown — use 30-day query (bm) filtered to `days` range
         let names = Dictionary(uniqueKeysWithValues: IntegrationRegistry.all.map { ($0.id, $0.displayName) })
@@ -1089,154 +707,51 @@ enum StatsService {
                 sourceKind: providerKind)
         }.sorted { $0.cost > $1.cost }
 
-        // Tool costs from usage_event source aggregation
-        let toolStartMs = rangeStartMs
-        let toolMap: [String: Double] = await resultOrLog("toolCosts", [:]) {
-            try await AppDatabase.shared.read { db in
-                try GRDB.Row.fetchAll(db, sql: "SELECT source AS s, COALESCE(SUM(cost_usd),0) AS c FROM usage_event WHERE ts >= ? GROUP BY s", arguments: [toolStartMs]).reduce(into: [String: Double]()) { map, r in
-                    if let s: String = r["s"], let c: Double = r["c"], c > 0 { map[s] = c }
-                }
-            }
-        }
-        // Keep both entries even when a tool has no sessions — the iOS detail
-        // sheet falls back to an empty state instead of a dead tap.
-        let toolDetailStartedAt = Date()
-        let detailItems = await toolDetails(sinceMs: toolStartMs)
-        DiagnosticJournal.log("dashboard_snapshot_stage", [
-            "stage": .string("tool_details"),
-            "days": .int(days),
-            "elapsed_ms": .double(Date().timeIntervalSince(toolDetailStartedAt) * 1_000),
-        ])
-        let toolTotal = toolMap.reduce(0.0) { $0 + $1.value }
-        let enabledB = Set(IntegrationRegistry.balanceTrackedCostSources().compactMap { cs in
-            if case .apiKey(let pid) = cs.kind { return pid }; return nil
-        })
-        // API spend for the current `days` range (for tool/repo scaling)
-        let apiSpend = bm.filter {
-            enabledB.contains($0.providerId) && $0.date.timeIntervalSince1970 >= rangeStart.timeIntervalSince1970
-        }.reduce(0.0) { $0 + $1.spend }
-        let subTotalAll = subAmort * Double(days)
-        let scale = toolTotal > 0 ? apiSpend / toolTotal : 1.0
-        let toolTokens = Dictionary(uniqueKeysWithValues: sourceAgg.map { ($0.s, $0.tok) })
-        let toolCalls = Dictionary(uniqueKeysWithValues: sourceAgg.map { ($0.s, $0.cnt) })
-        let rawTools = Set(toolMap.keys).union(sourceAgg.map(\.s)).compactMap { key -> (String, String, Double, Int64)? in
-            let tokens = toolTokens[key] ?? 0
-            let calls = toolCalls[key] ?? 0
-            guard tokens > 0 || calls > 0 else { return nil }
-            let cost = ChartMath.finite((toolMap[key] ?? 0) * scale, fallback: 0)
-            let label = IntegrationRegistry.toolDisplayName(for: key)
-            return (key, label, cost, tokens)
-        }.sorted {
-            if $0.3 != $1.3 { return $0.3 > $1.3 }
-            return $0.2 > $1.2
-        }
-        let toolCosts: [NameCostItem] = rawTools.map {
-            NameCostItem(name: $0.1, cost: $0.2, tokens: toolTokens[$0.0], calls: toolCalls[$0.0])
+        let toolActivities = sourceAgg.filter { $0.tok > 0 || $0.cnt > 0 }.sorted {
+            if $0.tok != $1.tok { return $0.tok > $1.tok }
+            return $0.s < $1.s
+        }.map { row in
+            ToolActivityItem(toolId: row.s, name: IntegrationRegistry.toolDisplayName(for: row.s),
+                             tokens: row.tok, calls: row.cnt)
         }
 
-        // Repos with subscription scaling
-        let logTotal = rp.reduce(0.0) { $0 + $1.cost }
-        // Guard the denominator: usage rows can carry a tool source without
-        // any repo attribution, leaving logTotal == 0 while toolTotal > 0.
-        // Dividing then yields +Inf and poisons every RepoItem cost.
-        let repoScale = logTotal > 0 && toolTotal > 0 ? apiSpend / logTotal : 1.0
-        let subScale = logTotal > 0 ? subTotalAll / logTotal : 0.0
+        // Repository activity
         let repoRoots = RepositoryScope.configuredRoots()
         var authorizedRepoTokens: [String: Int64] = [:]
         for row in repoTokens {
-            guard let root = RepositoryScope.authorizedGitRoot(for: row.p, roots: repoRoots) else { continue }
-            authorizedRepoTokens[root, default: 0] += row.tok
+            guard let root = RepositoryScope.authorizedGitRoot(for: row.path, roots: repoRoots) else { continue }
+            authorizedRepoTokens[root, default: 0] += row.tokens
         }
-        let repoTokenByName = StatsService.repoTokenByName(authorizedRepoTokens.map { ($0.key, $0.value) })
-        let repoItems: [RepoItem] = rp.map { r in
-            let scaledCost = ChartMath.finite(r.cost * repoScale + r.cost * subScale, fallback: 0)
-            let totalChanges = Int64(r.added) + Int64(r.deleted)
-            return RepoItem(name: r.repo, cost: scaledCost, added: r.added, deleted: r.deleted,
-                            cpl: totalChanges > 0 ? scaledCost * 1000 / Double(totalChanges) : 0,
-                            tokens: repoTokenByName[r.repo], commits: r.commits)
-        }
+        let repoItems = repositoryActivities(tokensByRoot: authorizedRepoTokens, changes: repoCode.map {
+            (repoPath: $0.repoPath, added: $0.added, deleted: $0.deleted, commitHash: $0.commitHash)
+        }, commits: repoCommits.map { (repoPath: $0.repoPath, commitHash: $0.commitHash) })
 
-        // Per-model attribution (BYOK mixes), sanitized by the pure helper.
-        // Cost is intentionally not populated: usage_event.cost_usd is a
-        // token×catalog estimate, which must not enter the snapshot as if it
-        // were fact. Model-level spend can only appear once attribution to an
-        // exclusive balance source is implemented.
-        let modelItems = StatsService.modelBreakdown(rows: modelRows.map {
-            (model: $0.m, providerId: $0.pid, toolId: $0.s.isEmpty ? nil : $0.s,
-             tokens: $0.tok, calls: $0.cnt, cost: 0)
-        })
+        let modelItems = modelRows
 
-        // Effective-price series: only tools whose balance provider is
-        // exclusively theirs produce points — both coordinates stay facts.
-        let exclusive = StatsService.exclusiveProviders(usageByTool: usageByTool)
-        var providerTool: [String: String] = [:]
-        for (tool, providers) in usageByTool {
-            for provider in providers where exclusive.contains(provider) {
-                providerTool[provider] = tool
-            }
-        }
-        var dailyCostByProvider: [String: [Int64: Double]] = [:]
-        for s in bm {
-            let day = Int64(s.date.timeIntervalSince1970)
-            dailyCostByProvider[s.providerId, default: [:]][day, default: 0] += s.spend
-        }
-        var sourceDailyByTool: [String: [Int64: Int64]] = [:]
-        for row in sourceDaily {
-            let daySec = row.day / 1000
-            sourceDailyByTool[row.s, default: [:]][daySec] = row.tok
-        }
-        let rangeStartInterval = Int64(rangeStart.timeIntervalSince1970)
-        let rangeEndInterval = Int64(todayStart.timeIntervalSince1970) + 86_400
-        var rateSeries: [RateSeriesItem] = []
-        for provider in providerTool.keys.sorted() {
-            guard let tool = providerTool[provider],
-                  let costs = dailyCostByProvider[provider],
-                  let tokens = sourceDailyByTool[tool]
-            else { continue }
-            let points = costs.compactMap { day, cost -> RatePoint? in
-                guard cost > 0, let tok = tokens[day], tok > 0,
-                      day >= rangeStartInterval, day < rangeEndInterval
-                else { return nil }
-                return RatePoint(ts: Double(day), tokens: tok, cost: cost)
-            }.sorted { $0.ts < $1.ts }
-            if !points.isEmpty {
-                rateSeries.append(RateSeriesItem(
-                    toolId: tool,
-                    label: IntegrationRegistry.toolDisplayName(for: tool),
-                    points: points))
-            }
-        }
-
-        // Daily/balance trend points
         let fmt = ISO8601DateFormatter(); fmt.formatOptions = [.withFullDate]
-        let dailyPts = st.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: $0.cost, calls: Int64($0.calls), tokens: Int64($0.tokens), netLines: $0.netLines) }
+        let dailyPts = st.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: Double($0.tokens), calls: Int64($0.calls), tokens: Int64($0.tokens), netLines: $0.netLines) }
         let codePts = cd.map { TrendPoint(ts: $0.date.timeIntervalSince1970, value: Double($0.added), calls: 0, tokens: 0, netLines: $0.added - $0.deleted, added: $0.added, deleted: $0.deleted, commits: $0.commits) }
         let balPts = Dictionary(grouping: bl, by: { $0.date }).compactMap { d, v in TrendPoint(ts: d.timeIntervalSince1970, value: v.reduce(0) { $0 + $1.spend }, calls: 0, tokens: 0, netLines: 0) }
         let todayCall = Int64(st.reduce(0) { $0 + $1.calls })
         let todayTok = Int64(st.reduce(0) { $0 + $1.tokens })
 
         var snap = DashboardSnapshot(
-            todayCost: tc, weekCost: wc, monthCost: mc,
-            yesterdaySpend: yc, previousPeriodSpend: previousPeriodSpend,
-            subDaily: subAmort, todayCalls: todayCall, todayTokens: todayTok,
+            todayCalls: todayCall, todayTokens: todayTok,
+            activityCoverage: activityCoverage,
             observedSpend: observedSpendItems,
             convertedObservedSpendUSD: observedSpend,
-            catalogEquivalentUSD: catalogEquivalent,
             declaredMonthlyCostUSD: declaredMonthlyCost,
-            providerBreakdown: providers, toolBreakdown: toolCosts, topRepos: repoItems,
-            prediction: PredictionItem(monthProjected: pr.monthProjected, dailyRate: pr.dailyRate, daysRemaining: pr.daysRemaining, monthSoFar: pr.monthSoFar),
+            providerBreakdown: providers, toolBreakdown: toolActivities, topRepos: repoItems,
             dailyStats: dailyPts, codeChanges: codePts, balanceDaily: balPts,
             remainingBalances: lb, quotaStatus: qs,
-            modelBreakdown: modelItems, rateSeries: rateSeries,
+            modelBreakdown: modelItems,
             updatedAt: Date()
         )
-        snap.toolDetails = detailItems
+        snap.period = horizon
+        snap.readFailures = await observationFailures?.snapshot() ?? []
+        snap.periodSessions = sourceAgg.reduce(Int64(0)) { $0 + $1.sessions }
         snap.payloadVersion = CKSchema.payloadVersion
         snap.writerAppVersion = CKSchema.writerAppVersion
-        // The single 2.0 contract syncs the native, unit-preserving Pulse.
-        if let pulse = await PulseEngine.shared.snapshot() {
-            snap.pulse = pulse
-        }
         // Sanitize at the source so every downstream consumer — local cache,
         // CloudKit sync, iOS/watchOS/widget decoders — can only ever receive
         // finite, non-negative values.
@@ -1251,367 +766,117 @@ enum StatsService {
 
     // MARK: - Tool detail (conclusion card + session explorer)
 
-    /// Period summary for one tool's dashboard conclusion card.
-    static func toolConclusion(source: String, sinceMs: Int64) async -> ToolConclusion {
-        let rows = await sessionRows(source: source, sinceMs: sinceMs)
-        return await toolConclusion(source: source, sinceMs: sinceMs, rows: rows)
-    }
-
-    private static func toolConclusion(
-        source: String,
-        sinceMs: Int64,
-        rows: [SessionRow]
-    ) async -> ToolConclusion {
-        let cal = Calendar.current
-        let todayMs = Int64(cal.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-        let toMs = todayMs + 86_400_000
-        let rangeLen = toMs - sinceMs
-        let prevSince = sinceMs - rangeLen
-
-        let metrics = await toolMetrics(source: source, sinceMs: sinceMs, toMs: toMs, prevSince: prevSince)
-
-        let daysElapsed = max(1, Int((todayMs - sinceMs) / 86_400_000) + 1)
-        let daysInMonth = cal.range(of: .day, in: .month, for: Date())?.count ?? 30
-        let totalLines = metrics.changes.added + metrics.changes.deleted
-        let cpl = totalLines > 0 ? metrics.spend / Double(totalLines) * 1000 : 0
-        let count = rows.count
-        let otherSource = source == "codex" ? "claude-code" : "codex"
-        let otherRows = await sessionRows(source: otherSource, sinceMs: sinceMs)
-        let thisAvg = count > 0 ? metrics.spend / Double(count) : 0
-        let otherAvg = otherRows.count > 0
-            ? (await sourceSpend(source: otherSource, sinceMs: sinceMs, toMs: toMs)) / Double(otherRows.count)
-            : 0
-
-        return ToolConclusion(
-            spend: metrics.spend,
-            previousSpend: metrics.previousSpend,
-            deltaPct: SessionStats.deltaPct(current: metrics.spend, previous: metrics.previousSpend),
-            projectedMonth: SessionStats.projectMonth(
-                spendSoFar: metrics.spend, daysElapsed: daysElapsed, daysInMonth: daysInMonth),
-            sessionCount: count,
-            commitCount: metrics.changes.commits,
-            addedLines: metrics.changes.added,
-            deletedLines: metrics.changes.deleted,
-            avgCostPerSession: thisAvg,
-            cpl: cpl,
-            crossToolDeltaPct: otherAvg > 0 ? SessionStats.deltaPct(current: thisAvg, previous: otherAvg) : nil)
-    }
-
-    /// Builds all dashboard tool blocks together. Each tool's cross-tool comparison
-    /// needs the other tool's sessions. One database pass keeps those related
-    /// readings consistent and avoids queueing six separate scans of 30-day
-    /// usage events behind each other.
-    private static func toolDetails(sinceMs: Int64) async -> [ToolDetailItem] {
-        let toMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000) + 86_400_000
-        let prevSince = sinceMs - (toMs - sinceMs)
-
-        let rowsStartedAt = Date()
-        let buildStartedAt = Date()
-        let detailSources = ["codex", "claude-code", "deepseek-harness"]
-        let detailData = await toolDetailData(
-            sources: detailSources, sinceMs: sinceMs, toMs: toMs, prevSince: prevSince)
-        DiagnosticJournal.log("dashboard_snapshot_stage", [
-            "stage": .string("tool_details_rows"),
-            "elapsed_ms": .double(Date().timeIntervalSince(rowsStartedAt) * 1_000),
-            "database_and_aggregation_ms": .double(
-                Date().timeIntervalSince(buildStartedAt) * 1_000),
-        ])
-
-        let totalSpend = detailSources.reduce(0.0) {
-            $0 + (detailData.sources[$1]?.metrics.spend ?? 0)
+    static func toolActivitySummary(source: String, sinceMs: Int64, sessionCount: Int, now: Date = Date()) async throws -> ToolActivitySummary {
+        let calendar = Calendar.current
+        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
+        let endMs = ObservationBounds.upperExclusive(now: now, periodEnd: end)
+        let paths = try await AppDatabase.shared.read { db in
+            try String.fetchAll(db, sql: """
+                SELECT DISTINCT repo_path FROM usage_event
+                WHERE source = ? AND ts >= ? AND ts < ? AND repo_path IS NOT NULL
+                  AND (model IS NULL OR model != '<synthetic>')
+                """, arguments: [source, sinceMs, endMs])
         }
-        let totalSessions = detailSources.reduce(0) {
-            $0 + (detailData.sources[$1]?.rows.count ?? 0)
-        }
-
-        return detailSources.compactMap { source in
-            guard let data = detailData.sources[source] else { return nil }
-            let otherSessionCount = totalSessions - data.rows.count
-            let otherSpend = totalSpend - data.metrics.spend
-            return toolDetail(
-                source: source, sinceMs: sinceMs, rows: data.rows,
-                metrics: data.metrics, otherAverageSpend: otherSpend,
-                otherRowCount: otherSessionCount)
-        }
-    }
-
-    private struct ToolDetailSourceData: Sendable {
-        let rows: [SessionRow]
-        let metrics: ToolMetrics
-    }
-
-    private struct ToolDetailData: Sendable {
-        let sources: [String: ToolDetailSourceData]
-    }
-
-    private static func toolDetailData(
-        sources: [String],
-        sinceMs: Int64,
-        toMs: Int64,
-        prevSince: Int64
-    ) async -> ToolDetailData {
-        do {
-            return try await AppDatabase.shared.read { db in
-                var eventArguments = StatementArguments(sources)
-                eventArguments += [sinceMs, toMs]
-                let eventRows = try Row.fetchAll(db, sql: """
-                    SELECT source, session_id, ts, in_tokens, cache_tokens,
-                           cost_usd, repo_path
-                    FROM usage_event
-                    WHERE source IN (\(sources.map { _ in "?" }.joined(separator: ",")))
-                      AND ts >= ? AND ts < ? AND session_id IS NOT NULL
-                    ORDER BY source, ts
-                    """, arguments: eventArguments)
-
-                struct SessionBuild {
-                    var sessionId: String = ""
-                    var firstTs: Int64 = .max
-                    var lastTs: Int64 = 0
-                    var cost: Double = 0
-                    var lastInput: Int = 0
-                    var firstRepo: String? = nil
-                    var hasFirstRepo = false
-                    var turns: [TurnPoint] = []
-                }
-
-                var builders: [String: [String: SessionBuild]] = [:]
-                for row in eventRows {
-                    let source: String = row["source"]
-                    let sid: String = row["session_id"]
-                    let ts: Int64 = row["ts"] ?? 0
-                    let input: Int = row["in_tokens"] ?? 0
-                    let cache: Int = row["cache_tokens"] ?? 0
-                    let cost: Double = row["cost_usd"] ?? 0
-
-                    var session = builders[source]?[sid] ?? SessionBuild()
-                    session.sessionId = sid
-                    session.firstTs = min(session.firstTs, ts)
-                    session.lastTs = max(session.lastTs, ts)
-                    session.cost += cost
-                    if ts >= session.lastTs { session.lastInput = input }
-                    if !session.hasFirstRepo {
-                        session.firstRepo = row["repo_path"]
-                        session.hasFirstRepo = true
-                    }
-                    if input + cache > 0 {
-                        let context = source == "claude-code" ? input + cache : input
-                        session.turns.append(TurnPoint(
-                            index: session.turns.count,
-                            ts: Int(ts),
-                            inputTokens: input,
-                            cacheTokens: cache,
-                            outTokens: 0,
-                            cost: cost,
-                            contextTokens: context))
-                    }
-                    builders[source, default: [:]][sid] = session
-                }
-
-                let infoRows = try Row.fetchAll(db, sql: """
-                    SELECT source, session_id, title, repo, window_tokens
-                    FROM session_info
-                    WHERE source IN (\(sources.map { _ in "?" }.joined(separator: ",")))
-                    """, arguments: StatementArguments(sources))
-                var sessionInfo: [String: (title: String?, repo: String?, window: Int?)] = [:]
-                for row in infoRows {
-                    let source: String = row["source"]
-                    let sid: String = row["session_id"]
-                    sessionInfo["\(source)|\(sid)"] = (
-                        title: row["title"],
-                        repo: row["repo"],
-                        window: row["window_tokens"]
-                    )
-                }
-
-                var spendArguments = StatementArguments(sources)
-                spendArguments += [sinceMs, sinceMs, prevSince, toMs]
-                let spendRows = try Row.fetchAll(db, sql: """
-                    SELECT source,
-                           COALESCE(SUM(CASE WHEN ts >= ? THEN cost_usd ELSE 0 END), 0) AS current_spend,
-                           COALESCE(SUM(CASE WHEN ts < ? THEN cost_usd ELSE 0 END), 0) AS previous_spend
-                    FROM usage_event
-                    WHERE source IN (\(sources.map { _ in "?" }.joined(separator: ",")))
-                      AND ts >= ? AND ts < ?
-                    GROUP BY source
-                    """, arguments: spendArguments)
-                var currentSpend: [String: Double] = [:]
-                var previousSpend: [String: Double] = [:]
-                for row in spendRows {
-                    let source: String = row["source"] ?? ""
-                    currentSpend[source] = row["current_spend"] ?? 0
-                    previousSpend[source] = row["previous_spend"] ?? 0
-                }
-
-                var changeArguments = StatementArguments(sources)
-                changeArguments += [sinceMs, toMs, sinceMs, toMs]
-                let changeRows = try Row.fetchAll(db, sql: """
-                    WITH touched AS (
-                        SELECT DISTINCT source, repo_path
-                        FROM usage_event
-                        WHERE source IN (\(sources.map { _ in "?" }.joined(separator: ",")))
-                          AND ts >= ? AND ts < ? AND repo_path IS NOT NULL
-                    )
-                    SELECT touched.source AS source,
-                           COUNT(DISTINCT c.commit_hash) AS commits,
-                           COALESCE(SUM(c.added), 0) AS added,
-                           COALESCE(SUM(c.deleted), 0) AS deleted
-                    FROM touched
-                    JOIN code_change c ON c.repo_path = touched.repo_path
-                    WHERE c.ts >= ? AND c.ts < ?
-                    GROUP BY touched.source
-                    """, arguments: changeArguments)
-                var changes: [String: (commits: Int, added: Int, deleted: Int)] = [:]
-                for row in changeRows {
-                    let source: String = row["source"]
-                    changes[source] = (
-                        commits: row["commits"] ?? 0,
-                        added: row["added"] ?? 0,
-                        deleted: row["deleted"] ?? 0
-                    )
-                }
-
-                var sourceData: [String: ToolDetailSourceData] = [:]
-                for source in sources {
-                    let sessions = builders[source] ?? [:]
-                    let rows = sessions.values
-                        .sorted { $0.cost > $1.cost }
-                        .map { build -> SessionRow in
-                            let info = sessionInfo["\(source)|\(build.sessionId)"]
-                            let repo = build.firstRepo
-                            return SessionRow(
-                                source: source,
-                                sessionId: build.sessionId,
-                                title: info?.title,
-                                repo: repo?.isEmpty == true ? nil : repo,
-                                firstTs: Int(build.firstTs),
-                                lastTs: Int(build.lastTs),
-                                lastInput: build.lastInput,
-                                cost: build.cost,
-                                windowTokens: info?.window)
-                        }
-                    sourceData[source] = ToolDetailSourceData(
-                        rows: rows,
-                        metrics: ToolMetrics(
-                            spend: currentSpend[source] ?? 0,
-                            previousSpend: previousSpend[source] ?? 0,
-                            changes: changes[source] ?? (0, 0, 0)))
-                }
-                return ToolDetailData(sources: sourceData)
+        let roots = RepositoryScope.configuredRoots()
+        let touched = Set(paths.compactMap { RepositoryScope.authorizedGitRoot(for: $0, roots: roots) })
+        let rows = try await AppDatabase.shared.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT repo_path, commit_hash, COALESCE(added, 0) AS a, COALESCE(deleted, 0) AS d
+                FROM code_change WHERE is_merge = 0 AND ts >= ? AND ts < ?
+                """, arguments: [sinceMs, endMs]).map { row in
+                (path: row["repo_path"] as String? ?? "", hash: row["commit_hash"] as String? ?? "",
+                 added: row["a"] as Int? ?? 0, deleted: row["d"] as Int? ?? 0)
             }
+        }
+        let relevant = rows.filter { row in
+            guard let root = RepositoryScope.authorizedGitRoot(for: row.path, roots: roots) else { return false }
+            return touched.contains(root)
+        }
+        let commits = try await authorizedCommits(sinceMs: sinceMs, beforeMs: endMs)
+        return ToolActivitySummary(sessionCount: sessionCount,
+            commitCount: Set(commits.filter { touched.contains($0.repoPath) }.map(\.identity)).count,
+            addedLines: relevant.reduce(0) { $0 + max($1.added, 0) },
+            deletedLines: relevant.reduce(0) { $0 + max($1.deleted, 0) })
+    }
+
+    /// Sessions with non-synthetic observations in the selected local period.
+    static func sessionRows(source: String, sinceMs: Int64, now: Date = Date()) async throws -> [SessionRow] {
+        let roots = RepositoryScope.configuredRoots()
+        let calendar = Calendar.current
+        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
+        let toMs = ObservationBounds.upperExclusive(now: now, periodEnd: end)
+        do {
+            let rows = try await AppDatabase.shared.read { db in
+                try sessionRows(in: db, source: source, sinceMs: sinceMs, beforeMs: toMs)
+            }
+            return authorizedSessionRepositories(rows, roots: roots)
         } catch {
-            Logger.error("StatsService.toolDetailData failed: \(error)")
-            return ToolDetailData(sources: [:])
+            Logger.error("StatsService.sessionRows failed: \(error)")
+            throw error
         }
     }
 
-    private struct ToolMetrics {
-        var spend: Double = 0
-        var previousSpend: Double = 0
-        var changes: (commits: Int, added: Int, deleted: Int) = (0, 0, 0)
+    static func authorizedSessionRepositories(
+        _ rows: [SessionRow], roots: [String], resolve: ((String) -> String?)? = nil
+    ) -> [SessionRow] {
+        let resolvePath = resolve ?? { RepositoryScope.authorizedGitRoot(for: $0, roots: roots) }
+        var resolved: [String: String] = [:]
+        var unavailable: Set<String> = []
+        return rows.map { row in
+            var result = row
+            guard let path = row.repo, !path.isEmpty else {
+                result.repo = nil
+                return result
+            }
+            if let root = resolved[path] {
+                result.repo = root
+            } else if unavailable.contains(path) {
+                result.repo = nil
+            } else if let root = resolvePath(path) {
+                resolved[path] = root
+                result.repo = root
+            } else {
+                unavailable.insert(path)
+                result.repo = nil
+            }
+            return result
+        }
     }
 
-    private static func toolMetrics(
-        source: String,
-        sinceMs: Int64,
-        toMs: Int64,
-        prevSince: Int64
-    ) async -> ToolMetrics {
-        let (spends, changes) = await (
-            sourceSpends(source: source, sinceMs: sinceMs, toMs: toMs, prevSince: prevSince),
-            attributedChanges(source: source, sinceMs: sinceMs, toMs: toMs)
-        )
-        return ToolMetrics(
-            spend: spends.current,
-            previousSpend: spends.previous,
-            changes: changes)
-    }
-
-    private static func toolDetail(
-        source: String,
-        sinceMs: Int64,
-        rows: [SessionRow],
-        metrics: ToolMetrics,
-        otherAverageSpend: Double,
-        otherRowCount: Int
-    ) -> ToolDetailItem {
-        let count = rows.count
-        let todayMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-        let daysElapsed = max(1, Int((todayMs - sinceMs) / 86_400_000) + 1)
-        let daysInMonth = Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30
-        let thisAverage = count > 0 ? metrics.spend / Double(count) : 0
-        let otherAverage = otherRowCount > 0 ? otherAverageSpend / Double(otherRowCount) : 0
-        let totalLines = metrics.changes.added + metrics.changes.deleted
-        let cpl = totalLines > 0 ? metrics.spend / Double(totalLines) * 1000 : 0
-
-        return ToolDetailItem(
-            source: source,
-            conclusion: ToolConclusionItem(
-                spend: metrics.spend,
-                previousSpend: metrics.previousSpend,
-                deltaPct: SessionStats.deltaPct(
-                    current: metrics.spend, previous: metrics.previousSpend),
-                projectedMonth: SessionStats.projectMonth(
-                    spendSoFar: metrics.spend,
-                    daysElapsed: daysElapsed,
-                    daysInMonth: daysInMonth),
-                sessionCount: count,
-                commitCount: metrics.changes.commits,
-                addedLines: metrics.changes.added,
-                deletedLines: metrics.changes.deleted,
-                avgCostPerSession: thisAverage,
-                cpl: cpl,
-                crossToolDeltaPct: otherAverage > 0
-                    ? SessionStats.deltaPct(current: thisAverage, previous: otherAverage)
-                    : nil),
-            sessions: rows.map {
-                ToolSessionItem(
-                    sessionId: $0.sessionId,
-                    title: $0.title,
-                    repo: $0.repo,
-                    firstTs: Int64($0.firstTs),
-                    lastTs: Int64($0.lastTs),
-                    cost: $0.cost,
-                    windowTokens: $0.windowTokens,
-                    lastInput: $0.lastInput,
-                    turnCount: $0.turnCount,
-                    avgOccupancy: $0.avgOccupancy,
-                    avgCacheRatio: $0.avgCacheRatio,
-                    compactionCount: $0.compactionCount)
-            })
-    }
-
-    /// Sessions that had interactions in `[sinceMs, today+1d)`, newest-cost ordered.
-    static func sessionRows(source: String, sinceMs: Int64) async -> [SessionRow] {
-        let toMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000) + 86_400_000
-        do {
-            return try await AppDatabase.shared.read { db -> [SessionRow] in
+    static func sessionRows(in db: Database, source: String, sinceMs: Int64, beforeMs toMs: Int64) throws -> [SessionRow] {
                 let rows = try Row.fetchAll(db, sql: """
                     SELECT u.session_id AS sid,
                            MIN(u.ts) AS first_ts,
                            MAX(u.ts) AS last_ts,
-                           (SELECT in_tokens FROM usage_event u3
+                           (SELECT \(TokenAccounting.inputSQL(alias: "u3")) FROM usage_event u3
                             WHERE u3.source = u.source AND u3.session_id = u.session_id
-                            ORDER BY u3.ts DESC LIMIT 1) AS last_input,
-                           COALESCE(SUM(u.cost_usd), 0) AS cost,
+                              AND u3.ts >= ? AND u3.ts < ?
+                              AND (u3.model IS NULL OR u3.model != '<synthetic>')
+                            ORDER BY u3.ts DESC, u3.id DESC LIMIT 1) AS last_input,
+                           COALESCE(SUM(\(TokenAccounting.observedTotalSQL(alias: "u"))), 0) AS observed_tokens,
                            COALESCE((SELECT repo_path FROM usage_event u2
                                      WHERE u2.source = u.source AND u2.session_id = u.session_id
-                                     ORDER BY u2.ts LIMIT 1), '') AS repo,
+                                       AND u2.ts >= ? AND u2.ts < ?
+                                       AND (u2.model IS NULL OR u2.model != '<synthetic>')
+                                     ORDER BY u2.ts, u2.id LIMIT 1), '') AS repo,
                            s.title AS title,
                            s.window_tokens AS window
                     FROM usage_event u
                     LEFT JOIN session_info s ON s.source = u.source AND s.session_id = u.session_id
-                    WHERE u.source = ? AND u.ts >= ? AND u.ts < ? AND u.session_id IS NOT NULL
+                    WHERE u.source = ? AND u.ts >= ? AND u.ts < ? AND NULLIF(u.session_id, '') IS NOT NULL
+                      AND (u.model IS NULL OR u.model != '<synthetic>')
                     GROUP BY u.session_id
-                    ORDER BY cost DESC
-                    """, arguments: [source, sinceMs, toMs])
+                    ORDER BY last_ts DESC
+                    """, arguments: [sinceMs, toMs, sinceMs, toMs, source, sinceMs, toMs])
                 // Batch-load all turns in the range, then aggregate per session
                 // in Swift (30d ≈ 20k rows, millisecond-scale; keeps SQL simple
                 // and the aggregation logic unit-testable via SessionStats.metrics).
                 let turns = try Row.fetchAll(db, sql: """
-                    SELECT session_id AS sid, in_tokens AS inT, cache_tokens AS cacheT
+                    SELECT session_id AS sid, \(TokenAccounting.inputSQL()) AS inT, cache_tokens AS cacheT
                     FROM usage_event
-                    WHERE source = ? AND ts >= ? AND ts < ? AND session_id IS NOT NULL
-                      AND (in_tokens + cache_tokens) > 0
+                    WHERE source = ? AND ts >= ? AND ts < ? AND NULLIF(session_id, '') IS NOT NULL
+                      AND (model IS NULL OR model != '<synthetic>')
+                      AND (\(TokenAccounting.inputSQL())) > 0
                     ORDER BY ts
                     """, arguments: [source, sinceMs, toMs])
                 var grouped: [String: [TurnPoint]] = [:]
@@ -1619,11 +884,11 @@ enum StatsService {
                     let sid: String = turn["sid"]
                     let input: Int = turn["inT"] ?? 0
                     let cache: Int = turn["cacheT"] ?? 0
-                    let ctx = input + (source == "claude-code" ? cache : 0)
+                    let ctx = input
                     var list = grouped[sid] ?? []
                     list.append(TurnPoint(
                         index: list.count, ts: 0, inputTokens: input,
-                        cacheTokens: cache, outTokens: 0, cost: 0, contextTokens: ctx))
+                        cacheTokens: cache, outTokens: 0, contextTokens: ctx))
                     grouped[sid] = list
                 }
                 return rows.map { row in
@@ -1633,7 +898,6 @@ enum StatsService {
                     let firstTs: Int? = row["first_ts"]
                     let lastTs: Int? = row["last_ts"]
                     let lastInput: Int? = row["last_input"]
-                    let cost: Double = row["cost"] ?? 0
                     let sid: String? = row["sid"]
                     let m = SessionStats.metrics(
                         turns: sid.flatMap { grouped[$0] } ?? [],
@@ -1646,129 +910,58 @@ enum StatsService {
                         firstTs: firstTs ?? 0,
                         lastTs: lastTs ?? 0,
                         lastInput: lastInput ?? 0,
-                        cost: cost,
                         windowTokens: window,
                         turnCount: m.turnCount,
+                        observedTokens: row["observed_tokens"] as Int64? ?? 0,
                         avgOccupancy: m.avgOccupancy,
                         avgCacheRatio: m.avgCacheRatio,
                         compactionCount: m.compactionCount)
                 }
-            }
-        } catch {
-            Logger.error("StatsService.sessionRows failed: \(error)")
-            return []
-        }
-    }
-
-    /// One tool's detail block for the iOS detail panel: conclusion summary
-    /// + session list with profile metrics.
-    static func toolDetail(source: String, sinceMs: Int64) async -> ToolDetailItem {
-        let rows = await sessionRows(source: source, sinceMs: sinceMs)
-        let toMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000) + 86_400_000
-        let prevSince = sinceMs - (toMs - sinceMs)
-        let metrics = await toolMetrics(
-            source: source, sinceMs: sinceMs, toMs: toMs, prevSince: prevSince)
-        let otherSource = source == "codex" ? "claude-code" : "codex"
-        let otherRows = await sessionRows(source: otherSource, sinceMs: sinceMs)
-        let otherSpend = await sourceSpend(source: otherSource, sinceMs: sinceMs, toMs: toMs)
-        return toolDetail(
-            source: source,
-            sinceMs: sinceMs,
-            rows: rows,
-            metrics: metrics,
-            otherAverageSpend: otherSpend,
-            otherRowCount: otherRows.count)
     }
 
     /// Full per-turn trajectory of one session (context trend chart data).
-    static func turnSeries(source: String, sessionId: String) async -> ContextTrend {
+    static func turnSeries(source: String, sessionId: String, now: Date = Date()) async throws -> ContextTrend {
+        let beforeMs = Int64(now.timeIntervalSince1970 * 1_000) + 1
         do {
-            return try await AppDatabase.shared.read { db -> ContextTrend in
+            return try await AppDatabase.shared.read { db in
+                try turnSeries(in: db, source: source, sessionId: sessionId, beforeMs: beforeMs)
+            }
+        } catch {
+            Logger.error("StatsService.turnSeries failed: \(error)")
+            throw error
+        }
+    }
+
+    static func turnSeries(in db: Database, source: String, sessionId: String, beforeMs: Int64) throws -> ContextTrend {
                 let turns = try TurnPoint.fetchAll(db, sql: """
-                    SELECT (ROW_NUMBER() OVER (ORDER BY ts)) AS turn_index,
-                           ts, in_tokens AS inputTokens, cache_tokens AS cacheTokens,
-                           out_tokens AS outTokens, COALESCE(cost_usd, 0) AS cost,
-                           (in_tokens + CASE WHEN ? = 'claude-code' THEN cache_tokens ELSE 0 END) AS contextTokens
+                    SELECT (ROW_NUMBER() OVER (ORDER BY ts, id)) AS turn_index,
+                           ts, \(TokenAccounting.inputSQL()) AS inputTokens, cache_tokens AS cacheTokens,
+                           \(TokenAccounting.outputSQL()) AS outTokens,
+                           \(TokenAccounting.inputSQL()) AS contextTokens
                     FROM usage_event
-                    WHERE source = ? AND session_id = ? AND (in_tokens + cache_tokens) > 0
-                    ORDER BY ts
-                    """, arguments: [source, source, sessionId])
+                    WHERE source = ? AND session_id = ? AND (\(TokenAccounting.inputSQL())) > 0
+                      AND ts < ? AND (model IS NULL OR model != '<synthetic>')
+                    ORDER BY ts, id
+                    """, arguments: [source, sessionId, beforeMs])
                 let window: Int? = try Int.fetchOne(db, sql: """
                     SELECT window_tokens FROM session_info WHERE source = ? AND session_id = ?
                     """, arguments: [source, sessionId])
                 let model: String? = try String.fetchOne(db, sql: """
-                    SELECT MAX(model) FROM usage_event WHERE source = ? AND session_id = ? AND model IS NOT NULL
-                    """, arguments: [source, sessionId])
-                return ContextTrend(turns: turns, windowTokens: window, model: model)
-            }
-        } catch {
-            Logger.error("StatsService.turnSeries failed: \(error)")
-            return ContextTrend(turns: [], windowTokens: nil, model: nil)
-        }
+                    SELECT model FROM usage_event WHERE source = ? AND session_id = ?
+                      AND ts < ? AND NULLIF(model, '') IS NOT NULL AND model != '<synthetic>'
+                    ORDER BY ts DESC, id DESC LIMIT 1
+                    """, arguments: [source, sessionId, beforeMs])
+                let totals = try Row.fetchOne(db, sql: """
+                    SELECT COUNT(*) AS observations,
+                           COALESCE(SUM(\(TokenAccounting.outputSQL())), 0) AS output,
+                           COALESCE(SUM(CASE WHEN \(TokenAccounting.missingComponentsSQL) THEN 1 ELSE 0 END), 0) AS incomplete
+                    FROM usage_event WHERE source = ? AND session_id = ? AND ts < ?
+                      AND (model IS NULL OR model != '<synthetic>')
+                    """, arguments: [source, sessionId, beforeMs])!
+                return ContextTrend(turns: turns, windowTokens: window, model: model,
+                                    observedOutputTokens: totals["output"] as Int?,
+                                    observationCount: totals["observations"] as Int?,
+                                    incompleteEvents: totals["incomplete"] as Int?)
     }
 
-    private static func sourceSpend(source: String, sinceMs: Int64, toMs: Int64) async -> Double {
-        do {
-            return try await AppDatabase.shared.read { db in
-                try Double.fetchOne(db, sql: """
-                    SELECT COALESCE(SUM(cost_usd), 0) FROM usage_event
-                    WHERE source = ? AND ts >= ? AND ts < ?
-                    """, arguments: [source, sinceMs, toMs]) ?? 0
-            }
-        } catch {
-            Logger.error("StatsService.sourceSpend failed: \(error)")
-            return 0
-        }
-    }
-
-    private static func sourceSpends(
-        source: String,
-        sinceMs: Int64,
-        toMs: Int64,
-        prevSince: Int64
-    ) async -> (current: Double, previous: Double) {
-        do {
-            return try await AppDatabase.shared.read { db -> (current: Double, previous: Double) in
-                let row = try Row.fetchOne(db, sql: """
-                    SELECT
-                      COALESCE(SUM(CASE WHEN ts >= ? THEN cost_usd ELSE 0 END), 0) AS current_spend,
-                      COALESCE(SUM(CASE WHEN ts < ? THEN cost_usd ELSE 0 END), 0) AS previous_spend
-                    FROM usage_event
-                    WHERE source = ? AND ts >= ? AND ts < ?
-                    """, arguments: [sinceMs, sinceMs, source, prevSince, toMs])
-                let current: Double = row?["current_spend"] ?? 0
-                let previous: Double = row?["previous_spend"] ?? 0
-                return (current: current, previous: previous)
-            }
-        } catch {
-            Logger.error("StatsService.sourceSpends failed: \(error)")
-            return (current: 0, previous: 0)
-        }
-    }
-
-    /// Commits / lines in repos the tool touched during the range (approximate
-    /// attribution, same repo-level model as the dashboard CPL).
-    private static func attributedChanges(source: String, sinceMs: Int64, toMs: Int64) async -> (commits: Int, added: Int, deleted: Int) {
-        do {
-            return try await AppDatabase.shared.read { db in
-                let row = try Row.fetchOne(db, sql: """
-                    SELECT COUNT(DISTINCT c.commit_hash) AS commits,
-                           COALESCE(SUM(c.added), 0) AS added,
-                           COALESCE(SUM(c.deleted), 0) AS deleted
-                    FROM code_change c
-                    WHERE c.repo_path IN (
-                        SELECT DISTINCT u.repo_path FROM usage_event u
-                        WHERE u.source = ? AND u.ts >= ? AND u.ts < ? AND u.repo_path IS NOT NULL
-                    ) AND c.ts >= ? AND c.ts < ?
-                    """, arguments: [source, sinceMs, toMs, sinceMs, toMs])
-                let commits: Int = row?["commits"] ?? 0
-                let added: Int = row?["added"] ?? 0
-                let deleted: Int = row?["deleted"] ?? 0
-                return (commits: commits, added: added, deleted: deleted)
-            }
-        } catch {
-            Logger.error("StatsService.attributedChanges failed: \(error)")
-            return (0, 0, 0)
-        }
-    }
 }

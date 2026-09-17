@@ -14,7 +14,7 @@ final class StatusItemController: NSObject {
     private var statusItem: NSStatusItem?
     private var headlineCache = ""
     private var detailCache = ""
-    private var observedSpendCache: [ObservedSpendItem] = []
+    private let refreshGeneration = RefreshGeneration()
 
     /// Decision #4: status item ships enabled by default.
     private var isEnabled: Bool {
@@ -37,6 +37,8 @@ final class StatusItemController: NSObject {
                                                name: .dataDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(onPulseChanged),
                                                name: .pulseDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(onConsumptionObserved),
+                                               name: .consumptionDidOccur, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(onSoundMuteChanged),
                                                name: .soundMuteDidChange, object: nil)
     }
@@ -45,14 +47,14 @@ final class StatusItemController: NSObject {
 
     @objc private func onDataChanged() {
         refresh()
+    }
+
+    @objc private func onConsumptionObserved() {
         animatePulseIfAllowed()
     }
 
     @objc private func onPulseChanged() {
-        Task { @MainActor in
-            apply(snapshot: await PulseEngine.shared.snapshot(),
-                  observedSpend: observedSpendCache)
-        }
+        refresh()
     }
 
     @objc private func onSoundMuteChanged() {
@@ -63,17 +65,18 @@ final class StatusItemController: NSObject {
     }
 
     func refresh() {
+        let request = refreshGeneration.begin()
         Task { @MainActor in
             let snapshot = await PulseEngine.shared.snapshot()
             let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-            let spend = await StatsService.observedSpendItems(sinceMs: todayStartMs)
+            let spend = await StatsService.observedSpendForMenu(sinceMs: todayStartMs)
+            guard refreshGeneration.isCurrent(request) else { return }
             apply(snapshot: snapshot, observedSpend: spend)
         }
     }
 
     /// Testable seam: UI state derived from data.
-    func apply(snapshot: PulseSnapshot?, observedSpend: [ObservedSpendItem]) {
-        observedSpendCache = observedSpend
+    func apply(snapshot: PulseSnapshot?, observedSpend: [ObservedSpendItem]?) {
         guard let item = statusItem, let button = item.button else { return }
 
         // Real tinted rendering (WI-6 反馈修正): template images are always
@@ -142,7 +145,7 @@ final class StatusItemController: NSObject {
     }
 
     nonisolated static func tierLabel(_ tier: PulseTier?) -> String {
-        I18n.t("pulse.tier.\((tier ?? .resting).rawValue)")
+        I18n.t("pulse.tier.\(tier?.rawValue ?? "unknown")")
     }
 
     nonisolated static func headline(snapshot: PulseSnapshot?) -> String {
@@ -150,14 +153,17 @@ final class StatusItemController: NSObject {
     }
 
     nonisolated static func detail(snapshot: PulseSnapshot?) -> String {
-        guard let snapshot else { return I18n.t("pulse.reason.no_recent_signal") }
+        guard let snapshot else { return I18n.t("pulse.reason.unavailable") }
         return PulseCopy.localizedReason(snapshot.reason, primarySignal: snapshot.primarySignal)
     }
 
-    nonisolated static func observedSpendLine(_ items: [ObservedSpendItem]) -> String? {
+    nonisolated static func observedSpendLine(_ items: [ObservedSpendItem]?) -> String? {
+        guard let items else {
+            return "\(I18n.t("pulse.observed_today")) · \(I18n.t("menu.unavailable"))"
+        }
         let facts = items.filter { $0.amount.isFinite && $0.amount > 0 }
         guard !facts.isEmpty else { return nil }
-        let values = facts.map { "\($0.currency.uppercased()) \(String(format: "%.2f", $0.amount))" }
+        let values = facts.map { "\($0.currency.uppercased()) \(String(format: "%.1f", $0.amount))" }
         return "\(I18n.t("pulse.observed_today")) " + values.joined(separator: " + ")
     }
 

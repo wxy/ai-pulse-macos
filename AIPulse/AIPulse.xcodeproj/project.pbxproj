@@ -12,7 +12,7 @@
 		C0843E2E2FF5561900E3F6C4 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C0843E2D2FF5561900E3F6C4 /* GRDB */; };
 		C0843EA22FF5561900E3F6C4 /* libgit2.1.9.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C0843EB52FF5561900E3F6C4 /* AIPulse.png in Resources */ = {isa = PBXBuildFile; fileRef = C0843EB22FF5561900E3F6C4 /* AIPulse.png */; };
-		C0843EB62FF5561900E3F6C4 /* pricing-catalog.json in Resources */ = {isa = PBXBuildFile; fileRef = C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */; };
+		C0843EB62FF5561900E3F6C4 /* model-catalog.json in Resources */ = {isa = PBXBuildFile; fileRef = C0843EB32FF5561900E3F6C4 /* model-catalog.json */; };
 		C0B3C4D62FF8126D00ED7B27 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = C0B3C4D52FF8126D00ED7B27 /* Sounds */; };
 /* End PBXBuildFile section */
 
@@ -35,7 +35,7 @@
 		C0843E1D2FF555ED00E3F6C4 /* AI Pulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "AI Pulse.app"; path = AIPulseDebug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libgit2.1.9.dylib; path = ../Libraries/libgit2/lib/libgit2.1.9.dylib; sourceTree = SOURCE_ROOT; };
 		C0843EB22FF5561900E3F6C4 /* AIPulse.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = AIPulse.png; path = ../Resources/AIPulse.png; sourceTree = SOURCE_ROOT; };
-		C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "pricing-catalog.json"; path = "../Resources/pricing-catalog.json"; sourceTree = SOURCE_ROOT; };
+		C0843EB32FF5561900E3F6C4 /* model-catalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "model-catalog.json"; path = "../Resources/model-catalog.json"; sourceTree = SOURCE_ROOT; };
 		C0B3C4D52FF8126D00ED7B27 /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Sounds; path = ../Resources/Sounds; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -66,7 +66,7 @@
 				C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */,
 				C0B3C4D52FF8126D00ED7B27 /* Sounds */,
 				C0843EB22FF5561900E3F6C4 /* AIPulse.png */,
-				C0843EB32FF5561900E3F6C4 /* pricing-catalog.json */,
+				C0843EB32FF5561900E3F6C4 /* model-catalog.json */,
 				542A515D2D6803121DB17A0E /* Assets.xcassets */,
 			);
 			name = References;
@@ -162,7 +162,7 @@
 			files = (
 				C0B3C4D62FF8126D00ED7B27 /* Sounds in Resources */,
 				C0843EB52FF5561900E3F6C4 /* AIPulse.png in Resources */,
-				C0843EB62FF5561900E3F6C4 /* pricing-catalog.json in Resources */,
+				C0843EB62FF5561900E3F6C4 /* model-catalog.json in Resources */,
 				542A515D2D6803121DB17A0E2A /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

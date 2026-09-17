@@ -18,8 +18,8 @@ struct CursorIntegration: Detectable {
             id: "sub:cursor:\(tier.label.lowercased())",
             label: "Cursor \(tier.label)",
             kind: .subscription(toolId: "cursor", tierLabel: tier.label, monthlyFee: tier.fee),
-            coveredModels: PricingManager.shared.modelsForTool("cursor"),
-            confidence: .amortized,
+            coveredModels: ModelCatalogManager.shared.modelsForTool("cursor"),
+            confidence: .declared,
             limitations: [I18n.t("limitation.overage_unsupported")]
         )]
     }
@@ -48,8 +48,8 @@ struct CopilotIntegration: Detectable {
             id: "sub:copilot:\(tier.label.lowercased())",
             label: "Copilot \(tier.label)",
             kind: .subscription(toolId: "copilot", tierLabel: tier.label, monthlyFee: tier.fee),
-            coveredModels: PricingManager.shared.modelsForTool("copilot"),
-            confidence: .amortized,
+            coveredModels: ModelCatalogManager.shared.modelsForTool("copilot"),
+            confidence: .declared,
             limitations: []
         )]
     }
@@ -78,8 +78,8 @@ struct WindsurfIntegration: Detectable {
             id: "sub:windsurf:\(tier.label.lowercased())",
             label: "Windsurf \(tier.label)",
             kind: .subscription(toolId: "windsurf", tierLabel: tier.label, monthlyFee: tier.fee),
-            coveredModels: PricingManager.shared.modelsForTool("windsurf"),
-            confidence: .amortized,
+            coveredModels: ModelCatalogManager.shared.modelsForTool("windsurf"),
+            confidence: .declared,
             limitations: [I18n.t("limitation.overage_unsupported")]
         )]
     }

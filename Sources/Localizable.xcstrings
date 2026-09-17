@@ -1,6 +1,24 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "source.local_scan.inactive":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"Local collection is not running. Historical totals do not prove current activity is zero."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"本地采集尚未运行；历史汇总不能证明当前活动为零。"}},"de":{"stringUnit":{"state":"translated","value":"Die lokale Erfassung läuft nicht. Historische Summen belegen keine aktuelle Inaktivität."}},"es":{"stringUnit":{"state":"translated","value":"La recopilación local no está en ejecución. Los totales históricos no demuestran que la actividad actual sea cero."}},"fr":{"stringUnit":{"state":"translated","value":"La collecte locale n’est pas en cours. Les totaux historiques ne prouvent pas l’absence d’activité actuelle."}},"ja":{"stringUnit":{"state":"translated","value":"ローカル収集は動作していません。過去の集計から現在の活動がゼロとは判断できません。"}},"ko":{"stringUnit":{"state":"translated","value":"로컬 수집이 실행되고 있지 않습니다. 과거 합계만으로 현재 활동이 없다고 판단할 수 없습니다."}},"pt-BR":{"stringUnit":{"state":"translated","value":"A coleta local não está em execução. Os totais históricos não comprovam que a atividade atual seja zero."}},"zh-Hant-HK":{"stringUnit":{"state":"translated","value":"本機收集尚未運行；歷史彙總不能證明目前活動為零。"}},"zh-Hant-TW":{"stringUnit":{"state":"translated","value":"本機收集尚未執行；歷史彙總不能證明目前活動為零。"}}}},
+    "source.local_scan.scanning":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"Local logs are being scanned; coverage is not yet confirmed."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"正在扫描本地日志；覆盖情况尚未确认。"}},"de":{"stringUnit":{"state":"translated","value":"Lokale Protokolle werden gescannt; die Abdeckung ist noch nicht bestätigt."}},"es":{"stringUnit":{"state":"translated","value":"Se están examinando los registros locales; la cobertura aún no está confirmada."}},"fr":{"stringUnit":{"state":"translated","value":"Analyse des journaux locaux en cours ; la couverture n’est pas encore confirmée."}},"ja":{"stringUnit":{"state":"translated","value":"ローカルログをスキャン中です。対象範囲はまだ確認できていません。"}},"ko":{"stringUnit":{"state":"translated","value":"로컬 로그를 스캔하고 있습니다. 수집 범위는 아직 확인되지 않았습니다."}},"pt-BR":{"stringUnit":{"state":"translated","value":"Os registros locais estão sendo examinados; a cobertura ainda não foi confirmada."}},"zh-Hant-HK":{"stringUnit":{"state":"translated","value":"正在掃描本機日誌；涵蓋範圍尚未確認。"}},"zh-Hant-TW":{"stringUnit":{"state":"translated","value":"正在掃描本機日誌；涵蓋範圍尚未確認。"}}}},
+    "source.local_scan.available":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"A local scan recently completed. Coverage remains limited to accessible supported logs."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"最近本地扫描已完成；覆盖仍限于可访问的支持日志。"}},"de":{"stringUnit":{"state":"translated","value":"Ein lokaler Scan wurde kürzlich abgeschlossen. Die Abdeckung bleibt auf zugängliche, unterstützte Protokolle beschränkt."}},"es":{"stringUnit":{"state":"translated","value":"Un examen local finalizó recientemente. La cobertura se limita a los registros compatibles y accesibles."}},"fr":{"stringUnit":{"state":"translated","value":"Une analyse locale vient de se terminer. La couverture reste limitée aux journaux pris en charge et accessibles."}},"ja":{"stringUnit":{"state":"translated","value":"ローカルスキャンが最近完了しました。対象はアクセス可能な対応ログに限られます。"}},"ko":{"stringUnit":{"state":"translated","value":"최근 로컬 스캔이 완료되었습니다. 범위는 접근 가능한 지원 로그로 제한됩니다."}},"pt-BR":{"stringUnit":{"state":"translated","value":"Uma verificação local foi concluída recentemente. A cobertura se limita aos registros compatíveis e acessíveis."}},"zh-Hant-HK":{"stringUnit":{"state":"translated","value":"最近的本機掃描已完成；涵蓋範圍仍限於可存取的支援日誌。"}},"zh-Hant-TW":{"stringUnit":{"state":"translated","value":"最近的本機掃描已完成；涵蓋範圍仍限於可存取的支援日誌。"}}}},
+    "source.local_scan.stale":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"The local scan observation is stale; current activity is unknown."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"本地扫描观察已过期；当前活动未知。"}},"de":{"stringUnit":{"state":"translated","value":"Die lokale Scanbeobachtung ist veraltet; die aktuelle Aktivität ist unbekannt."}},"es":{"stringUnit":{"state":"translated","value":"La observación del examen local ha caducado; se desconoce la actividad actual."}},"fr":{"stringUnit":{"state":"translated","value":"L’observation de l’analyse locale est périmée ; l’activité actuelle est inconnue."}},"ja":{"stringUnit":{"state":"translated","value":"ローカルスキャンの観測が古くなっています。現在の活動は不明です。"}},"ko":{"stringUnit":{"state":"translated","value":"로컬 스캔 관측이 오래되었습니다. 현재 활동은 알 수 없습니다."}},"pt-BR":{"stringUnit":{"state":"translated","value":"A observação da verificação local está desatualizada; a atividade atual é desconhecida."}},"zh-Hant-HK":{"stringUnit":{"state":"translated","value":"本機掃描觀察已過期；目前活動未知。"}},"zh-Hant-TW":{"stringUnit":{"state":"translated","value":"本機掃描觀察已過期；目前活動未知。"}}}},
+    "source.local_scan.failed":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"Some local log reads or writes failed. Empty charts do not mean no activity."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"部分本地日志读取或写入失败；空图不代表没有活动。"}},"de":{"stringUnit":{"state":"translated","value":"Einige lokale Protokolle konnten nicht gelesen oder gespeichert werden. Leere Diagramme bedeuten nicht, dass keine Aktivität stattfand."}},"es":{"stringUnit":{"state":"translated","value":"Fallaron algunas lecturas o escrituras de registros locales. Los gráficos vacíos no significan ausencia de actividad."}},"fr":{"stringUnit":{"state":"translated","value":"Certaines lectures ou écritures de journaux locaux ont échoué. Des graphiques vides ne signifient pas une absence d’activité."}},"ja":{"stringUnit":{"state":"translated","value":"一部のローカルログの読み取りまたは書き込みに失敗しました。空のグラフは活動がないことを意味しません。"}},"ko":{"stringUnit":{"state":"translated","value":"일부 로컬 로그 읽기 또는 쓰기에 실패했습니다. 빈 차트가 활동이 없다는 뜻은 아닙니다."}},"pt-BR":{"stringUnit":{"state":"translated","value":"Algumas leituras ou gravações de registros locais falharam. Gráficos vazios não significam ausência de atividade."}},"zh-Hant-HK":{"stringUnit":{"state":"translated","value":"部分本機日誌讀取或寫入失敗；空白圖表不代表沒有活動。"}},"zh-Hant-TW":{"stringUnit":{"state":"translated","value":"部分本機日誌讀取或寫入失敗；空白圖表不代表沒有活動。"}}}},
+    "pulse.fact.code_changes" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "changed lines" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "变化行" } } } },
+    "dashboard.unknown_model" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Unknown model" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未知模型" } } } },
+    "dashboard.unattributed_tool" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Unattributed tool" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未归属工具" } } } },
+    "pulse.tier.unknown" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Unknown" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "状态未知" } } } },
+    "pulse.reason.unavailable" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "No current observation is available." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂时没有有效的当前观察。" } } } },
+    "panel.header_activity" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "%d repository groups · %@ tokens" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%d 个仓库分组 · %@ 词元" } } } },
+    "panel.group_activity" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "%d sessions · %@ tokens" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%d 个会话 · %@ 词元" } } } },
+    "panel.most_active" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Most active" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "词元最多" } } } },
+    "panel.observed_tokens" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "%@ tokens" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%@ 词元" } } } },
+    "panel.output_tokens" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Output %@ tokens" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "输出 %@ 词元" } } } },
+    "panel.activity_explanation" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Tokens describe activity, not a bill. Output covers repositories touched by this tool, not proof of AI authorship. Expand a session for its full context history." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "词元反映活动，不代表账单。产出来自此工具涉及的仓库，不代表 AI 创作归属。点击会话可查看完整上下文历史。" } } } },
+    "panel.detail_entry_hint" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Select a tool to explore its sessions and activity." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "选择工具，查看会话与活动详情。" } } } },
+    "panel.view_tool_details" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "View tool details" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看工具详情" } } } },
     "" : {
       "shouldTranslate" : false
     },
@@ -10592,67 +10610,67 @@
         }
       }
     },
-    "detect.chatgpt_desktop_found" : {
+    "detect.codex_desktop_found" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ChatGPT Desktop erkannt · %d Sitzungen"
+            "value" : "Codex Desktop erkannt · %d Sitzungen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ChatGPT desktop detected · %d sessions"
+            "value" : "Codex desktop detected · %d sessions"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ChatGPT de escritorio detectado · %d sesiones"
+            "value" : "Codex de escritorio detectado · %d sesiones"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ChatGPT Desktop détecté · %d sessions"
+            "value" : "Codex Desktop détecté · %d sessions"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ChatGPT デスクトップを検出 · %d セッション"
+            "value" : "Codex デスクトップを検出 · %d セッション"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ChatGPT 데스크톱 감지 · 세션 %d개"
+            "value" : "Codex 데스크톱 감지 · 세션 %d개"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ChatGPT desktop detectado · %d sessões"
+            "value" : "Codex desktop detectado · %d sessões"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已检测到 ChatGPT 桌面应用 · %d 个会话"
+            "value" : "已检测到 Codex 桌面应用 · %d 个会话"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已偵測到 ChatGPT 桌面應用程式 · %d 個工作階段"
+            "value" : "已偵測到 Codex 桌面應用程式 · %d 個工作階段"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已偵測到 ChatGPT 桌面應用程式 · %d 個工作階段"
+            "value" : "已偵測到 Codex 桌面應用程式 · %d 個工作階段"
           }
         }
       }
@@ -12320,66 +12338,8 @@
         }
       }
     },
-    "general.spend_alerts" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spend Alerts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花费激增提醒"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花費激增提醒"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "花費激增提醒"
-          }
-        }
-      }
-    },
-    "general.spend_alerts_desc" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Warn when spending spikes unexpectedly or a balance drops sharply."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当花费意外激增或余额骤降时发出警告。"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "當花費意外激增或餘額驟降時發出警告。"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "當花費意外激增或餘額驟降時發出警告。"
-          }
-        }
-      }
-    },
+    "general.spend_alerts":{"comment":"Keep translation short — UI label, avoid layout overflow","extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Balance Alerts"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"余额消费提醒"}},"zh-Hant-HK":{"stringUnit":{"state":"translated","value":"餘額消費提醒"}},"zh-Hant-TW":{"stringUnit":{"state":"translated","value":"餘額消費提醒"}},"de":{"stringUnit":{"state":"translated","value":"Guthabenhinweise"}},"es":{"stringUnit":{"state":"translated","value":"Alertas de saldo"}},"fr":{"stringUnit":{"state":"translated","value":"Alertes de solde"}},"ja":{"stringUnit":{"state":"translated","value":"残高の通知"}},"ko":{"stringUnit":{"state":"translated","value":"잔액 알림"}},"pt-BR":{"stringUnit":{"state":"translated","value":"Alertas de saldo"}}}},
+    "general.spend_alerts_desc":{"comment":"Keep translation short — UI label, avoid layout overflow","extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Reminders based on observed net balance decreases—not itemized bills."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"根据已观察到的余额净下降提醒；不代表逐笔账单。"}},"zh-Hant-HK":{"stringUnit":{"state":"translated","value":"根據已觀察到的餘額淨下降提醒；不代表逐筆帳單。"}},"zh-Hant-TW":{"stringUnit":{"state":"translated","value":"根據已觀察到的餘額淨下降提醒；不代表逐筆帳單。"}},"de":{"stringUnit":{"state":"translated","value":"Hinweise anhand beobachteter Nettoabnahmen des Guthabens – keine Einzelabrechnung."}},"es":{"stringUnit":{"state":"translated","value":"Avisos basados en disminuciones netas observadas del saldo, no en facturas detalladas."}},"fr":{"stringUnit":{"state":"translated","value":"Rappels fondés sur les diminutions nettes observées du solde, pas sur des factures détaillées."}},"ja":{"stringUnit":{"state":"translated","value":"観測された残高の純減に基づく通知です。個別の請求明細ではありません。"}},"ko":{"stringUnit":{"state":"translated","value":"관측된 잔액의 순감소를 기준으로 알립니다. 항목별 청구 내역이 아닙니다."}},"pt-BR":{"stringUnit":{"state":"translated","value":"Avisos baseados em reduções líquidas observadas no saldo, não em cobranças detalhadas."}}}},
     "general.spend_rate_alerts" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -12932,36 +12892,7 @@
         }
       }
     },
-    "general.system_notifications_desc" : {
-      "comment" : "Keep translation short — UI label, avoid layout overflow",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn off to stop all system notifications, including spend-surge and anomaly alerts."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭后将不再发送任何系统通知，包括花费激增与异常提醒。"
-          }
-        },
-        "zh-Hant-HK" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉後將不再傳送任何系統通知，包括花費激增與異常提醒。"
-          }
-        },
-        "zh-Hant-TW" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉後將不再傳送任何系統通知，包括花費激增與異常提醒。"
-          }
-        }
-      }
-    },
+    "general.system_notifications_desc":{"comment":"Keep translation short — UI label, avoid layout overflow","extractionState":"manual","localizations":{"en":{"stringUnit":{"state":"translated","value":"Turn off to stop system notifications. Sound cues are controlled separately below."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"关闭后不再发送系统通知；声音提示由下方独立控制。"}},"zh-Hant-HK":{"stringUnit":{"state":"translated","value":"關閉後不再傳送系統通知；聲音提示由下方獨立控制。"}},"zh-Hant-TW":{"stringUnit":{"state":"translated","value":"關閉後不再傳送系統通知；聲音提示由下方獨立控制。"}},"de":{"stringUnit":{"state":"translated","value":"Deaktivieren, um Systemmitteilungen zu stoppen. Hinweistöne werden unten separat gesteuert."}},"es":{"stringUnit":{"state":"translated","value":"Desactiva las notificaciones del sistema. Los sonidos se controlan por separado abajo."}},"fr":{"stringUnit":{"state":"translated","value":"Désactivez les notifications système. Les sons se règlent séparément ci-dessous."}},"ja":{"stringUnit":{"state":"translated","value":"オフにするとシステム通知を停止します。通知音は下で個別に設定できます。"}},"ko":{"stringUnit":{"state":"translated","value":"끄면 시스템 알림이 중지됩니다. 효과음은 아래에서 별도로 설정합니다."}},"pt-BR":{"stringUnit":{"state":"translated","value":"Desative para interromper as notificações do sistema. Os sons são controlados separadamente abaixo."}}}},
     "general.title" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -15399,6 +15330,136 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "/K 行"
+          }
+        }
+      }
+    },
+    "menu.file" : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datei"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arquivo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案"
+          }
+        }
+      }
+    },
+    "menu.window" : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fenster"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ventana"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fenêtre"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウインドウ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "윈도우"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Janela"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "窗口"
+          }
+        },
+        "zh-Hant-HK": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "視窗"
+          }
+        },
+        "zh-Hant-TW": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "視窗"
           }
         }
       }

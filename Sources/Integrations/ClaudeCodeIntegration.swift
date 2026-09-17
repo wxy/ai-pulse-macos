@@ -19,8 +19,8 @@ struct ClaudeCodeIntegration: Detectable, Collectable {
                 id: "sub:claude-code:\(tier.label.lowercased())",
                 label: "Claude \(tier.label)",
                 kind: .subscription(toolId: "claude-code", tierLabel: tier.label, monthlyFee: tier.fee),
-                coveredModels: PricingManager.shared.claudeModels(),
-                confidence: .amortized,
+                coveredModels: ModelCatalogManager.shared.claudeModels(),
+                confidence: .declared,
                 limitations: []
             ))
         }

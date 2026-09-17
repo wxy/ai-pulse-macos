@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var securityScopedURLs: [URL] = []
     var menuBarController: MenuBarController?
     private var pulseSubmenu: NSMenu?
+    @MainActor private var pulseMenuRefreshGeneration: RefreshGeneration?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Present foreground notifications with sound; without a delegate macOS
@@ -31,6 +32,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             "coin_sound_enabled": true,
             SystemNotifications.enabledKey: true,
         ])
+        if RuntimeQA.isEnabled {
+            UserDefaults.standard.register(defaults: [
+                "demo_mode_manual": true,
+                "onboarding_completed": true,
+                "sound_muted": true,
+                "closing_bell_enabled": false,
+                SystemNotifications.enabledKey: false,
+            ])
+        }
 
         // Reset per-session demo suppression on each launch
         DemoData.isSuppressed = false
@@ -39,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         GitRepo.setup()
 
         // Resolve security-scoped bookmarks for sandbox file access
-        securityScopedURLs = BookmarkManager.resolveAll()
+        securityScopedURLs = RuntimeQA.isEnabled ? [] : BookmarkManager.resolveAll()
         Logger.debug("A: bookmarks resolved=\(self.securityScopedURLs.count)")
 
         do { try AppDatabase.shared.setup(); AppHealthMonitor.shared.clearDBError() }
@@ -53,24 +63,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         menuBarController?.start()
 
         // Auto-enable integrations that are detected on first launch
-        migrateIntegrationDefaults()
+        if !RuntimeQA.isEnabled { migrateIntegrationDefaults() }
         // Onboarding: show welcome page if first launch or no integrations enabled
         showOnboardingIfNeeded()
         // Start all enabled, detected integrations via the registry
-        IntegrationRegistry.startAllEnabled()
+        if !RuntimeQA.isEnabled { IntegrationRegistry.startAllEnabled() }
         // Cache the App Store storefront once at launch for region-based gating.
-        Task { await IntegrationRegistry.refreshStorefrontRegion() }
+        if !RuntimeQA.isEnabled { Task { await IntegrationRegistry.refreshStorefrontRegion() } }
         // Sync active CostSources to database for StatsService queries
-        CostSource.syncToDatabase(IntegrationRegistry.activeCostSources())
+        let activeSources = RuntimeQA.isEnabled ? [] : IntegrationRegistry.activeCostSources()
+        CostSource.syncToDatabase(activeSources)
         Logger.debug("integrations started, costSources synced")
         DiagnosticJournal.log("app_launch", [
             "integrations": .int(IntegrationRegistry.all.count),
-            "active_cost_sources": .int(IntegrationRegistry.activeCostSources().count),
+            "active_cost_sources": .int(activeSources.count),
         ])
         // Git/repo + Claude log monitoring is independent of which integrations are
         // enabled: it must run whenever the user has authorized repo directories or
         // ~/.claude. LogWatcher.start() is safe to call again (idempotent scans).
-        LogWatcher.shared.start()
+        if !RuntimeQA.isEnabled { LogWatcher.shared.start() }
         Logger.debug("LogWatcher started")
         // P3: Dock fuel gauge
         DockManager.shared.start()
@@ -78,14 +89,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Dashboard opens on Dock click or Cmd+Tab — not auto-launched
 
         // Request notification permission (only works in .app bundle, not bare binary)
-        if Bundle.main.bundleIdentifier != nil {
+        if Bundle.main.bundleIdentifier != nil && !RuntimeQA.isEnabled {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
         }
 
         // Centralized data refresh coordinator (replaces scattered timers).
         // Manages three ingestion phases — Ingest (30s), Git (5min), Balance (1h) —
         // with change detection, 500ms debounce, and unified .dataDidChange notification.
-        DataRefreshCoordinator.shared.start()
+        if !RuntimeQA.isEnabled { DataRefreshCoordinator.shared.start() }
+        if RuntimeQA.consumeLocalGitProbe() { GitMonitor.shared.poll() }
 
         // v2 §3.3: menu bar flame — the perception headline (default on).
         StatusItemController.shared.start()
@@ -114,9 +126,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             name: .demoModeDidChange, object: nil
         )
         NotificationCenter.default.addObserver(
-            self, selector: #selector(refreshPulseMenuStats),
+            self, selector: #selector(onSoundMuteChange),
             name: .soundMuteDidChange, object: nil
         )
+    }
+
+    @MainActor @objc private func onSoundMuteChange() {
+        if AppSoundControl.isMuted() { CoinSound.stopPlayback() }
+        refreshPulseMenuStats()
     }
 
     /// Re-open handler: Dock click or Cmd+Tab → show Dashboard
@@ -229,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // --- File Menu ---
         let fileMenuItem = NSMenuItem()
-        let fileSubmenu = NSMenu(title: "File")
+        let fileSubmenu = NSMenu(title: I18n.t("menu.file"))
 
         let welcomeItem = NSMenuItem(title: I18n.t("general.rerun_welcome"), action: #selector(showOnboardingFromMenu), keyEquivalent: "")
         welcomeItem.target = self
@@ -259,7 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // --- Window Menu ---
         // Keep this menu conventional and limited to window management.
         let windowMenuItem = NSMenuItem()
-        let windowSubmenu = NSMenu(title: "Window")
+        let windowSubmenu = NSMenu(title: I18n.t("menu.window"))
         let dashboardItem = NSMenuItem(title: I18n.t("menu.dashboard"), action: #selector(openDashboardFromMenu), keyEquivalent: "1")
         dashboardItem.target = self
         windowSubmenu.addItem(dashboardItem)
@@ -279,11 +296,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @MainActor @objc
     private func refreshPulseMenuStats() {
         guard let sub = pulseSubmenu else { return }
-        sub.removeAllItems()
+        let generation = pulseMenuRefreshGeneration ?? RefreshGeneration()
+        pulseMenuRefreshGeneration = generation
+        let request = generation.begin()
         Task {
             let items = await menuBarController?.statsMenuItems() ?? []
             await MainActor.run {
-                guard let sub = pulseSubmenu else { return }
+                guard generation.isCurrent(request), pulseSubmenu === sub else { return }
                 sub.removeAllItems()
                 for item in items { sub.addItem(item) }
             }

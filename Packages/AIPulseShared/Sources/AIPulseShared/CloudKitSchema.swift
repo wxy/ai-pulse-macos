@@ -32,6 +32,11 @@ public enum CKSchema {
         public static let month = "snapshot-30d"
     }
 
+    public enum CurrentPulse {
+        public static let recordType = "CurrentPulse_v2"
+        public static let recordName = "current-pulse"
+    }
+
     public enum Field {
         public static let json = "json"
         public static let updatedAt = "updatedAt"

@@ -27,12 +27,13 @@ enum RepositoryScope {
     static func gitRoot(containing path: String, fileManager: FileManager = .default) -> String? {
         var url = URL(fileURLWithPath: canonicalPath(path))
         var isDirectory: ObjCBool = false
-        if fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return nil }
+        if !isDirectory.boolValue {
             url.deleteLastPathComponent()
         }
         while url.path != "/" {
             if fileManager.fileExists(atPath: url.appendingPathComponent(".git").path) {
-                return canonicalPath(url.path)
+                return GitRepo.verifiedWorkingRoot(at: url.path)
             }
             url.deleteLastPathComponent()
         }

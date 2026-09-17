@@ -29,7 +29,16 @@ struct PulseSample: Equatable {
 /// compared, never summed. The strongest fresh signal drives the tier/reason.
 actor PulseEngine {
     static let shared = PulseEngine()
-    private init() {}
+    private let healthMonitor: AppHealthMonitor
+    private let computeOverride: (@Sendable (Date) async throws -> PulseSnapshot)?
+
+    init(healthMonitor: AppHealthMonitor = .shared,
+         compute: (@Sendable (Date) async throws -> PulseSnapshot)? = nil) {
+        self.healthMonitor = healthMonitor
+        self.computeOverride = compute
+    }
+
+    private enum ObservationError: Error { case failedQueries([String]) }
 
     static let baselineDays = 7
     static let currentWindow: TimeInterval = 3_600
@@ -44,14 +53,26 @@ actor PulseEngine {
     private var inFlight: (generation: Int, task: Task<PulseSnapshot, Error>)?
 
     func snapshot(now: Date = Date()) async -> PulseSnapshot? {
-        if let cached, now.timeIntervalSince(cachedAt) < Self.cacheTTL {
+        if let cached, cached.isCurrent(asOf: now), now.timeIntervalSince(cachedAt) >= 0,
+           now.timeIntervalSince(cachedAt) < Self.cacheTTL {
             return cached
         }
         if let inFlight, inFlight.generation == generation {
-            return (try? await inFlight.task.value) ?? cached
+            let result = (try? await inFlight.task.value) ?? cached
+            guard generation == inFlight.generation else { return await snapshot(now: now) }
+            return result?.isCurrent(asOf: now) == true ? result : nil
         }
         let startedGeneration = generation
-        let task = Task { try await compute(now: now) }
+        let task = Task {
+            let failures = ObservationFailures()
+            let result = try await StatsService.$observationFailures.withValue(failures) {
+                if let computeOverride { return try await computeOverride(now) }
+                return try await compute(now: now)
+            }
+            let failedQueries = await failures.snapshot()
+            guard failedQueries.isEmpty else { throw ObservationError.failedQueries(failedQueries) }
+            return result
+        }
         inFlight = (startedGeneration, task)
         do {
             let fresh = try await task.value
@@ -61,11 +82,13 @@ actor PulseEngine {
             cached = fresh
             cachedAt = now
             inFlight = nil
+            healthMonitor.clearStatsError(source: "pulse.current")
             return fresh
         } catch {
             if inFlight?.generation == startedGeneration { inFlight = nil }
             if generation != startedGeneration { return await snapshot(now: now) }
-            return cached
+            healthMonitor.reportStatsError(error.localizedDescription, source: "pulse.current")
+            return cached?.isCurrent(asOf: now) == true ? cached : nil
         }
     }
 
@@ -82,42 +105,26 @@ actor PulseEngine {
         let historyStartMs = nowMs - Int64(Self.baselineDays) * 86_400_000
 
         async let usageResult = AppDatabase.shared.read { db in
-            try Self.fetchSamples(
-                in: db,
-                sql: """
-                    SELECT MAX(ts) AS observed_at,
-                           COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS value
-                    FROM usage_event
-                    WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
-                    GROUP BY CAST(ts / 300000 AS INTEGER)
-                    ORDER BY observed_at
-                    """,
-                sinceMs: historyStartMs)
+            let samples = try Self.usageSamples(in: db, sinceMs: historyStartMs, beforeMs: nowMs)
+            let missingCreation = try Bool.fetchOne(db, sql: """
+                SELECT EXISTS(SELECT 1 FROM usage_event
+                  WHERE \(TokenAccounting.missingComponentsSQL)
+                    AND ts >= ? AND ts <= ? AND (model IS NULL OR model != '<synthetic>'))
+                """, arguments: [nowMs - Int64(Self.currentWindow * 1_000), nowMs]) ?? false
+            return (samples: samples, missingCreation: missingCreation)
         }
-        async let outputResult = AppDatabase.shared.read { db in
-            try Self.fetchSamples(
-                in: db,
-                sql: """
-                    SELECT MAX(ts) AS observed_at,
-                           COALESCE(SUM(MAX(added, 0) + MAX(deleted, 0)), 0) AS value
-                    FROM code_change
-                    WHERE ts >= ? AND attribution IS NOT NULL
-                    GROUP BY CAST(ts / 300000 AS INTEGER)
-                    ORDER BY observed_at
-                    """,
-                sinceMs: historyStartMs)
-        }
+        async let outputResult = Self.authorizedOutputSamples(sinceMs: historyStartMs, beforeMs: nowMs)
         async let balanceResult = AppDatabase.shared.read { db in
-            try BurnRateEngine.fetchBalanceDeltas(in: db, sinceMs: historyStartMs)
+            try BalanceObservation.fetchBalanceDeltas(in: db, sinceMs: historyStartMs, beforeMs: nowMs)
         }
         async let quotaResult = StatsService.latestQuotaStatus()
 
-        let (usageSamples, outputSamples, balanceDeltas, quotaItems) = try await (
+        let (usageData, outputSamples, balanceDeltas, quotaItems) = try await (
             usageResult, outputResult, balanceResult, quotaResult)
 
         let activity = Self.rateSignal(
-            kind: .activity, samples: usageSamples, unit: "tokens/h",
-            completeness: .complete, now: now,
+            kind: .activity, samples: usageData.samples, unit: "tokens/h",
+            completeness: usageData.missingCreation ? .partial : .complete, now: now,
             ratioReason: "token_rate", fallbackReason: "recent_token_activity")
 
         var moneySamples: [PulseSample] = []
@@ -147,9 +154,14 @@ actor PulseEngine {
 
     static func buildSnapshot(signals: [PulseSignal], now: Date = Date()) -> PulseSnapshot {
         let eligible = signals.filter {
-            $0.freshness != .stale && $0.freshness != .unavailable && $0.normalized > 0
+            $0.freshness != .stale && $0.freshness != .unavailable &&
+                $0.normalized.isFinite && $0.normalized > 0 &&
+                ($0.observedAt.map { $0 <= now } ?? true)
         }
-        let primary = eligible.max { lhs, rhs in lhs.normalized < rhs.normalized }
+        let direct = eligible.filter { $0.kind != .attributedOutput }
+        // Output is a fallback for missing direct activity, not a competing
+        // claim that a large commit implies more AI consumption.
+        let primary = (direct.isEmpty ? eligible : direct).max { lhs, rhs in lhs.normalized < rhs.normalized }
         let score = primary?.normalized ?? 0
         return PulseSnapshot(
             tier: tier(score: score),
@@ -292,8 +304,43 @@ actor PulseEngine {
         }
     }
 
-    private static func fetchSamples(in db: Database, sql: String, sinceMs: Int64) throws -> [PulseSample] {
-        try Row.fetchAll(db, sql: sql, arguments: [sinceMs]).compactMap { row in
+    /// Only recognized commit trailers in authorized Git roots may act as an
+    /// output fallback. Historical editor proximity is not AI authorship.
+    private static func authorizedOutputSamples(sinceMs: Int64, beforeMs: Int64) async throws -> [PulseSample] {
+        let rows = try await AppDatabase.shared.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT c.ts, c.repo_path, c.added, c.deleted, g.attributed_tool
+                FROM code_change c JOIN git_commit g
+                  ON g.repo_path = c.repo_path AND g.commit_hash = c.commit_hash
+                WHERE c.is_merge = 0 AND c.ts >= ? AND c.ts <= ?
+                  AND g.attributed_tool IS NOT NULL
+                """, arguments: [sinceMs, beforeMs]).map { row in
+                (ts: row["ts"] as Int64? ?? 0, path: row["repo_path"] as String? ?? "",
+                 added: row["added"] as Int? ?? 0, deleted: row["deleted"] as Int? ?? 0,
+                 tool: row["attributed_tool"] as String? ?? "")
+            }
+        }
+        let roots = RepositoryScope.configuredRoots()
+        var buckets: [Int64: (ts: Int64, value: Double)] = [:]
+        for row in rows {
+            guard RepositoryScope.authorizedGitRoot(for: row.path, roots: roots) != nil,
+                  GitMonitor.canonicalAttributedTool(row.tool) != nil else { continue }
+            let key = row.ts / 300_000
+            let previous = buckets[key] ?? (0, 0)
+            buckets[key] = (max(previous.ts, row.ts), previous.value + Double(max(row.added, 0) + max(row.deleted, 0)))
+        }
+        return buckets.values.map { PulseSample(timestamp: Date(timeIntervalSince1970: Double($0.ts) / 1_000), value: $0.value) }
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+
+    static func usageSamples(in db: Database, sinceMs: Int64, beforeMs: Int64) throws -> [PulseSample] {
+        try Row.fetchAll(db, sql: """
+            SELECT MAX(ts) AS observed_at,
+                   COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0) AS value
+            FROM usage_event WHERE ts >= ? AND ts <= ?
+              AND (model IS NULL OR model != '<synthetic>')
+            GROUP BY CAST(ts / 300000 AS INTEGER) ORDER BY observed_at
+            """, arguments: [sinceMs, beforeMs]).compactMap { row in
             let ts: Int64 = row["observed_at"] ?? 0
             let value: Double = row["value"] ?? 0
             guard ts > 0, value.isFinite, value > 0 else { return nil }

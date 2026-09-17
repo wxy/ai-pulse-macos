@@ -1,17 +1,13 @@
 import Foundation
 import AppKit
 
-/// ChatGPT (formerly Codex) — log-based integration.
-/// Covers both the ChatGPT desktop app and the Codex CLI: the desktop app
-/// (bundle id `com.openai.codex`) writes its sessions into the same
-/// `~/.codex/sessions/**/rollout-*.jsonl` directory as the CLI.
+/// Codex session-log integration; not a general ChatGPT conversation importer.
 /// Data source: `~/.codex/sessions/**/rollout-*.jsonl`
-/// Log entries are attributed to the `openai` apiKey CostSource via the
-/// Arbitrator, unless the user picks a ChatGPT subscription (Plus/Pro) — then
-/// that amortized plan becomes the fallback source for ChatGPT-family models.
+/// Log activity and declared subscription fees are independent observations.
+/// A model name does not establish which account or plan paid for a session.
 struct CodexIntegration: Detectable {
     let id = "codex"
-    let displayName = "ChatGPT"
+    let displayName = "Codex"
 
     var costSources: [CostSource] {
         var sources: [CostSource] = []
@@ -25,8 +21,8 @@ struct CodexIntegration: Detectable {
                 id: "sub:codex:\(tier.label.lowercased())",
                 label: "ChatGPT \(tier.label)",
                 kind: .subscription(toolId: "codex", tierLabel: tier.label, monthlyFee: tier.fee),
-                coveredModels: PricingManager.shared.modelsForTool("codex"),
-                confidence: .amortized,
+                coveredModels: ModelCatalogManager.shared.modelsForTool("codex"),
+                confidence: .declared,
                 limitations: []
             ))
         }
@@ -41,25 +37,23 @@ struct CodexIntegration: Detectable {
             .contains { Int($0) != nil } ?? false
         let sessionCount = sessionCount(in: sessionsDir)
 
-        // The ChatGPT desktop app writes a `state_5.sqlite` / `logs_2.sqlite`
-        // next to the CLI sessions — presence of either means the app (or a
-        // recent Codex install) has been used on this machine.
+        // Local Codex state can help detection; it is not a usage ledger.
         let desktopDb = home.appendingPathComponent(".codex/state_5.sqlite")
         let hasDesktopData = FileManager.default.fileExists(atPath: desktopDb.path)
-        let appInstalled = Self.chatgptAppInstalled()
+        let appInstalled = Self.codexAppInstalled()
 
         let found = hasSessions || hasDesktopData
         return DetectionResult(
             found: found,
             summary: found
                 ? appInstalled && hasSessions
-                    ? String(format: I18n.t("detect.chatgpt_desktop_found"), sessionCount)
+                    ? String(format: I18n.t("detect.codex_desktop_found"), sessionCount)
                     : I18n.t("detect.codex_found")
                 : I18n.t("detect.codex_not_found")
         )
     }
 
-    /// Number of per-day session directories under `~/.codex/sessions/YYYY/MM/DD`.
+    /// Number of rollout JSONL files, not directories or account conversations.
     private func sessionCount(in sessionsDir: URL) -> Int {
         guard let enumerator = FileManager.default.enumerator(
             at: sessionsDir,
@@ -74,14 +68,12 @@ struct CodexIntegration: Detectable {
         return count
     }
 
-    /// True if the ChatGPT desktop app (bundle id `com.openai.codex`, the
-    /// renamed Codex app) is installed. Uses LaunchServices so it works inside
-    /// the App Sandbox without file access to /Applications.
-    private static func chatgptAppInstalled() -> Bool {
+    /// Detection hint only; usage still comes from rollout files.
+    private static func codexAppInstalled() -> Bool {
         if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.openai.codex") != nil {
             return true
         }
         // Fallback for sandboxed LaunchServices misses: the app bundle path.
-        return FileManager.default.fileExists(atPath: "/Applications/ChatGPT.app")
+        return FileManager.default.fileExists(atPath: "/Applications/Codex.app")
     }
 }

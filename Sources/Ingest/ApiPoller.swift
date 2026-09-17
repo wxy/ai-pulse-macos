@@ -32,6 +32,7 @@ nonisolated final class ApiPoller: @unchecked Sendable {
     }
 
     func pollAll() {
+        guard !RuntimeQA.isEnabled else { return }
         for p in ProviderRegistry.all where p.canFetchBalance {
             guard let key = ApiKeyManager.shared.get(p.id), !key.isEmpty else { continue }
             fetchBalance(provider: p, apiKey: key)
@@ -39,6 +40,7 @@ nonisolated final class ApiPoller: @unchecked Sendable {
     }
 
     func fetchNow(providerId: String) {
+        guard !RuntimeQA.isEnabled else { return }
         guard let p = ProviderRegistry.byId(providerId),
               p.canFetchBalance,
               let key = ApiKeyManager.shared.get(providerId), !key.isEmpty

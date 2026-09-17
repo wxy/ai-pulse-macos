@@ -118,16 +118,30 @@ final class ChartMathTests: XCTestCase {
     }
 
     @MainActor
-    func testRenderableDonutSegmentsExcludesZeroAndInvalidCosts() {
+    func testRenderableDonutSegmentsExcludesZeroAndInvalidTokens() {
         let segments = [
-            DashboardView.DonutItem(label: "error", cost: 0, pct: 0, color: .gray),
-            DashboardView.DonutItem(label: "invalid", cost: .nan, pct: 0, color: .gray),
-            DashboardView.DonutItem(label: "negative", cost: -1, pct: 0, color: .gray),
-            DashboardView.DonutItem(label: "valid", cost: 2, pct: 100, color: .gray),
+            DashboardView.DonutItem(label: "error", tokens: 0, pct: 0, color: .gray),
+            DashboardView.DonutItem(label: "invalid", tokens: .nan, pct: 0, color: .gray),
+            DashboardView.DonutItem(label: "negative", tokens: -1, pct: 0, color: .gray),
+            DashboardView.DonutItem(label: "valid", tokens: 2, pct: 100, color: .gray),
         ]
 
         let result = DashboardView.renderableDonutSegments(segments)
 
         XCTAssertEqual(result.map(\.label), ["valid"])
+    }
+
+    @MainActor
+    func testTokenDonutGroupingPreservesObservedTotalAndRepositoryIdentity() {
+        let items = (1...5).map { index in
+            DashboardView.DonutItem(label: "same name", tokens: Double(index), pct: 0,
+                                    color: .gray, id: "/development/repo-\(index)")
+        }
+        let grouped = DashboardView.topSegments(items)
+        XCTAssertEqual(grouped.count, 4)
+        XCTAssertEqual(grouped.reduce(0) { $0 + $1.tokens }, 15)
+        XCTAssertEqual(grouped.prefix(3).map(\.id),
+                       ["/development/repo-5", "/development/repo-4", "/development/repo-3"])
+        XCTAssertEqual(grouped.last?.tokens, 3)
     }
 }

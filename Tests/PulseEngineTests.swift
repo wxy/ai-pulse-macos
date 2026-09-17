@@ -1,8 +1,55 @@
 import XCTest
+import GRDB
 @testable import AIPulse
 import AIPulseShared
 
 final class PulseEngineTests: XCTestCase {
+    func testFutureTimestampInSameBucketCannotHideOrInflateActualActivity() throws {
+        let queue = try DatabaseQueue()
+        try queue.write { db in
+            try AppDatabase.createAllTables(db)
+            for ts in [599999, 610000, 620000, 650000] {
+                let event = UsageEvent(ts: ts, source: "aider", model: "m", inTokens: 10,
+                                       outTokens: 2, cacheTokens: 0, repoPath: nil,
+                                       sessionId: nil, dedupeKey: "pulse-bound-\(ts)")
+                _ = try LogWatcher.persistObservedEvents(in: db, rows: [(event, "deepseek")], nowMs: 630000)
+            }
+            let samples = try PulseEngine.usageSamples(in: db, sinceMs: 600000, beforeMs: 630000)
+            XCTAssertEqual(samples.count, 1)
+            XCTAssertEqual(samples.first?.value, 24)
+            XCTAssertEqual(samples.first?.timestamp, Date(timeIntervalSince1970: 620))
+            XCTAssertGreaterThan(PulseEngine.decayedHourlyRate(samples: samples, now: Date(timeIntervalSince1970: 630)), 0)
+            XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event"), 4)
+        }
+    }
+    func testOutputOnlyDrivesPulseWhenDirectSignalsAreAbsent() {
+        let direct = signal(.activity, score: 0.5, reason: "activity")
+        let output = signal(.attributedOutput, score: 8, reason: "output")
+        XCTAssertEqual(PulseEngine.buildSnapshot(signals: [direct, output], now: now).primarySignal, .activity)
+        XCTAssertEqual(PulseEngine.buildSnapshot(signals: [output], now: now).primarySignal, .attributedOutput)
+    }
+
+    func testInvalidOrFutureSignalCannotDriveCurrentPulse() {
+        var future = signal(.activity, score: 8, reason: "future")
+        future.observedAt = now.addingTimeInterval(1)
+        let invalid = signal(.quota, score: .infinity, reason: "invalid")
+        XCTAssertEqual(PulseEngine.buildSnapshot(signals: [future, invalid], now: now).tier, .resting)
+    }
+
+    func testQuotaRejectsExpiredWindowAndFutureObservation() {
+        let time = Date(timeIntervalSince1970: 1_789_300_800)
+        var item = QuotaStatusItem(toolId: "claude-code", windowId: "5h", utilization: 96,
+                                   limitStatus: "allowed", resetAt: time.timeIntervalSince1970,
+                                   windowSeconds: 18_000, updatedAt: time.timeIntervalSince1970 - 10)
+        XCTAssertTrue(item.isStale(asOf: time))
+        XCTAssertEqual(PulseEngine.quotaSignal(items: [item], now: time).normalized, 0)
+        item.resetAt = time.timeIntervalSince1970 + 1000
+        item.updatedAt = time.timeIntervalSince1970 + 1
+        XCTAssertTrue(item.isStale(asOf: time))
+        item.updatedAt = time.timeIntervalSince1970 - 10
+        XCTAssertFalse(item.isStale(asOf: time))
+    }
+
     private let now = Date(timeIntervalSince1970: 1_789_300_800) // exact hour
 
     private func signal(

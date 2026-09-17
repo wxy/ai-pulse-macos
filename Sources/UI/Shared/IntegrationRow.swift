@@ -168,12 +168,8 @@ struct IntegrationRow: View {
                 balanceText = I18n.t("apikeys.error") + ": \(err)"
                 keyStatus = .invalid
             } else if let b = cb.balances.first {
-                let usd = b.totalBalance * StatsService.toUSD(currency: b.currency)
-                if b.currency == "USD" {
-                    balanceText = "$\(String(format: "%.2f", usd))"
-                } else {
-                    balanceText = "$\(String(format: "%.2f", usd)) (\(b.currency) \(String(format: "%.2f", b.totalBalance)))"
-                }
+                // Preserve the provider's denomination; no unlabelled static FX estimate.
+                balanceText = "\(b.currency.uppercased()) \(String(format: "%.1f", b.totalBalance))"
                 keyStatus = .valid
             }
         }

@@ -3,8 +3,8 @@ import GRDB
 
 // MARK: - CostSource（计费来源）
 
-/// 一个 CostSource 回答 "谁在付钱"。
-/// 一条 UsageRecord 最终只归属到一个 CostSource，防止重复计数。
+/// 配置的 API 观察入口或用户声明的订阅背景。
+/// 模型覆盖不能证明某条活动由此账户付费，不进行活动金额归属。
 struct CostSource: Identifiable, Equatable, Hashable, Codable {
     let id: String                     // "api-key:deepseek", "sub:cursor:pro"
     let label: String                  // "DeepSeek API Key"
@@ -27,9 +27,8 @@ enum CostSourceKind: Equatable, Hashable, Codable {
 // MARK: - CostConfidence（可信度）
 
 enum CostConfidence: String, Codable, Comparable {
-    case exact       // 余额差值 — 精确实数
-    case estimated   // token × 定价表 — 估算
-    case amortized   // 订阅月费摊销
+    case exact       // 原始余额采样可用；差值不等于逐笔账单
+    case declared    // 用户声明的月费背景，不摊销
     case uncertain   // 归属有歧义，最佳猜测
     case incomplete  // 已知缺失（如 Copilot overage）
 
@@ -40,8 +39,7 @@ enum CostConfidence: String, Codable, Comparable {
     private static func order(_ c: CostConfidence) -> Int {
         switch c {
         case .exact:       return 0
-        case .estimated:   return 1
-        case .amortized:   return 2
+        case .declared:    return 1
         case .uncertain:   return 3
         case .incomplete:  return 4
         }

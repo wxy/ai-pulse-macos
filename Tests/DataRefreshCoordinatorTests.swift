@@ -25,7 +25,7 @@ final class DataRefreshCoordinatorTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        coordinator = DataRefreshCoordinator(actions: .noop)
+        coordinator = DataRefreshCoordinator(actions: .noop, playConsumption: { _, _ in })
     }
 
     override func tearDown() {
@@ -61,6 +61,11 @@ final class DataRefreshCoordinatorTests: XCTestCase {
         expectation.assertForOverFulfill = true
 
         let notificationCount = LockedNotificationCounter()
+        let beatCount = LockedNotificationCounter()
+        let beatObserver = NotificationCenter.default.addObserver(
+            forName: .consumptionDidOccur, object: nil, queue: .main
+        ) { _ in _ = beatCount.increment() }
+        defer { NotificationCenter.default.removeObserver(beatObserver) }
         let observer = NotificationCenter.default.addObserver(
             forName: .dataDidChange, object: nil, queue: .main
         ) { _ in
@@ -78,8 +83,25 @@ final class DataRefreshCoordinatorTests: XCTestCase {
         // After 500ms debounce, only one notification should have fired
         // (but by the time we check, at most 1 should fire due to 3s min interval)
         XCTAssertEqual(notificationCount.read(), 1, "Rapid pushes should coalesce to one notification")
+        XCTAssertEqual(beatCount.read(), 0, "Generic refreshes must not manufacture a consumption beat")
 
         NotificationCenter.default.removeObserver(observer)
+    }
+
+    func testNonemptyConsumptionBatchProducesOneExplicitBeat() {
+        let beat = XCTestExpectation(description: "Observed consumption beat")
+        let counter = LockedNotificationCounter()
+        let observer = NotificationCenter.default.addObserver(
+            forName: .consumptionDidOccur, object: nil, queue: .main
+        ) { _ in
+            _ = counter.increment()
+            beat.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        coordinator.notifyPhaseIngest(ConsumptionEvent(spendUSD: nil, tokens: 100, source: "codex"))
+        coordinator.notifyPhaseGitScan()
+        wait(for: [beat], timeout: 3)
+        XCTAssertEqual(counter.read(), 1)
     }
 
     // MARK: - Min-notify interval delivery

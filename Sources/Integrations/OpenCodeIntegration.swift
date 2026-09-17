@@ -2,8 +2,7 @@ import Foundation
 
 /// OpenCode CLI (anomaly.co) — log-based integration.
 /// Data source: `~/.local/share/opencode/storage/message/**/msg_*.json`.
-/// Not a CostSource itself — log entries are attributed to the configured
-/// apiKey CostSource (openai / deepseek / etc.) via the Arbitrator.
+/// Activity does not establish attribution to a configured API account.
 struct OpenCodeIntegration: Detectable {
     let id = "opencode"
     let displayName = "OpenCode"

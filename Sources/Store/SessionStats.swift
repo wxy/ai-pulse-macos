@@ -1,19 +1,12 @@
 import Foundation
 import GRDB
 
-/// Period-level summary for one tool's dashboard conclusion card.
-struct ToolConclusion {
-    var spend: Double = 0
-    var previousSpend: Double = 0
-    var deltaPct: Double = 0
-    var projectedMonth: Double = 0
-    var sessionCount: Int = 0
-    var commitCount: Int = 0
-    var addedLines: Int = 0
-    var deletedLines: Int = 0
-    var avgCostPerSession: Double = 0
-    var cpl: Double = 0
-    var crossToolDeltaPct: Double? = nil
+/// Local output in repositories touched by a tool, not AI authorship.
+struct ToolActivitySummary: Sendable {
+    let sessionCount: Int
+    let commitCount: Int
+    let addedLines: Int
+    let deletedLines: Int
 }
 
 /// One session in the explorer list.
@@ -22,15 +15,16 @@ struct SessionRow: Identifiable, Equatable, Sendable {
     let source: String
     let sessionId: String?
     let title: String?
-    let repo: String?
+    var repo: String?
     let firstTs: Int
     let lastTs: Int
     let lastInput: Int
-    let cost: Double
     let windowTokens: Int?
 
     // Session profile metrics (computed by StatsService.sessionRows)
     var turnCount: Int = 0
+    /// Observed input + output in the selected period, not context capacity.
+    var observedTokens: Int64 = 0
     var avgOccupancy: Double? = nil
     var avgCacheRatio: Double? = nil
     var compactionCount: Int = 0
@@ -46,11 +40,11 @@ struct SessionRow: Identifiable, Equatable, Sendable {
 struct RepoSessionGroup: Identifiable {
     var id: String { repo }
     let repo: String
-    let totalCost: Double
+    var observedTokens: Int64 { sessions.reduce(0) { $0 + max($1.observedTokens, 0) } }
     let sessions: [SessionRow]
 }
 
-/// One turn of a session: context size, cache, output and cost.
+/// One turn of observed input context, its cached subset, and output.
 struct TurnPoint: Identifiable, Equatable, Decodable, FetchableRecord {
     var id: Int { index }
     let index: Int
@@ -58,15 +52,12 @@ struct TurnPoint: Identifiable, Equatable, Decodable, FetchableRecord {
     let inputTokens: Int
     let cacheTokens: Int
     let outTokens: Int
-    let cost: Double
-    /// Total prompt context at this turn: for Codex `inputTokens` already
-    /// includes the cached portion; for Claude Code (BYOK gateways) it does
-    /// not, so context = input + cache. Computed in the query.
+    /// Computed from the source's actual input/cache representation.
     let contextTokens: Int
 
     enum CodingKeys: String, CodingKey {
         case index = "turn_index"
-        case ts, inputTokens, cacheTokens, outTokens, cost, contextTokens
+        case ts, inputTokens, cacheTokens, outTokens, contextTokens
     }
 }
 
@@ -75,8 +66,12 @@ struct ContextTrend {
     let turns: [TurnPoint]
     let windowTokens: Int?
     let model: String?
+    /// All valid observations, including output-only events excluded from the
+    /// input-context plot. nil means no independent output query was supplied.
+    var observedOutputTokens: Int? = nil
+    var observationCount: Int? = nil
+    var incompleteEvents: Int? = nil
     var cacheTokensTotal: Int { turns.reduce(0) { $0 + $1.cacheTokens } }
-    var totalCost: Double { turns.reduce(0) { $0 + $1.cost } }
     var finalOccupancy: Double? {
         guard let window = windowTokens, window > 0, let last = turns.last else { return nil }
         return Double(last.contextTokens) / Double(window)
@@ -106,18 +101,9 @@ enum SessionStats {
     /// Label used when a session has no repo; views localize it.
     static let noRepoKey = "（无仓库）"
 
-    static func deltaPct(current: Double, previous: Double) -> Double {
-        guard current.isFinite, previous.isFinite, previous > 0 else { return 0 }
-        return (current - previous) / previous * 100
-    }
 
-    static func projectMonth(spendSoFar: Double, daysElapsed: Int, daysInMonth: Int) -> Double {
-        guard spendSoFar.isFinite, daysElapsed > 0 else { return 0 }
-        return spendSoFar / Double(daysElapsed) * Double(daysInMonth)
-    }
 
-    /// Group sessions by repo; groups sorted by total cost descending,
-    /// sessions within a group sorted by cost descending. Nil repo → `noRepoKey`.
+    /// Group by repository identity; rank by observed tokens, not estimated money.
     static func groupSessions(_ rows: [SessionRow]) -> [RepoSessionGroup] {
         var grouped: [String: [SessionRow]] = [:]
         for row in rows {
@@ -128,10 +114,16 @@ enum SessionStats {
             .map { key, sessions in
                 RepoSessionGroup(
                     repo: key,
-                    totalCost: sessions.reduce(0) { $0 + $1.cost },
-                    sessions: sessions.sorted { $0.cost > $1.cost })
+                    sessions: sessions.sorted {
+                        if $0.observedTokens != $1.observedTokens { return $0.observedTokens > $1.observedTokens }
+                        if $0.lastTs != $1.lastTs { return $0.lastTs > $1.lastTs }
+                        return $0.id < $1.id
+                    })
             }
-            .sorted { $0.totalCost > $1.totalCost }
+            .sorted {
+                if $0.observedTokens != $1.observedTokens { return $0.observedTokens > $1.observedTokens }
+                return $0.repo < $1.repo
+            }
     }
 
     /// Turn indexes where the next turn's input dropped to < 70% of the previous
@@ -149,9 +141,6 @@ enum SessionStats {
         return marks
     }
 
-    static func cacheSavings(cacheTokens: Int, inPricePerMtok: Double, cachePricePerMtok: Double) -> Double {
-        Double(cacheTokens) / 1_000_000 * (inPricePerMtok - cachePricePerMtok)
-    }
 
     /// Aggregated per-session profile metrics for the iOS session card.
     struct SessionMetrics: Equatable {

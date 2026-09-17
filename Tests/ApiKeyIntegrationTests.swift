@@ -52,8 +52,8 @@ final class ApiKeyIntegrationTests: XCTestCase {
         ApiKeyManager.shared.set(testId, key: "sk-test-123")
         let claudeSource = makeIntegration(usesClaudeModels: true).costSources[0]
         let providerSource = makeIntegration(usesClaudeModels: false).costSources[0]
-        XCTAssertEqual(claudeSource.coveredModels, PricingManager.shared.claudeModels())
+        XCTAssertEqual(claudeSource.coveredModels, ModelCatalogManager.shared.claudeModels())
         XCTAssertEqual(providerSource.coveredModels,
-                       PricingManager.shared.modelsForProvider(testId))
+                       ModelCatalogManager.shared.modelsForProvider(testId))
     }
 }

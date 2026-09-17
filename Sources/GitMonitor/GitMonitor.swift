@@ -8,11 +8,9 @@ struct CodeChange: Codable {
     let added: Int
     let deleted: Int
     let isMerge: Bool
-    /// AI tool that produced this change (v2 WI-5). nil = unattributed →
-    /// the row stays对照-only and never counts as consumption (§4.6 铁律).
+    /// Recognized tool declared in the commit trailer, not proven authorship.
     var attributedTool: String?
-    /// "uncertain" for every attribution signal: a trailer or editor session
-    /// cannot prove line-level authorship.
+    /// Observation provenance. "trailer" is still not line-level authorship.
     var attribution: String?
 }
 
@@ -25,6 +23,7 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     private let lock = NSLock()
     private var watchedRepos: Set<String> = []
     private var lastSeenCommit: [String: String] = [:] // repo -> last processed commit hash
+    private var scanningRepos: Set<String> = []
     /// Concurrent queue for running libgit2 operations with a timeout,
     /// so a hung repo never blocks the serial notifyQueue indefinitely.
     private let gitOpQueue = DispatchQueue(label: "com.wxy.aipulse.git.op",
@@ -38,20 +37,21 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     }
 
     private static let watchedReposKey = "gitmonitor_watched_repos"
-    private static let lastSeenKey = "gitmonitor_last_seen"
 
-    /// Ensures DB state is loaded before the first poll() runs.
-    private let loadGroup = DispatchGroup()
+    private let stateLoadGate = GitStateLoadGate()
+    private let statePersistenceQueue = DispatchQueue(label: "xingyu.wang.aipulse.git.state", qos: .utility)
 
     private init() {
-        loadGroup.enter()
-        Task { await loadFromDB(); loadGroup.leave() }
+        Task { _ = await stateLoadGate.ensureLoaded { await self.loadFromDB() } }
     }
 
-    private func loadFromDB() async {
+    private func loadFromDB() async -> Bool {
         do {
             let (seen, watched) = try await AppDatabase.shared.read { db -> (seen: [String: String], watched: Set<String>) in
-                let rows = try Row.fetchAll(db, sql: "SELECT repo_path, last_commit FROM gitmonitor_state")
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT s.repo_path, c.head_hash AS last_commit FROM gitmonitor_state s
+                    LEFT JOIN git_commit_scan c ON c.repo_path = s.repo_path
+                    """)
                 var seen = [String: String]()
                 var watched = Set<String>()
                 for r in rows {
@@ -63,26 +63,26 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 return (seen, watched)
             }
             lock.withLock {
-                if !watched.isEmpty { watchedRepos = watched }
-                if !seen.isEmpty { lastSeenCommit = seen }
+                // Loading may complete after watch/scan has already added live
+                // state. Never replace it with the older database snapshot.
+                watchedRepos.formUnion(watched.filter { RepositoryScope.authorizedGitRoot(for: $0) != nil })
+                lastSeenCommit.merge(seen) { live, _ in live }
                 // Fall back to UserDefaults if DB returned empty (e.g. fresh migration)
                 if watchedRepos.isEmpty, let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) {
-                    watchedRepos = Set(saved)
-                }
-                if lastSeenCommit.isEmpty, let saved = UserDefaults.standard.dictionary(forKey: Self.lastSeenKey) as? [String: String] {
-                    lastSeenCommit = saved
+                    watchedRepos.formUnion(saved.filter { RepositoryScope.authorizedGitRoot(for: $0) != nil })
                 }
             }
+            AppHealthMonitor.shared.clearIngestError(source: "Git.state.load")
+            return true
         } catch {
+            AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Git.state.load")
             // DB not ready; fall back to UserDefaults
             lock.withLock {
                 if let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) {
-                    watchedRepos = Set(saved)
-                }
-                if let saved = UserDefaults.standard.dictionary(forKey: Self.lastSeenKey) as? [String: String] {
-                    lastSeenCommit = saved
+                    watchedRepos.formUnion(saved.filter { RepositoryScope.authorizedGitRoot(for: $0) != nil })
                 }
             }
+            return false
         }
     }
 
@@ -116,30 +116,25 @@ nonisolated final class GitMonitor: @unchecked Sendable {
         let removed = watchedRepos.filter { !RepositoryScope.isInsideConfiguredRoots($0, roots: roots) }
         watchedRepos.subtract(removed)
         for path in removed { lastSeenCommit.removeValue(forKey: path) }
-        let remainingRepos = Array(watchedRepos)
-        let remainingSeen = lastSeenCommit
         lock.unlock()
         guard !removed.isEmpty else { return }
-        UserDefaults.standard.set(remainingRepos, forKey: Self.watchedReposKey)
-        UserDefaults.standard.set(remainingSeen, forKey: Self.lastSeenKey)
-        Task {
-            do {
-                try await AppDatabase.shared.write { db in
-                    for path in removed {
-                        try db.execute(sql: "DELETE FROM gitmonitor_state WHERE repo_path = ?", arguments: [path])
-                    }
-                }
-            } catch {
-                Logger.error("GitMonitor: prune watched repos failed: \(error)")
-            }
+        for path in removed {
+            AppHealthMonitor.shared.clearIngestError(source: "Git.scan.\(path)")
         }
+        persistWatchedRepos()
     }
 
     /// Poll watched repos - called periodically or after log ingestion
     func poll() {
-        if loadGroup.wait(timeout: .now() + 5.0) == .timedOut {
-            Logger.warning("GitMonitor: DB state load timed out after 5s, falling back to in-memory state")
+        // Wait asynchronously; never stall the UI/coordinator thread.
+        Task { [self] in
+            guard await stateLoadGate.ensureLoaded({ await self.loadFromDB() }) else { return }
+            persistWatchedRepos() // retry any previous watch-list write failure
+            gitOpQueue.async { [self] in pollLoadedState() }
         }
+    }
+
+    private func pollLoadedState() {
         lock.lock()
         let repos = watchedRepos
         lock.unlock()
@@ -151,62 +146,105 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     // MARK: - Private
 
     private func scanRecentCommits(repo: String) {
-        lock.lock()
-        let lastHash = lastSeenCommit[repo]
-        lock.unlock()
+        guard RepositoryScope.authorizedGitRoot(for: repo) != nil else { return }
+        let state = lock.withLock { () -> (Bool, String?) in
+            guard !scanningRepos.contains(repo) else { return (false, nil) }
+            scanningRepos.insert(repo)
+            return (true, lastSeenCommit[repo])
+        }
+        guard state.0 else { return }
+        let lastHash = state.1
         let repoName = URL(fileURLWithPath: repo).lastPathComponent
-
         gitOpQueue.async { [self] in
-            let gitRepo = GitRepo(path: repo)
-            let authorEmail = gitRepo.userEmail()
-            let commits = gitRepo.log(since: lastHash, authorEmail: authorEmail)
-
-            var changes: [CodeChange] = []
-            var newHash: String?
-            for commit in commits {
-                guard let stats = gitRepo.diffTree(hash: commit.hash) else { continue }
-                if stats.added > 0 || stats.deleted > 0 {
-                    // Signal 1 (强): git trailer self-attribution — tools that
-                    // commit themselves sign their work (e.g. Co-Authored-By: Claude).
-                    let trailerTool = Self.attributedToolFromTrailer(commit.message)
-                    changes.append(CodeChange(
-                        commitHash: commit.hash, ts: commit.ts * 1000,
-                        repoPath: repo, added: stats.added, deleted: stats.deleted,
-                        isMerge: commit.parentCount >= 2,
-                        attributedTool: trailerTool,
-                        attribution: trailerTool != nil ? "uncertain" : nil
-                    ))
+            do {
+                let gitRepo = GitRepo(path: repo)
+                let authorEmail = gitRepo.userEmail()
+                let calendar = Calendar.current
+                let coverageStart = calendar.date(byAdding: .day, value: -29, to: calendar.startOfDay(for: Date()))!
+                let coverageSince = Int(coverageStart.timeIntervalSince1970 * 1000)
+                let batch = try gitRepo.log(since: lastHash, sinceTimestamp: coverageSince / 1000, authorEmail: authorEmail)
+                guard let head = batch.headHash else {
+                    lock.withLock { _ = scanningRepos.remove(repo) }
+                    return
                 }
-                newHash = commit.hash
-            }
-
-            // Dispatch to the main queue instead of `Task { @MainActor }` — creating
-            // a MainActor-isolated Task from this GCD block (gitOpQueue) trips
-            // Swift's isolation check and crashes on quit.
-            DispatchQueue.main.async { [self, changes, newHash, repo, repoName] in
-                MainActor.assumeIsolated {
-                    // Signal 2 (中, uncertain): editor-session × timing — a change
-                    // landing while an AI editor has this repo open attributes to it.
-                    var sessionMappings: [EditorDetector.Mapping] = []
-                    if changes.contains(where: { $0.attributedTool == nil }) {
-                        sessionMappings = EditorDetector.detect()
+                var changes: [CodeChange] = []
+                var complete = true
+                for commit in batch.commits {
+                    guard let stats = gitRepo.diffTree(hash: commit.hash) else { complete = false; continue }
+                    if stats.added > 0 || stats.deleted > 0 {
+                        let tool = Self.attributedToolFromTrailer(commit.message)
+                        changes.append(CodeChange(commitHash: commit.hash, ts: commit.ts * 1000,
+                            repoPath: repo, added: stats.added, deleted: stats.deleted,
+                            isMerge: commit.parentCount >= 2, attributedTool: tool,
+                            attribution: tool == nil ? nil : "trailer"))
                     }
-                    let attributed = changes.map { change -> CodeChange in
-                        var c = change
-                        if c.attributedTool == nil,
-                           let m = sessionMappings.first(where: { $0.repoPath == repo }) {
-                            c.attributedTool = m.toolName
-                            c.attribution = "uncertain"
+                }
+                let readyChanges = changes
+                let readComplete = complete
+                Task { [self] in
+                    defer { lock.withLock { _ = scanningRepos.remove(repo) } }
+                    guard RepositoryScope.authorizedGitRoot(for: repo) != nil else { return }
+                    do {
+                        let changed = try await AppDatabase.shared.write { db in
+                            try Self.persistBatch(in: db, repo: repo, commits: batch.commits,
+                                changes: readyChanges, headHash: readComplete ? head : lastHash,
+                                coverageSince: coverageSince, authorEmail: authorEmail,
+                                complete: readComplete)
                         }
-                        return c
+                        if readComplete { lock.withLock { lastSeenCommit[repo] = head } }
+                        if changed { DataRefreshCoordinator.shared.notifyPhaseGitScan() }
+                        if readComplete {
+                            AppHealthMonitor.shared.clearIngestError(source: "Git.scan.\(repo)")
+                        } else {
+                            AppHealthMonitor.shared.reportIngestError(
+                                "Some commit diffs could not be read; scan will retry.", source: "Git.scan.\(repo)")
+                        }
+                    } catch {
+                        Logger.error("Git batch persistence failed: \(error)")
+                        AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Git.scan.\(repo)")
                     }
-                    for change in attributed { insertChange(change) }
-                    if let h = newHash { lock.withLock { lastSeenCommit[repo] = h } }
-                    persistLastSeen()
-                    AppHealthMonitor.shared.clearAPIError(providerId: "git-\(repoName)")
                 }
+            } catch {
+                lock.withLock { _ = scanningRepos.remove(repo) }
+                Logger.error("Git scan failed for \(repoName): \(error)")
+                AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Git.scan.\(repo)")
             }
         }
+    }
+
+    /// Called within one database transaction. Commit identity is independent
+    /// of line counts, and the cursor is committed only with the captured facts.
+    static func persistBatch(in db: Database, repo: String, commits: [GitCommitSummary],
+                             changes: [CodeChange], headHash: String?, coverageSince: Int,
+                             authorEmail: String?, complete: Bool) throws -> Bool {
+        var changed = false
+        for commit in commits {
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO git_commit
+                  (repo_path, commit_hash, ts, parent_count, author_email, attributed_tool)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [repo, commit.hash, commit.ts * 1000, commit.parentCount,
+                                 commit.authorEmail, attributedToolFromTrailer(commit.message)])
+            changed = changed || db.changesCount > 0
+        }
+        for change in changes {
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO code_change
+                  (commit_hash, ts, repo_path, added, deleted, is_merge, attributed_tool, attribution)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [change.commitHash, change.ts, change.repoPath, change.added, change.deleted,
+                                 change.isMerge, change.attributedTool, change.attribution])
+            changed = changed || db.changesCount > 0
+        }
+        try db.execute(sql: """
+            INSERT INTO git_commit_scan (repo_path, head_hash, updated_at, coverage_since, author_email, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(repo_path) DO UPDATE SET head_hash = excluded.head_hash,
+              updated_at = excluded.updated_at, coverage_since = excluded.coverage_since,
+              author_email = excluded.author_email, status = excluded.status
+            """, arguments: [repo, headHash, Int(Date().timeIntervalSince1970 * 1000), coverageSince,
+                             authorEmail, complete ? "complete" : "partial"])
+        return changed
     }
 
     /// git trailer self-attribution (WI-5 信号一): scan the message from the
@@ -220,13 +258,28 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 // "Claude <noreply@anthropic.com>" → "Claude"
                 let tool = value.split(separator: "<").first
                     .map { $0.trimmingCharacters(in: .whitespaces) } ?? value
-                if !tool.isEmpty { return tool }
+                if Self.canonicalAttributedTool(tool) != nil { return tool }
             } else if lower.hasPrefix("generated-with:") {
                 let tool = line.dropFirst("generated-with:".count).trimmingCharacters(in: .whitespaces)
-                if !tool.isEmpty { return tool }
+                if Self.canonicalAttributedTool(tool) != nil { return tool }
             }
         }
         return nil
+    }
+
+    static func canonicalAttributedTool(_ text: String) -> String? {
+        switch text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "claude", "claude code", "claude-code": return "claude-code"
+        case "codex", "openai codex": return "codex"
+        case "cursor", "cursor agent": return "cursor"
+        case "copilot", "github copilot": return "copilot"
+        case "windsurf", "windsurf cascade", "cascade": return "windsurf"
+        case "aider": return "aider"
+        case "opencode", "open code": return "opencode"
+        case "qwen code", "qwen-code", "qwencode": return "qwencode"
+        case "deepseek harness", "deepseek-harness": return "deepseek-harness"
+        default: return nil
+        }
     }
 
     /// Check whether a file path matches exclusion patterns (lockfiles,
@@ -240,55 +293,21 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     // MARK: - Persistence
 
     private func persistWatchedRepos() {
-        // Write watched repos to DB (best-effort)
-        lock.lock()
-        let arr = Array(watchedRepos)
-        lock.unlock()
-        UserDefaults.standard.set(arr, forKey: Self.watchedReposKey)  // keep as fallback
-        Task {
+        statePersistenceQueue.async { [self] in
+            // Capture at execution time, not when an older watch/prune request
+            // was enqueued. No detached database tasks can overtake this write.
+            let current = lock.withLock { watchedRepos }
+            UserDefaults.standard.set(Array(current), forKey: Self.watchedReposKey)
             do {
-                try await AppDatabase.shared.write { db in
-                    for repo in arr {
-                        try db.execute(sql: """
-                            INSERT OR IGNORE INTO gitmonitor_state (repo_path) VALUES (?)
-                            """, arguments: [repo])
-                    }
+                try AppDatabase.shared.writeSynchronously { db in
+                    try GitWatchStore.synchronize(in: db, repositories: current)
                 }
-            } catch { Logger.error("GitMonitor: persist watched repos failed: \(error)") }
-        }
-    }
-
-    private func persistLastSeen() {
-        lock.lock()
-        let dict = lastSeenCommit
-        lock.unlock()
-        UserDefaults.standard.set(dict, forKey: Self.lastSeenKey)  // keep as fallback
-        Task {
-            do {
-                try await AppDatabase.shared.write { db in
-                    for (repo, hash) in dict {
-                        try db.execute(sql: """
-                            INSERT OR REPLACE INTO gitmonitor_state (repo_path, last_commit) VALUES (?, ?)
-                            """, arguments: [repo, hash])
-                    }
-                }
-            } catch { Logger.error("GitMonitor: persist watched repos failed: \(error)") }
-        }
-    }
-
-    private func insertChange(_ change: CodeChange) {
-        Task {
-            do {
-                try await AppDatabase.shared.write { db in
-                    try db.execute(sql: """
-                        INSERT OR IGNORE INTO code_change (commit_hash, ts, repo_path, added, deleted, is_merge, attributed_tool, attribution)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """, arguments: [change.commitHash, change.ts, change.repoPath, change.added, change.deleted, change.isMerge, change.attributedTool, change.attribution])
-                }
-                DataRefreshCoordinator.shared.notifyPhaseGitScan()
+                AppHealthMonitor.shared.clearIngestError(source: "Git.state.persist")
             } catch {
-                Logger.error("Failed to insert code_change: \(error)")
+                Logger.error("GitMonitor: persist watched repos failed: \(error)")
+                AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Git.state.persist")
             }
         }
     }
+
 }

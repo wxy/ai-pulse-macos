@@ -9,10 +9,42 @@ final class AppDatabase: @unchecked Sendable {
     /// or accidentally mix test-generated usage with production history.
     static var databaseDirectoryName: String {
         #if DEBUG
-        "AIPulseDebug"
+        RuntimeQA.isEnabled ? "AIPulseRuntimeQA" : "AIPulseDebug"
         #else
         "AIPulse"
         #endif
+    }
+
+    /// Preserve the old raw table while replacing global hash uniqueness.
+    /// Call inside a write transaction, after additive columns are installed.
+    static func migrateRepositoryCodeIdentity(_ db: Database) throws {
+        let indexes = try Row.fetchAll(db, sql: "PRAGMA index_list(code_change)")
+        var hasGlobalHash = false
+        for index in indexes where (index["unique"] as Int? ?? 0) == 1 {
+            let name: String = index["name"]
+            let escaped = name.replacingOccurrences(of: "'", with: "''")
+            let columns = try Row.fetchAll(db, sql: "PRAGMA index_info('\(escaped)')")
+                .compactMap { $0["name"] as String? }
+            if columns == ["commit_hash"] { hasGlobalHash = true }
+        }
+        guard hasGlobalHash else { return }
+        try db.execute(sql: """
+            ALTER TABLE code_change RENAME TO code_change_legacy_raw;
+            CREATE TABLE code_change (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                commit_hash TEXT NOT NULL, ts INTEGER NOT NULL, repo_path TEXT NOT NULL,
+                added INTEGER DEFAULT 0, deleted INTEGER DEFAULT 0, is_merge BOOLEAN DEFAULT 0,
+                attributed_tool TEXT, attribution TEXT,
+                UNIQUE(repo_path, commit_hash)
+            );
+            INSERT INTO code_change
+              (id, commit_hash, ts, repo_path, added, deleted, is_merge, attributed_tool, attribution)
+            SELECT id, commit_hash, ts, repo_path, added, deleted, is_merge, attributed_tool, attribution
+            FROM code_change_legacy_raw;
+            CREATE INDEX code_change_v2_ts ON code_change(ts);
+            CREATE INDEX code_change_v2_repo ON code_change(repo_path);
+            UPDATE git_commit_scan SET head_hash = NULL, status = 'partial';
+            """)
     }
 
     func setup() throws {
@@ -22,6 +54,12 @@ final class AppDatabase: @unchecked Sendable {
         let dbDir = appSupport.appendingPathComponent(Self.databaseDirectoryName)
         try FileManager.default.createDirectory(at: dbDir, withIntermediateDirectories: true)
         let dbPath = dbDir.appendingPathComponent("aipulse.db").path
+        try setup(at: dbPath, defaults: .standard)
+    }
+
+    /// Run the production startup migration against an isolated database and
+    /// preference domain without touching the user's active profile.
+    func setup(at dbPath: String, defaults: UserDefaults) throws {
         dbQueue = try DatabaseQueue(path: dbPath)
         Logger.info("DB opened at \(dbPath)")
 
@@ -30,14 +68,19 @@ final class AppDatabase: @unchecked Sendable {
         // Additive column migrations for existing installs
         // (create-ifNotExists won't add columns to tables that already exist).
         addColumnIfMissing("quota_status", "window_seconds", "REAL")
+        addColumnIfMissing("usage_event", "cache_creation_tokens", "INTEGER")
+        addColumnIfMissing("usage_event", "reported_output_tokens", "INTEGER")
+        addColumnIfMissing("usage_event", "reasoning_tokens", "INTEGER")
         // v2 WI-5: AI attribution on code changes — NULL means unattributed
         // (stays a对照-only row, never counted as consumption).
         addColumnIfMissing("code_change", "attributed_tool", "TEXT")
         addColumnIfMissing("code_change", "attribution", "TEXT")
         try dbQueue?.write { db in
+            try Self.migrateRepositoryCodeIdentity(db)
             try Self.backfillKnownProviderAttribution(db)
             try Self.migrateLegacyQuotaStatus(db)
             try Self.normalizeCodeAttributionConfidence(db)
+            _ = try LogCheckpointStore.prepareReliableReplay(in: db)
         }
 
         // The first DSH scan marked compressed journals complete before
@@ -45,22 +88,48 @@ final class AppDatabase: @unchecked Sendable {
         // so dropping only those parser positions is enough to replay them
         // safely while usage_event dedupe keys prevent duplicates.
         let dshReplayKey = "dsh_usage_shape_positions_replayed_v2"
-        if !UserDefaults.standard.bool(forKey: dshReplayKey) {
+        if !defaults.bool(forKey: dshReplayKey) {
             try dbQueue?.write { db in
                 try Self.invalidateDeepSeekHarnessPositions(db)
             }
-            UserDefaults.standard.set(true, forKey: dshReplayKey)
+            defaults.set(true, forKey: dshReplayKey)
+        }
+
+        // Re-read immutable Claude logs to enrich previously omitted cache
+        // creation metadata. Existing raw input and historical amounts stay intact.
+        let claudeCreationReplayKey = "claude_cache_creation_metadata_replayed_v2"
+        if !defaults.bool(forKey: claudeCreationReplayKey) {
+            try dbQueue?.write { db in
+                try Self.invalidateClaudeCacheCreationPositions(db)
+            }
+            defaults.set(true, forKey: claudeCreationReplayKey)
+        }
+
+        let dshCounterReplayKey = "dsh_disjoint_usage_metadata_replayed_v2"
+        if !defaults.bool(forKey: dshCounterReplayKey) {
+            try dbQueue?.write { db in
+                try Self.invalidateDeepSeekHarnessPositions(db)
+            }
+            defaults.set(true, forKey: dshCounterReplayKey)
+        }
+
+        let codexOutputReplayKey = "codex_reported_output_metadata_replayed_v2"
+        if !defaults.bool(forKey: codexOutputReplayKey) {
+            try dbQueue?.write { db in
+                try Self.invalidateCodexOutputPositions(db)
+            }
+            defaults.set(true, forKey: codexOutputReplayKey)
         }
 
         // Startup used to cache a snapshot at the 20-second mark while cold
         // history import could still be running. Rebuild those derived rows
         // once; usage and balance facts are never touched.
         let cacheRebuildKey = "dashboard_cache_rebuilt_after_startup_backfill_guard"
-        if !UserDefaults.standard.bool(forKey: cacheRebuildKey) {
+        if !defaults.bool(forKey: cacheRebuildKey) {
             try dbQueue?.write { db in
                 try db.execute(sql: "DELETE FROM dashboard_cache")
             }
-            UserDefaults.standard.set(true, forKey: cacheRebuildKey)
+            defaults.set(true, forKey: cacheRebuildKey)
         }
         Logger.info("DB migration complete")
     }
@@ -85,7 +154,7 @@ final class AppDatabase: @unchecked Sendable {
         for row in rows {
             guard let id: Int64 = row["id"],
                   let model: String = row["model"],
-                  let providerId = PricingManager.shared.providerId(for: model)
+                  let providerId = ModelCatalogManager.shared.providerId(for: model)
             else { continue }
             updates.append((id, providerId))
         }
@@ -124,6 +193,33 @@ final class AppDatabase: @unchecked Sendable {
             """)
     }
 
+    static func invalidateCodexOutputPositions(
+        _ db: Database,
+        sessionDirectory: String = FileManager.default.realHomeDirectory
+            .appendingPathComponent(".codex/sessions").path
+    ) throws {
+        let paths = try String.fetchAll(db, sql: "SELECT file_path FROM logwatcher_position")
+        for path in paths where path.hasPrefix(sessionDirectory + "/")
+            && URL(fileURLWithPath: path).lastPathComponent.hasPrefix("rollout-")
+            && path.hasSuffix(".jsonl") {
+            try db.execute(sql: "DELETE FROM logwatcher_position WHERE file_path = ?", arguments: [path])
+        }
+        try db.execute(sql: "DELETE FROM dashboard_cache")
+    }
+
+    static func invalidateClaudeCacheCreationPositions(
+        _ db: Database,
+        projectDirectory: String = FileManager.default.realHomeDirectory
+            .appendingPathComponent(".claude/projects").path
+    ) throws {
+        let prefix = projectDirectory + "/"
+        let paths = try String.fetchAll(db, sql: "SELECT file_path FROM logwatcher_position")
+        for path in paths where path.hasPrefix(prefix) && path.hasSuffix(".jsonl") {
+            try db.execute(sql: "DELETE FROM logwatcher_position WHERE file_path = ?", arguments: [path])
+        }
+        try db.execute(sql: "DELETE FROM dashboard_cache")
+    }
+
     /// Clear parser positions for the current user's DSH journals and derived
     /// dashboard rows. Exposed for a regression test; callers decide when the
     /// one-time replay runs.
@@ -149,6 +245,9 @@ final class AppDatabase: @unchecked Sendable {
                     t.column("in_tokens", .integer).defaults(to: 0)
                     t.column("out_tokens", .integer).defaults(to: 0)
                     t.column("cache_tokens", .integer).defaults(to: 0)
+                    t.column("cache_creation_tokens", .integer)
+                    t.column("reported_output_tokens", .integer)
+                    t.column("reasoning_tokens", .integer)
                     t.column("cost_usd", .double)
                     t.column("repo_path", .text)
                     t.column("session_id", .text)
@@ -164,7 +263,7 @@ final class AppDatabase: @unchecked Sendable {
             ("code_change", { db in
                 try db.create(table: "code_change", ifNotExists: true) { t in
                     t.autoIncrementedPrimaryKey("id")
-                    t.column("commit_hash", .text).notNull().unique()
+                    t.column("commit_hash", .text).notNull()
                     t.column("ts", .integer).notNull()
                     t.column("repo_path", .text).notNull()
                     t.column("added", .integer).defaults(to: 0)
@@ -174,9 +273,34 @@ final class AppDatabase: @unchecked Sendable {
                     // existing installs; NULL = unattributed →对照-only row)
                     t.column("attributed_tool", .text)
                     t.column("attribution", .text)
+                    t.uniqueKey(["repo_path", "commit_hash"])
                 }
                 try? db.create(indexOn: "code_change", columns: ["ts"])
                 try? db.create(indexOn: "code_change", columns: ["repo_path"])
+            }),
+            ("git_commit", { db in
+                try db.create(table: "git_commit", ifNotExists: true) { t in
+                    t.column("repo_path", .text).notNull()
+                    t.column("commit_hash", .text).notNull()
+                    t.column("ts", .integer).notNull()
+                    t.column("parent_count", .integer).notNull()
+                    t.column("author_email", .text).notNull()
+                    // Recognized tool trailer is provenance, not proof of
+                    // AI authorship or of the value of the resulting code.
+                    t.column("attributed_tool", .text)
+                    t.primaryKey(["repo_path", "commit_hash"])
+                }
+                try db.create(index: "git_commit_ts", on: "git_commit", columns: ["ts"], ifNotExists: true)
+            }),
+            ("git_commit_scan", { db in
+                try db.create(table: "git_commit_scan", ifNotExists: true) { t in
+                    t.column("repo_path", .text).primaryKey()
+                    t.column("head_hash", .text)
+                    t.column("updated_at", .integer).notNull()
+                    t.column("coverage_since", .integer).notNull()
+                    t.column("author_email", .text)
+                    t.column("status", .text).notNull()
+                }
             }),
             ("subscription_tool", { db in
                 try db.create(table: "subscription_tool", ifNotExists: true) { t in
@@ -287,6 +411,18 @@ final class AppDatabase: @unchecked Sendable {
     }
 
     var writer: DatabaseWriter? { dbQueue }
+
+    /// Ingest worker only; keep checkpoint loading ordered before scanning.
+    func readSynchronously<T>(_ value: (Database) throws -> T) throws -> T {
+        guard let queue = dbQueue else { throw AppDBError.notReady }
+        return try queue.read(value)
+    }
+
+    /// Ingest worker only: returning success must precede any cursor advance.
+    func writeSynchronously<T>(_ updates: (Database) throws -> T) throws -> T {
+        guard let queue = dbQueue else { throw AppDBError.notReady }
+        return try queue.write(updates)
+    }
 
     func write<T: Sendable>(_ updates: @Sendable @escaping (Database) throws -> T) async throws -> T {
         guard let queue = dbQueue else { throw AppDBError.notReady }
