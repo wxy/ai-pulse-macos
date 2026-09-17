@@ -1,30 +1,19 @@
 import Foundation
 
-struct ModelPricing: Codable {
+struct ModelDescriptor: Codable {
     let provider: String
     let name: String
-    let inPricePerMtok: Double
-    let outPricePerMtok: Double
-    let cachePricePerMtok: Double
-    let currency: String
-
-    enum CodingKeys: String, CodingKey {
-        case provider, name, currency
-        case inPricePerMtok = "in_price_per_mtok"
-        case outPricePerMtok = "out_price_per_mtok"
-        case cachePricePerMtok = "cache_price_per_mtok"
-    }
 }
 
-struct PricingCatalog: Codable {
+struct ModelCatalog: Codable {
     let version: String
     let updated: String
-    let models: [String: ModelPricing]
+    let models: [String: ModelDescriptor]
 }
 
-final class PricingManager: @unchecked Sendable {
-    static let shared = PricingManager()
-    private var catalog: PricingCatalog?
+final class ModelCatalogManager: @unchecked Sendable {
+    static let shared = ModelCatalogManager()
+    private var catalog: ModelCatalog?
 
     private init() {
         load()
@@ -33,28 +22,28 @@ final class PricingManager: @unchecked Sendable {
     private func load() {
         // Try multiple paths: bundle resource, relative to package root, relative to cwd
         let searchPaths = [
-            Bundle.main.path(forResource: "pricing-catalog", ofType: "json"),
-            "Resources/pricing-catalog.json",      // from package root (swift test)
-            "../Resources/pricing-catalog.json",   // from .build/debug/ (swift run)
-            "../../Resources/pricing-catalog.json", // from .build/release/
+            Bundle.main.path(forResource: "model-catalog", ofType: "json"),
+            "Resources/model-catalog.json",      // from package root (swift test)
+            "../Resources/model-catalog.json",   // from .build/debug/ (swift run)
+            "../../Resources/model-catalog.json", // from .build/release/
         ]
         for path in searchPaths {
             guard let p = path else { continue }
             let url = URL(fileURLWithPath: p)
             guard let data = try? Data(contentsOf: url),
-                  let catalog = try? JSONDecoder().decode(PricingCatalog.self, from: data)
+                  let catalog = try? JSONDecoder().decode(ModelCatalog.self, from: data)
             else {
-                Logger.warning("PricingCatalog: failed to load from \(p)")
+                Logger.warning("ModelCatalog: failed to load from \(p)")
                 continue
             }
             self.catalog = catalog
-            Logger.info("PricingCatalog: loaded \(catalog.models.count) models from \(p)")
+            Logger.info("ModelCatalog: loaded \(catalog.models.count) models from \(p)")
             return
         }
-        Logger.warning("PricingCatalog: no catalog found, cost data will be missing")
+        Logger.warning("ModelCatalog: no catalog found, model attribution will be limited")
     }
 
-    func pricing(for model: String?) -> ModelPricing? {
+    func descriptor(for model: String?) -> ModelDescriptor? {
         guard let model, let cat = catalog else { return nil }
         // 1. Exact match
         if let exact = cat.models[model] { return exact }
@@ -82,13 +71,11 @@ final class PricingManager: @unchecked Sendable {
     }
 
     func providerId(for model: String?) -> String? {
-        if let provider = pricing(for: model)?.provider {
+        if let provider = descriptor(for: model)?.provider {
             return provider
         }
 
-        // Catalog coverage lags behind custom endpoints. Vendor-specific model
-        // IDs are still enough for factual provider attribution; pricing can
-        // remain nil until the catalog has a verified tariff.
+        // Unknown model names remain unpriced; vendor prefixes only identify the provider.
         let normalized = Self.normalize(model ?? "")
         if normalized.hasPrefix("glm-") || normalized == "glm" { return "zhipu" }
         if normalized.hasPrefix("deepseek-") { return "deepseek" }
@@ -96,35 +83,13 @@ final class PricingManager: @unchecked Sendable {
         return nil
     }
 
-    func costUSD(model: String?, inTokens: Int, outTokens: Int, cacheTokens: Int) -> Double? {
-        guard let p = pricing(for: model) else { return nil }
-        // Cache tokens are a *subset* of input tokens for every parser we feed
-        // (Codex `cached_input_tokens`, Claude `cache_read_input_tokens`,
-        // Qwen `cached`). The cache portion must not also be billed at the full
-        // input price, otherwise context-heavy sessions get ~100x overcharged
-        // for providers like DeepSeek where cache price ≪ input price.
-        // Overflow-safe: cacheTokens may exceed inTokens or be negative in
-        // corrupt logs. Clamp both sides before subtracting in Int64 space.
-        let safeCache = Int64(max(cacheTokens, 0))
-        let nonCachedIn = max(0, Int64(inTokens) - safeCache)
-        let inCost = Double(nonCachedIn) / 1_000_000 * p.inPricePerMtok
-        let outCost = Double(outTokens) / 1_000_000 * p.outPricePerMtok
-        let cacheCost = Double(cacheTokens) / 1_000_000 * p.cachePricePerMtok
-        return inCost + outCost + cacheCost
-    }
-
-    /// Backfill NULL cost_usd and provider_id in usage_event table.
-    /// One-time fix for events recorded before the pricing catalog was available.
-
-    // MARK: - Model → Provider mapping (for CostSource arbitration)
-
     /// All model keys in the catalog belonging to a given provider.
     func modelsForProvider(_ providerId: String) -> Set<String> {
         guard let cat = catalog else { return [] }
         return Set(cat.models.filter { $0.value.provider == providerId }.keys)
     }
 
-    /// Models covered by a subscription tool's plan.
+    /// Known model families associated with a tool; not evidence of payment.
     func modelsForTool(_ toolId: String) -> Set<String> {
         switch toolId {
         case "claude-code":
@@ -142,7 +107,7 @@ final class PricingManager: @unchecked Sendable {
         }
     }
 
-    /// Claude-family models (provider == "anthropic" pricing keys).
+    /// Claude-family model names (provider == "anthropic").
     func claudeModels() -> Set<String> {
         return modelsForProvider("anthropic")
     }

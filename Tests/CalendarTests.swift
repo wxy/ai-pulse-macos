@@ -2,6 +2,29 @@ import XCTest
 @testable import AIPulse
 
 final class CalendarTests: XCTestCase {
+    func testLocalDayDoesNotUseUTCMidnight() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        let midnight = calendar.date(from: DateComponents(year: 2026, month: 9, day: 16))!
+        let earlyMorning = midnight.addingTimeInterval(3 * 3600)
+        XCTAssertEqual(calendar.localDayTimestamp(milliseconds: Int64(earlyMorning.timeIntervalSince1970 * 1000)),
+                       Int64(midnight.timeIntervalSince1970 * 1000))
+    }
+
+    func testDayBucketsRespectShortAndLongDSTDays() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        for (month, day, hours) in [(3, 8, 23), (11, 1, 25)] {
+            let start = calendar.date(from: DateComponents(year: 2026, month: month, day: day))!
+            let end = calendar.date(byAdding: .day, value: 1, to: start)!
+            XCTAssertEqual(end.timeIntervalSince(start), Double(hours * 3600))
+            XCTAssertEqual(calendar.localDayTimestamp(milliseconds: Int64(end.addingTimeInterval(-1).timeIntervalSince1970 * 1000)),
+                           Int64(start.timeIntervalSince1970 * 1000))
+            XCTAssertEqual(calendar.localDayTimestamp(milliseconds: Int64(end.timeIntervalSince1970 * 1000)),
+                           Int64(end.timeIntervalSince1970 * 1000))
+        }
+    }
+
     private var cal: Calendar {
         var c = Calendar.current
         // ISO 8601 weekday ordering: Monday = 1 … Sunday = 7

@@ -65,14 +65,36 @@ public struct PulseSnapshot: Codable, Sendable, Equatable {
     public var reason: String
     public var signals: [PulseSignal]
     public var asOf: Date
+    /// A current-state observation is not a historical period summary.
+    public var validUntil: Date
 
     public init(tier: PulseTier, primarySignal: PulseSignalKind?, reason: String,
-                signals: [PulseSignal], asOf: Date) {
+                signals: [PulseSignal], asOf: Date, validUntil: Date? = nil) {
         self.tier = tier
         self.primarySignal = primarySignal
         self.reason = reason
         self.signals = signals
         self.asOf = asOf
+        self.validUntil = validUntil ?? asOf.addingTimeInterval(60)
+    }
+
+    public func isCurrent(asOf now: Date = Date()) -> Bool {
+        guard asOf.timeIntervalSince1970.isFinite, validUntil.timeIntervalSince1970.isFinite,
+              now.timeIntervalSince1970.isFinite else { return false }
+        return asOf <= now && now < validUntil && validUntil > asOf
+    }
+
+    public func sanitized() -> PulseSnapshot {
+        func safe(_ value: Double) -> Double { value.isFinite && value >= 0 ? value : 0 }
+        var clean = self
+        clean.signals = signals.map { signal in
+            var result = signal
+            result.rawValue = signal.rawValue.map(safe)
+            result.baseline = signal.baseline.map(safe)
+            result.normalized = safe(signal.normalized)
+            return result
+        }
+        return clean
     }
 
     public var activity: PulseSignal? { signals.first { $0.kind == .activity } }
@@ -83,32 +105,45 @@ public struct PulseSnapshot: Codable, Sendable, Equatable {
 
 /// Full dashboard snapshot — computed by macOS and synced via iCloud.
 /// iOS/watchOS read this structure to render their dashboards.
-public struct DashboardSnapshot: Codable, Sendable {
-    public var version: Int = 2
+/// Completeness of captured components, not coverage of an entire AI account.
+/// nil counters indicate a failed/unavailable observation query, not zero use.
+public struct ActivityCoverage: Codable, Sendable, Equatable {
+    public var observedEvents: Int64?
+    public var incompleteEvents: Int64?
 
-    public var todayCost: Double = 0
-    public var weekCost: Double = 0
-    public var monthCost: Double = 0
-    public var yesterdaySpend: Double = 0
-    public var previousPeriodSpend: Double = 0
-    public var subDaily: Double = 0
+    public init(observedEvents: Int64? = nil, incompleteEvents: Int64? = nil) {
+        self.observedEvents = observedEvents
+        self.incompleteEvents = incompleteEvents
+    }
+
+    public var isPartial: Bool? {
+        guard let observedEvents, observedEvents >= 0,
+              let incompleteEvents, incompleteEvents >= 0, incompleteEvents <= observedEvents else { return nil }
+        return incompleteEvents > 0
+    }
+}
+
+public struct DashboardSnapshot: Codable, Sendable {
+    /// Unavailable queries, not confirmed zeros. Required in decoded payloads.
+    public var readFailures: [String] = []
+    public var version: Int = 2
+    public var period: DashboardPeriod = DashboardPeriod(kind: .today)
+
     public var todayCalls: Int64 = 0
     public var todayTokens: Int64 = 0
+    /// Distinct nonempty sessions by (source, session_id).
+    public var periodSessions: Int64 = 0
+    public var activityCoverage: ActivityCoverage = ActivityCoverage()
     /// Balance/usage API interval net spend in original currencies. nil for legacy.
     public var observedSpend: [ObservedSpendItem]?
     /// Converted sum of `observedSpend`; conversion is not a native-currency fact.
     public var convertedObservedSpendUSD: Double?
-    /// Token × catalog price reference. Never an observed charge. nil for legacy.
-    public var catalogEquivalentUSD: Double?
     /// User-entered or catalog-prefilled fixed monthly context. nil for legacy.
     public var declaredMonthlyCostUSD: Double?
-    /// Native Pulse contract used by macOS, iOS, watchOS and widgets.
-    public var pulse: PulseSnapshot?
 
     public var providerBreakdown: [ProviderItem] = []
-    public var toolBreakdown: [NameCostItem] = []
+    public var toolBreakdown: [ToolActivityItem] = []
     public var topRepos: [RepoItem] = []
-    public var prediction: PredictionItem?
 
     public var dailyStats: [TrendPoint] = []
     public var codeChanges: [TrendPoint] = []
@@ -117,15 +152,7 @@ public struct DashboardSnapshot: Codable, Sendable {
     public var quotaStatus: [QuotaStatusItem] = []
     /// Per-model usage/cost attribution (BYOK mixes live here). Optional so
     /// older macOS writers can produce snapshots without this block.
-    public var modelBreakdown: [ModelCostItem] = []
-    /// Effective-price series for tools/models with attributable balance
-    /// sources (exclusive provider ownership). Empty when nothing is
-    /// attributable — clients show an explanatory placeholder instead.
-    public var rateSeries: [RateSeriesItem] = []
-    /// Per-tool conclusion summary + session list. Optional/empty when
-    /// produced by an older macOS app; old clients ignore this field.
-    public var toolDetails: [ToolDetailItem] = []
-
+    public var modelBreakdown: [ModelActivityItem] = []
     /// Sync metadata written by macOS:
     /// `payloadVersion` = JSON payload format version; `writerAppVersion` = the
     /// macOS app version that produced this snapshot. Optional so legacy
@@ -137,61 +164,41 @@ public struct DashboardSnapshot: Codable, Sendable {
 
     public init(
         version: Int = 2,
-        todayCost: Double = 0,
-        weekCost: Double = 0,
-        monthCost: Double = 0,
-        yesterdaySpend: Double = 0,
-        previousPeriodSpend: Double = 0,
-        subDaily: Double = 0,
         todayCalls: Int64 = 0,
         todayTokens: Int64 = 0,
+        activityCoverage: ActivityCoverage = ActivityCoverage(),
         observedSpend: [ObservedSpendItem]? = nil,
         convertedObservedSpendUSD: Double? = nil,
-        catalogEquivalentUSD: Double? = nil,
         declaredMonthlyCostUSD: Double? = nil,
-        pulse: PulseSnapshot? = nil,
         providerBreakdown: [ProviderItem] = [],
-        toolBreakdown: [NameCostItem] = [],
+        toolBreakdown: [ToolActivityItem] = [],
         topRepos: [RepoItem] = [],
-        prediction: PredictionItem? = nil,
         dailyStats: [TrendPoint] = [],
         codeChanges: [TrendPoint] = [],
         balanceDaily: [TrendPoint] = [],
         remainingBalances: [RemainingBalanceItem] = [],
         quotaStatus: [QuotaStatusItem] = [],
-        modelBreakdown: [ModelCostItem] = [],
-        rateSeries: [RateSeriesItem] = [],
-        toolDetails: [ToolDetailItem] = [],
+        modelBreakdown: [ModelActivityItem] = [],
         payloadVersion: String? = nil,
         writerAppVersion: String? = nil,
         updatedAt: Date = Date()
     ) {
         self.version = version
-        self.todayCost = todayCost
-        self.weekCost = weekCost
-        self.monthCost = monthCost
-        self.yesterdaySpend = yesterdaySpend
-        self.previousPeriodSpend = previousPeriodSpend
-        self.subDaily = subDaily
         self.todayCalls = todayCalls
         self.todayTokens = todayTokens
+        self.activityCoverage = activityCoverage
         self.observedSpend = observedSpend
         self.convertedObservedSpendUSD = convertedObservedSpendUSD
-        self.catalogEquivalentUSD = catalogEquivalentUSD
         self.declaredMonthlyCostUSD = declaredMonthlyCostUSD
-        self.pulse = pulse
         self.providerBreakdown = providerBreakdown
         self.toolBreakdown = toolBreakdown
         self.topRepos = topRepos
-        self.prediction = prediction
         self.dailyStats = dailyStats
         self.codeChanges = codeChanges
         self.balanceDaily = balanceDaily
         self.remainingBalances = remainingBalances
         self.quotaStatus = quotaStatus
         self.modelBreakdown = modelBreakdown
-        self.rateSeries = rateSeries
-        self.toolDetails = toolDetails
         self.payloadVersion = payloadVersion
         self.writerAppVersion = writerAppVersion
         self.updatedAt = updatedAt
@@ -212,12 +219,6 @@ public struct DashboardSnapshot: Codable, Sendable {
     /// only non-finite values become zero.
     public func sanitized() -> DashboardSnapshot {
         var clean = self
-        clean.todayCost = Self.safeNonNegative(todayCost)
-        clean.weekCost = Self.safeNonNegative(weekCost)
-        clean.monthCost = Self.safeNonNegative(monthCost)
-        clean.yesterdaySpend = Self.safeNonNegative(yesterdaySpend)
-        clean.previousPeriodSpend = Self.safeNonNegative(previousPeriodSpend)
-        clean.subDaily = Self.safeNonNegative(subDaily)
         clean.todayCalls = Self.safeNonNegative(todayCalls)
         clean.todayTokens = Self.safeNonNegative(todayTokens)
         clean.observedSpend = observedSpend?.map {
@@ -228,12 +229,12 @@ public struct DashboardSnapshot: Codable, Sendable {
                 convertedUSD: $0.convertedUSD.map(Self.safeNonNegative),
                 conversionRateToUSD: $0.conversionRateToUSD.map(Self.safeNonNegative),
                 conversionSource: $0.conversionSource,
-                observedAt: Self.safeNonNegative($0.observedAt))
+                observedAt: Self.safeNonNegative($0.observedAt),
+                intervalStart: $0.intervalStart.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil },
+                intervalEnd: $0.intervalEnd.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil })
         }
         clean.convertedObservedSpendUSD = convertedObservedSpendUSD.map(Self.safeNonNegative)
-        clean.catalogEquivalentUSD = catalogEquivalentUSD.map(Self.safeNonNegative)
         clean.declaredMonthlyCostUSD = declaredMonthlyCostUSD.map(Self.safeNonNegative)
-        clean.pulse = pulse.map(Self.sanitizedPulse)
 
         clean.providerBreakdown = providerBreakdown.map {
             ProviderItem(
@@ -243,28 +244,20 @@ public struct DashboardSnapshot: Codable, Sendable {
                 sourceKind: $0.sourceKind)
         }
         clean.toolBreakdown = toolBreakdown.map {
-            NameCostItem(
+            ToolActivityItem(
+                toolId: $0.toolId,
                 name: $0.name,
-                cost: Self.safeNonNegative($0.cost),
                 tokens: $0.tokens.map(Self.safeNonNegative),
                 calls: $0.calls.map(Self.safeNonNegative))
         }
         clean.topRepos = topRepos.map {
             RepoItem(
+                repoPath: $0.repoPath,
                 name: $0.name,
-                cost: Self.safeNonNegative($0.cost),
                 added: Self.safeNonNegative($0.added),
                 deleted: Self.safeNonNegative($0.deleted),
-                cpl: Self.safeNonNegative($0.cpl),
                 tokens: $0.tokens.map(Self.safeNonNegative),
                 commits: Self.safeNonNegative($0.commits))
-        }
-        clean.prediction = prediction.map {
-            PredictionItem(
-                monthProjected: Self.safeNonNegative($0.monthProjected),
-                dailyRate: Self.safeNonNegative($0.dailyRate),
-                daysRemaining: Self.safeNonNegative($0.daysRemaining),
-                monthSoFar: Self.safeNonNegative($0.monthSoFar))
         }
         clean.dailyStats = dailyStats.map(Self.sanitizedTrendPoint)
         clean.codeChanges = codeChanges.map(Self.sanitizedTrendPoint)
@@ -287,78 +280,15 @@ public struct DashboardSnapshot: Codable, Sendable {
                 updatedAt: $0.updatedAt.map(Self.safeNonNegative))
         }
         clean.modelBreakdown = modelBreakdown.map {
-            ModelCostItem(
+            ModelActivityItem(
                 model: $0.model,
                 providerId: $0.providerId,
                 toolId: $0.toolId,
                 tokens: Self.safeNonNegative($0.tokens),
-                calls: Self.safeNonNegative($0.calls),
-                cost: $0.cost.map { $0.isFinite && $0 >= 0 ? $0 : 0 },
-                costIsEstimate: $0.costIsEstimate)
+                calls: Self.safeNonNegative($0.calls))
         }
-        clean.rateSeries = rateSeries.map { series in
-            RateSeriesItem(
-                toolId: series.toolId,
-                label: series.label,
-                points: series.points.map {
-                    RatePoint(
-                        ts: $0.ts.isFinite ? $0.ts : 0,
-                        tokens: Self.safeNonNegative($0.tokens),
-                        cost: Self.safeNonNegative($0.cost))
-                })
-        }
-        clean.toolDetails = toolDetails.map { detail in
-            let c = detail.conclusion
-            let cleanConclusion = ToolConclusionItem(
-                spend: Self.safeNonNegative(c.spend),
-                previousSpend: Self.safeNonNegative(c.previousSpend),
-                deltaPct: c.deltaPct.isFinite ? c.deltaPct : 0,
-                projectedMonth: Self.safeNonNegative(c.projectedMonth),
-                sessionCount: Self.safeNonNegative(c.sessionCount),
-                commitCount: Self.safeNonNegative(c.commitCount),
-                addedLines: Self.safeNonNegative(c.addedLines),
-                deletedLines: Self.safeNonNegative(c.deletedLines),
-                avgCostPerSession: Self.safeNonNegative(c.avgCostPerSession),
-                cpl: Self.safeNonNegative(c.cpl),
-                crossToolDeltaPct: c.crossToolDeltaPct.map { $0.isFinite ? $0 : 0 })
-            let cleanSessions = detail.sessions.map { s in
-                ToolSessionItem(
-                    sessionId: s.sessionId,
-                    title: s.title,
-                    repo: s.repo,
-                    firstTs: Self.safeNonNegative(s.firstTs),
-                    lastTs: Self.safeNonNegative(s.lastTs),
-                    cost: Self.safeNonNegative(s.cost),
-                    windowTokens: s.windowTokens.map(Self.safeNonNegative),
-                    lastInput: Self.safeNonNegative(s.lastInput),
-                    turnCount: Self.safeNonNegative(s.turnCount),
-                    avgOccupancy: s.avgOccupancy.map { $0.isFinite ? $0 : 0 },
-                    avgCacheRatio: s.avgCacheRatio.map { $0.isFinite ? $0 : 0 },
-                    compactionCount: Self.safeNonNegative(s.compactionCount))
-            }
-            return ToolDetailItem(source: detail.source, conclusion: cleanConclusion, sessions: cleanSessions)
-        }
+        clean.periodSessions = Self.safeNonNegative(periodSessions)
         return clean
-    }
-
-    private static func sanitizedPulse(_ pulse: PulseSnapshot) -> PulseSnapshot {
-        PulseSnapshot(
-            tier: pulse.tier,
-            primarySignal: pulse.primarySignal,
-            reason: pulse.reason,
-            signals: pulse.signals.map { signal in
-                PulseSignal(
-                    kind: signal.kind,
-                    rawValue: signal.rawValue.map(safeNonNegative),
-                    unit: signal.unit,
-                    baseline: signal.baseline.map(safeNonNegative),
-                    normalized: safeNonNegative(signal.normalized),
-                    freshness: signal.freshness,
-                    completeness: signal.completeness,
-                    observedAt: signal.observedAt,
-                    reason: signal.reason)
-            },
-            asOf: pulse.asOf)
     }
 
     private static func sanitizedTrendPoint(_ p: TrendPoint) -> TrendPoint {
@@ -402,119 +332,43 @@ public struct ProviderItem: Codable, Sendable {
     }
 }
 
-public struct NameCostItem: Codable, Sendable {
+public struct ToolActivityItem: Codable, Sendable {
+    public var toolId: String
     public var name: String
-    public var cost: Double
-    /// Token usage attributed to this tool (JSONL fact). nil for legacy.
     public var tokens: Int64?
-    /// Call count attributed to this tool (JSONL fact). nil for legacy.
     public var calls: Int?
-
-    public init(name: String, cost: Double, tokens: Int64? = nil, calls: Int? = nil) {
-        self.name = name
-        self.cost = cost
-        self.tokens = tokens
-        self.calls = calls
+    public init(toolId: String, name: String, tokens: Int64? = nil, calls: Int? = nil) {
+        self.toolId = toolId; self.name = name; self.tokens = tokens; self.calls = calls
     }
 }
 
-public struct RepoItem: Codable, Sendable {
+public struct RepoItem: Codable, Sendable, Identifiable {
+    public var id: String { repoPath }
+    /// Canonical Git root; basename is only a display label.
+    public var repoPath: String
     public var name: String
-    public var cost: Double
     public var added: Int
     public var deleted: Int
     public var commits: Int
-    public var cpl: Double
-    /// Token usage attributed to this repo (JSONL fact). nil for legacy.
     public var tokens: Int64?
-
-    public init(name: String, cost: Double, added: Int, deleted: Int, cpl: Double,
-                tokens: Int64? = nil, commits: Int = 0) {
-        self.name = name
-        self.cost = cost
-        self.added = added
-        self.deleted = deleted
-        self.commits = commits
-        self.cpl = cpl
-        self.tokens = tokens
+    public var totalChanges: Int { added + deleted }
+    public init(repoPath: String, name: String, added: Int, deleted: Int, tokens: Int64? = nil, commits: Int = 0) {
+        self.repoPath = repoPath; self.name = name; self.added = added
+        self.deleted = deleted; self.tokens = tokens; self.commits = commits
     }
 }
 
 /// Per-model usage/cost attribution, primarily for BYOK mixes where a tool
 /// runs third-party models (e.g. Claude Code on a DeepSeek key).
-public struct ModelCostItem: Codable, Sendable {
+public struct ModelActivityItem: Codable, Sendable {
     public var model: String
     public var providerId: String
-    /// Tool that produced this model's events (BYOK mixes live here).
     public var toolId: String?
     public var tokens: Int64
     public var calls: Int
-    /// Spend attributable to this model; nil when the balance source is
-    /// shared/not attributable.
-    public var cost: Double?
-    /// True when `cost` is an estimate (token-price fallback) — UI shows "?".
-    public var costIsEstimate: Bool?
-
-    public init(
-        model: String,
-        providerId: String,
-        toolId: String? = nil,
-        tokens: Int64,
-        calls: Int,
-        cost: Double? = nil,
-        costIsEstimate: Bool? = nil
-    ) {
-        self.model = model
-        self.providerId = providerId
-        self.toolId = toolId
-        self.tokens = tokens
-        self.calls = calls
-        self.cost = cost
-        self.costIsEstimate = costIsEstimate
-    }
-}
-
-/// One tool's effective-price series: daily balance delta ÷ daily tokens.
-/// Only populated for tools whose balance source is exclusively theirs, so
-/// both coordinates are facts.
-public struct RateSeriesItem: Codable, Sendable {
-    public var toolId: String
-    public var label: String
-    public var points: [RatePoint]
-
-    public init(toolId: String, label: String, points: [RatePoint]) {
-        self.toolId = toolId
-        self.label = label
-        self.points = points
-    }
-}
-
-public struct RatePoint: Codable, Sendable {
-    /// Day start (unix seconds).
-    public var ts: Double
-    /// Tokens logged that day (fact).
-    public var tokens: Int64
-    /// Balance delta that day (fact, attributable series only).
-    public var cost: Double
-
-    public init(ts: Double, tokens: Int64, cost: Double) {
-        self.ts = ts
-        self.tokens = tokens
-        self.cost = cost
-    }
-}
-
-public struct PredictionItem: Codable, Sendable {
-    public var monthProjected: Double
-    public var dailyRate: Double
-    public var daysRemaining: Int
-    public var monthSoFar: Double
-
-    public init(monthProjected: Double, dailyRate: Double, daysRemaining: Int, monthSoFar: Double) {
-        self.monthProjected = monthProjected
-        self.dailyRate = dailyRate
-        self.daysRemaining = daysRemaining
-        self.monthSoFar = monthSoFar
+    public init(model: String, providerId: String, toolId: String? = nil, tokens: Int64, calls: Int) {
+        self.model = model; self.providerId = providerId; self.toolId = toolId
+        self.tokens = tokens; self.calls = calls
     }
 }
 
@@ -567,6 +421,7 @@ public struct RemainingBalanceItem: Codable, Sendable {
 /// `amount` preserves the original currency; `convertedUSD` is a separate
 /// convenience conversion and must not be presented as native provider data.
 public struct ObservedSpendItem: Codable, Sendable, Equatable {
+    public var stableId: String { providerId + "|" + currency.uppercased() }
     public var providerId: String
     public var amount: Double
     public var currency: String
@@ -577,6 +432,10 @@ public struct ObservedSpendItem: Codable, Sendable, Equatable {
     /// Human-readable provenance for the rate, e.g. an internal static table.
     public var conversionSource: String?
     public var observedAt: Double
+    /// Outer sampling bounds in Unix seconds. The amount is interval net
+    /// decrease; a sample before the selected period may be its baseline.
+    public var intervalStart: Double?
+    public var intervalEnd: Double?
 
     public init(
         providerId: String,
@@ -585,7 +444,9 @@ public struct ObservedSpendItem: Codable, Sendable, Equatable {
         convertedUSD: Double?,
         conversionRateToUSD: Double? = nil,
         conversionSource: String? = nil,
-        observedAt: Double
+        observedAt: Double,
+        intervalStart: Double? = nil,
+        intervalEnd: Double? = nil
     ) {
         self.providerId = providerId
         self.amount = amount
@@ -594,6 +455,8 @@ public struct ObservedSpendItem: Codable, Sendable, Equatable {
         self.conversionRateToUSD = conversionRateToUSD
         self.conversionSource = conversionSource
         self.observedAt = observedAt
+        self.intervalStart = intervalStart
+        self.intervalEnd = intervalEnd
     }
 }
 
@@ -631,107 +494,12 @@ public struct QuotaStatusItem: Codable, Sendable {
 
     public func isStale(asOf: Date = Date(), maxAge: TimeInterval = 2 * 3_600) -> Bool {
         guard let updatedAt, updatedAt.isFinite, updatedAt > 0 else { return true }
-        return asOf.timeIntervalSince1970 - updatedAt > maxAge
+        let now = asOf.timeIntervalSince1970
+        guard now.isFinite, maxAge.isFinite, maxAge >= 0 else { return true }
+        if updatedAt > now || now - updatedAt > maxAge { return true }
+        if !resetAt.isFinite || (resetAt > 0 && resetAt <= now) { return true }
+        return false
     }
 
     public var stableId: String { "\(toolId)|\(windowId ?? "legacy")" }
-}
-
-public struct ToolDetailItem: Codable, Sendable {
-    public var source: String
-    public var conclusion: ToolConclusionItem
-    public var sessions: [ToolSessionItem]
-
-    public init(source: String, conclusion: ToolConclusionItem, sessions: [ToolSessionItem]) {
-        self.source = source
-        self.conclusion = conclusion
-        self.sessions = sessions
-    }
-}
-
-extension ToolDetailItem: Identifiable {
-    public var id: String { source }
-}
-
-public struct ToolConclusionItem: Codable, Sendable {
-    public var spend: Double = 0
-    public var previousSpend: Double = 0
-    public var deltaPct: Double = 0
-    public var projectedMonth: Double = 0
-    public var sessionCount: Int = 0
-    public var commitCount: Int = 0
-    public var addedLines: Int = 0
-    public var deletedLines: Int = 0
-    public var avgCostPerSession: Double = 0
-    public var cpl: Double = 0
-    public var crossToolDeltaPct: Double? = nil
-
-    public init(
-        spend: Double = 0,
-        previousSpend: Double = 0,
-        deltaPct: Double = 0,
-        projectedMonth: Double = 0,
-        sessionCount: Int = 0,
-        commitCount: Int = 0,
-        addedLines: Int = 0,
-        deletedLines: Int = 0,
-        avgCostPerSession: Double = 0,
-        cpl: Double = 0,
-        crossToolDeltaPct: Double? = nil
-    ) {
-        self.spend = spend
-        self.previousSpend = previousSpend
-        self.deltaPct = deltaPct
-        self.projectedMonth = projectedMonth
-        self.sessionCount = sessionCount
-        self.commitCount = commitCount
-        self.addedLines = addedLines
-        self.deletedLines = deletedLines
-        self.avgCostPerSession = avgCostPerSession
-        self.cpl = cpl
-        self.crossToolDeltaPct = crossToolDeltaPct
-    }
-}
-
-public struct ToolSessionItem: Codable, Sendable {
-    public var sessionId: String?
-    public var title: String?
-    public var repo: String?
-    public var firstTs: Int64
-    public var lastTs: Int64
-    public var cost: Double
-    public var windowTokens: Int?
-    public var lastInput: Int
-    public var turnCount: Int
-    public var avgOccupancy: Double?
-    public var avgCacheRatio: Double?
-    public var compactionCount: Int
-
-    public init(
-        sessionId: String?,
-        title: String?,
-        repo: String?,
-        firstTs: Int64,
-        lastTs: Int64,
-        cost: Double,
-        windowTokens: Int?,
-        lastInput: Int,
-        turnCount: Int,
-        avgOccupancy: Double?,
-        avgCacheRatio: Double?,
-        compactionCount: Int
-    ) {
-        self.sessionId = sessionId
-        self.title = title
-        self.repo = repo
-        self.firstTs = firstTs
-        self.lastTs = lastTs
-        self.cost = cost
-        self.windowTokens = windowTokens
-        self.lastInput = lastInput
-        self.turnCount = turnCount
-        self.avgOccupancy = avgOccupancy
-        self.avgCacheRatio = avgCacheRatio
-        self.compactionCount = compactionCount
-    }
 }

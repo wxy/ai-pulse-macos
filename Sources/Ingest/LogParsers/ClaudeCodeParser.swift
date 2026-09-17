@@ -11,6 +11,11 @@ struct UsageEvent: Codable {
     let repoPath: String?
     let sessionId: String?
     let dedupeKey: String
+    /// nil when absent/unavailable; old records must not pretend creation was zero.
+    var cacheCreationTokens: Int? = nil
+    /// Original provider/host output counter; excludes legacy derived additions.
+    var reportedOutputTokens: Int? = nil
+    var reasoningTokens: Int? = nil
 }
 
 /// Parses Claude Code session logs (~/.claude/projects/<encoded-cwd>/*.jsonl)
@@ -60,7 +65,8 @@ struct ClaudeCodeParser {
             cacheTokens: cacheTokens,
             repoPath: cwd,
             sessionId: sessionId,
-            dedupeKey: dedupeKey
+            dedupeKey: dedupeKey,
+            cacheCreationTokens: usage?["cache_creation_input_tokens"] as? Int
         )
     }
 

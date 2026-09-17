@@ -46,8 +46,10 @@ final class DashboardWindowManager: @unchecked Sendable {
     }
 }
 
-final class MenuBarController: NSObject, @unchecked Sendable {
+@MainActor
+final class MenuBarController: NSObject {
     private(set) var menu: NSMenu!
+    private let refreshGeneration = RefreshGeneration()
 
     func start() {
         menu = NSMenu()
@@ -84,14 +86,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
     }
 
     @objc private func onPulseChanged() {
-        Task {
-            let snapshot = await PulseEngine.shared.snapshot()
-            await MainActor.run {
-                guard self.menu.items.count >= 2 else { return }
-                self.menu.items[0].title = StatusItemController.headline(snapshot: snapshot)
-                self.menu.items[1].title = StatusItemController.detail(snapshot: snapshot)
-            }
-        }
+        refreshStats()
     }
 
     @objc private func onSoundMuteChanged() {
@@ -101,14 +96,16 @@ final class MenuBarController: NSObject, @unchecked Sendable {
     /// Rebuild the entire menu from scratch each refresh.
     /// Sections appear only when they have content.
     private func refreshStats() {
+        let request = refreshGeneration.begin()
         Task {
             let demoActive = DemoData.isActive
             let statsItems = await statsMenuItems()
             let snapshot = await PulseEngine.shared.snapshot()
             let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
-            let observedSpend = await StatsService.observedSpendItems(sinceMs: todayStartMs)
+            let observedSpend = await StatsService.observedSpendForMenu(sinceMs: todayStartMs)
 
             DispatchQueue.main.async {
+                guard self.refreshGeneration.isCurrent(request) else { return }
                 self.menu.removeAllItems()
 
                 let headline = NSMenuItem(
@@ -234,31 +231,41 @@ final class MenuBarController: NSObject, @unchecked Sendable {
     private func fetchStats() async -> Stats {
         do {
             let cal = Calendar.current
-            let weekStart = Calendar.mondayOfWeek().timeIntervalSince1970 * 1000
-            let todayStart = cal.startOfDay(for: Date()).timeIntervalSince1970 * 1000
+            let now = Date()
+            let weekStart = Int64(DashboardPeriod(kind: .week, now: now, calendar: cal).start.timeIntervalSince1970 * 1000)
+            let todayStart = Int64(cal.startOfDay(for: now).timeIntervalSince1970 * 1000)
+            let end = ObservationBounds.upperExclusive(now: now, periodEnd: DashboardPeriod(kind: .today, now: now, calendar: cal).end)
 
             // --- Today ---
             let todayCnt: Int = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COUNT(DISTINCT session_id) FROM usage_event WHERE ts >= ? AND session_id IS NOT NULL AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart]) ?? 0
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM (SELECT source, session_id FROM usage_event WHERE ts >= ? AND ts < ? AND NULLIF(session_id, '') IS NOT NULL AND (model IS NULL OR model != '<synthetic>') GROUP BY source, session_id)", arguments: [todayStart, end]) ?? 0
             }
             let todayTokens: Int64 = try await AppDatabase.shared.read { db in
-                try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(\(TokenAccounting.observedTotalSQL)),0) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart]) ?? 0
+                try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(\(TokenAccounting.observedTotalSQL)),0) FROM usage_event WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')", arguments: [todayStart, end]) ?? 0
             }
-            let todayCode = try await StatsService.authorizedCodeOutput(sinceMs: Int64(todayStart))
+            let todayCode = try await StatsService.authorizedCodeOutput(sinceMs: todayStart, beforeMs: end)
 
             // --- This week ---
             let weekCnt: Int = try await AppDatabase.shared.read { db in
-                try Int.fetchOne(db, sql: "SELECT COUNT(DISTINCT session_id) FROM usage_event WHERE ts >= ? AND session_id IS NOT NULL AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart]) ?? 0
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM (SELECT source, session_id FROM usage_event WHERE ts >= ? AND ts < ? AND NULLIF(session_id, '') IS NOT NULL AND (model IS NULL OR model != '<synthetic>') GROUP BY source, session_id)", arguments: [weekStart, end]) ?? 0
             }
             let weekTokens: Int64 = try await AppDatabase.shared.read { db in
-                try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(\(TokenAccounting.observedTotalSQL)),0) FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart]) ?? 0
+                try Int64.fetchOne(db, sql: "SELECT COALESCE(SUM(\(TokenAccounting.observedTotalSQL)),0) FROM usage_event WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')", arguments: [weekStart, end]) ?? 0
             }
-            let weekCode = try await StatsService.authorizedCodeOutput(sinceMs: Int64(weekStart))
+            let weekCode = try await StatsService.authorizedCodeOutput(sinceMs: weekStart, beforeMs: end)
 
             // --- Submenu breakdowns (this week) ---
             // Repo added/deleted per repo
             let repoAddDel = try await AppDatabase.shared.read { db -> [String: (Int, Int, Int)] in
-                let rows = try Row.fetchAll(db, sql: "SELECT repo_path AS p, COALESCE(SUM(added),0) AS a, COALESCE(SUM(deleted),0) AS d, COUNT(DISTINCT commit_hash) AS commits FROM code_change WHERE is_merge = 0 AND ts >= ? GROUP BY repo_path", arguments: [weekStart])
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT p, SUM(a) AS a, SUM(d) AS d, SUM(commits) AS commits FROM (
+                      SELECT repo_path AS p, SUM(added) AS a, SUM(deleted) AS d, 0 AS commits
+                      FROM code_change WHERE is_merge = 0 AND ts >= ? AND ts < ? GROUP BY repo_path
+                      UNION ALL
+                      SELECT repo_path AS p, 0 AS a, 0 AS d, COUNT(*) AS commits
+                      FROM git_commit WHERE ts >= ? AND ts < ? GROUP BY repo_path
+                    ) GROUP BY p
+                    """, arguments: [weekStart, end, weekStart, end])
                 let roots = RepositoryScope.configuredRoots()
                 var result: [String: (Int, Int, Int)] = [:]
                 for r in rows {
@@ -273,8 +280,9 @@ final class MenuBarController: NSObject, @unchecked Sendable {
                 return result
             }
 
+            let labels = RepositoryLabels.make(for: Array(repoAddDel.keys))
             let repos = repoAddDel.map { path, changes in
-                RepoStat(name: URL(fileURLWithPath: path).lastPathComponent,
+                RepoStat(name: labels[path] ?? path,
                          added: changes.0, deleted: changes.1, commits: changes.2)
             }.sorted { ($0.added + $0.deleted) > ($1.added + $1.deleted) }
 
@@ -291,13 +299,14 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             let weekSum  = makeSummary(tokens: weekTokens, cnt: weekCnt, added: weekCode.added, deleted: weekCode.deleted, commits: weekCode.commits, label: I18n.t("menu.this_week"))
 
             let hasActivity = weekTokens > 0 || weekCnt > 0 || !repos.isEmpty || weekCode.added > 0 || weekCode.deleted > 0 || weekCode.commits > 0
+            AppHealthMonitor.shared.clearStatsError(source: "menu.activity")
             if !hasActivity {
                 return Stats(todaySummary: nil, weekSummary: nil, repos: [])
             }
-            // The persistent menu is a factual pulse surface. Estimated
-            // provider/tool allocations stay in the deeper dashboard only.
+            // No estimated provider/tool allocations are presented anywhere.
             return Stats(todaySummary: todaySum, weekSummary: weekSum, repos: repos)
         } catch {
+            AppHealthMonitor.shared.reportStatsError(error.localizedDescription, source: "menu.activity")
             return Stats(todaySummary: I18n.t("menu.unavailable"), weekSummary: nil, repos: [])
         }
     }
@@ -314,7 +323,7 @@ final class MenuBarController: NSObject, @unchecked Sendable {
             return "\(label) · \(ChartMath.compactCount(tokens)) \(I18n.t("dashboard.chart_tokens")) · +\(ChartMath.compactCount(Int64(a)))/-\(ChartMath.compactCount(Int64(d))) \(I18n.t("menu.lines")) · \(ChartMath.compactCount(Int64(commits))) \(I18n.t("menu.commits"))"
         }
 
-        let todayCnt = todayData.todayCalls
+        let todayCnt = todayData.periodCalls
         let todayAdded = todayData.codeChanges.reduce(0) { $0 + $1.added }
         let todayDeleted = todayData.codeChanges.reduce(0) { $0 + $1.deleted }
         let todayCommits = todayData.codeChanges.reduce(0) { $0 + $1.commits }
@@ -324,12 +333,12 @@ final class MenuBarController: NSObject, @unchecked Sendable {
         let weekDeleted = weekData.codeChanges.reduce(0) { $0 + $1.deleted }
         let weekCommits = weekData.codeChanges.reduce(0) { $0 + $1.commits }
 
-        let todaySum = makeSummary(tokens: Int64(todayData.todayTokens), cnt: todayCnt, a: todayAdded, d: todayDeleted, commits: todayCommits, label: I18n.t("menu.today"))
+        let todaySum = makeSummary(tokens: Int64(todayData.periodTokens), cnt: todayCnt, a: todayAdded, d: todayDeleted, commits: todayCommits, label: I18n.t("menu.today"))
         let weekTokens = weekData.dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
         let weekSum = makeSummary(tokens: weekTokens, cnt: weekCnt, a: weekAdded, d: weekDeleted, commits: weekCommits, label: I18n.t("menu.this_week"))
 
         let repos: [RepoStat] = weekData.repos.map { r in
-            RepoStat(name: URL(fileURLWithPath: "/\(r.repo)").lastPathComponent,
+            RepoStat(name: r.name,
                      added: r.added, deleted: r.deleted, commits: r.commits)
         }
 

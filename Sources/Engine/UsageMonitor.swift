@@ -33,15 +33,39 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
         return (util5h, util7d, limitStatus, reset5hAt, reset7dAt)
     }
 
+    /// The payload's source time wins over file copying/touching. Missing or
+    /// invalid source time cannot establish a current quota observation.
+    static func claudeObservationDate(_ json: [String: Any], modifiedAt: Date, now: Date = Date()) -> Date? {
+        guard let timestamp = json["updatedAt"] as? String else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let source = formatter.date(from: timestamp) ?? ISO8601DateFormatter().date(from: timestamp)
+        guard let source, source <= now, modifiedAt <= now else { return nil }
+        return min(source, modifiedAt)
+    }
+
+    static func latestClaudeModel(in db: Database, now: Date) throws -> String? {
+        let end = Int64(now.timeIntervalSince1970 * 1_000)
+        return try String.fetchOne(db, sql: """
+            SELECT model FROM usage_event
+            WHERE source = 'claude-code' AND model IS NOT NULL AND model != '<synthetic>'
+              AND ts >= ? AND ts <= ?
+            ORDER BY ts DESC, id DESC LIMIT 1
+            """, arguments: [end - 5 * 3_600_000, end])
+    }
+
     /// Read Claude rate-limit utilization from the VSCode status cache.
     /// Written by Claude Code's `/statusline` feature.
     func refreshClaudeStatus() {
         let home = FileManager.default.realHomeDirectory
         let cacheURL = home.appendingPathComponent(".claude/vscode-claude-status-cache.json")
 
-        guard let data = try? Data(contentsOf: cacheURL),
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: cacheURL.path),
+              let modifiedAt = attributes[.modificationDate] as? Date,
+              let data = try? Data(contentsOf: cacheURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let status = Self.parseClaudeStatusCache(json)
+              let status = Self.parseClaudeStatusCache(json),
+              let sourceDate = Self.claudeObservationDate(json, modifiedAt: modifiedAt)
         else {
             Logger.debug("UsageMonitor: Claude status cache not found or unreadable")
             return
@@ -58,20 +82,21 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
             }
             do {
                 try await AppDatabase.shared.write { db in
-                    let now = Date().timeIntervalSince1970
+                    // Reading an unchanged cache must not renew its validity.
+                    let observedAt = sourceDate.timeIntervalSince1970
                     if let utilization = status.utilization5h {
                         try Self.upsertQuotaWindow(
                             in: db, toolId: "claude-code", windowId: "5h",
                             utilization: utilization * 100, limitStatus: status.limitStatus,
                             resetAt: status.reset5hAt, windowSeconds: 5 * 3_600,
-                            updatedAt: now)
+                            updatedAt: observedAt)
                     }
                     if let utilization = status.utilization7d {
                         try Self.upsertQuotaWindow(
                             in: db, toolId: "claude-code", windowId: "7d",
                             utilization: utilization * 100, limitStatus: status.limitStatus,
                             resetAt: status.reset7dAt, windowSeconds: 7 * 86_400,
-                            updatedAt: now)
+                            updatedAt: observedAt)
                     }
                 }
             } catch {
@@ -82,19 +107,15 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
         Logger.debug("UsageMonitor: Claude status 5h=\(status.utilization5h.map { String(format: "%.0f", $0 * 100) } ?? "--")% 7d=\(status.utilization7d.map { String(format: "%.0f", $0 * 100) } ?? "--")% limit=\(status.limitStatus)")
     }
 
-    /// True if Claude Code's most recent logged events used Anthropic models
-    /// (claude-*), i.e. the user is actually consuming an Anthropic subscription
-    /// rather than routing through a third-party API (DeepSeek / BYOK, etc.).
+    /// Recent model family is an eligibility filter, not proof of payment.
     private func isClaudeCodeUsingAnthropicModel() async -> Bool {
         do {
-            let models = try await AppDatabase.shared.read { db -> [String] in
-                try String.fetchAll(db, sql: """
-                    SELECT DISTINCT model FROM usage_event
-                    WHERE source = 'claude-code' AND model IS NOT NULL AND model != '<synthetic>'
-                    ORDER BY ts DESC LIMIT 10
-                    """)
+            let now = Date()
+            let model = try await AppDatabase.shared.read { db in
+                try Self.latestClaudeModel(in: db, now: now)
             }
-            return models.contains { PricingManager.shared.providerId(for: $0) == "anthropic" }
+            guard let model else { return false }
+            return ModelCatalogManager.normalize(model).hasPrefix("claude-")
         } catch {
             Logger.debug("UsageMonitor: model check failed: \(error)")
             return false
@@ -217,6 +238,8 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
         windowSeconds: Double,
         updatedAt: Double
     ) throws {
+        guard utilization.isFinite, resetAt.isFinite, windowSeconds.isFinite,
+              windowSeconds > 0, updatedAt.isFinite, updatedAt > 0 else { return }
         let safeUtilization = min(max(utilization, 0), 100)
         try db.execute(sql: """
             INSERT INTO quota_window_status

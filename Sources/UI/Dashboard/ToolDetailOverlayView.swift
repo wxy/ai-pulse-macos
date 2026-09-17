@@ -7,6 +7,7 @@ import AIPulseShared
 /// Covers the whole dashboard window, so its internal scrolling never
 /// conflicts with the dashboard's scroll area.
 struct ToolDetailOverlayView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let toolId: String
     let sinceMs: Int64
     let onClose: () -> Void
@@ -14,12 +15,20 @@ struct ToolDetailOverlayView: View {
     @State private var groups: [RepoSessionGroup] = []
     @State private var expandedSessionId: String? = nil
     @State private var trend: ContextTrend?
-    @State private var sortByCost = false
+    @State private var sortByActivity = false
     @State private var collapsedRepos: Set<String> = []
     @State private var hoveredSessionId: String? = nil
     @State private var selectedTurnIndex: Int? = nil
     @State private var trendSessionId: String? = nil
-    @State private var conclusion: ToolConclusion? = nil
+    @State private var conclusion: ToolActivitySummary? = nil
+    private enum LoadState { case loading, ready, failed, demo }
+    @State private var loadState: LoadState = .loading
+    @State private var outputUnavailable = false
+    @State private var retryGeneration = 0
+    @State private var loadGeneration = 0
+    @State private var observationDate = Date()
+    @State private var trendFailed = false
+    @State private var trendGeneration = 0
 
     // Chart axis labels as runtime values so Xcode's string catalog does not
     // auto-extract them as translatable keys.
@@ -39,12 +48,27 @@ struct ToolDetailOverlayView: View {
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    if groups.isEmpty {
+                    if loadState == .loading {
+                        ProgressView(detailText("正在读取会话…", "Reading sessions…"))
+                            .frame(maxWidth: .infinity)
+                    } else if loadState == .demo {
+                        Label(detailText("演示模式仅展示汇总；配置真实工具后可查看会话详情。", "Demo mode shows summaries only; configure a real tool to explore sessions."), systemImage: "info.circle")
+                            .font(.caption).foregroundColor(.secondary)
+                    } else if loadState == .failed {
+                        Label(detailText("会话读取失败，不代表没有活动。", "Sessions could not be read; this does not mean no activity."), systemImage: "exclamationmark.triangle")
+                            .foregroundColor(.orange)
+                        retryButton
+                    } else if groups.isEmpty {
                         emptyState
                     } else {
                         ForEach(groups) { group in
                             groupSection(group)
                         }
+                    }
+                    if loadState == .ready && outputUnavailable {
+                        Text(detailText("会话已读取，但仓库产出暂不可用。", "Sessions loaded, but repository output is unavailable."))
+                            .font(.caption).foregroundColor(.orange)
+                        retryButton
                     }
                 }
                 .padding(16)
@@ -52,7 +76,7 @@ struct ToolDetailOverlayView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.regularMaterial)
-        .task { await load() }
+        .task(id: "\(toolId)/\(sinceMs)/\(retryGeneration)") { await load() }
         .onExitCommand(perform: onClose)
     }
 
@@ -60,8 +84,8 @@ struct ToolDetailOverlayView: View {
         IntegrationRegistry.toolDisplayName(for: toolId)
     }
 
-    private var totalCostText: String {
-        String(format: "$%.2f", groups.reduce(0) { $0 + $1.totalCost })
+    private var totalActivityText: String {
+        Self.abbrevTokens(Int(clamping: groups.flatMap(\.sessions).reduce(Int64(0)) { $0 + $1.observedTokens }))
     }
 
     private var header: some View {
@@ -71,19 +95,23 @@ struct ToolDetailOverlayView: View {
                 .foregroundColor(.accentColor)
             VStack(alignment: .leading, spacing: 1) {
                 Text(toolDisplayName).font(.headline)
-                Text(String(format: I18n.t("panel.header_cost"), groups.count, totalCostText))
+                Text(loadState == .ready
+                     ? String(format: I18n.t("panel.header_activity"), groups.count, totalActivityText)
+                     : loadState == .demo ? detailText("演示汇总 · 无真实会话详情", "Demo summary · no real session details")
+                     : detailText("会话统计暂不可用", "Session statistics unavailable"))
                     .font(.caption2).foregroundColor(.secondary)
             }
             Spacer()
-            Picker("", selection: $sortByCost) {
+            Picker("", selection: $sortByActivity) {
                 Text(I18n.t("panel.recent")).tag(false)
-                Text(I18n.t("panel.most_expensive")).tag(true)
+                Text(I18n.t("panel.most_active")).tag(true)
             }
             .pickerStyle(.segmented).frame(width: 170).labelsHidden()
             .pointingHandCursor()
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
             }
+            .keyboardShortcut(.cancelAction)
             .buttonStyle(.plain).foregroundColor(.secondary)
             .pointingHandCursor()
         }
@@ -104,7 +132,7 @@ struct ToolDetailOverlayView: View {
         let collapsed = collapsedRepos.contains(group.repo)
         return VStack(alignment: .leading, spacing: 6) {
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) { toggleCollapse(group.repo) }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) { toggleCollapse(group.repo) }
             } label: {
                 HStack {
                     Image(systemName: "folder")
@@ -115,7 +143,8 @@ struct ToolDetailOverlayView: View {
                         .font(.caption).fontWeight(.semibold)
                         .lineLimit(1)
                     Spacer()
-                    Text(String(format: I18n.t("panel.group_header"), group.sessions.count, String(format: "$%.2f", group.totalCost)))
+                    Text(String(format: I18n.t("panel.group_activity"), group.sessions.count,
+                                Self.abbrevTokens(Int(clamping: group.sessions.reduce(Int64(0)) { $0 + $1.observedTokens }))))
                         .font(.caption2).foregroundColor(.secondary)
                         .monospacedDigit()
                 }
@@ -138,7 +167,7 @@ struct ToolDetailOverlayView: View {
     }
 
     private func sortedSessions(_ rows: [SessionRow]) -> [SessionRow] {
-        rows.sorted { sortByCost ? $0.cost > $1.cost : $0.lastTs > $1.lastTs }
+        rows.sorted { sortByActivity ? $0.observedTokens > $1.observedTokens : $0.lastTs > $1.lastTs }
     }
 
     private func sessionRow(_ row: SessionRow) -> some View {
@@ -152,7 +181,7 @@ struct ToolDetailOverlayView: View {
                 .font(.caption).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             occupancyBar(row)
-            Text(String(format: "$%.2f", row.cost))
+            Text(String(format: I18n.t("panel.observed_tokens"), Self.abbrevTokens(Int(clamping: row.observedTokens))))
                 .font(.caption).fontWeight(expanded ? .semibold : .regular).monospacedDigit()
                 .foregroundColor(expanded ? .accentColor : .primary)
         }
@@ -163,18 +192,11 @@ struct ToolDetailOverlayView: View {
             hoveredSessionId = inside ? row.sessionId : nil
         }
         .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                 expandedSessionId = expanded ? nil : row.sessionId
             }
             if expandedSessionId == row.sessionId, let sid = row.sessionId {
-                trend = nil
-                trendSessionId = sid
-                Task {
-                    let loaded = await StatsService.turnSeries(source: row.source, sessionId: sid)
-                    if trendSessionId == sid {
-                        trend = loaded
-                    }
-                }
+                loadTrend(source: row.source, sessionId: sid)
             }
         }
         .pointingHandCursor()
@@ -201,8 +223,9 @@ struct ToolDetailOverlayView: View {
                         if let occ = trend.finalOccupancy {
                             metric("cylinder.split.1x2", occupancyText(occ))
                         }
-                        metric("dollarsign.circle", String(format: I18n.t("panel.total_cost"), String(format: "$%.2f", trend.totalCost)))
-                        metric("bolt.badge.clock", String(format: I18n.t("panel.cache_savings"), String(format: "$%.2f", cacheSavingsText(trend))))
+                        metric("arrow.down", trend.observedOutputTokens.map {
+                            String(format: I18n.t("panel.output_tokens"), Self.abbrevTokens($0))
+                        } ?? detailText("输出词元不可用", "Output tokens unavailable"))
                     }
                     .layoutPriority(1)
                     Spacer(minLength: 8)
@@ -213,9 +236,23 @@ struct ToolDetailOverlayView: View {
                     }
                 }
                 .font(.caption2).foregroundColor(.secondary)
+                Text(detailText("完整会话截至本次读取；曲线仅含有效输入观察，输出合计另含仅输出记录。", "Full session up to this read; the plot contains input observations, while output totals also include output-only records."))
+                    .font(.caption2).foregroundColor(.secondary)
+                if (trend.incompleteEvents ?? 0) > 0 {
+                    Text(detailText("部分字段缺失，词元合计仅包含已知部分。", "Some fields are missing; token totals include known components only."))
+                        .font(.caption2).foregroundColor(.orange)
+                }
             }
             .padding(10)
             .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+        } else if trendFailed {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(detailText("会话轨迹读取失败。", "Session trajectory could not be read."))
+                    .font(.caption).foregroundColor(.orange)
+                if let sid = row.sessionId {
+                    Button(detailText("重试", "Retry")) { loadTrend(source: row.source, sessionId: sid) }
+                }
+            }.padding(8)
         } else {
             ProgressView().controlSize(.small).padding(8)
         }
@@ -370,51 +407,86 @@ struct ToolDetailOverlayView: View {
         .frame(width: 40, height: 4)
     }
 
-    private func load() async {
-        let source = toolId
-        async let conclusion = StatsService.toolConclusion(source: source, sinceMs: sinceMs)
-        let rows = await StatsService.sessionRows(source: source, sinceMs: sinceMs)
-        let c = await conclusion
-        await MainActor.run {
-            groups = SessionStats.groupSessions(rows)
-            self.conclusion = c
+    private func detailText(_ zh: String, _ en: String) -> String {
+        I18n.resolvedLang() == "zh-Hans" ? zh : en
+    }
+
+    private var retryButton: some View {
+        Button(detailText("重试", "Retry")) { retryGeneration += 1 }
+    }
+
+    @MainActor
+    private func loadTrend(source: String, sessionId: String) {
+        trendGeneration += 1
+        let generation = trendGeneration
+        let now = observationDate
+        trend = nil
+        trendFailed = false
+        trendSessionId = sessionId
+        Task { @MainActor in
+            do {
+                let loaded = try await StatsService.turnSeries(source: source, sessionId: sessionId, now: now)
+                guard !Task.isCancelled, generation == trendGeneration,
+                      expandedSessionId == sessionId else { return }
+                trend = loaded
+            } catch {
+                guard !Task.isCancelled, generation == trendGeneration,
+                      expandedSessionId == sessionId else { return }
+                trendFailed = true
+            }
         }
     }
 
-    /// Tool summary block (spend, output, worth) shown above the session list.
+    @MainActor
+    private func load() async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        loadState = .loading
+        groups = []
+        conclusion = nil
+        outputUnavailable = false
+        expandedSessionId = nil
+        trend = nil
+        trendSessionId = nil
+        trendGeneration += 1
+        trendFailed = false
+        guard !DemoData.isActive else {
+            loadState = .demo
+            return
+        }
+        let source = toolId
+        let now = Date()
+        observationDate = now
+        let rows: [SessionRow]
+        do {
+            rows = try await StatsService.sessionRows(source: source, sinceMs: sinceMs, now: now)
+        } catch {
+            guard !Task.isCancelled, generation == loadGeneration else { return }
+            loadState = .failed
+            return
+        }
+        let c: ToolActivitySummary?
+        do {
+            c = try await StatsService.toolActivitySummary(source: source, sinceMs: sinceMs, sessionCount: rows.count, now: now)
+        } catch {
+            Logger.error("Tool activity summary failed: \(error)")
+            c = nil
+        }
+        guard !Task.isCancelled, generation == loadGeneration else { return }
+        groups = SessionStats.groupSessions(rows)
+        conclusion = c
+        outputUnavailable = c == nil
+        loadState = .ready
+    }
+
+    /// Output is a companion fact, not evidence that spending was worthwhile.
     @ViewBuilder
     private var conclusionSummary: some View {
         if let c = conclusion, c.sessionCount > 0 {
-            let money = String(format: "$%.2f", c.spend)
-            let projected = String(format: "$%.2f", c.projectedMonth)
-            let progress = ChartMath.unit(c.projectedMonth > 0 ? c.spend / c.projectedMonth : 0)
-            let safeDelta = c.deltaPct.isFinite ? c.deltaPct : 0
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(money).font(.caption).fontWeight(.semibold).monospacedDigit()
-                    Text((safeDelta >= 0 ? "↑" : "↓") + String(format: "%.0f", abs(safeDelta)) + "%")
-                        .font(.caption2).fontWeight(.medium).monospacedDigit()
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background((safeDelta >= 0 ? Color.deepRed : Color.marsGreen).opacity(0.12), in: Capsule())
-                        .foregroundColor(safeDelta >= 0 ? .deepRed : .marsGreen)
-                    Spacer()
-                    Text(String(format: I18n.t("card.spend"), projected))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.secondary.opacity(0.15))
-                        Capsule().fill(Color.marsGreen)
-                            .frame(width: max(geo.size.width * CGFloat(progress), 2))
-                    }
-                }
-                .frame(height: 4)
                 Text(String(format: I18n.t("card.output"),
                             c.sessionCount, c.commitCount, c.addedLines, c.deletedLines))
-                Text(String(format: I18n.t("card.worth"),
-                            String(format: "$%.2f", c.avgCostPerSession),
-                            String(format: "$%.2f", c.cpl),
-                            crossToolText(c)))
+                Text(I18n.t("panel.activity_explanation"))
             }
             .font(.caption2).foregroundColor(.secondary)
             .padding(10)
@@ -422,14 +494,6 @@ struct ToolDetailOverlayView: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
             .padding(.horizontal, 16).padding(.top, 10)
         }
-    }
-
-    private func crossToolText(_ c: ToolConclusion) -> String {
-        guard let d = c.crossToolDeltaPct, d.isFinite else { return "—" }
-        let pct = (abs(d) / 100).formatted(.percent.precision(.fractionLength(0)))
-        return d >= 0
-            ? String(format: I18n.t("card.cross_more"), pct)
-            : String(format: I18n.t("card.cross_less"), pct)
     }
 
     private func toggleCollapse(_ repo: String) {
@@ -455,13 +519,4 @@ struct ToolDetailOverlayView: View {
         occ > 0.8 ? .orange : (occ > 0.5 ? .yellow : .marsGreen)
     }
 
-    private func cacheSavingsText(_ trend: ContextTrend) -> Double {
-        guard let model = trend.model,
-              let pricing = PricingManager.shared.pricing(for: model)
-        else { return 0 }
-        return SessionStats.cacheSavings(
-            cacheTokens: trend.cacheTokensTotal,
-            inPricePerMtok: pricing.inPricePerMtok,
-            cachePricePerMtok: pricing.cachePricePerMtok)
-    }
 }

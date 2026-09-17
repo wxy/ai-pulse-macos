@@ -58,6 +58,14 @@ enum AppSoundControl {
         defaults.bool(forKey: mutedKey)
     }
 
+    /// System notification tones share app-wide silence, but are independent
+    /// of the consumption-pack enable switch and hourly playback limit.
+    static func permitsNotificationSound(now: Date = Date(), calendar: Calendar = .current,
+                                         defaults: UserDefaults = .standard) -> Bool {
+        let settings = SoundSettings.current(defaults: defaults)
+        return !settings.muted && !CoinSound.isQuietTime(now, settings: settings, calendar: calendar)
+    }
+
     static func setMuted(_ muted: Bool, defaults: UserDefaults = .standard) {
         defaults.set(muted, forKey: mutedKey)
         NotificationCenter.default.post(name: .soundMuteDidChange, object: nil)
@@ -82,7 +90,7 @@ enum AppSoundControl {
 enum CoinSound {
 
     private enum DecisionReason: String {
-        case played
+        case selected
         case disabled
         case noEvents = "no_events"
         case quietHours = "quiet_hours"
@@ -138,14 +146,17 @@ enum CoinSound {
                                  settings: SoundSettings, state: DecisionState,
                                  now: Date, calendar: Calendar) -> DecisionOutcome {
         var state = state
-        guard settings.enabled, !settings.muted else {
+        guard settings.enabled, !settings.muted,
+              settings.volume.isFinite, settings.volume > 0 else {
             return DecisionOutcome(decision: .none, state: state, reason: .disabled)
         }
         guard !events.isEmpty else {
             return DecisionOutcome(decision: .none, state: state, reason: .noEvents)
         }
 
-        let tier = pulse?.tier ?? .active
+        // A fresh activity occurrence can make a regular beat, but an old or
+        // future pulse must not intensify that beat.
+        let tier = pulse.flatMap { $0.isCurrent(asOf: now) ? $0.tier : nil } ?? .active
         let escalated = tier.rank > state.lastTier.rank
         state.lastTier = tier
 
@@ -154,7 +165,10 @@ enum CoinSound {
         }
 
         // Absolute hourly cap (原则 1).
-        state.recentPlays = state.recentPlays.filter { now.timeIntervalSince($0) < capWindow }
+        state.recentPlays = state.recentPlays.filter {
+            let age = now.timeIntervalSince($0)
+            return age >= 0 && age < capWindow
+        }
         guard state.recentPlays.count < settings.maxPerHour else {
             return DecisionOutcome(decision: .none, state: state, reason: .hourlyCap)
         }
@@ -168,7 +182,8 @@ enum CoinSound {
         }
         // A genuine tier escalation is itself meaningful feedback and may
         // break through the normal merge window. Downgrades never make sound.
-        if !escalated, let last = state.lastPlay, now.timeIntervalSince(last) < window {
+        if !escalated, let last = state.lastPlay,
+           now.timeIntervalSince(last) >= 0, now.timeIntervalSince(last) < window {
             return DecisionOutcome(decision: .none, state: state, reason: .coalesced)
         }
 
@@ -177,11 +192,11 @@ enum CoinSound {
 
         switch tier {
         case .resting, .active:
-            return DecisionOutcome(decision: .coin, state: state, reason: .played)
+            return DecisionOutcome(decision: .coin, state: state, reason: .selected)
         case .elevated:
-            return DecisionOutcome(decision: .coinDouble, state: state, reason: .played)
+            return DecisionOutcome(decision: .coinDouble, state: state, reason: .selected)
         case .intense:
-            return DecisionOutcome(decision: .coinRain, state: state, reason: .played)
+            return DecisionOutcome(decision: .coinRain, state: state, reason: .selected)
         }
     }
 
@@ -189,6 +204,13 @@ enum CoinSound {
 
     @MainActor private static var state = DecisionState()
     @MainActor private static var activePlayers: [AVAudioPlayer] = []
+    @MainActor private static var playbackGeneration: UInt64 = 0
+
+    @MainActor static func stopPlayback() {
+        playbackGeneration &+= 1
+        for player in activePlayers { player.stop() }
+        activePlayers.removeAll()
+    }
 
     /// Entry point from the consumption-event bus (DataRefreshCoordinator).
     @MainActor static func play(events: [ConsumptionEvent], pulse: PulseSnapshot?) {
@@ -196,38 +218,62 @@ enum CoinSound {
         let outcome = evaluate(
             events: events, pulse: pulse, settings: settings, state: state,
             now: Date(), calendar: .current)
-        state = outcome.state
+        if outcome.decision == .none {
+            state = outcome.state
+        } else if playDecision(outcome.decision, settings: settings) {
+            // Reserve a prompt only when its first audio playback starts.
+            state = outcome.state
+        }
         Logger.debug(
             "CoinSound decision: events=\(events.count) tier=\(pulse?.tier.rawValue ?? "active") " +
             "decision=\(String(describing: outcome.decision)) reason=\(outcome.reason.rawValue) " +
             "plays_in_hour=\(state.recentPlays.count)/\(settings.maxPerHour)")
         guard outcome.decision != .none else { return }
-        playDecision(outcome.decision, settings: settings)
     }
 
     static func permitsPlayback(_ decision: SoundDecision, settings: SoundSettings) -> Bool {
         !settings.muted && (settings.enabled || decision == .chime)
     }
 
-    @MainActor static func playDecision(_ decision: SoundDecision, settings: SoundSettings) {
-        guard permitsPlayback(decision, settings: settings) else {
+    static func permitsAutomaticPlayback(_ decision: SoundDecision, settings: SoundSettings,
+                                         now: Date, calendar: Calendar = .current) -> Bool {
+        permitsPlayback(decision, settings: settings)
+            && !isQuietTime(now, settings: settings, calendar: calendar)
+            && settings.volume.isFinite && settings.volume > 0
+    }
+
+    static func permitsPreviewPlayback(settings: SoundSettings) -> Bool {
+        !settings.muted && settings.volume.isFinite && settings.volume > 0
+    }
+
+    @discardableResult
+    @MainActor static func playDecision(_ decision: SoundDecision, settings: SoundSettings, isPreview: Bool = false) -> Bool {
+        let permitted = isPreview ? permitsPreviewPlayback(settings: settings)
+            : permitsAutomaticPlayback(decision, settings: settings, now: Date())
+        guard permitted else {
             Logger.debug("CoinSound playback skipped: sound disabled")
-            return
+            return false
         }
         switch decision {
         case .none:
-            break
+            return false
         case .coin:
-            playFile(named: "coin", volume: settings.volume, pack: settings.pack)
+            return playFile(named: "coin", volume: settings.volume, pack: settings.pack)
         case .coinDouble:
-            playFile(named: "coin", volume: settings.volume, pack: settings.pack)
+            guard playFile(named: "coin", volume: settings.volume, pack: settings.pack) else { return false }
+            let generation = playbackGeneration
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                playFile(named: "coin", volume: settings.volume, pack: settings.pack)
+                let current = SoundSettings.current()
+                let permitted = isPreview ? permitsPreviewPlayback(settings: current)
+                    : permitsAutomaticPlayback(.coin, settings: current, now: Date())
+                guard generation == playbackGeneration, permitted else { return }
+                playFile(named: "coin", volume: current.volume, pack: current.pack)
             }
+            return true
         case .coinRain:
-            playFile(named: "coins", volume: settings.volume, pack: settings.pack)
+            return playFile(named: "coins", volume: settings.volume, pack: settings.pack)
         case .chime:
-            playFile(named: "chime", volume: settings.volume, pack: settings.pack)
+            return playFile(named: "chime", volume: settings.volume, pack: settings.pack)
         }
     }
 
@@ -242,11 +288,11 @@ enum CoinSound {
 
     // MARK: - File resolution & playback
 
-    @MainActor private static func playFile(named name: String, volume: Double, pack: String) {
+    @discardableResult
+    @MainActor private static func playFile(named name: String, volume: Double, pack: String) -> Bool {
         guard let url = soundURL(named: name, pack: pack) else {
-            Logger.debug("CoinSound: '\(name)' missing in pack '\(pack)', falling back to beep")
-            NSSound.beep()
-            return
+            Logger.debug("CoinSound: '\(name)' missing in pack '\(pack)'; playback skipped")
+            return false
         }
         do {
             let player = try AVAudioPlayer(contentsOf: url)
@@ -254,8 +300,7 @@ enum CoinSound {
             player.prepareToPlay()
             guard player.play() else {
                 Logger.debug("CoinSound: AVAudioPlayer declined playback for \(url.lastPathComponent)")
-                NSSound.beep()
-                return
+                return false
             }
             activePlayers.append(player)
             Logger.debug("CoinSound playback started: \(url.lastPathComponent) volume=\(String(format: "%.2f", player.volume))")
@@ -263,14 +308,15 @@ enum CoinSound {
             DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.05) {
                 activePlayers.removeAll { $0 === player }
             }
+            return true
         } catch {
             Logger.debug("CoinSound: AVAudioPlayer failed for \(url.lastPathComponent): \(error)")
-            NSSound.beep()
+            return false
         }
     }
 
     /// Resolution order per extension: selected pack subdirectory → coin pack
-    /// fallback → the project owner's flat MP3 cues → caller beep. The coin
+    /// fallback → the project owner's flat MP3 cues → unavailable (no beep). The coin
     /// pack intentionally has no coin/coins WAV so those two original MP3s win.
     @MainActor static func soundURL(named name: String, pack: String) -> URL? {
         let packDir = "Sounds/\(pack)"

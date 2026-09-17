@@ -25,8 +25,8 @@ struct ApiKeyIntegration: Detectable, Collectable {
     var costSources: [CostSource] {
         guard ApiKeyManager.shared.get(id) != nil else { return [] }
         let models = usesClaudeModels
-            ? PricingManager.shared.claudeModels()
-            : PricingManager.shared.modelsForProvider(providerId)
+            ? ModelCatalogManager.shared.claudeModels()
+            : ModelCatalogManager.shared.modelsForProvider(providerId)
         return [CostSource(
             id: "api-key:\(id)",
             label: "\(displayName) API",

@@ -33,7 +33,8 @@ final class AppHealthMonitor: @unchecked Sendable {
     private var _messages: [String] = []
     private var _hasDBError = false
     private var _apiErrors = Set<String>()  // provider IDs currently failing
-    private var _hasStatsError = false
+    private var _statsErrors = Set<String>()
+    private var _ingestErrors = Set<String>()
 
     /// Thread-safe read of the current snapshot.
     var current: Snapshot {
@@ -43,7 +44,7 @@ final class AppHealthMonitor: @unchecked Sendable {
             messages: _messages,
             hasDBError: _hasDBError,
             hasAPIError: !_apiErrors.isEmpty,
-            hasStatsError: _hasStatsError
+            hasStatsError: !_statsErrors.isEmpty
         )
     }
 
@@ -53,7 +54,7 @@ final class AppHealthMonitor: @unchecked Sendable {
         return _apiErrors
     }
 
-    private init() {}
+    init() {}
 
     // MARK: - Reporting
 
@@ -69,15 +70,26 @@ final class AppHealthMonitor: @unchecked Sendable {
     }
 
     /// Report a stats query failure.
-    func reportStatsError(_ message: String) {
-        update(severity: .impaired, message: message, category: .stats)
+    func reportStatsError(_ message: String, source: String) {
+        update(severity: .impaired, providerId: source, message: "\(source): \(message)", category: .stats)
+    }
+
+    func reportIngestError(_ message: String, source: String) {
+        update(severity: .impaired, providerId: source, message: "\(source): \(message)", category: .ingest)
+    }
+
+    func clearIngestError(source: String) { clear(category: .ingest, providerId: source) }
+
+    var failingIngestSources: Set<String> {
+        lock.lock(); defer { lock.unlock() }
+        return _ingestErrors
     }
 
     /// Clear a specific category (called when things recover).
     func clearDBError()  { clear(category: .db) }
     func clearAPIError(providerId: String) { clear(category: .api, providerId: providerId) }
     func clearAPIErrors() { clear(category: .api) }  // clear all
-    func clearStatsError() { clear(category: .stats) }
+    func clearStatsError(source: String) { clear(category: .stats, providerId: source) }
 
     /// Reset everything to nominal (call on startup).
     func reset() {
@@ -86,13 +98,14 @@ final class AppHealthMonitor: @unchecked Sendable {
         _messages = []
         _hasDBError = false
         _apiErrors.removeAll()
-        _hasStatsError = false
+        _statsErrors.removeAll()
+        _ingestErrors.removeAll()
         lock.unlock()
     }
 
     // MARK: - Internal
 
-    private enum Category { case db, api, stats }
+    private enum Category { case db, api, stats, ingest }
 
     private func update(severity newSeverity: Severity, providerId: String = "",
                         message: String, category: Category) {
@@ -105,7 +118,8 @@ final class AppHealthMonitor: @unchecked Sendable {
         switch category {
         case .db:    _hasDBError = true
         case .api:   _apiErrors.insert(providerId)
-        case .stats: _hasStatsError = true
+        case .stats: _statsErrors.insert(providerId)
+        case .ingest: _ingestErrors.insert(providerId)
         }
         // Deduplicate: skip if the last message is identical
         if _messages.last != message {
@@ -144,7 +158,18 @@ final class AppHealthMonitor: @unchecked Sendable {
                 // Remove stale messages for this provider
                 _messages.removeAll { $0.hasPrefix("\(providerId):") }
             }
-        case .stats: _hasStatsError = false
+        case .stats:
+            guard _statsErrors.remove(providerId) != nil else {
+                lock.unlock()
+                return // Healthy reads do not emit redundant UI refreshes.
+            }
+            _messages.removeAll { $0.hasPrefix("\(providerId):") }
+        case .ingest:
+            guard _ingestErrors.remove(providerId) != nil else {
+                lock.unlock()
+                return
+            }
+            _messages.removeAll { $0.hasPrefix("\(providerId):") }
         }
         let prev = _severity
         let updated = recomputeSeverity()
@@ -165,7 +190,7 @@ final class AppHealthMonitor: @unchecked Sendable {
         let content = UNMutableNotificationContent()
         content.title = I18n.t("app.name")
         content.body = message
-        content.sound = AppSoundControl.isMuted() ? nil : .default
+        content.sound = AppSoundControl.permitsNotificationSound() ? .default : nil
         let req = UNNotificationRequest(
             identifier: "ai-pulse-health-critical",
             content: content, trigger: nil
@@ -175,7 +200,7 @@ final class AppHealthMonitor: @unchecked Sendable {
 
     private func recomputeSeverity() -> Severity {
         if _hasDBError { return .critical }
-        if _hasStatsError { return .impaired }
+        if !_statsErrors.isEmpty || !_ingestErrors.isEmpty { return .impaired }
         if !_apiErrors.isEmpty { return .degraded }
         return .nominal
     }

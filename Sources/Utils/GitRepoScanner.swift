@@ -32,6 +32,14 @@ enum GitRepoScanner {
     @discardableResult
     nonisolated static func enumerate(in dir: URL, deadline: Date? = nil,
                                       _ handler: (URL) -> Void) -> Bool {
+        // The selected development directory can itself be a repository.
+        // Enumerators only yield children, so check this boundary explicitly
+        // and preserve shallow-first semantics (including worktree .git files).
+        if FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path) {
+            if let deadline, Date() >= deadline { return true }
+            handler(dir)
+            return false
+        }
         guard let enumerator = FileManager.default.enumerator(
             at: dir,
             includingPropertiesForKeys: [.isDirectoryKey],

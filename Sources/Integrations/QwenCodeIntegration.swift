@@ -2,8 +2,7 @@ import Foundation
 
 /// Qwen Code CLI (Alibaba) — log-based integration.
 /// Data source: `~/.qwen/projects/**/chats/*.jsonl` (Gemini CLI format fork).
-/// Not a CostSource itself — log entries are attributed to the configured
-/// apiKey CostSource (qwen / deepseek / etc.) via the Arbitrator.
+/// Activity does not establish attribution to a configured API account.
 struct QwenCodeIntegration: Detectable {
     let id = "qwen-code"
     let displayName = "Qwen Code"

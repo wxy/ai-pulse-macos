@@ -37,11 +37,10 @@ final class CloudSyncService {
         }
 
         Logger.info("CloudSync: starting sync")
-        // Per-range config: days, cache maxAge
-        let ranges: [(key: String, recordName: String, days: Int, maxAge: TimeInterval)] = [
-            ("today", CKSchema.RecordName.today, 1, 600),
-            ("week", CKSchema.RecordName.week, 7, 3600),
-            ("30d", CKSchema.RecordName.month, 30, 43200),
+        let ranges: [(key: String, recordName: String, maxAge: TimeInterval)] = [
+            ("today", CKSchema.RecordName.today, 600),
+            ("week", CKSchema.RecordName.week, 3600),
+            ("30d", CKSchema.RecordName.month, 43200),
         ]
         for r in ranges {
             let snap: DashboardSnapshot
@@ -49,7 +48,8 @@ final class CloudSyncService {
             if let cached = await DashboardCache.read(timeRange: r.key, maxAge: r.maxAge) {
                 snap = cached
             } else {
-                snap = await StatsService.dashboardSnapshot(days: r.days)
+                guard let period = DashboardPeriodKind(rawValue: r.key) else { continue }
+                snap = await StatsService.dashboardSnapshot(period: period)
             }
             guard let data = try? JSONEncoder().encode(snap),
                   let json = String(data: data, encoding: .utf8) else { continue }
@@ -85,6 +85,27 @@ final class CloudSyncService {
             } catch {
                 Logger.error("CloudSync: \(r.key) save failed: \(error)")
             }
+        }
+        await syncCurrentPulse()
+    }
+
+    private func syncCurrentPulse() async {
+        let now = Date()
+        let envelope = CurrentPulseEnvelope(pulse: await PulseEngine.shared.snapshot(),
+                                            writerAppVersion: CKSchema.writerAppVersion, generatedAt: now)
+        guard let data = try? JSONEncoder().encode(envelope),
+              let json = String(data: data, encoding: .utf8) else { return }
+        let record = CKRecord(recordType: CKSchema.CurrentPulse.recordType,
+                              recordID: CKRecord.ID(recordName: CKSchema.CurrentPulse.recordName))
+        record[CKSchema.Field.json] = json
+        record[CKSchema.Field.updatedAt] = now
+        do {
+            let (_, results) = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
+            for (_, result) in results {
+                if case .failure(let error) = result { Logger.error("CloudSync current pulse record failed: \(error)") }
+            }
+        } catch {
+            Logger.error("CloudSync current pulse failed: \(error)")
         }
     }
 

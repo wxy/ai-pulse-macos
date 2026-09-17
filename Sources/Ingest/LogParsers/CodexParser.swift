@@ -50,8 +50,8 @@ struct CodexParser {
         let outTokens = usage["output_tokens"] as? Int ?? 0
         let reasoningTokens = usage["reasoning_output_tokens"] as? Int ?? 0
 
-        // Reasoning tokens are billed as output.
-        let totalOut = outTokens + reasoningTokens
+        // Codex maps Responses API output directly; reasoning is its detail,
+        // not additional output. Preserve both counters without double-counting.
 
         let ts: Int
         if let tsStr = json["timestamp"] as? String, let date = iso8601.date(from: tsStr) {
@@ -65,11 +65,14 @@ struct CodexParser {
             source: "codex",
             model: model,
             inTokens: inTokens,
-            outTokens: totalOut,
+            outTokens: outTokens,
             cacheTokens: cacheTokens,
             repoPath: cwd,
             sessionId: (payload["session_id"] as? String) ?? sessionId,
-            dedupeKey: "codex|\(stableHash(line))"
+            dedupeKey: "codex|\(stableHash(line))",
+            cacheCreationTokens: usage["cache_write_input_tokens"] as? Int,
+            reportedOutputTokens: outTokens,
+            reasoningTokens: reasoningTokens
         )
     }
 

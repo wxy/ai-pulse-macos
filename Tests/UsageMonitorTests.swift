@@ -3,6 +3,37 @@ import GRDB
 @testable import AIPulse
 
 final class UsageMonitorTests: XCTestCase {
+    func testClaudeSourceTimeCannotBeRenewedByTouchingOrCopying() throws {
+        let source = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-17T02:00:00Z"))
+        let now = source.addingTimeInterval(600)
+        let json: [String: Any] = ["updatedAt": "2026-09-17T02:00:00.000Z"]
+        XCTAssertEqual(UsageMonitor.claudeObservationDate(json, modifiedAt: now, now: now), source)
+        XCTAssertEqual(UsageMonitor.claudeObservationDate(json, modifiedAt: source.addingTimeInterval(-10), now: now),
+                       source.addingTimeInterval(-10))
+        XCTAssertNil(UsageMonitor.claudeObservationDate([:], modifiedAt: now, now: now))
+        XCTAssertNil(UsageMonitor.claudeObservationDate(["updatedAt": "invalid"], modifiedAt: now, now: now))
+        XCTAssertNil(UsageMonitor.claudeObservationDate(json, modifiedAt: now.addingTimeInterval(1), now: now))
+        XCTAssertNil(UsageMonitor.claudeObservationDate(["updatedAt": "2026-09-18T02:00:00Z"], modifiedAt: now, now: now))
+    }
+
+    func testClaudeRecentModelDoesNotUseDistinctHistoricalOrFutureModels() throws {
+        let queue = try DatabaseQueue()
+        let now = Date(timeIntervalSince1970: 100_000)
+        let end = Int(now.timeIntervalSince1970 * 1_000)
+        try queue.write { db in
+            try AppDatabase.createAllTables(db)
+            for (index, item) in [(end - 6 * 3_600_000, "claude-sonnet-4"),
+                                  (end - 1000, "deepseek-chat"),
+                                  (end + 1000, "claude-opus-4")].enumerated() {
+                let event = UsageEvent(ts: item.0, source: "claude-code", model: item.1,
+                                       inTokens: 10, outTokens: 2, cacheTokens: 0,
+                                       repoPath: nil, sessionId: nil, dedupeKey: "model-\(index)")
+                _ = try LogWatcher.persistObservedEvents(in: db, rows: [(event, "unknown")], nowMs: Int64(end))
+            }
+            XCTAssertEqual(try UsageMonitor.latestClaudeModel(in: db, now: now), "deepseek-chat")
+            XCTAssertNil(try UsageMonitor.latestClaudeModel(in: db, now: now.addingTimeInterval(6 * 3_600)))
+        }
+    }
 
     // MARK: - Claude status cache parsing
 

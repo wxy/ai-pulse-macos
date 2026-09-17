@@ -32,11 +32,11 @@ enum IntegrationRegistry {
             usesClaudeModels: false, limitationKey: "limitation.assume_programming",
             confidence: .exact
         ),
-        // Anthropic has no balance API — cost estimated from token pricing.
+        // No balance API: observation coverage is incomplete, not estimated.
         ApiKeyIntegration(
             id: "anthropic", displayName: "Anthropic", providerId: "anthropic",
             usesClaudeModels: true, limitationKey: "limitation.no_balance_api",
-            confidence: .estimated
+            confidence: .incomplete
         ),
         CursorIntegration(),
         CopilotIntegration(),
@@ -120,7 +120,7 @@ enum IntegrationRegistry {
             let sourceId = "sub:\(toolId):editor-detected"
             if !configuredToolIds.contains(toolId)
                 && !sources.contains(where: { $0.id == sourceId }) {
-                let models = PricingManager.shared.modelsForTool(toolId)
+                let models = ModelCatalogManager.shared.modelsForTool(toolId)
                 sources.append(CostSource(
                     id: sourceId,
                     label: "\(m.toolName) (detected)",
@@ -208,7 +208,7 @@ enum IntegrationRegistry {
         case "claude-code": return "Claude Code"
         case "deepseek-harness": return "DeepSeek Harness"
         case "aider":       return "aider"
-        case "codex":       return "ChatGPT"
+        case "codex":       return "Codex"
         case "qwen-code":   return "Qwen Code"
         case "opencode":    return "OpenCode"
         case "cursor":      return "Cursor"

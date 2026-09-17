@@ -1,0 +1,152 @@
+# Historical App Store Description — AI Pulse for macOS 1.x
+
+## English
+
+### Description
+
+— Introduction —
+
+AI Pulse is your AI coding cost tracker — track exactly how much you're spending on AI tools, who's charging you, and whether the output is worth it. 100% local — zero data leaves your machine.
+
+* Universal Purchase — buy once, use on macOS and iOS.
+A single purchase covers both platforms. Already own the iOS version but still see a price button on your Mac? Don't worry — as long as you're signed in with the same Apple ID, the App Store will recognize your existing purchase and let you download for free. You will never be charged twice.
+
+The iOS companion app mirrors your AI usage and spending to your iPhone and iPad through iCloud — read-only, and your data never leaves your Apple ID ecosystem.
+
+AI Pulse discovers your AI spending through four layers of data collection:
+- Log Parsing — Token-level accuracy from Claude Code, aider, Codex, and OpenCode request logs
+- Balance API — Exact dollar deltas from DeepSeek, OpenAI, Kimi, Zhipu, and Anthropic APIs
+- Subscription Detection — Monthly fee amortization for Cursor, Copilot, Windsurf, and Claude Code Pro
+- Quota Tracking — Live Claude & Copilot subscription usage with reset countdowns, right in the Dashboard
+
+Every dollar is then attributed to the right tool, provider, and repo through the CostSource attribution model.
+
+[Dashboard]
+The 3-section home window gives you the full picture at a glance: subscription vs. API donut chart, 30-day spending trend with daily API + subscription stacks, and per-tool/per-repo breakdown bars so you know exactly which projects and AI tools cost the most. Live subscription quotas (Claude & Copilot) with reset countdowns, relative balance bars, and Claude cache-cost hover details round out the view.
+
+[Dock Spending Gauge]
+A log-scale progress ring shows your monthly burn rate right on the Dock icon. The badge displays today's spending total. Right-click — or open the Window menu — for a live cost breakdown by tool, provider, and repo.
+
+[Onboarding]
+First-launch integration detection automatically finds your installed AI tools and guides you through setup — no manual configuration needed.
+
+[Other Highlights]
+- Anomaly detection with macOS notifications for spending spikes
+- Coin sound effects on data refresh
+- Commit tracking via libgit2 — correlates code output with AI spending
+- Full Chinese and English localization
+- Mac App Store sandbox compliant
+
+### What's New (Version 1.2.5)
+
+- Spend-surge & balance-drop alerts — opt-out warnings when spending accelerates or a balance drops sharply, delivered on Mac, iPhone, and Apple Watch
+- Session-level tool details — click any tool to see its session list and per-session profile metrics: turn count, context occupancy, cache ratio, and compaction count
+- App & CloudKit version display — dashboard footer and About now show the software version alongside the CloudKit payload version for clearer sync compatibility
+- Notification controls — a dedicated notification group in Settings with a master switch, alert toggle, sound toggle, and permission status
+- Companion-app reminder — the About page links to the iPhone companion when it isn't installed yet
+
+### Keywords
+
+ai,cost,tracker,spending,claude,code,codex,opencode,openai,deepseek,cursor,copilot,gpt,api,subscription,quota,coding,developer,tools,expense,monitor
+
+---
+
+## 中文
+
+### 应用描述
+
+— 介绍 —
+
+AI Pulse 是你的 AI 编程花费追踪仪 —— 精确追踪每笔 AI 费用花在了哪里、花了多少、产出是否值得。100% 本地运行，数据绝不出设备。
+
+* 多平台通用购买（Universal Purchase）—— 一次购买，macOS 与 iOS 通用。
+本软件支持一次购买，macOS 与 iOS 跨平台通用。如果您已经购买了 iOS 版，在 Mac 上下载时若仍看到价格按钮，请不要担心：只要使用同一个 Apple ID，系统会自动识别您的购买记录，绝不会向您重复扣费。
+
+iOS 伴侣应用会通过 iCloud 将您的 AI 用量与花费以只读方式同步到 iPhone / iPad，数据不会离开您的 Apple ID 生态。
+
+AI Pulse 通过四层数据采集发现你的 AI 支出：
+- 日志解析 — 从 Claude Code、aider、OpenCode 请求日志中提取 Token 级精确计价
+- 余额 API — DeepSeek、Kimi（月之暗面）、智谱、Anthropic API 的每日余额差值
+- 订阅检测 — Cursor、Copilot、Windsurf、Claude Code Pro 的月费按天摊销
+- 配额追踪 — 在仪表盘中实时查看 Claude 与 Copilot 订阅用量及重置倒计时
+
+所有费用通过 CostSource 归因模型精确归属到对应的工具、供应商和代码仓库。
+
+[仪表盘]
+三区块主窗口，一目了然：订阅 vs. API 环形图、30 天 API + 订阅堆叠趋势图、按工具和仓库的费用排行条，让你清楚知道哪个项目和哪个 AI 工具烧钱最多。实时订阅配额（Claude 与 Copilot）与重置倒计时、余额相对进度条、Claude 缓存费用悬停详情，一应俱全。
+
+[Dock 花费仪表]
+对数刻度环形进度条直观展示月度消费节奏。角标显示今日花费总额。右键点击——或打开 Window 菜单——即可查看按工具、供应商、仓库分类的实时费用明细。
+
+[首次引导]
+首次启动时自动检测已安装的 AI 工具，逐步引导完成配置 —— 无需手动设置。
+
+[更多亮点]
+- 异常检测：费用飙升时发送 macOS 通知
+- 金币音效：数据刷新时的听觉反馈
+- 提交追踪：通过 libgit2 将代码产出与 AI 花费关联
+- 完整中英文双语支持
+- 符合 Mac App Store 沙盒规范
+
+### 本次更新（版本 1.2.5）
+
+- 花费激增与余额骤降告警——可选接收，花费加速或余额骤降时在 Mac、iPhone、Apple Watch 上提醒
+- 会话级工具详情——点击任一工具即可查看会话列表与逐会话档案指标：轮次、上下文占用率、缓存比例与压缩次数
+- 应用与 CloudKit 版本显示——仪表盘底部与关于页现在同时显示软件版本与 CloudKit 载荷版本，同步兼容性一目了然
+- 通知设置——设置页新增通知分组，可分别控制系统通知、花费告警与音效，并显示权限状态
+- 伴侣应用提醒——关于页会在未安装 iPhone 伴侣应用时提示下载
+
+### 关键词
+
+ai,花费,追踪,claude,code,opencode,deepseek,cursor,copilot,gpt,api,订阅,配额,编程,开发者,工具,费用,监控
+
+---
+
+## 繁體中文
+
+### 應用描述
+
+— 介紹 —
+
+AI Pulse 是你的 AI 程式花費追蹤儀 —— 精確追蹤每筆 AI 費用花在哪裡、花了多少、產出是否值得。100% 本機執行，資料絕不離開裝置。
+
+* 多平台通用購買（Universal Purchase）—— 一次購買，macOS 與 iOS 通用。
+本軟體支援一次購買，macOS 與 iOS 跨平台通用。如果您已購買 iOS 版，在 Mac 下載時若仍看到價格按鈕，請別擔心：只要使用同一個 Apple ID，系統會自動識別您的購買記錄，絕不會向您重複扣費。
+
+iOS 伴侶應用程式會透過 iCloud 將您的 AI 用量與花費以唯讀方式同步到 iPhone / iPad，資料不會離開您的 Apple ID 生態。
+
+AI Pulse 透過四層資料收集發現你的 AI 支出：
+- 日誌解析 — 從 Claude Code、aider、Codex 和 OpenCode 請求日誌中提取 Token 級精確計價
+- 餘額 API — DeepSeek、OpenAI、Kimi（月之暗面）、智譜、Anthropic API 的每日餘額差值
+- 訂閱偵測 — Cursor、Copilot、Windsurf、Claude Code Pro 的月費按天攤銷
+- 額度追蹤 — 在儀表板中即時查看 Claude 與 Copilot 訂閱用量及重置倒數
+
+所有費用透過 CostSource 歸因模型精確歸屬到對應的工具、供應商和程式碼儲存庫。
+
+[儀表板]
+三區塊主視窗，一目了然：訂閱 vs. API 環形圖、30 天 API + 訂閱堆疊趨勢圖、按工具和儲存庫的費用排行條，讓您清楚知道哪個專案和哪個 AI 工具最燒錢。即時訂閱額度（Claude 與 Copilot）與重置倒數、餘額相對進度條、Claude 快取費用懸停詳情，一應俱全。
+
+[Dock 花費儀表]
+對數刻度環形進度條直觀展示月度消費節奏。角標顯示今日花費總額。按右鍵——或開啟 Window 選單——即可查看按工具、供應商、儲存庫分類的即時費用明細。
+
+[首次引導]
+首次啟動時自動偵測已安裝的 AI 工具，逐步引導完成設定 —— 無需手動設定。
+
+[更多亮點]
+- 異常偵測：費用飆升時傳送 macOS 通知
+- 金幣音效：資料重新整理時的聽覺回饋
+- 提交追蹤：透過 libgit2 將程式碼產出與 AI 花費關聯
+- 完整中英雙語支援
+- 符合 Mac App Store 沙盒規範
+
+### 本次更新（版本 1.2.5）
+
+- 花費激增與餘額驟降告警——可選接收，花費加速或餘額驟降時在 Mac、iPhone、Apple Watch 上提醒
+- 工作階段級工具詳情——點擊任一工具即可查看工作階段清單與逐工作階段檔案指標：輪次、上下文佔用率、快取比例與壓縮次數
+- 應用程式與 CloudKit 版本顯示——儀表板底部與關於頁現在同時顯示軟體版本與 CloudKit 載荷版本，同步相容性一目了然
+- 通知設定——設定頁新增通知分組，可分別控制系統通知、花費告警與音效，並顯示權限狀態
+- 伴侶應用程式提醒——關於頁會在未安裝 iPhone 伴侶應用程式時提示下載
+
+### 關鍵詞
+
+ai,花費,追蹤,claude,code,codex,opencode,openai,deepseek,cursor,copilot,gpt,api,訂閱,額度,程式設計,開發者,工具,費用,監控

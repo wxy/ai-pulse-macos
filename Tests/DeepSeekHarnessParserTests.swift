@@ -29,10 +29,10 @@ final class DeepSeekHarnessParserTests: XCTestCase {
         XCTAssertEqual(event?.source, "deepseek-harness")
         XCTAssertEqual(event?.model, "deepseek-v4-flash")
         XCTAssertEqual(event?.inTokens, 66)
-        XCTAssertEqual(event?.outTokens, 726)
+        XCTAssertEqual(event?.outTokens, 440)
         XCTAssertEqual(event?.cacheTokens, 104832)
         XCTAssertEqual(event?.sessionId, "session-1")
-        XCTAssertEqual(PricingManager.shared.providerId(for: event?.model), "deepseek")
+        XCTAssertEqual(ModelCatalogManager.shared.providerId(for: event?.model), "deepseek")
     }
 
     func testCompletedTurnDetected() {
@@ -67,7 +67,7 @@ extension DeepSeekHarnessParserTests {
         XCTAssertEqual(event?.source, "deepseek-harness")
         XCTAssertEqual(event?.model, "glm-5.3-flash")
         XCTAssertEqual(event?.inTokens, 9145)
-        XCTAssertEqual(event?.outTokens, 181, "outputTokens + reasoningTokens")
+        XCTAssertEqual(event?.outTokens, 131, "reasoning is an output subset")
         XCTAssertEqual(event?.cacheTokens, 64)
         XCTAssertEqual(event?.dedupeKey.hasPrefix("deepseek-harness|"), true)
     }

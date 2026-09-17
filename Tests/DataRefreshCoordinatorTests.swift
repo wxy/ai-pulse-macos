@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 @testable import AIPulse
 
 private final class LockedNotificationCounter: @unchecked Sendable {
@@ -25,7 +26,7 @@ final class DataRefreshCoordinatorTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        coordinator = DataRefreshCoordinator(actions: .noop)
+        coordinator = DataRefreshCoordinator(actions: .noop, playConsumption: { _, _ in })
     }
 
     override func tearDown() {
@@ -46,6 +47,30 @@ final class DataRefreshCoordinatorTests: XCTestCase {
         coordinator.stop()
     }
 
+    @MainActor
+    func testSleepStopRestartResetsSuspensionAndIgnoresNotificationsAfterStop() {
+        let center = NSWorkspace.shared.notificationCenter
+        coordinator.start()
+        coordinator.start()
+        XCTAssertTrue(coordinator.isRunning)
+        center.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        XCTAssertTrue(coordinator.isSuspended)
+        coordinator.stop()
+        XCTAssertFalse(coordinator.isRunning)
+        XCTAssertFalse(coordinator.isSuspended)
+        center.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        XCTAssertFalse(coordinator.isRunning)
+        coordinator.start()
+        XCTAssertFalse(coordinator.isSuspended)
+        center.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        XCTAssertTrue(coordinator.isSuspended)
+        center.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        XCTAssertFalse(coordinator.isSuspended)
+        coordinator.stop()
+        center.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+        XCTAssertFalse(coordinator.isSuspended)
+    }
+
     // MARK: - Trigger ingest
 
     func testTriggerIngestRunsWithoutStart() {
@@ -55,12 +80,41 @@ final class DataRefreshCoordinatorTests: XCTestCase {
 
     // MARK: - Debounce coalesces rapid pushes
 
+    func testGitInvalidatesPeriodCachesBeforeNotifyingUIWithoutConsumptionBeat() {
+        let invalidated = LockedNotificationCounter()
+        let beats = LockedNotificationCounter()
+        coordinator = DataRefreshCoordinator(actions: .noop, invalidateDashboardCache: {
+            try? await Task.sleep(for: .milliseconds(30))
+            _ = invalidated.increment()
+        }, playConsumption: { _, _ in })
+        let delivered = XCTestExpectation(description: "Git notification follows cache invalidation")
+        let observer = NotificationCenter.default.addObserver(forName: .dataDidChange, object: nil, queue: .main) { _ in
+            XCTAssertEqual(invalidated.read(), 1)
+            delivered.fulfill()
+        }
+        let beatObserver = NotificationCenter.default.addObserver(forName: .consumptionDidOccur, object: nil, queue: .main) { _ in
+            _ = beats.increment()
+        }
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            NotificationCenter.default.removeObserver(beatObserver)
+        }
+        coordinator.notifyPhaseGitScan()
+        wait(for: [delivered], timeout: 3)
+        XCTAssertEqual(beats.read(), 0)
+    }
+
     func testRapidPhasePushesAreDebounced() {
         let expectation = XCTestExpectation(description: "dataDidChange fires once after debounce")
         expectation.expectedFulfillmentCount = 1
         expectation.assertForOverFulfill = true
 
         let notificationCount = LockedNotificationCounter()
+        let beatCount = LockedNotificationCounter()
+        let beatObserver = NotificationCenter.default.addObserver(
+            forName: .consumptionDidOccur, object: nil, queue: .main
+        ) { _ in _ = beatCount.increment() }
+        defer { NotificationCenter.default.removeObserver(beatObserver) }
         let observer = NotificationCenter.default.addObserver(
             forName: .dataDidChange, object: nil, queue: .main
         ) { _ in
@@ -78,8 +132,25 @@ final class DataRefreshCoordinatorTests: XCTestCase {
         // After 500ms debounce, only one notification should have fired
         // (but by the time we check, at most 1 should fire due to 3s min interval)
         XCTAssertEqual(notificationCount.read(), 1, "Rapid pushes should coalesce to one notification")
+        XCTAssertEqual(beatCount.read(), 0, "Generic refreshes must not manufacture a consumption beat")
 
         NotificationCenter.default.removeObserver(observer)
+    }
+
+    func testNonemptyConsumptionBatchProducesOneExplicitBeat() {
+        let beat = XCTestExpectation(description: "Observed consumption beat")
+        let counter = LockedNotificationCounter()
+        let observer = NotificationCenter.default.addObserver(
+            forName: .consumptionDidOccur, object: nil, queue: .main
+        ) { _ in
+            _ = counter.increment()
+            beat.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        coordinator.notifyPhaseIngest(ConsumptionEvent(spendUSD: nil, tokens: 100, source: "codex"))
+        coordinator.notifyPhaseGitScan()
+        wait(for: [beat], timeout: 3)
+        XCTAssertEqual(counter.read(), 1)
     }
 
     // MARK: - Min-notify interval delivery

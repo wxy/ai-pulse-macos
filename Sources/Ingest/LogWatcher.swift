@@ -14,17 +14,19 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private var codexSource: DispatchSourceFileSystemObject?
 
     /// Serial queue for ALL scanning/parsing. Serializing prevents data races on
-    /// the mutable state below (filePositions/partialLines) and on GitMonitor's
+    /// the mutable scan state below (filePositions) and on GitMonitor's
     /// watched-repo set when start() is called from multiple places (launch,
     /// after granting access, after adding a directory) or when an FSEvent fires
     /// while an initial scan is still running.
-    private let scanQueue = DispatchQueue(label: "com.wxy.aipulse.logwatcher.scan", qos: .utility)
-    private let stateLock = NSLock()
+    private let scanQueue = DispatchQueue(label: "com.wxy.aipulse.logwatcher.scan", qos: .utility,
+                                         autoreleaseFrequency: .workItem)
+    private var stopped = false // scanQueue only
+    private var positionsLoaded = false // retry if DB was not ready at init
+    private var suppressConsumptionEvents = false // initial history scan only
+    private let liveObservationStartMs = Int64(Date().timeIntervalSince1970 * 1_000)
 
-    /// Last-read byte offset per file path.  Persisted in UserDefaults.
+    /// Last complete-line byte offset per file path, persisted in SQLite.
     private var filePositions: [String: UInt64] = [:]
-    /// Leftover partial line (when a write stops mid-line) per file path.
-    private var partialLines: [String: String] = [:]
     /// Last seen model per aider file (survives incremental scans).
     private var aiderModels: [String: String] = [:]
 
@@ -38,57 +40,30 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// mistaken for an empty account while backfill is running.
     static let backfill = IngestionBackfillState()
 
-    /// Ensures positions are loaded before the first scan() runs.
-    private let loadGroup = DispatchGroup()
-    /// Tracks in-flight persist tasks so stop() can wait for them.
-    private let persistGroup = DispatchGroup()
-
     private init() {
-        loadGroup.enter()
-        scanQueue.async {
-            Task { await self.loadPositionsFromDB(); self.loadGroup.leave() }
-        }
+        scanQueue.async { self.loadPositionsFromDB() }
     }
 
-    private func loadPositionsFromDB() async {
+    private func loadPositionsFromDB() {
+        dispatchPrecondition(condition: .onQueue(scanQueue))
         do {
-            let map = try await AppDatabase.shared.read { db -> [String: UInt64] in
-                let rows = try Row.fetchAll(db, sql: "SELECT file_path, byte_offset FROM logwatcher_position")
-                var result = [String: UInt64]()
-                for r in rows {
-                    if let path: String = r["file_path"], let offset: Int64 = r["byte_offset"] {
-                        result[path] = UInt64(offset)
-                    }
-                }
-                return result
-            }
-            applyLoadedPositions(map)
+            filePositions = try AppDatabase.shared.readSynchronously { try LogCheckpointStore.load(in: $0) }
+            positionsLoaded = true
+            AppHealthMonitor.shared.clearIngestError(source: "log.offsets.load")
         } catch {
             Logger.warning("LogWatcher: DB positions load failed, re-scanning all files: \(error)")
-        }
-    }
-
-    private func applyLoadedPositions(_ map: [String: UInt64]) {
-        stateLock.withLock {
-            if !map.isEmpty {
-                filePositions = map
-            } else if let saved = UserDefaults.standard.dictionary(forKey: "logwatcher_positions") as? [String: UInt64], !saved.isEmpty {
-                // One-time migration from UserDefaults to DB
-                filePositions = saved
-                persistPositions(filePositions)
-                UserDefaults.standard.removeObject(forKey: "logwatcher_positions")
-            }
+            AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "log.offsets.load")
         }
     }
 
     func start() {
         scanQueue.async { [weak self] in
-            let timedOut = self?.loadGroup.wait(timeout: .now() + 5.0) == .timedOut
             guard let self else { return }
-            if timedOut {
-                Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
-            }
-        let isColdStart = self.filePositions.isEmpty
+            self.stopped = false
+            if !self.positionsLoaded { self.loadPositionsFromDB() }
+        let isColdStart = self.filePositions.values.allSatisfy { $0 == 0 }
+        self.suppressConsumptionEvents = true
+        defer { self.suppressConsumptionEvents = false }
         LogWatcher.backfill.setActive(isColdStart)
         self.watchClaudeCode(scanNow: false)
         self.watchCodex(scanNow: false)
@@ -109,21 +84,21 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Safe to call repeatedly; idempotent. Used by DataRefreshCoordinator.
     func scan() {
         scanQueue.async { [weak self] in
-            guard let self, !self.scanQueued else { return }
+            guard let self, !self.stopped, !self.scanQueued else { return }
             self.scanQueued = true
             self.scanQueue.async { [weak self] in
                 guard let self else { return }
                 defer { self.scanQueued = false }
+                guard !self.stopped else { return }
                 self.runScan(includeClaudeProjects: true)
             }
         }
     }
 
     private func runScan(includeClaudeProjects: Bool) {
-        let timedOut = loadGroup.wait(timeout: .now() + 5.0) == .timedOut
-        if timedOut {
-            Logger.warning("LogWatcher: DB positions load timed out after 5s, using in-memory positions")
-        }
+        dispatchPrecondition(condition: .onQueue(scanQueue))
+        LogScanObservation.shared.begin()
+        defer { LogScanObservation.shared.finish() }
         if includeClaudeProjects {
                 self.scanClaudeProjectsOnly()
         }
@@ -132,20 +107,20 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         scanDeepSeekHarnessSessions()
         scanQwenSessions()
         scanOpenCodeSessions()
+        persistPositions(filePositions) // also retry previously failed cursor saves
     }
 
     func stop() {
-        claudeSource?.cancel()
-        claudeSource = nil
-        codexSource?.cancel()
-        codexSource = nil
-        persistPositions()
-        // Deliberately NO blocking wait for the persist group: at quit the main
-        // thread must stay on the run loop so queued @MainActor work (the FSEvent
-        // handler's `Task { @MainActor ... }`) can be dispatched. Blocking here
-        // wedges the Swift MainActor executor and crashes with
-        // _dispatch_assert_queue_fail ("did not quit normally"). Persisting the
-        // last byte offsets is best-effort; losing them just re-scans on next run.
+        // Never block the main thread waiting for ingest or queued UI work.
+        scanQueue.async {
+            self.stopped = true
+            LogScanObservation.shared.stop()
+            self.claudeSource?.cancel()
+            self.claudeSource = nil
+            self.codexSource?.cancel()
+            self.codexSource = nil
+            self.persistPositions(self.filePositions)
+        }
     }
 
     // MARK: - Claude Code
@@ -259,7 +234,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
-    /// Watch `~/.codex/sessions` with FSEvents so ChatGPT desktop / Codex CLI
+    /// Watch `~/.codex/sessions` with FSEvents for Codex rollout activity;
     /// sessions are ingested in real time, mirroring the Claude Code watcher.
     private func watchCodex(scanNow: Bool = true) {
         let home = FileManager.default.realHomeDirectory
@@ -328,15 +303,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
         let result: DeepSeekHarnessScanResult
         do {
-            result = try parseDeepSeekHarnessStream(at: file)
+            result = try Self.parseDeepSeekHarnessStream(at: file) { events in
+                guard self.insertEvents(events) else { throw JSONLCheckpoint.Failure.persistenceFailed }
+            }
         } catch {
-            Logger.warning("LogWatcher: DSH decompression failed for \(path): \(error.localizedDescription)")
+            Logger.warning("LogWatcher: DSH scan failed for \(path): \(error.localizedDescription)")
+            Self.recordFileScanResult(path: path, error: error)
             return
         }
 
-        if !result.events.isEmpty {
-            insertEvents(result.events)
-        }
+        Self.recordFileScanResult(path: path, error: nil)
         if let sessionId = result.sessionId, result.maxTs > 0 {
             upsertSessionInfo(SessionInfoRecord(
                 source: "deepseek-harness", sessionId: sessionId,
@@ -351,7 +327,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         persistPositions([path: fileSize])
     }
 
-    private struct DeepSeekHarnessScanResult {
+    struct DeepSeekHarnessScanResult {
         var events: [UsageEvent]
         var cwd: String?
         var sessionId: String?
@@ -367,7 +343,9 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Stream zstd output and retain only a bounded working set. The previous
     /// implementation materialized the decompressed journal three times: as
     /// Data, String, and an array of every line.
-    private func parseDeepSeekHarnessStream(at url: URL) throws -> DeepSeekHarnessScanResult {
+    static func parseDeepSeekHarnessStream(
+        at url: URL, persist: ([UsageEvent]) throws -> Void
+    ) throws -> DeepSeekHarnessScanResult {
         let decoder = try ZstdStreamDecoder()
 
         var state = (
@@ -383,8 +361,10 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             parsedCount: 0, byteCount: 0
         )
         var splitter = LineSplitter()
+        var persistenceError: Error?
 
         func processLine(_ line: String) {
+            guard persistenceError == nil else { return }
             guard !line.isEmpty else { return }
             result.byteCount += line.utf8.count + 1
             if let metadata = DeepSeekHarnessParser.metadata(fromLine: line) {
@@ -405,7 +385,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             result.parsedCount += 1
             result.events.append(event)
             if result.events.count >= 512 {
-                insertEvents(result.events)
+                do { try persist(result.events) } catch { persistenceError = error }
                 result.events.removeAll(keepingCapacity: false)
             }
         }
@@ -413,15 +393,26 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
 
-        while let compressedChunk = try handle.read(upToCount: 256 << 10), !compressedChunk.isEmpty {
-            try decoder.decompress(compressedChunk) { chunk in
-                splitter.append(chunk, handler: processLine)
+        while true {
+            let hasInput = try autoreleasepool {
+                guard let compressedChunk = try handle.read(upToCount: 256 << 10), !compressedChunk.isEmpty else {
+                    return false
+                }
+                try decoder.decompress(compressedChunk) { chunk in
+                    splitter.append(chunk, handler: processLine)
+                    if let persistenceError { throw persistenceError }
+                }
+                return true
             }
+            if !hasInput { break }
         }
         try decoder.finish { chunk in
             splitter.append(chunk, handler: processLine)
         }
         splitter.finish(handler: processLine)
+        if let persistenceError { throw persistenceError }
+        if !result.events.isEmpty { try persist(result.events) }
+        result.events.removeAll(keepingCapacity: false)
         result.cwd = state.cwd
         result.sessionId = state.sessionId
         result.title = state.title
@@ -481,7 +472,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
-    private struct CodexResumeMetadata {
+    struct CodexResumeMetadata {
         let cwd: String?
         let sessionId: String?
         let model: String?
@@ -491,9 +482,13 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// earlier lines no longer exists. Rebuild only the small metadata needed to
     /// attribute the new events; token_count parsing still stays incremental.
     private func codexResumeMetadata(at file: URL) -> CodexResumeMetadata? {
+        guard let lastPos = filePositions[file.path] else { return nil }
+        return Self.codexResumeMetadata(at: file, lastPosition: lastPos)
+    }
+
+    static func codexResumeMetadata(at file: URL, lastPosition lastPos: UInt64) -> CodexResumeMetadata? {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
               let fileSize = attrs[.size] as? UInt64,
-              let lastPos = filePositions[file.path],
               lastPos > 0, lastPos <= fileSize,
               let handle = try? FileHandle(forReadingFrom: file)
         else { return nil }
@@ -588,7 +583,9 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
     private func insertOpenCodeFile(_ file: URL) {
         guard let event = OpenCodeParser.parseFile(file, cwd: nil) else { return }
-        insertEvent(event)
+        let saved = insertEvents([event])
+        Self.recordFileScanResult(path: file.path,
+                                  error: saved ? nil : JSONLCheckpoint.Failure.persistenceFailed)
         Logger.debug("LogWatcher: parsed opencode event from \(file.path)")
     }
 
@@ -652,79 +649,56 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         let startPos = lastPos <= fileSize ? lastPos : 0
         guard startPos < fileSize else { return } // nothing new
 
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return }
-        defer { try? handle.close() }
-
-        try? handle.seek(toOffset: startPos)
-        var events = [UsageEvent]()
-        let pendingLine = partialLines[path].map { Data($0.utf8) } ?? Data()
-        var splitter = LineSplitter(initialBytes: pendingLine)
-        var bytesRead = 0
-
-        while bytesRead < Int(fileSize - startPos),
-              let chunk = try? handle.read(upToCount: min(1 << 20, Int(fileSize - startPos) - bytesRead)),
-              !chunk.isEmpty {
-            bytesRead += chunk.count
-            splitter.append(chunk) { line in
-                guard !line.isEmpty, let event = parser(line) else { return }
-                events.append(event)
-                if events.count >= 512 {
-                    insertEvents(events)
-                    events.removeAll(keepingCapacity: false)
-                }
-            }
+        do {
+            let checkpoint = try JSONLCheckpoint.read(at: url, from: startPos, fileSize: fileSize,
+                parse: parser, persist: { events in
+                    guard insertEvents(events) else { throw JSONLCheckpoint.Failure.persistenceFailed }
+                })
+            filePositions[path] = checkpoint
+            persistPositions(filePositions)
+            Self.recordFileScanResult(path: path, error: nil)
+        } catch {
+            Logger.error("LogWatcher: file scan did not advance checkpoint: \(error)")
+            Self.recordFileScanResult(path: path, error: error)
         }
-
-        // Save the trailing (potentially incomplete) line for next time.
-        partialLines[path] = String(decoding: splitter.pendingBytes, as: UTF8.self)
-        if !events.isEmpty {
-            insertEvents(events)
-        }
-
-        filePositions[path] = fileSize
-        persistPositions(filePositions)
-    }
-
-    private func persistPositions() {
-        let positions = filePositions
-        persistPositions(positions)
     }
 
     private func persistPositions(_ positions: [String: UInt64]) {
-        persistGroup.enter()
-        Task {
-            defer { persistGroup.leave() }
+        dispatchPrecondition(condition: .onQueue(scanQueue))
             do {
-                try await AppDatabase.shared.write { db in
-                    for (path, offset) in positions {
-                        try db.execute(sql: """
-                            INSERT OR REPLACE INTO logwatcher_position (file_path, byte_offset)
-                            VALUES (?, ?)
-                            """, arguments: [path, Int64(offset)])
-                    }
-                }
+                try AppDatabase.shared.writeSynchronously { try LogCheckpointStore.save(positions, in: $0) }
+                AppHealthMonitor.shared.clearIngestError(source: "log.offsets")
             } catch {
                 Logger.error("LogWatcher: persist positions failed: \(error)")
+                AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "log.offsets")
             }
-        }
     }
 
     private func enumerateGitRepos(in dir: URL, handler: (URL) -> Void) {
         GitRepoScanner.enumerate(in: dir, handler)
     }
 
-    private func insertEvent(_ event: UsageEvent) {
-        insertEvents([event])
+    /// A retry may contain different batches after the log grows. Track the
+    /// stable file identity, clearing only after its whole scan succeeds.
+    static func recordFileScanResult(path: String, error: Error?, monitor: AppHealthMonitor = .shared) {
+        let source = "Log.file.\(path)"
+        if let error {
+            monitor.reportIngestError(error.localizedDescription, source: source)
+        } else {
+            monitor.clearIngestError(source: source)
+        }
     }
 
     /// Batch all events read from one file into a single SQLite transaction.
     /// A historical JSONL can contain thousands of rows; spawning one Task per
     /// row makes first launch fight itself for the database queue and UI.
-    private func insertEvents(_ events: [UsageEvent]) {
-        guard !events.isEmpty else { return }
+    @discardableResult
+    private func insertEvents(_ events: [UsageEvent]) -> Bool {
+        dispatchPrecondition(condition: .onQueue(scanQueue))
+        guard !events.isEmpty else { return true }
         let roots = RepositoryScope.configuredRoots()
         var normalizedRepos: [String: String?] = [:]
-        let rows = events.map { rawEvent -> (event: UsageEvent, providerId: String, confidence: CostConfidence, csId: String, cost: Double?) in
+        let rows = events.map { rawEvent -> (event: UsageEvent, providerId: String) in
             let normalizedRepo: String? = rawEvent.repoPath.flatMap { path in
                 if let cached = normalizedRepos[path] { return cached }
                 let resolved = RepositoryScope.authorizedGitRoot(for: path, roots: roots)
@@ -735,81 +709,63 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                 ts: rawEvent.ts, source: rawEvent.source, model: rawEvent.model,
                 inTokens: rawEvent.inTokens, outTokens: rawEvent.outTokens,
                 cacheTokens: rawEvent.cacheTokens, repoPath: normalizedRepo,
-                sessionId: rawEvent.sessionId, dedupeKey: rawEvent.dedupeKey)
-            let providerId = PricingManager.shared.providerId(for: event.model) ?? "unknown"
-
-        // CostSource arbitration
-        let sources = IntegrationRegistry.activeCostSources()
-        let (csId, confidence) = Arbitrator.resolve(
-            model: event.model, source: event.source,
-            costSources: sources
-        )
-
-        // Always compute token-pricing cost for per-repo CPL attribution.
-        // Balance delta (ApiPoller) gives the exact total but can't be attributed per-repo.
-        let cost = PricingManager.shared.costUSD(
-            model: event.model,
-            inTokens: event.inTokens,
-            outTokens: event.outTokens,
-            cacheTokens: event.cacheTokens
-        )
-
-        // For apiKey balance-tracked sources, the per-event cost is token-pricing (estimated),
-        // while the CostSource itself is .exact (from balance delta).
-        let effectiveConfidence: CostConfidence
-        if let cs = sources.first(where: { $0.id == csId }),
-           case .apiKey(let pid) = cs.kind,
-           ProviderRegistry.byId(pid)?.canFetchBalance == true {
-            effectiveConfidence = .estimated
-        } else {
-            effectiveConfidence = confidence
+                sessionId: rawEvent.sessionId, dedupeKey: rawEvent.dedupeKey,
+                cacheCreationTokens: rawEvent.cacheCreationTokens,
+                reportedOutputTokens: rawEvent.reportedOutputTokens,
+                reasoningTokens: rawEvent.reasoningTokens)
+            let providerId = ModelCatalogManager.shared.providerId(for: event.model) ?? "unknown"
+            return (event, providerId)
         }
 
-        return (event, providerId, effectiveConfidence, csId, cost)
-        }
-
-        Task {
             do {
-                try await AppDatabase.shared.write { db in
-                    for row in rows {
-                        try db.execute(sql: """
-                            INSERT INTO usage_event
-                              (ts, source, provider_id, model, in_tokens, out_tokens,
-                               cache_tokens, cost_usd, repo_path, session_id, dedupe_key,
-                               cost_source_id, cost_confidence)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            ON CONFLICT(dedupe_key) DO UPDATE SET
-                              provider_id = excluded.provider_id,
-                              model       = excluded.model,
-                              cost_usd    = excluded.cost_usd,
-                              repo_path   = excluded.repo_path,
-                              cost_source_id = excluded.cost_source_id,
-                              cost_confidence = excluded.cost_confidence
-                            """, arguments: [
-                                row.event.ts, row.event.source, row.providerId, row.event.model,
-                                row.event.inTokens, row.event.outTokens, row.event.cacheTokens,
-                                row.cost, row.event.repoPath, row.event.sessionId, row.event.dedupeKey,
-                                row.csId, row.confidence.rawValue,
-                            ])
-                    }
+                let nowMs = Int64(Date().timeIntervalSince1970 * 1_000)
+                let batchTokens = try AppDatabase.shared.writeSynchronously { db in
+                    try Self.persistObservedEvents(in: db, rows: rows, nowMs: nowMs,
+                                                   liveSinceMs: liveObservationStartMs)
                 }
-                // v2 §3.2: report the batch's consumption totals so the coin
-                // sound is driven by money/tokens actually spent (WI-2).
-                let batchSpend = rows.compactMap { $0.cost }.reduce(0, +)
-                let batchTokens = rows.reduce(0) {
-                    $0 + TokenAccounting.observedTotal(
-                        input: $1.event.inTokens,
-                        output: $1.event.outTokens)
-                }
-                let event = ConsumptionEvent(
-                    spendUSD: batchSpend > 0 ? batchSpend : nil,
-                    tokens: batchTokens > 0 ? batchTokens : nil,
-                    source: rows.first?.event.source ?? "log")
+                let event: ConsumptionEvent? = batchTokens > 0 && !suppressConsumptionEvents
+                    ? ConsumptionEvent(spendUSD: nil, tokens: Int(clamping: batchTokens),
+                                       source: rows.first?.event.source ?? "log")
+                    : nil
                 DataRefreshCoordinator.shared.notifyPhaseIngest(event)
+                return true
             } catch {
                 Logger.error("Failed to insert usage_event: \(error)")
+                return false
+            }
+    }
+
+    /// Logs contain activity facts, not bills. Existing legacy amounts remain
+    /// untouched; new rows have no derived amount. Replays are not new spending.
+    static func persistObservedEvents(in db: Database, rows: [(event: UsageEvent, providerId: String)],
+                                      nowMs: Int64, liveSinceMs: Int64? = nil) throws -> Int64 {
+        var freshTokens: Int64 = 0
+        for row in rows {
+            let event = row.event
+            let exists = try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM usage_event WHERE dedupe_key = ?)",
+                                          arguments: [event.dedupeKey]) ?? false
+            try db.execute(sql: """
+                INSERT INTO usage_event
+                  (ts, source, provider_id, model, in_tokens, out_tokens, cache_tokens, cache_creation_tokens,
+                   reported_output_tokens, reasoning_tokens,
+                   repo_path, session_id, dedupe_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(dedupe_key) DO UPDATE SET
+                  provider_id = excluded.provider_id, model = excluded.model,
+                  repo_path = excluded.repo_path,
+                  cache_creation_tokens = COALESCE(excluded.cache_creation_tokens, usage_event.cache_creation_tokens),
+                  reported_output_tokens = COALESCE(excluded.reported_output_tokens, usage_event.reported_output_tokens),
+                  reasoning_tokens = COALESCE(excluded.reasoning_tokens, usage_event.reasoning_tokens)
+                """, arguments: [event.ts, event.source, row.providerId, event.model,
+                    event.inTokens, event.outTokens, event.cacheTokens, event.cacheCreationTokens,
+                    event.reportedOutputTokens, event.reasoningTokens, event.repoPath,
+                    event.sessionId, event.dedupeKey])
+            if !exists, event.model != "<synthetic>", event.ts <= nowMs,
+               event.ts >= max(nowMs - 300_000, liveSinceMs ?? Int64.min) {
+                freshTokens += Int64(TokenAccounting.observedTotal(event: event))
             }
         }
+        return freshTokens
     }
 
     /// Walk up from a path until we find a .git directory
@@ -1060,8 +1016,10 @@ struct LineSplitter {
         guard let last = pieces.last else { return }
 
         for piece in pieces.dropLast() {
-            if let line = consume(piece, terminated: true), !skippingOversizedLine {
-                handler(line)
+            autoreleasepool {
+                if let line = consume(piece, terminated: true), !skippingOversizedLine {
+                    handler(line)
+                }
             }
             skippingOversizedLine = false
         }

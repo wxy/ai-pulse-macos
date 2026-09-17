@@ -34,6 +34,103 @@ final class CoinSoundDecisionTests: XCTestCase {
 
     // MARK: - Quiet hours (防烦原则 2, cross-midnight aware)
 
+    func testSystemNotificationSoundRespectsMuteAndQuietHoursIndependentlyOfPack() {
+        let domain = "NotificationSoundTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: domain)!
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set(false, forKey: "coin_sound_enabled")
+        defaults.set(true, forKey: "sound_quiet_enabled")
+        defaults.set("22:00", forKey: "sound_quiet_from")
+        defaults.set("08:00", forKey: "sound_quiet_to")
+        for hour in [22, 23, 0, 7] {
+            XCTAssertFalse(AppSoundControl.permitsNotificationSound(
+                now: date(h: hour), calendar: utcCalendar(), defaults: defaults))
+        }
+        XCTAssertTrue(AppSoundControl.permitsNotificationSound(
+            now: date(h: 8), calendar: utcCalendar(), defaults: defaults))
+        defaults.set(true, forKey: AppSoundControl.mutedKey)
+        XCTAssertFalse(AppSoundControl.permitsNotificationSound(
+            now: date(h: 12), calendar: utcCalendar(), defaults: defaults))
+        defaults.set(false, forKey: "sound_quiet_enabled")
+        XCTAssertFalse(AppSoundControl.permitsNotificationSound(
+            now: date(h: 23), calendar: utcCalendar(), defaults: defaults))
+        defaults.set(false, forKey: AppSoundControl.mutedKey)
+        XCTAssertTrue(AppSoundControl.permitsNotificationSound(
+            now: date(h: 23), calendar: utcCalendar(), defaults: defaults))
+    }
+
+    func testExpiredOrFuturePulseCannotIntensifyFreshActivitySound() {
+        let now = date(h: 12)
+        let s = settings(quietEnabled: false)
+        for observedAt in [now.addingTimeInterval(-60), now.addingTimeInterval(1)] {
+            let result = CoinSound.decide(events: [event(tokens: 1)],
+                pulse: pulse(.intense, at: observedAt), settings: s, state: .init(), now: now)
+            XCTAssertEqual(result.decision, .coin)
+            XCTAssertEqual(result.state.lastTier, .active)
+        }
+        let current = CoinSound.decide(events: [event(tokens: 1)], pulse: pulse(.intense, at: now),
+                                       settings: s, state: .init(), now: now)
+        XCTAssertEqual(current.decision, .coinRain)
+    }
+
+    func testClockRollbackDoesNotLockHourlyBudgetOrMergeWindow() {
+        let now = date(h: 12)
+        let future = now.addingTimeInterval(3600)
+        let previous = CoinSound.DecisionState(lastPlay: future, recentPlays: [future], lastTier: .active)
+        let result = CoinSound.decide(events: [event(tokens: 1)], pulse: nil,
+            settings: settings(quietEnabled: false, maxPerHour: 1), state: previous, now: now)
+        XCTAssertEqual(result.decision, .coin)
+        XCTAssertEqual(result.state.recentPlays, [now])
+        XCTAssertEqual(result.state.lastPlay, now)
+    }
+
+    func testSilentOrInvalidVolumeDoesNotConsumePromptBudgetOrReplayHistory() {
+        let now = date(h: 12)
+        let original = CoinSound.DecisionState()
+        var s = settings(quietEnabled: false, maxPerHour: 1)
+        for volume in [0.0, -1.0, Double.nan, Double.infinity] {
+            s.volume = volume
+            let result = CoinSound.decide(events: [event(tokens: 20)], pulse: nil,
+                                         settings: s, state: original, now: now)
+            XCTAssertEqual(result.decision, .none)
+            XCTAssertEqual(result.state, original)
+        }
+        s.volume = 0.5
+        let fresh = CoinSound.decide(events: [event(tokens: 1)], pulse: nil,
+                                    settings: s, state: original, now: now.addingTimeInterval(1))
+        XCTAssertEqual(fresh.decision, .coin)
+        XCTAssertEqual(fresh.state.recentPlays.count, 1)
+    }
+
+    func testAutomaticPlaybackRechecksQuietMuteVolumeAndCueToggle() {
+        var s = settings()
+        let calendar = utcCalendar()
+        for cue: SoundDecision in [.coin, .coinDouble, .coinRain, .chime] {
+            XCTAssertFalse(CoinSound.permitsAutomaticPlayback(cue, settings: s, now: date(h: 23), calendar: calendar))
+            XCTAssertTrue(CoinSound.permitsAutomaticPlayback(cue, settings: s, now: date(h: 12), calendar: calendar))
+        }
+        s.muted = true
+        XCTAssertFalse(CoinSound.permitsAutomaticPlayback(.coin, settings: s, now: date(h: 12), calendar: calendar))
+        s.muted = false
+        s.enabled = false
+        XCTAssertFalse(CoinSound.permitsAutomaticPlayback(.coin, settings: s, now: date(h: 12), calendar: calendar))
+        XCTAssertTrue(CoinSound.permitsAutomaticPlayback(.chime, settings: s, now: date(h: 12), calendar: calendar))
+        for volume in [0.0, -1.0, Double.nan, Double.infinity] {
+            s.volume = volume
+            XCTAssertFalse(CoinSound.permitsAutomaticPlayback(.chime, settings: s, now: date(h: 12), calendar: calendar))
+        }
+    }
+
+    func testExplicitPreviewIgnoresAutomaticToggleButNotMuteOrZeroVolume() {
+        var s = settings(enabled: false)
+        XCTAssertTrue(CoinSound.permitsPreviewPlayback(settings: s))
+        s.muted = true
+        XCTAssertFalse(CoinSound.permitsPreviewPlayback(settings: s))
+        s.muted = false
+        s.volume = 0
+        XCTAssertFalse(CoinSound.permitsPreviewPlayback(settings: s))
+    }
+
     func testChimesDoNotDependOnConsumptionToggle() {
         let s = settings(enabled: false)
         XCTAssertTrue(CoinSound.permitsPlayback(.chime, settings: s))

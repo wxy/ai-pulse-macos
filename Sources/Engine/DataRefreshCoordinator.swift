@@ -47,6 +47,8 @@ struct ConsumptionEvent {
 nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     static let shared = DataRefreshCoordinator()
     private let actions: IngestActions
+    private let invalidateDashboardCache: @Sendable () async -> Void
+    private let playConsumption: @MainActor @Sendable ([ConsumptionEvent], PulseSnapshot?) -> Void
 
     private var phase1Timer: DispatchSourceTimer?
     private var phase2Timer: DispatchSourceTimer?
@@ -57,29 +59,40 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     /// Consumption events accumulated across debounce/suppression windows.
     /// Main-thread only: every writer hops through DispatchQueue.main.async.
     private var pendingEvents: [ConsumptionEvent] = []
+    private var pendingConsumptionBeat = false
     private var lastNotifyTime: Date = .distantPast
     private let notifyQueue = DispatchQueue(label: "com.wxy.aipulse.coordinator", qos: .utility)
     private var screenSleepObserver: NSObjectProtocol?
     private var screenWakeObserver: NSObjectProtocol?
     private var stopped = false
+    private(set) var isRunning = false
+    var isSuspended: Bool { timersSuspended }
 
     /// Minimum interval between consecutive .dataDidChange posts.
     /// Prevents the staggered startup phases (5s/10s/15s) and rapid
     /// multi-source writes from triggering a storm of notifications.
     private let minNotifyInterval: TimeInterval = 3.0
 
-    init(actions: IngestActions = .live) {
+    init(actions: IngestActions = .live,
+         invalidateDashboardCache: @escaping @Sendable () async -> Void = { await DashboardCache.invalidateAll() },
+         playConsumption: @escaping @MainActor @Sendable ([ConsumptionEvent], PulseSnapshot?) -> Void = {
+             CoinSound.play(events: $0, pulse: $1)
+         }) {
         self.actions = actions
+        self.invalidateDashboardCache = invalidateDashboardCache
+        self.playConsumption = playConsumption
     }
 
     // MARK: - Public
 
     func start() {
+        guard !isRunning else { return }
+        isRunning = true
         stopped = false
+        timersSuspended = false
         // One-time session metadata backfill for logs that predate the
         // session_info table (runs once, guarded internally).
         SessionInfoBackfill.runIfNeeded()
-        Task { await CostBackfill.runIfNeeded() }
         recreateTimers()
 
         Logger.info("DataRefreshCoordinator: started (P1=30s, P2=5min, P3=1h)")
@@ -109,7 +122,10 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         screenSleepObserver = nil; screenWakeObserver = nil
         cancelAllTimers()
         stopped = true
+        isRunning = false
+        timersSuspended = false
         pendingEvents.removeAll()
+        pendingConsumptionBeat = false
         lastNotifyTime = .distantPast
         Logger.info("DataRefreshCoordinator: stopped")
     }
@@ -119,7 +135,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     private var timersSuspended = false
 
     private func suspendTimers() {
-        guard !timersSuspended else { return }
+        guard isRunning, !timersSuspended else { return }
         timersSuspended = true
         cancelAllTimers()
         Logger.debug("DataRefreshCoordinator: timers suspended (system sleeping)")
@@ -127,7 +143,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     }
 
     private func resumeTimers() {
-        guard timersSuspended else { return }
+        guard isRunning, timersSuspended else { return }
         timersSuspended = false
         recreateTimers()
         Logger.info("DataRefreshCoordinator: timers resumed (system woke)")
@@ -196,7 +212,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     // MARK: - WI-7: closing bell (日终收盘)
 
     /// Lazy daily check riding the 30s phase-1 tick — no new timer. Fires at
-    /// most once per calendar day, and only when something was actually spent.
+    /// most once per calendar day, and only when an observed fact is available.
     private func maybeRingClosingBell() {
         let d = UserDefaults.standard
         guard d.object(forKey: "closing_bell_enabled") as? Bool ?? true else { return }
@@ -213,32 +229,35 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
             let todayStartMs = Int64(dayStart.timeIntervalSince1970 * 1000)
             async let observed = StatsService.observedSpendItems(sinceMs: todayStartMs)
             async let quota = StatsService.latestQuotaStatus()
+            let endMs = Int64(now.timeIntervalSince1970 * 1000) + 1
+            async let codeOutput = StatsService.authorizedCodeOutput(sinceMs: todayStartMs, beforeMs: endMs)
             async let counts = AppDatabase.shared.read { db in
                 let tokens = try Int64.fetchOne(db, sql: """
                     SELECT COALESCE(SUM(\(TokenAccounting.observedTotalSQL)), 0)
-                    FROM usage_event WHERE ts >= ? AND (model IS NULL OR model != '<synthetic>')
-                    """, arguments: [todayStartMs]) ?? 0
-                let lines = try Int.fetchOne(db, sql: """
-                    SELECT COALESCE(SUM(MAX(added, 0) + MAX(deleted, 0)), 0)
-                    FROM code_change WHERE ts >= ? AND attribution IS NOT NULL
-                    """, arguments: [todayStartMs]) ?? 0
-                return (tokens, lines)
+                    FROM usage_event WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
+                    """, arguments: [todayStartMs, endMs]) ?? 0
+                return tokens
             }
             let pulse = await PulseEngine.shared.snapshot()
             let (spend, quotas, output) = await (observed, quota, try? counts)
+            let code = try? await codeOutput
             let freshQuota = quotas.filter {
-                guard let updatedAt = $0.updatedAt else { return false }
-                return now.timeIntervalSince1970 - updatedAt <= PulseEngine.quotaMaxAge
+                guard let updatedAt = $0.updatedAt, $0.utilization.isFinite else { return false }
+                let age = now.timeIntervalSince1970 - updatedAt
+                return age.isFinite && age >= 0 && age <= PulseEngine.quotaMaxAge
             }.map(\.utilization).max()
             let summary = ClosingBellSummary(
                 tier: pulse?.tier ?? .resting,
                 reason: pulse?.reason ?? "no_recent_signal",
-                activityTokens: output?.0 ?? 0,
+                activityTokens: output,
                 observedSpend: spend,
                 quotaPercent: freshQuota,
-                attributedLines: output?.1 ?? 0)
+                changedLines: code.map { $0.added + $0.deleted },
+                commits: code?.commits)
             guard summary.hasActivity else { return }
-            d.set(dayKey, forKey: "closing_bell_last_fired")
+            // Concurrent slow reads may finish after another daily task. Claim
+            // on the main actor immediately before firing, without an await.
+            guard ClosingBell.claimDailyDelivery(for: dayStart) else { return }
             await ClosingBell.fire(summary: summary, at: now)
         }
     }
@@ -272,17 +291,13 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
             let intervals: [(String, Int, TimeInterval)] = [
                 ("today", 1, 300), ("week", 7, 3600), ("30d", 30, 43200)
             ]
-            // Compute actual weekDays
-            let sTodayStart = Calendar.current.startOfDay(for: Date())
-            let weekDays = max((Calendar.current.dateComponents([.day], from: Calendar.mondayOfWeek(), to: sTodayStart).day ?? 0) + 1, 1)
-            let dayMap: [String: Int] = ["today": 1, "week": weekDays, "30d": 30]
-
             for (key, _, interval) in intervals {
                 let lastKey = "cache_refresh_\(key)"
                 let last = UserDefaults.standard.double(forKey: lastKey)
                 guard now - last >= interval else { continue }
                 UserDefaults.standard.set(now, forKey: lastKey)
-                let snap = await StatsService.dashboardSnapshot(days: dayMap[key] ?? 1)
+                guard let period = DashboardPeriodKind(rawValue: key) else { continue }
+                let snap = await StatsService.dashboardSnapshot(period: period)
                 await DashboardCache.write(timeRange: key, json: snap.jsonString())
             }
 
@@ -320,7 +335,11 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     /// are not consumption events (v2 §4.2 — unattributed output never burns),
     /// so this only refreshes UI.
     func notifyPhaseGitScan() {
-        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify() } }
+        Task { [weak self] in
+            guard let self else { return }
+            await invalidateDashboardCache()
+            await MainActor.run { self.scheduleUINotify() }
+        }
     }
 
     /// Called by ApiPoller after a balance_snapshot row is inserted, optionally
@@ -347,6 +366,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     /// Main-thread only (all callers hop through DispatchQueue.main.async).
     private func appendEvent(_ event: ConsumptionEvent?) {
         guard let event, !event.isEmpty else { return }
+        pendingConsumptionBeat = true
         // Quiet-time observations still update facts and pulse state, but they
         // never enter the sound queue and therefore cannot replay in the
         // morning if UI notification delivery was delayed.
@@ -389,12 +409,17 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         Logger.debug("DataRefreshCoordinator: posting .dataDidChange (\(pendingEvents.count) consumption event(s))")
         let events = pendingEvents
         pendingEvents.removeAll()
+        let shouldBeat = pendingConsumptionBeat
+        pendingConsumptionBeat = false
         Task { @MainActor in
             await PulseEngine.shared.invalidate()
             NotificationCenter.default.post(name: .dataDidChange, object: nil)
+            if shouldBeat {
+                NotificationCenter.default.post(name: .consumptionDidOccur, object: nil)
+            }
             guard !events.isEmpty else { return }
             let pulse = await PulseEngine.shared.snapshot()
-            CoinSound.play(events: events, pulse: pulse)
+            self.playConsumption(events, pulse)
         }
     }
 

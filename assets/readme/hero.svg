@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="480" viewBox="0 0 1280 480" role="img" aria-labelledby="heroTitle heroDesc">
-  <title id="heroTitle">AI Pulse — AI 编程花费追踪仪</title>
+  <title id="heroTitle">AI Pulse — 感受 AI 消费的脉搏</title>
   <desc id="heroDesc">浅色 hero：左侧产品名与中英双语标语，右侧机器人头像、金色脉冲环与迷你仪表盘装饰插画。</desc>
   <defs>
     <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
@@ -31,28 +31,28 @@
   <line x1="512" y1="44" x2="512" y2="438" stroke="#2B2620" stroke-opacity="0.10"/>
 
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif">
-    <text x="54" y="60" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13.5" font-weight="700" letter-spacing="2" fill="#A97A3B">AI CODING COST TRACKER</text>
+    <text x="54" y="60" font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13.5" font-weight="700" letter-spacing="2" fill="#A97A3B">AI CONSUMPTION PULSE</text>
     <text x="52" y="126" font-size="74" font-weight="850" letter-spacing="-1.5" fill="#2B2620">AI Pulse</text>
     <rect x="54" y="138" width="230" height="11" rx="5.5" fill="#F0C75F" opacity="0.9"/>
-    <text x="56" y="182" font-size="26" font-weight="700" fill="#B26B24">AI 编程花费追踪仪</text>
-    <text x="56" y="214" font-size="26" font-weight="700" fill="#B26B24">Your AI Coding Cost Tracker</text>
-    <text x="56" y="248" font-size="19" font-weight="520" fill="#6B6255">精确掌握每一笔 AI 花费，以及产出是否值得</text>
-    <text x="56" y="278" font-size="17" fill="#6B6255">See your AI spend — and whether it&apos;s worth it</text>
-    <text x="56" y="310" font-size="14.5" fill="#8A8070">100% 本地运行 · 数据绝不出设备</text>
-    <text x="56" y="332" font-size="14.5" fill="#8A8070">100% local · zero data leaves your machine</text>
+    <text x="56" y="182" font-size="26" font-weight="700" fill="#B26B24">感受 AI 消费的脉搏</text>
+    <text x="56" y="214" font-size="26" font-weight="700" fill="#B26B24">Feel your AI activity</text>
+    <text x="56" y="248" font-size="19" font-weight="520" fill="#6B6255">持续的投入，看得见的本地成果</text>
+    <text x="56" y="278" font-size="17" fill="#6B6255">Ongoing activity. Observable output.</text>
+    <text x="56" y="310" font-size="14.5" fill="#8A8070">本地解析 · 可选账户观察与云端同步</text>
+    <text x="56" y="332" font-size="14.5" fill="#8A8070">Local parsing · optional cloud sync</text>
   </g>
 
   <g font-family="ui-monospace, 'SF Mono', Menlo, monospace">
     <circle cx="64" cy="392" r="9" fill="#E8954C" stroke="#2B2620" stroke-width="3"/>
-    <text x="82" y="397" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7A6F5F">TRACK</text>
+    <text x="82" y="397" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7A6F5F">SENSE</text>
     <line x1="150" y1="392" x2="190" y2="392" stroke="#2B2620" stroke-width="2"/>
     <path d="M188 386 L196 392 L188 398 Z" fill="#2B2620"/>
     <circle cx="208" cy="392" r="9" fill="#E8A24B" stroke="#2B2620" stroke-width="3"/>
-    <text x="226" y="397" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7A6F5F">ATTRIBUTE</text>
+    <text x="226" y="397" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7A6F5F">OBSERVE</text>
     <line x1="326" y1="392" x2="366" y2="392" stroke="#2B2620" stroke-width="2"/>
     <path d="M364 386 L372 392 L364 398 Z" fill="#2B2620"/>
     <circle cx="384" cy="392" r="9" fill="#F6C85F" stroke="#2B2620" stroke-width="3"/>
-    <text x="402" y="397" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7A6F5F">GUARD</text>
+    <text x="402" y="397" font-size="13" font-weight="700" letter-spacing="1.5" fill="#7A6F5F">REFLECT</text>
   </g>
 
   <!-- gold pulse rings around the robot -->

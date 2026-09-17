@@ -80,7 +80,7 @@ struct DashboardCache {
             }
 
             let age = -cached.updatedAt.timeIntervalSinceNow
-            guard age < maxAge else {
+            guard age >= 0, age < maxAge else {
                 DiagnosticJournal.log("cache_read", [
                     "range": .string(timeRange), "outcome": .string("expired"),
                     "age_seconds": .double(age.isFinite ? age : 0),
@@ -90,7 +90,9 @@ struct DashboardCache {
 
             guard
                   let data = cached.json.data(using: .utf8),
-                  let snap = try? JSONDecoder().decode(DashboardSnapshot.self, from: data)
+                  let snap = try? JSONDecoder().decode(DashboardSnapshot.self, from: data),
+                  let kind = DashboardPeriodKind(rawValue: timeRange),
+                  snap.period == DashboardPeriod(kind: kind)
             else {
                 DiagnosticJournal.log("cache_read", [
                     "range": .string(timeRange), "outcome": .string("decode_failed"),

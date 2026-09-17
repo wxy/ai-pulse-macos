@@ -146,8 +146,10 @@ final class SpendAlertService: @unchecked Sendable {
                 // in-window snapshot already reflects part of the drop and the
                 // 24h change is under-counted.
                 let dropRaw = baseline.balance - newest.balance
-                guard dropRaw > 0 else { continue }
-                let dropUSD = dropRaw * StatsService.toUSD(currency: newest.currency)
+                guard dropRaw.isFinite, dropRaw > 0,
+                      baseline.currency.uppercased() == newest.currency.uppercased(),
+                      let conversion = StatsService.semanticUSDConversion(currency: newest.currency) else { continue }
+                let dropUSD = dropRaw * conversion.rate
                 guard let level = SpendAlertRules.levelForBalanceDrop(
                     dropUSD: dropUSD, thresholds: thresholds) else { continue }
 
@@ -220,7 +222,7 @@ final class SpendAlertService: @unchecked Sendable {
         let content = UNMutableNotificationContent()
         content.title = I18n.t("alert.l\(payload.level).title")
         content.body = alertBody(payload)
-        content.sound = AppSoundControl.isMuted() ? nil : .default
+        content.sound = AppSoundControl.permitsNotificationSound() ? .default : nil
         content.interruptionLevel = .timeSensitive
 
         let request = UNNotificationRequest(
