@@ -13113,61 +13113,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unvollständige Daten — einige Abfragen fehlgeschlagen, Daten können fehlen"
+            "value" : "Daten unvollständig — Lesen oder Erfassung fehlgeschlagen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Incomplete Data — some queries failed, data may be missing"
+            "value" : "Incomplete data — some reads or collection failed"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Datos incompletos — algunas consultas fallaron, pueden faltar datos"
+            "value" : "Datos incompletos — falló la lectura o recopilación"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Données incomplètes — certaines requêtes ont échoué, des données peuvent manquer"
+            "value" : "Données incomplètes — échec de lecture ou de collecte"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "不完全データ — 一部のクエリが失敗、データ欠落の可能性"
+            "value" : "データ不完全 — 読み取りまたは収集に失敗"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "불완전 데이터 — 일부 쿼리 실패, 데이터 누락 가능"
+            "value" : "데이터 불완전 — 읽기 또는 수집 실패"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dados incompletos — algumas consultas falharam, dados podem estar ausentes"
+            "value" : "Dados incompletos — falha na leitura ou coleta"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "数据不完整 — 部分查询失败，数据可能缺失"
+            "value" : "数据不完整 — 部分读取或采集失败"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "數據不完整 — 部分查詢失敗，數據可能缺少"
+            "value" : "數據不完整 — 部分讀取或採集失敗"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "資料不完整 — 部分查詢失敗，資料可能缺少"
+            "value" : "資料不完整 — 部分讀取或收集失敗"
           }
         }
       }
