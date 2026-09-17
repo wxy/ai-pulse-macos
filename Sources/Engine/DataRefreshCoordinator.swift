@@ -47,6 +47,7 @@ struct ConsumptionEvent {
 nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     static let shared = DataRefreshCoordinator()
     private let actions: IngestActions
+    private let invalidateDashboardCache: @Sendable () async -> Void
     private let playConsumption: @MainActor @Sendable ([ConsumptionEvent], PulseSnapshot?) -> Void
 
     private var phase1Timer: DispatchSourceTimer?
@@ -71,10 +72,12 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     private let minNotifyInterval: TimeInterval = 3.0
 
     init(actions: IngestActions = .live,
+         invalidateDashboardCache: @escaping @Sendable () async -> Void = { await DashboardCache.invalidateAll() },
          playConsumption: @escaping @MainActor @Sendable ([ConsumptionEvent], PulseSnapshot?) -> Void = {
              CoinSound.play(events: $0, pulse: $1)
          }) {
         self.actions = actions
+        self.invalidateDashboardCache = invalidateDashboardCache
         self.playConsumption = playConsumption
     }
 
@@ -325,7 +328,11 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     /// are not consumption events (v2 §4.2 — unattributed output never burns),
     /// so this only refreshes UI.
     func notifyPhaseGitScan() {
-        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify() } }
+        Task { [weak self] in
+            guard let self else { return }
+            await invalidateDashboardCache()
+            await MainActor.run { self.scheduleUINotify() }
+        }
     }
 
     /// Called by ApiPoller after a balance_snapshot row is inserted, optionally

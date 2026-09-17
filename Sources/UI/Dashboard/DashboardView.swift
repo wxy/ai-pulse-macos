@@ -73,7 +73,6 @@ struct DashboardView: View {
     @State private var timeRange: TimeRange
     @State private var costHoverDate: Date? = nil
     @State private var isRefreshing = false
-    @State private var dataChangeThrottle = DashboardLoadThrottle()
     @State private var lastChartJournalKey: String = ""
 
     init(initialTimeRange: TimeRange = .today) {
@@ -540,10 +539,10 @@ struct DashboardView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .dataDidChange)) { _ in
             Task { await refreshCurrentPulse() }
-            // Background data change — throttle to avoid redundant work
-            let now = Date()
-            guard dataChangeThrottle.shouldLoad(now: now, minimumInterval: 15) else { return }
-            scheduleLoad(for: timeRange)
+            // The coordinator already debounces writes. Refresh all resident
+            // channels so non-selected periods cannot retain pre-ingest facts.
+            // Each range cancels only its own older request.
+            for range in TimeRange.allCases { scheduleLoad(for: range) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .appHealthDidChange)) { _ in
             refreshLocalScanStatus()

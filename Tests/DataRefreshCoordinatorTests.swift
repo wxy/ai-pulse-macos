@@ -55,6 +55,30 @@ final class DataRefreshCoordinatorTests: XCTestCase {
 
     // MARK: - Debounce coalesces rapid pushes
 
+    func testGitInvalidatesPeriodCachesBeforeNotifyingUIWithoutConsumptionBeat() {
+        let invalidated = LockedNotificationCounter()
+        let beats = LockedNotificationCounter()
+        coordinator = DataRefreshCoordinator(actions: .noop, invalidateDashboardCache: {
+            try? await Task.sleep(for: .milliseconds(30))
+            _ = invalidated.increment()
+        }, playConsumption: { _, _ in })
+        let delivered = XCTestExpectation(description: "Git notification follows cache invalidation")
+        let observer = NotificationCenter.default.addObserver(forName: .dataDidChange, object: nil, queue: .main) { _ in
+            XCTAssertEqual(invalidated.read(), 1)
+            delivered.fulfill()
+        }
+        let beatObserver = NotificationCenter.default.addObserver(forName: .consumptionDidOccur, object: nil, queue: .main) { _ in
+            _ = beats.increment()
+        }
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            NotificationCenter.default.removeObserver(beatObserver)
+        }
+        coordinator.notifyPhaseGitScan()
+        wait(for: [delivered], timeout: 3)
+        XCTAssertEqual(beats.read(), 0)
+    }
+
     func testRapidPhasePushesAreDebounced() {
         let expectation = XCTestExpectation(description: "dataDidChange fires once after debounce")
         expectation.expectedFulfillmentCount = 1
