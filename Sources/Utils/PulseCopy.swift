@@ -6,7 +6,7 @@ import AIPulseShared
 enum PulseCopy {
     static func localizedReason(_ reason: String, primarySignal: PulseSignalKind? = nil) -> String {
         if reason == "no_recent_signal" { return I18n.t("pulse.reason.no_recent_signal") }
-        if reason == "recent_token_activity" { return I18n.t("pulse.reason.recent_token_activity") }
+        if reason == "recent_token_activity" { return I18n.t("pulse.activity.recent_signal") }
         if reason == "recent_observed_spend" { return I18n.t("pulse.reason.recent_observed_spend") }
         if reason == "recent_attributed_output" { return I18n.t("pulse.reason.recent_attributed_output") }
         if reason == "quota_unavailable_or_stale" { return I18n.t("pulse.reason.quota_unavailable_or_stale") }
@@ -19,9 +19,8 @@ enum PulseCopy {
         }
 
         if let factor = multiplier(in: reason, prefix: "token_rate_") {
-            return I18n.resolvedLang() == "zh-Hans"
-                ? "词元速率为平时的 \(factor) 倍"
-                : "Token rate is \(factor)× your usual pace"
+            if reason.contains("cold_start_") { return I18n.t("pulse.activity.reference") }
+            return String(format: I18n.t("pulse.activity.personal"), factor)
         }
         if let factor = multiplier(in: reason, prefix: "observed_spend_") {
             return I18n.resolvedLang() == "zh-Hans"
@@ -41,6 +40,20 @@ enum PulseCopy {
         case .attributedOutput: return I18n.t("pulse.reason.attributed_output")
         case .none: return I18n.t("pulse.reason.no_recent_signal")
         }
+    }
+
+    static func recentFacts(_ facts: PulseActivityFacts?) -> String {
+        guard let facts else { return I18n.t("pulse.reason.unavailable") }
+        let line = String(format: I18n.t("pulse.activity.recent"), facts.windowSeconds / 60,
+                          ChartMath.compactCount(facts.recentTokens))
+        return line + (facts.isPartial ? " · " + I18n.t("pulse.activity.partial") : "")
+    }
+
+    static func todayFacts(_ facts: PulseActivityFacts?, commits: Int?) -> String {
+        String(format: I18n.t("pulse.activity.today"),
+               facts.map { ChartMath.compactCount($0.todayTokens) } ?? "—",
+               commits.map { ChartMath.compactCount(Int64($0)) } ?? "—")
+        + (facts?.isPartial == true ? " · " + I18n.t("pulse.activity.partial") : "")
     }
 
     private static func multiplier(in reason: String, prefix: String) -> String? {

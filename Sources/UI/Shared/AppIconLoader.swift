@@ -106,6 +106,56 @@ enum AppIconLoader {
         }
     }
 
+    /// Fixed twelve-segment intensity mark; never a fraction of a budget.
+    @MainActor
+    static func pulseIcon(appearance: PulseAppearance, beat: Bool,
+                          healthDot: AppHealthMonitor.Severity) -> NSImage {
+        let image = load(healthDot: healthDot)
+        image.lockFocus()
+        let width: CGFloat = beat ? 28 : 22
+        let inset: CGFloat = 4 + width / 2
+        let rect = bodyRect.insetBy(dx: inset, dy: inset)
+        let points = perimeterPoints(rect: rect, cornerRadius: cornerRadius - inset)
+        var lengths: [CGFloat] = [0]
+        for index in 1..<points.count {
+            lengths.append(lengths[index - 1] + hypot(points[index].x - points[index - 1].x,
+                                                     points[index].y - points[index - 1].y))
+        }
+        let total = lengths.last ?? 0
+        for segment in 0..<PulseAppearance.segmentCount {
+            let start = (CGFloat(segment) + 0.15) / 12 * total
+            let end = (CGFloat(segment) + 0.85) / 12 * total
+            let path = NSBezierPath()
+            var started = false
+            for index in 1..<points.count where lengths[index] > start && lengths[index - 1] < end {
+                let length = lengths[index] - lengths[index - 1]
+                guard length > 0 else { continue }
+                func point(_ distance: CGFloat) -> CGPoint {
+                    let fraction = (distance - lengths[index - 1]) / length
+                    return CGPoint(x: points[index - 1].x + (points[index].x - points[index - 1].x) * fraction,
+                                   y: points[index - 1].y + (points[index].y - points[index - 1].y) * fraction)
+                }
+                if !started { path.move(to: point(max(start, lengths[index - 1]))); started = true }
+                path.line(to: point(min(end, lengths[index])))
+            }
+            appearance.color.withAlphaComponent(appearance.opacity(at: segment, beat: beat)).setStroke()
+            path.lineWidth = width
+            path.lineCapStyle = .round
+            path.stroke()
+        }
+        if appearance.tier == nil {
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 72, weight: .semibold),
+                .foregroundColor: NSColor.systemGray
+            ]
+            ("?" as NSString).draw(at: CGPoint(x: bodyRect.midX - 22, y: bodyRect.minY + 25),
+                                   withAttributes: attributes)
+        }
+        image.unlockFocus()
+        image.accessibilityDescription = appearance.label
+        return image
+    }
+
     // MARK: - Tile rendering
 
     /// Render the white rounded body with the artwork centered inside it.

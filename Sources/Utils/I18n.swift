@@ -91,9 +91,18 @@ enum I18n {
         }
     }
 
-    /// Load compiled .strings from bundle for a given language code.
+    private static var stringsBundle: Bundle {
+        #if SWIFT_PACKAGE
+        return .module
+        #else
+        return .main
+        #endif
+    }
+
+    /// SwiftPM/XCTest resources live in the module bundle, not Bundle.main.
+    /// The Xcode app still reads its normal main-bundle localizations.
     private static func loadStrings(for lang: String) -> [String: String] {
-        guard let path = Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: "\(lang).lproj"),
+        guard let path = stringsBundle.path(forResource: "Localizable", ofType: "strings", inDirectory: "\(lang).lproj"),
               let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
             return [:]
         }
@@ -116,7 +125,7 @@ enum I18n {
         if let v = dict[key] { return v }
 
         // Fallback to English
-        if target != "en", let enPath = Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: "en.lproj"),
+        if target != "en", let enPath = stringsBundle.path(forResource: "Localizable", ofType: "strings", inDirectory: "en.lproj"),
            let enDict = NSDictionary(contentsOfFile: enPath) as? [String: String],
            let v = enDict[key] { return v }
 

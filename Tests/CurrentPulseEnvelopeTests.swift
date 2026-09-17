@@ -32,4 +32,14 @@ final class CurrentPulseEnvelopeTests: XCTestCase {
         XCTAssertEqual(clean.pulse?.activity?.baseline, 0)
         XCTAssertEqual(clean.pulse?.activity?.normalized, 0)
     }
+
+    func testExactActivityFactsRoundTripWithoutTurningMalformedFactsIntoZero() throws {
+        let facts = PulseActivityFacts(recentTokens: 350_000, todayTokens: 2_400_000, isPartial: true)
+        var pulse = PulseSnapshot(tier: .elevated, primarySignal: .activity, reason: "activity",
+                                  signals: [], asOf: now, activityFacts: facts)
+        let decoded = try JSONDecoder().decode(PulseSnapshot.self, from: JSONEncoder().encode(pulse))
+        XCTAssertEqual(decoded.activityFacts, facts)
+        pulse.activityFacts?.recentTokens = -1
+        XCTAssertNil(pulse.sanitized().activityFacts)
+    }
 }

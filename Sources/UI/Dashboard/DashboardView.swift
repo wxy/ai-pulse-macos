@@ -257,12 +257,7 @@ struct DashboardView: View {
     }
 
     private func pulseColor(_ tier: PulseTier?) -> Color {
-        switch tier {
-        case .resting, .none: return .secondary
-        case .active: return .marsGreen
-        case .elevated: return .orange
-        case .intense: return .deepRed
-        }
+        Color(nsColor: PulseAppearance(tier: tier).color)
     }
 
     private var modelBreakdownItems: [ModelActivityItem] {
@@ -784,7 +779,7 @@ struct DashboardView: View {
             HStack(spacing: 6) {
                 Circle().fill(pulseColor(pulseTier)).frame(width: 8, height: 8)
                     .help(currentPulse?.isCurrent() == true
-                          ? StatusItemController.detail(snapshot: currentPulse)
+                          ? StatusItemController.detail(snapshot: currentPulse) + "\n" + I18n.t("pulse.activity.legend")
                           : I18n.t("pulse.reason.unavailable"))
                 Text(rangeTokenRateText)
                     .font(.caption).foregroundColor(.secondary).lineLimit(1)

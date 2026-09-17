@@ -15,6 +15,9 @@ final class StatusItemController: NSObject {
     private var headlineCache = ""
     private var detailCache = ""
     private let refreshGeneration = RefreshGeneration()
+    private var currentTier: PulseTier?
+    private var currentCooling = false
+    private var latestTodayCommits: Int?
 
     /// Decision #4: status item ships enabled by default.
     private var isEnabled: Bool {
@@ -25,7 +28,7 @@ final class StatusItemController: NSObject {
         guard isEnabled, statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
-            button.image = flameImage(for: nil)
+            button.image = PulseAppearance(tier: nil).image()
             button.imagePosition = .imageLeading
             button.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
         }
@@ -36,9 +39,13 @@ final class StatusItemController: NSObject {
         NotificationCenter.default.addObserver(self, selector: #selector(onDataChanged),
                                                name: .dataDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(onPulseChanged),
-                                               name: .pulseDidChange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(onConsumptionObserved),
-                                               name: .consumptionDidOccur, object: nil)
+                                               name: .pulseAppearanceDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(onBeatChanged),
+                                               name: .pulseBeatDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(onBeatChanged),
+                                               name: .appHealthDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(onLanguageChanged),
+                                               name: I18n.didChangeLanguage, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(onSoundMuteChanged),
                                                name: .soundMuteDidChange, object: nil)
     }
@@ -49,12 +56,21 @@ final class StatusItemController: NSObject {
         refresh()
     }
 
-    @objc private func onConsumptionObserved() {
-        animatePulseIfAllowed()
+    @objc private func onBeatChanged() {
+        renderMark()
     }
 
     @objc private func onPulseChanged() {
+        apply(snapshot: PulseFeedbackController.shared.snapshot, observedSpend: nil,
+              todayCommits: latestTodayCommits, updateContext: false)
         refresh()
+    }
+
+    @objc private func onLanguageChanged() {
+        headlineCache = ""
+        detailCache = ""
+        statusItem?.menu = buildMenu()
+        onPulseChanged()
     }
 
     @objc private func onSoundMuteChanged() {
@@ -67,29 +83,48 @@ final class StatusItemController: NSObject {
     func refresh() {
         let request = refreshGeneration.begin()
         Task { @MainActor in
-            let snapshot = await PulseEngine.shared.snapshot()
-            let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
+            let snapshot = PulseFeedbackController.shared.snapshot
+            let observedAt = snapshot?.asOf ?? Date()
+            let todayStartMs = Int64(Calendar.current.startOfDay(for: observedAt).timeIntervalSince1970 * 1000)
             let spend = await StatsService.observedSpendForMenu(sinceMs: todayStartMs)
+            let output = try? await StatsService.authorizedCodeOutput(
+                sinceMs: todayStartMs, beforeMs: Int64(observedAt.timeIntervalSince1970 * 1000) + 1)
+            let quotaFailures = ObservationFailures()
+            let quotas = await StatsService.$observationFailures.withValue(quotaFailures) {
+                await StatsService.latestQuotaStatus()
+            }
+            let quotaFailed = !(await quotaFailures.snapshot()).isEmpty
             guard refreshGeneration.isCurrent(request) else { return }
-            apply(snapshot: snapshot, observedSpend: spend)
+            updateQuota(items: quotaFailed ? nil : quotas)
+            let latestPulse = PulseFeedbackController.shared.snapshot
+            let sameDay = Calendar.current.isDate(observedAt, inSameDayAs: latestPulse?.asOf ?? Date())
+            apply(snapshot: latestPulse, observedSpend: sameDay ? spend : nil,
+                  todayCommits: sameDay ? output?.commits : nil)
         }
     }
 
     /// Testable seam: UI state derived from data.
-    func apply(snapshot: PulseSnapshot?, observedSpend: [ObservedSpendItem]?) {
+    func apply(snapshot: PulseSnapshot?, observedSpend: [ObservedSpendItem]?, todayCommits: Int? = nil,
+               updateContext: Bool = true) {
         guard let item = statusItem, let button = item.button else { return }
+        latestTodayCommits = todayCommits
+        let validSnapshot = snapshot?.isCurrent() == true ? snapshot : nil
 
-        // Real tinted rendering (WI-6 反馈修正): template images are always
-        // monochrome in the menu bar and contentTintColor does not apply —
-        // bake the tier color into a non-template bitmap instead.
-        button.image = flameImage(for: snapshot?.tier)
+        currentTier = snapshot?.isCurrent() == true ? snapshot?.tier : nil
+        currentCooling = validSnapshot?.activity?.freshness == .aging
+        renderMark()
+        button.title = " " + PulseAppearance(tier: currentTier, cooling: validSnapshot?.activity?.freshness == .aging).label
+        button.setAccessibilityLabel(Self.headline(snapshot: validSnapshot))
+        button.toolTip = [Self.detail(snapshot: validSnapshot), PulseCopy.recentFacts(validSnapshot?.activityFacts),
+                          I18n.t("pulse.activity.legend")].joined(separator: "\n")
 
-        button.title = " " + Self.tierLabel(snapshot?.tier)
-        button.setAccessibilityLabel(Self.headline(snapshot: snapshot))
-
-        let headline = Self.headline(snapshot: snapshot)
-        let detail = Self.detail(snapshot: snapshot)
+        let headline = Self.headline(snapshot: validSnapshot)
+        let detail = Self.detail(snapshot: validSnapshot)
         if let menu = item.menu {
+            menu.items.first { ($0.representedObject as? String) == "pulse-recent-facts" }?.title =
+                PulseCopy.recentFacts(validSnapshot?.activityFacts)
+            menu.items.first { ($0.representedObject as? String) == "pulse-today-facts" }?.title =
+                PulseCopy.todayFacts(validSnapshot?.activityFacts, commits: todayCommits)
             if headline != headlineCache,
                let row = menu.items.first(where: { ($0.representedObject as? String) == "pulse-headline" }) {
                 row.title = headline
@@ -100,7 +135,7 @@ final class StatusItemController: NSObject {
                 row.title = detail
                 detailCache = detail
             }
-            if let row = menu.items.first(where: { ($0.representedObject as? String) == "observed-spend" }) {
+            if updateContext, let row = menu.items.first(where: { ($0.representedObject as? String) == "observed-spend" }) {
                 if let money = Self.observedSpendLine(observedSpend) {
                     row.title = money
                     row.isHidden = false
@@ -119,37 +154,43 @@ final class StatusItemController: NSObject {
         }
     }
 
-    nonisolated static func tintColor(for tier: PulseTier?) -> NSColor {
-        switch tier {
-        case .intense: return .systemRed
-        case .elevated: return .systemOrange
-        case .active: return .systemYellow
-        case .resting, .none: return .systemGray
-        }
+    private func updateQuota(items: [QuotaStatusItem]?) {
+        guard let row = statusItem?.menu?.items.first(where: { ($0.representedObject as? String) == "quota-context" }) else { return }
+        let text = Self.quotaContext(items: items)
+        row.title = text ?? ""
+        row.isHidden = text == nil
     }
 
-    private func animatePulseIfAllowed() {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-              let button = statusItem?.button else { return }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.10
-            button.animator().alphaValue = 0.45
-        } completionHandler: {
-            Task { @MainActor in
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.14
-                    button.animator().alphaValue = 1
-                }
-            }
+    nonisolated static func quotaContext(items: [QuotaStatusItem]?, now: Date = Date()) -> String? {
+        guard let items else { return I18n.t("pulse.activity.quota_unavailable") }
+        guard !items.isEmpty else { return nil }
+        let fresh = items.filter { !$0.isStale(asOf: now) && $0.utilization.isFinite && (0...100).contains($0.utilization) }
+        guard !fresh.isEmpty else { return I18n.t("pulse.activity.quota_stale") }
+        // Independent windows; never call the highest utilization a current beat.
+        let values = fresh.map {
+            "\(IntegrationRegistry.toolDisplayName(for: $0.toolId)) · \($0.windowId ?? "—") · \(String(format: "%.1f", $0.utilization))%"
         }
+        return I18n.t("pulse.activity.quota_context") + " " + values.joined(separator: " / ")
+            + (fresh.count < items.count ? " · " + I18n.t("pulse.activity.quota_stale") : "")
+    }
+
+    nonisolated static func tintColor(for tier: PulseTier?) -> NSColor {
+        PulseAppearance(tier: tier).color
+    }
+
+    private func renderMark() {
+        let beat = PulseFeedbackController.shared.isBeating &&
+            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion &&
+            AppHealthMonitor.shared.current.severity < .critical
+        statusItem?.button?.image = PulseAppearance(tier: currentTier, cooling: currentCooling).image(beat: beat)
     }
 
     nonisolated static func tierLabel(_ tier: PulseTier?) -> String {
-        I18n.t("pulse.tier.\(tier?.rawValue ?? "unknown")")
+        PulseAppearance(tier: tier).label
     }
 
     nonisolated static func headline(snapshot: PulseSnapshot?) -> String {
-        "●  \(tierLabel(snapshot?.tier))"
+        "●  " + PulseAppearance(tier: snapshot?.tier, cooling: snapshot?.activity?.freshness == .aging).label
     }
 
     nonisolated static func detail(snapshot: PulseSnapshot?) -> String {
@@ -169,31 +210,6 @@ final class StatusItemController: NSObject {
 
     // MARK: - Tier-colored flame
 
-    @MainActor private var flameCache: [PulseTier?: NSImage] = [:]
-
-    /// Render the flame symbol with the tier color baked in. Template images
-    /// are monochrome in the menu bar and `contentTintColor` does not reach
-    /// them — so we draw the symbol and tint its opaque pixels (sourceAtop).
-    /// System colors adapt to light/dark menu bars; mid-tones stay legible.
-    @MainActor private func flameImage(for tier: PulseTier?) -> NSImage {
-        if let cached = flameCache[tier] { return cached }
-        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-        let base = NSImage(systemSymbolName: "flame.fill",
-                           accessibilityDescription: "AI Pulse")!
-            .withSymbolConfiguration(config)!
-        let color = Self.tintColor(for: tier)
-        let tinted = NSImage(size: base.size, flipped: false) { rect in
-            base.draw(in: rect)
-            color.set()
-            rect.fill(using: .sourceAtop)
-            return true
-        }
-        tinted.isTemplate = false
-        tinted.accessibilityDescription = "AI Pulse"
-        flameCache[tier] = tinted
-        return tinted
-    }
-
     // MARK: - Menu
 
     private func buildMenu() -> NSMenu {
@@ -207,6 +223,13 @@ final class StatusItemController: NSObject {
         detail.representedObject = "pulse-detail"
         detail.isEnabled = false
         menu.addItem(detail)
+        for identifier in ["pulse-recent-facts", "pulse-today-facts", "quota-context"] {
+            let row = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            row.representedObject = identifier
+            row.isEnabled = false
+            row.isHidden = identifier == "quota-context"
+            menu.addItem(row)
+        }
         let observed = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         observed.representedObject = "observed-spend"
         observed.isEnabled = false

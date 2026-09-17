@@ -1,197 +1,42 @@
 import AppKit
 import AIPulseShared
 
-/// Dock icon with a ring driven by the current unit-free Pulse score. Money is
-/// intentionally absent: the Dock communicates pressure, not an inferred bill.
-final class DockManager: @unchecked Sendable {
+/// The Dock is the large version of the menu bar's token-activity mark.
+@MainActor
+final class DockManager {
     static let shared = DockManager()
-    private var lastPulseTime: Date = .distantPast
-    private let baseIcon: NSImage = AppIconLoader.load()
-    private var dataChangeObserver: NSObjectProtocol?
-    private var healthObserver: NSObjectProtocol?
-    private var pulseObserver: NSObjectProtocol?
-    private var consumptionObserver: NSObjectProtocol?
-    private var healthSeverity: AppHealthMonitor.Severity = .nominal
+    private var observers: [NSObjectProtocol] = []
+    private var renderedKey: String?
 
     func start() {
-        // Observe health changes for progress bar colour
-        healthObserver = NotificationCenter.default.addObserver(
-            forName: .appHealthDidChange, object: nil, queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
-            Task { @MainActor in
-                let snap = AppHealthMonitor.shared.current
-                self.healthSeverity = snap.severity
-                await self.setProgressIcon()
-            }
+        guard observers.isEmpty else { return }
+        for name in [Notification.Name.pulseAppearanceDidChange, .pulseBeatDidChange, .appHealthDidChange] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
+                [weak self] _ in Task { @MainActor in self?.render() }
+            })
         }
-
-        Task {
-            // Initial refresh sets the progress icon
-            await refresh()
-            // Pulse once on launch so the user sees the app is alive
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            await pulseIcon()
-            // Restore progress after pulse (pulse overwrites with base frames)
-            await setProgressIcon()
-        }
-        // Observe data-change notifications from the centralized coordinator
-        dataChangeObserver = NotificationCenter.default.addObserver(
-            forName: Notification.Name.dataDidChange, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { [weak self] in
-                guard let self else { return }
-                // Refresh first to compute the latest progress icon
-                await self.refresh()
-            }
-        }
-        pulseObserver = NotificationCenter.default.addObserver(
-            forName: .pulseDidChange, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { [weak self] in await self?.refreshPulseAppearance() }
-        }
-        consumptionObserver = NotificationCenter.default.addObserver(
-            forName: .consumptionDidOccur, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { [weak self] in
-                guard let self else { return }
-                await self.pulseIcon()
-                await self.setProgressIcon()
-            }
-        }
+        render()
     }
 
     func stop() {
-        if let token = consumptionObserver {
-            NotificationCenter.default.removeObserver(token)
-            consumptionObserver = nil
-        }
-        if let token = dataChangeObserver {
-            NotificationCenter.default.removeObserver(token)
-            dataChangeObserver = nil
-        }
-        if let token = healthObserver {
-            NotificationCenter.default.removeObserver(token)
-            healthObserver = nil
-        }
-        if let token = pulseObserver {
-            NotificationCenter.default.removeObserver(token)
-            pulseObserver = nil
-        }
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers.removeAll()
+        renderedKey = nil
     }
 
-    // MARK: - Pulse
-
-    /// Animate the Dock icon with a scale-pulse + gold-flash overlay.
-    /// The current `applicationIconImage` (set by refresh) is captured
-    /// and restored after the animation.
-    /// Throttled to at most once every 2 seconds.
-    @MainActor
-    func pulseIcon() async {
-        guard NSApp != nil else { return }
-        guard healthSeverity < .critical else { return }
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        let now = Date()
-        guard now.timeIntervalSince(lastPulseTime) >= 2.0 else { return }
-        lastPulseTime = now
-
-        // Pre-render the pulse frames (scale-up + gold tint overlay)
-        let frames: [(scale: CGFloat, tint: CGFloat)] = [
-            (1.00, 0.0),
-            (1.15, 0.3),
-            (1.30, 0.6),
-            (1.15, 0.3),
-        ]
-        let images = frames.map { AppIconLoader.pulseFrame(scale: $0.scale, tintAmount: $0.tint) }
-
-        let frameDuration: UInt64 = 80_000_000 // 80ms in nanoseconds
-        for img in images {
-            try? await Task.sleep(nanoseconds: frameDuration)
-            NSApp.applicationIconImage = img
-        }
+    private func render() {
+        guard NSApp != nil, !observers.isEmpty else { return }
+        let snapshot = PulseFeedbackController.shared.snapshot
+        let appearance = PulseAppearance(tier: snapshot?.isCurrent() == true ? snapshot?.tier : nil,
+                                         cooling: snapshot?.activity?.freshness == .aging)
+        let health = AppHealthMonitor.shared.current.severity
+        let beat = PulseFeedbackController.shared.isBeating &&
+            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && health < .critical
+        let key = "\(appearance.tier?.rawValue ?? "unknown")|\(appearance.cooling)|\(health.rawValue)|\(beat)"
+        guard key != renderedKey else { return }
+        renderedKey = key
+        NSApp.dockTile.badgeLabel = nil
+        NSApp.applicationIconImage = AppIconLoader.pulseIcon(appearance: appearance, beat: beat, healthDot: health)
+        NSApp.dockTile.display()
     }
-
-    // MARK: - Refresh
-
-    @MainActor
-    private func refreshPulseAppearance() async {
-        // Pulse ticks include natural time decay. Recompute both colour and
-        // length so the Dock cannot retain a stale full ring between data writes.
-        await refresh()
-    }
-
-    @MainActor
-    private func refresh() async {
-        // Guard against test environment where NSApp may not be available
-        guard NSApp != nil else { return }
-        let snapshot = await PulseEngine.shared.snapshot()
-        let ringColor = Self.tierRingColor(for: snapshot?.tier)
-        let fillFraction = Self.pulseFillFraction(snapshot)
-        Logger.debug("Dock pulse: tier=\(snapshot?.tier.rawValue ?? "resting") fillFraction=\(String(format: "%.2f", fillFraction))")
-
-        let tile = NSApp.dockTile
-        tile.badgeLabel = nil
-        guard fillFraction > 0.001 else {
-            NSApp.applicationIconImage = AppIconLoader.load(healthDot: healthSeverity)
-            tile.display()
-            _cachedProgressFraction = 0
-            _cachedLap = 0
-            _cachedRingColor = ringColor
-            return
-        }
-
-        NSApp.applicationIconImage = AppIconLoader.load(
-            progress: fillFraction, lap: 0, healthDot: healthSeverity,
-            ringColor: ringColor)
-        tile.display()
-
-        _cachedProgressFraction = fillFraction
-        _cachedLap = 0
-        _cachedRingColor = ringColor
-    }
-
-    /// The primary signal keeps all surfaces visually aligned while activity
-    /// remains the fallback when another channel is unavailable. Three times
-    /// baseline nearly closes the ring; a small gap remains so an intense Pulse
-    /// still reads as live progress instead of a permanent coloured border.
-    nonisolated static func pulseFillFraction(_ snapshot: PulseSnapshot?) -> Double {
-        guard let snapshot else { return 0 }
-        let primary = snapshot.primarySignal.flatMap { kind in
-            snapshot.signals.first { $0.kind == kind }
-        }
-        let score = primary?.normalized ?? snapshot.activity?.normalized ?? 0
-        guard score.isFinite else { return 0 }
-        return min(max(score / 3, 0), 0.92)
-    }
-
-    /// Dock ring colours (§3.3 绿→金→橙→红); cold keeps the legacy green so a
-    /// quiet day never renders the ring in alarm colours.
-    nonisolated private static func tierRingColor(for tier: PulseTier?) -> NSColor {
-        switch tier {
-        case .intense: return .systemRed
-        case .elevated: return .systemOrange
-        case .active: return .systemYellow
-        case .resting, .none: return .systemGreen
-        }
-    }
-
-    private var _cachedProgressFraction: Double = 0
-    private var _cachedLap: Int = 0
-    @MainActor private var _cachedRingColor: NSColor = .systemGreen
-
-    /// Re-render the progress icon after a pulse animation completes.
-    @MainActor
-    private func setProgressIcon() async {
-        // Test environment: NSApp may be nil; the delayed start() task can reach
-        // this without an NSApplication. Sibling refresh()/pulseIcon() guard too.
-        guard NSApp != nil else { return }
-        if _cachedProgressFraction > 0.001 {
-            NSApp.applicationIconImage = AppIconLoader.load(
-                progress: _cachedProgressFraction, lap: _cachedLap, healthDot: healthSeverity,
-                ringColor: _cachedRingColor)
-        } else {
-            NSApp.applicationIconImage = AppIconLoader.load(healthDot: healthSeverity)
-        }
-    }
-
 }
