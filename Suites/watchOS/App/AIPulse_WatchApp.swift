@@ -30,6 +30,7 @@ private enum WatchCopy {
 private struct WatchActivityRing: View {
     let ratio: Double?
     let color: Color
+    let trackColor: Color
     let width: CGFloat
     var allowsLaps = true
     var body: some View {
@@ -39,7 +40,7 @@ private struct WatchActivityRing: View {
             let value = ratio.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
             let arc = WatchDashboardData.remainingArc(value ?? 0)
             ZStack {
-                Circle().stroke(value == nil ? Color.gray.opacity(0.24) : color.opacity(0.15), lineWidth: width)
+                Circle().stroke(value == nil ? Color.gray.opacity(0.24) : trackColor, lineWidth: width)
                 if let value {
                     if value >= 1 { Circle().stroke(color.opacity(allowsLaps ? 0.48 : 1), lineWidth: width) }
                     if arc > 0 {
@@ -65,9 +66,12 @@ struct WatchDashboardView: View {
     @State private var showingInfo = false
     @State private var refreshing = false
     @State private var refreshMessage: String?
-    private let red = Color(red: 236 / 255, green: 81 / 255, blue: 90 / 255)
-    private let green = Color(red: 49 / 255, green: 197 / 255, blue: 129 / 255)
-    private let yellow = Color(red: 246 / 255, green: 199 / 255, blue: 66 / 255)
+    private let tokenColor = Color.deepRed
+    private let tokenTrackColor = Color.deepRed2.opacity(0.22)
+    private let lineColor = Color.marsGreen
+    private let lineTrackColor = Color.marsGreenLight.opacity(0.22)
+    private let activityColor = Color(red: 212 / 255, green: 163 / 255, blue: 38 / 255)
+    private let activityTrackColor = Color(red: 226 / 255, green: 204 / 255, blue: 126 / 255).opacity(0.20)
     private func t(_ zh: String, _ en: String) -> String { WatchCopy.t(zh, en) }
 
     private func today(asOf now: Date) -> DashboardSnapshot? {
@@ -85,11 +89,11 @@ struct WatchDashboardView: View {
         return snapshot.topRepos.reduce(0) { $0 + Double($1.added) + Double($1.deleted) }
     }
     private func count(_ value: Double?) -> String {
-        guard let value, value.isFinite, value >= 0, value < Double(Int64.max) else { return "—" }
+        guard let value, value.isFinite, value >= 0, value < Double(Int64.max) else { return "N/A" }
         return ChartMath.compactCount(Int64(value))
     }
     private func multiple(_ value: Double?) -> String {
-        guard let value else { return t("暂无基准", "No baseline") }
+        guard let value else { return "N/A" }
         return String(format: "%.1f×", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
@@ -105,12 +109,13 @@ struct WatchDashboardView: View {
                 // Size against the full display width, as in the original corner-overlay layout.
                 let side = geometry.size.width * 0.90
                 let thickness = side * 13 / 184
+                let cornerInset: CGFloat = geometry.size.width < 180 ? 10 : 16
                 ZStack {
                     Color.black
                     ZStack {
-                        WatchActivityRing(ratio: tokenRatio, color: red, width: thickness)
-                        WatchActivityRing(ratio: lineRatio, color: green, width: thickness).padding(side * 16 / 184)
-                        WatchActivityRing(ratio: WatchDashboardData.intensity(pulse, now: now), color: yellow, width: thickness, allowsLaps: false).padding(side * 32 / 184)
+                        WatchActivityRing(ratio: tokenRatio, color: tokenColor, trackColor: tokenTrackColor, width: thickness)
+                        WatchActivityRing(ratio: lineRatio, color: lineColor, trackColor: lineTrackColor, width: thickness).padding(side * 16 / 184)
+                        WatchActivityRing(ratio: WatchDashboardData.intensity(pulse, now: now), color: activityColor, trackColor: activityTrackColor, width: thickness, allowsLaps: false).padding(side * 32 / 184)
                         Button { showingInfo = true } label: {
                             VStack(spacing: 5) {
                                 Text(t("当前强度", "Current activity")).font(.system(size: 10)).foregroundStyle(.secondary)
@@ -125,17 +130,17 @@ struct WatchDashboardView: View {
                     }.frame(width: side, height: side).position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 8)
                     VStack {
                         HStack(alignment: .top) {
-                            corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: red, alignment: .leading, numberFirst: false)
+                            corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: tokenColor, alignment: .leading, numberFirst: false)
                             Spacer()
-                            corner(t("今日行数", "Today lines"), count(lines(snapshot)), color: green, alignment: .trailing, numberFirst: false)
+                            corner(t("今日行数", "Today lines"), count(lines(snapshot)), color: lineColor, alignment: .trailing, numberFirst: false)
                         }
                         Spacer()
                         HStack(alignment: .bottom) {
-                            corner(t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: red, alignment: .leading, numberFirst: true)
+                            corner(t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: tokenColor, alignment: .leading, numberFirst: true)
                             Spacer()
-                            corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: green, alignment: .trailing, numberFirst: true)
+                            corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: lineColor, alignment: .trailing, numberFirst: true)
                         }
-                    }.padding(.horizontal, 16).padding(.top, 18).padding(.bottom, 6)
+                    }.padding(.horizontal, cornerInset).padding(.top, 18).padding(.bottom, 6)
                     if cloud.isPreview { Text(t("演示", "Demo")).font(.system(size: 8)).foregroundStyle(.secondary).position(x: geometry.size.width / 2, y: geometry.size.height - 8) }
                 }
             }
