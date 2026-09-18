@@ -78,3 +78,15 @@ final class DashboardDataPresentationTests: XCTestCase {
         XCTAssertEqual(DashboardDataPresentation.barFraction(value: Double(Int64.max), maximum: Double(Int64.max)), 1)
     }
 }
+
+extension DashboardDataPresentationTests {
+    func testNoseKeepsTinyCategoriesVisibleAndRespondsToData() {
+        let cached = DashboardDataPresentation.noseFractions(values: [0.5, 99, 0.5])
+        XCTAssertEqual(cached.reduce(0, +), 1, accuracy: 0.00001)
+        XCTAssertGreaterThan(cached[0], 0.15)
+        XCTAssertGreaterThan(cached[2], 0.15)
+        XCTAssertGreaterThan(cached[1], cached[0])
+        let output = DashboardDataPresentation.noseFractions(values: [1, 1, 98])
+        XCTAssertGreaterThan(output[2], output[1])
+    }
+}

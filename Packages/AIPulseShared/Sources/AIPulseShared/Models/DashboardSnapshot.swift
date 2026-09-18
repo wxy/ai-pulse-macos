@@ -154,6 +154,7 @@ public struct DashboardSnapshot: Codable, Sendable {
     public var todayTokens: Int64 = 0
     /// Distinct nonempty sessions by (source, session_id).
     public var periodSessions: Int64 = 0
+    public var tokenComposition: TokenComposition?
     public var activityCoverage: ActivityCoverage = ActivityCoverage()
     /// Balance/usage API interval net spend in original currencies. nil for legacy.
     public var observedSpend: [ObservedSpendItem]?
@@ -240,6 +241,9 @@ public struct DashboardSnapshot: Codable, Sendable {
     /// only non-finite values become zero.
     public func sanitized() -> DashboardSnapshot {
         var clean = self
+        if let parts = tokenComposition {
+            clean.tokenComposition = TokenComposition(nonCachedInput: parts.nonCachedInput, cachedInput: parts.cachedInput, output: parts.output, isPartial: parts.isPartial)
+        }
         clean.todayCalls = Self.safeNonNegative(todayCalls)
         clean.todayTokens = Self.safeNonNegative(todayTokens)
         clean.observedSpend = observedSpend?.map {
@@ -523,4 +527,18 @@ public struct QuotaStatusItem: Codable, Sendable {
     }
 
     public var stableId: String { "\(toolId)|\(windowId ?? "legacy")" }
+}
+
+/// Three disjoint observed token categories; cached input is already part of input.
+public struct TokenComposition: Codable, Sendable, Equatable {
+    public var nonCachedInput: Int64
+    public var cachedInput: Int64
+    public var output: Int64
+    public var isPartial: Bool
+    public init(nonCachedInput: Int64, cachedInput: Int64, output: Int64, isPartial: Bool = false) {
+        self.nonCachedInput = max(0, nonCachedInput)
+        self.cachedInput = max(0, cachedInput)
+        self.output = max(0, output)
+        self.isPartial = isPartial
+    }
 }

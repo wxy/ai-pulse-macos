@@ -180,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     // MARK: - Windows
 
     @MainActor
-    private func openDashboard(initialTimeRange: TimeRange = .today) {
+    private func openDashboard(initialTimeRange: TimeRange? = nil) {
         DashboardWindowManager.shared.openOrBringToFront(initialTimeRange: initialTimeRange)
     }
 
@@ -305,6 +305,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             await MainActor.run {
                 guard generation.isCurrent(request), pulseSubmenu === sub else { return }
                 sub.removeAllItems()
+                let dashboard = NSMenuItem(title: I18n.t("menu.dashboard") + "…", action: #selector(openDashboardFromMenu), keyEquivalent: "")
+                dashboard.target = self
+                sub.addItem(dashboard)
+                sub.addItem(.separator())
                 for item in items { sub.addItem(item) }
             }
         }
