@@ -32,6 +32,16 @@ final class CloudDataService: ObservableObject {
     /// The snapshot for the currently selected time range.
     @Published var snapshot: DashboardSnapshot?
     @Published var lastUpdated: Date?
+    @Published private(set) var pulseEnvelope: CurrentPulseEnvelope?
+    @Published private(set) var rangeErrors: [String: String] = [:]
+    @Published private(set) var pulseError: String?
+    var isPreview: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("--iphone-preview")
+        #else
+        return false
+        #endif
+    }
     private(set) var currentRange: String = "today"
 
     /// All three per-range snapshots. Keyed by "today" / "week" / "30d".
@@ -43,7 +53,7 @@ final class CloudDataService: ObservableObject {
     }()
     private let log = Logger(subsystem: "com.wxy.aipulse", category: "CloudData")
     private init() {
-        loadLocalCache()
+        if !isPreview { loadLocalCache() }
     }
 
     // MARK: - Local cache (survives offline / app restart)
@@ -58,13 +68,16 @@ final class CloudDataService: ObservableObject {
               let dict = try? JSONDecoder().decode([String: DashboardSnapshot].self, from: data) else { return }
         // A cache written by a buggy macOS build may still contain poisoned
         // values; sanitize on every read so old data can never reach the UI.
-        self.snapshots = dict.mapValues { $0.sanitized() }
+        self.snapshots = dict.filter { PhoneDashboardData.accepts($0.value, range: $0.key) }.mapValues { $0.sanitized() }
+        if let data = try? Data(contentsOf: localCacheURL.deletingLastPathComponent().appendingPathComponent("current_pulse_v2.json")),
+           let pulse = try? JSONDecoder().decode(CurrentPulseEnvelope.self, from: data), pulse.payloadVersion == CKSchema.payloadVersion { pulseEnvelope = pulse }
         // Default to today on first load (caller should call loadSnapshot(for:) afterward)
         if let today = self.snapshots["today"] { self.snapshot = today }
         log.info("loaded local cache: \(dict.keys.joined(separator: ", "))")
     }
 
     private func saveLocalCache() {
+        guard !isPreview else { return }
         guard let data = try? JSONEncoder().encode(self.snapshots) else { return }
         // Primary cache
         try? data.write(to: localCacheURL, options: .atomic)
@@ -134,7 +147,7 @@ final class CloudDataService: ObservableObject {
     }
 
     private func checkEnvelope(in data: Data) throws {
-        guard let envelope = try? JSONDecoder().decode(SnapshotEnvelope.self, from: data) else { return }
+        guard let envelope = try? JSONDecoder().decode(SnapshotEnvelope.self, from: data) else { throw CloudError.noData }
         try checkPayloadVersion(envelope)
     }
 
@@ -152,7 +165,8 @@ final class CloudDataService: ObservableObject {
             do {
                 let record = try await self.database.record(for: recordID)
                 self.log.info("hasData: record found, json present=\(record[CKSchema.Field.json] != nil)")
-                guard let json = record[CKSchema.Field.json] as? String,
+                guard record.recordType == CKSchema.recordType,
+                      let json = record[CKSchema.Field.json] as? String,
                       let data = json.data(using: .utf8) else {
                     self.log.warning("hasData: json field missing")
                     throw CloudError.noData
@@ -166,8 +180,8 @@ final class CloudDataService: ObservableObject {
                     throw CloudError.noData
                 }
                 // Store today's snapshot independently (with CK updatedAt timestamp)
+                guard PhoneDashboardData.accepts(snap, range: "today") else { throw CloudError.noData }
                 var stored = snap
-                if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
                 self.snapshots["today"] = stored.sanitized()
                 if self.snapshot == nil { self.loadSnapshot(for: "today") }
                 self.saveLocalCache()
@@ -225,7 +239,6 @@ final class CloudDataService: ObservableObject {
         await fetchAndStore(range: "30d")
         // Reload the currently displayed range so the UI reflects new data
         loadSnapshot(for: currentRange)
-        log.info("refresh: final — today=\(self.snapshots["today"]?.todayCost ?? -1) week=\(self.snapshots["week"]?.weekCost ?? -1) month=\(self.snapshots["30d"]?.monthCost ?? -1)")
     }
 
     /// Fetch a single snapshot record and store it independently by range.
@@ -234,50 +247,54 @@ final class CloudDataService: ObservableObject {
     func fetchAndMergeMonth() async { await fetchAndStore(range: "30d") }
 
     func fetchAndStore(range: String) async {
-        // Gated + deduped: skips outright if this exact range was fetched in
-        // the last few seconds (e.g. hasData() already fetched "today" and
-        // DashboardView.onAppear asks for it again moments later), and
-        // otherwise serializes with every other CloudKit call in the app.
-        _ = try? await CloudKitGate.shared.runDeduped("fetchAndStore(\(range))", dedupeKey: "fetch-\(range)") {
-            let rid = CKRecord.ID(recordName: self.recordName(for: range))
-            let record: CKRecord
-            do {
-                record = try await self.database.record(for: rid)
-            } catch {
-                self.log.error("fetchAndStore(\(range)): CK fetch failed — \(error.localizedDescription)")
-                return
-            }
-            guard let json = record[CKSchema.Field.json] as? String,
-                  let data = json.data(using: .utf8) else {
-                self.log.error("fetchAndStore(\(range)): json field missing or not a string")
-                return
-            }
-            do {
+        guard !isPreview else { return }
+        do {
+            _ = try await CloudKitGate.shared.runDeduped("fetch(\(range))", dedupeKey: "fetch-\(range)") {
+                let record = try await self.database.record(for: CKRecord.ID(recordName: self.recordName(for: range)))
+                guard record.recordType == CKSchema.recordType,
+                      let json = record[CKSchema.Field.json] as? String, let data = json.data(using: .utf8) else { throw CloudError.noData }
                 try self.checkEnvelope(in: data)
-            } catch {
-                self.log.error("fetchAndStore(\(range)): payload version mismatch — keep existing data")
-                return
+                let snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
+                guard PhoneDashboardData.accepts(snap, range: range) else { throw CloudError.noData }
+                self.snapshots[range] = snap.sanitized()
+                self.rangeErrors[range] = nil
+                self.saveLocalCache()
             }
-            let snap: DashboardSnapshot
-            do {
-                snap = try JSONDecoder().decode(DashboardSnapshot.self, from: data)
-            } catch {
-                self.log.error("fetchAndStore(\(range)): decode failed — \(error.localizedDescription)")
-                return
-            }
-            self.log.info("fetchAndStore(\(range)): today=\(snap.todayCost) week=\(snap.weekCost) month=\(snap.monthCost)")
-            var stored = snap
-            if let ts = record[CKSchema.Field.updatedAt] as? Date { stored.updatedAt = ts }
-            self.snapshots[range] = stored.sanitized()
-            self.saveLocalCache()
+        } catch {
+            rangeErrors[range] = error.localizedDescription
         }
     }
+
+    func fetchCurrentPulse() async {
+        guard !isPreview else { return }
+        do {
+            _ = try await CloudKitGate.shared.runDeduped("currentPulse", dedupeKey: "current-pulse") {
+                let record = try await self.database.record(for: CKRecord.ID(recordName: "current-pulse"))
+                guard record.recordType == "CurrentPulse_v2",
+                      let json = record[CKSchema.Field.json] as? String, let data = json.data(using: .utf8) else { throw CloudError.noData }
+                let envelope = try JSONDecoder().decode(CurrentPulseEnvelope.self, from: data)
+                guard envelope.payloadVersion == CKSchema.payloadVersion else { throw CloudError.noData }
+                self.pulseEnvelope = envelope
+                self.pulseError = nil
+                try? data.write(to: self.localCacheURL.deletingLastPathComponent().appendingPathComponent("current_pulse_v2.json"), options: .atomic)
+            }
+        } catch { pulseError = error.localizedDescription }
+    }
+
+    #if DEBUG
+    func installPreview(snapshots: [String: DashboardSnapshot], pulse: CurrentPulseEnvelope) {
+        guard isPreview else { return }
+        self.snapshots = snapshots
+        pulseEnvelope = pulse
+        loadSnapshot(for: "today")
+    }
+    #endif
 
     /// Fetch a single range AND switch the published snapshot to it.
     /// Called on tab switch — shows that range's data immediately.
     func fetchSnapshot(for range: String = "today") async throws {
         loadSnapshot(for: range)
         await fetchAndStore(range: range)
-        loadSnapshot(for: range)
+        if currentRange == range { loadSnapshot(for: range) }
     }
 }
