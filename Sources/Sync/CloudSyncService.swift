@@ -8,20 +8,58 @@ import AIPulseShared
 final class CloudSyncService {
     static let shared = CloudSyncService()
 
-    /// Do not construct CKContainer until a release build actually needs a
-    /// CloudKit operation. Debug builds disable writes and must not crash while
-    /// initializing an unavailable/misconfigured container.
+    /// Construct CKContainer only when a signed app needs CloudKit.
+    /// Unsigned SwiftPM builds and tests have no CloudKit access.
+    static let didChange = Notification.Name("cloudSyncStatusDidChange")
+    enum Result: Equatable { case idle, disabled, syncing, succeeded, failed }
+    private(set) var result: Result = .idle
+    private(set) var accountText = SetupCopy.text("尚未检查 iCloud 账户", "iCloud account not checked")
+    var lastSuccess: Date? {
+        let seconds = UserDefaults.standard.double(forKey: "cloud_sync_last_success")
+        return seconds > 0 ? Date(timeIntervalSince1970: seconds) : nil
+    }
+    private func setResult(_ value: Result) {
+        result = value
+        NotificationCenter.default.post(name: Self.didChange, object: nil)
+    }
+    var resultText: String {
+        switch result {
+        case .idle: return SetupCopy.text("等待同步", "Waiting to sync")
+        case .disabled: return SetupCopy.text("此构建未启用 iCloud 权限", "Cloud access is not enabled in this build")
+        case .syncing: return SetupCopy.text("正在同步摘要…", "Syncing summaries…")
+        case .succeeded: return SetupCopy.text("摘要同步成功", "Summaries synced successfully")
+        case .failed: return SetupCopy.text("摘要同步失败，可稍后重试", "Summary sync failed; retry later")
+        }
+    }
+    func refreshAccount() async {
+        guard Self.allowsCloudWrites else {
+            accountText = SetupCopy.text("此构建未启用 iCloud 权限", "Cloud access is not enabled in this build")
+            setResult(.disabled)
+            return
+        }
+        do {
+            let account = try await CKContainer(identifier: "iCloud.com.wxy.aipulse").accountStatus()
+            switch account {
+            case .available: accountText = SetupCopy.text("iCloud 账户可用", "iCloud account available")
+            case .noAccount: accountText = SetupCopy.text("尚未登录 iCloud", "Not signed in to iCloud")
+            case .restricted: accountText = SetupCopy.text("iCloud 访问受限", "iCloud access restricted")
+            default: accountText = SetupCopy.text("暂时无法确认 iCloud 状态", "iCloud status temporarily unavailable")
+            }
+        } catch { accountText = SetupCopy.text("无法连接 iCloud，稍后重试", "Cannot connect to iCloud; retry later") }
+        NotificationCenter.default.post(name: Self.didChange, object: nil)
+    }
+
     private var database: CKDatabase {
         CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
     }
 
-    private static let allowsCloudWrites: Bool = {
-        #if DEBUG
-        return false
-        #else
-        return true
-        #endif
-    }()
+    static func allowsCloudWrites(signingEnabled: String?) -> Bool {
+        signingEnabled?.uppercased() == "YES"
+    }
+
+    private static var allowsCloudWrites: Bool {
+        allowsCloudWrites(signingEnabled: Bundle.main.object(forInfoDictionaryKey: "CloudKitAccessEnabled") as? String)
+    }
 
     /// Content fingerprint (updatedAt excluded) of the last snapshot actually
     /// written per range. Used to skip no-op CloudKit writes — see
@@ -32,10 +70,14 @@ final class CloudSyncService {
 
     func syncFromCache() async {
         guard Self.allowsCloudWrites else {
-            Logger.info("CloudSync: dashboard writes disabled in Debug")
+            setResult(.disabled)
+            Logger.info("CloudSync: dashboard writes disabled in this unsigned build")
             return
         }
 
+        guard result != .syncing else { return }
+        setResult(.syncing)
+        var didFail = false
         Logger.info("CloudSync: starting sync")
         let ranges: [(key: String, recordName: String, maxAge: TimeInterval)] = [
             ("today", CKSchema.RecordName.today, 600),
@@ -48,11 +90,11 @@ final class CloudSyncService {
             if let cached = await DashboardCache.read(timeRange: r.key, maxAge: r.maxAge) {
                 snap = cached
             } else {
-                guard let period = DashboardPeriodKind(rawValue: r.key) else { continue }
+                guard let period = DashboardPeriodKind(rawValue: r.key) else { didFail = true; continue }
                 snap = await StatsService.dashboardSnapshot(period: period)
             }
             guard let data = try? JSONEncoder().encode(snap),
-                  let json = String(data: data, encoding: .utf8) else { continue }
+                  let json = String(data: data, encoding: .utf8) else { didFail = true; continue }
 
             // This runs every ~5 min (throttled by DataRefreshCoordinator),
             // but the underlying numbers often haven't changed between
@@ -79,40 +121,49 @@ final class CloudSyncService {
                 let (_, results) = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
                 let ok = results.compactMap({ _, r in if case .failure = r { return true }; return nil }).isEmpty
                 if ok {
-                    Logger.info("CloudSync: synced \(r.key) len=\(json.count)")
+                    Logger.info("CloudSync: synced \(CKSchema.recordType)/\(r.recordName) len=\(json.count)")
                     lastSyncedFingerprint[r.key] = fingerprint
-                }
+                } else { didFail = true }
             } catch {
+                didFail = true
                 Logger.error("CloudSync: \(r.key) save failed: \(error)")
             }
         }
-        await syncCurrentPulse()
+        if !(await syncCurrentPulse()) { didFail = true }
+        if !didFail { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "cloud_sync_last_success") }
+        setResult(didFail ? .failed : .succeeded)
     }
 
-    private func syncCurrentPulse() async {
+    private func syncCurrentPulse() async -> Bool {
         let now = Date()
-        let envelope = CurrentPulseEnvelope(pulse: await PulseEngine.shared.snapshot(),
+        let pulse = await PulseEngine.shared.snapshot()
+        let availability = LocalDataStatus.current(hasActivity: (pulse?.activityFacts?.todayTokens ?? 0) > 0)
+        let envelope = CurrentPulseEnvelope.forCloudSync(pulse: availability.canReportCurrentActivity ? pulse : nil,
                                             writerAppVersion: CKSchema.writerAppVersion, generatedAt: now)
         guard let data = try? JSONEncoder().encode(envelope),
-              let json = String(data: data, encoding: .utf8) else { return }
+              let json = String(data: data, encoding: .utf8) else { return false }
         let record = CKRecord(recordType: CKSchema.CurrentPulse.recordType,
                               recordID: CKRecord.ID(recordName: CKSchema.CurrentPulse.recordName))
         record[CKSchema.Field.json] = json
         record[CKSchema.Field.updatedAt] = now
         do {
             let (_, results) = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
+            var success = true
             for (_, result) in results {
-                if case .failure(let error) = result { Logger.error("CloudSync current pulse record failed: \(error)") }
+                if case .failure(let error) = result { success = false; Logger.error("CloudSync current pulse record failed: \(error)") }
             }
+            if success { Logger.info("CloudSync: synced \(CKSchema.CurrentPulse.recordType)/\(CKSchema.CurrentPulse.recordName)") }
+            return success
         } catch {
             Logger.error("CloudSync current pulse failed: \(error)")
+            return false
         }
     }
 
     /// Upsert the latest spend-surge / balance-drop alert for iOS readers.
     func writeSpendAlert(_ payload: SpendAlertPayload) async {
         guard Self.allowsCloudWrites else {
-            Logger.info("CloudSync: spend-alert CloudKit write disabled in Debug")
+            Logger.info("CloudSync: spend-alert CloudKit write disabled in this unsigned build")
             return
         }
 

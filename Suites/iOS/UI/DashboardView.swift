@@ -1,734 +1,307 @@
 import SwiftUI
-import Charts
 import AIPulseShared
 
-// Additional iOS-only color palette variants. Base colors now come from
-// AIPulseShared.
 extension Color {
-    // Dark mode: use lighter variants for better contrast
-    static let marsGreenBar   = Color(light: .marsGreen, dark: .marsGreenLight)
-    static let deepRedBar     = Color(light: .deepRed, dark: Color(red: 235/255, green: 100/255, blue: 90/255))
-
+    static let marsGreenBar = Color(light: .marsGreen, dark: Color(red: 0.49, green: 0.66, blue: 0.53))
+    static let deepRedBar = Color.deepRed
     init(light: Color, dark: Color) {
         self.init(UIColor { $0.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light) })
     }
 }
-
-/// Frosted card border matching macOS .ultraThinMaterial + separator.
 struct FrostedCard: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .padding(12)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+    func body(content: Content) -> some View { content.padding(12).background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14)) }
+}
+
+private struct RobotSilhouette: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addRoundedRect(in: CGRect(x: 0, y: 23, width: 440, height: 440), cornerSize: CGSize(width: 29, height: 29))
+        path.addRect(CGRect(x: 182, y: 462, width: 76, height: 10))
+        path.addRoundedRect(in: CGRect(x: 0, y: 471, width: 440, height: 152), cornerSize: CGSize(width: 16, height: 16))
+        path.addRoundedRect(in: CGRect(x: -9, y: 223.5, width: 10, height: 39), cornerSize: CGSize(width: 4, height: 4))
+        path.addRoundedRect(in: CGRect(x: 439, y: 223.5, width: 10, height: 39), cornerSize: CGSize(width: 4, height: 4))
+        path.addEllipse(in: CGRect(x: 213.5, y: 0, width: 13, height: 13))
+        path.addRect(CGRect(x: 219, y: 12, width: 2, height: 12))
+        return path
+    }
+}
+
+private struct RobotPulseCurve: Shape {
+    var tier: PulseTier?
+    func path(in rect: CGRect) -> Path {
+        let strength: CGFloat = tier == nil || tier == .resting ? 0.15 : tier == .intense ? 1 : tier == .elevated ? 0.88 : 0.72
+        // Unequal peaks and troughs follow the approved symbol; not a fabricated time series.
+        let points: [(CGFloat, CGFloat)] = [(0,0),(0.18,0),(0.28,-0.28),(0.37,0.22),(0.46,-0.46),(0.57,0.42),(0.67,-0.18),(0.77,0.08),(0.87,0),(1,0)]
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        for index in 1..<points.count {
+            let a = points[index-1], b = points[index]
+            let x1 = rect.minX + rect.width * a.0, x2 = rect.minX + rect.width * b.0
+            let y1 = rect.midY + rect.height * a.1 * strength, y2 = rect.midY + rect.height * b.1 * strength
+            path.addCurve(to: CGPoint(x: x2, y: y2), control1: CGPoint(x: (x1+x2)/2, y: y1), control2: CGPoint(x: (x1+x2)/2, y: y2))
+        }
+        return path
+    }
+}
+
+private struct CodeChangeTrapezoid: Shape {
+    func path(in rect: CGRect) -> Path {
+        let inset = rect.width * 0.25
+        let radius = min(6, min(rect.width, rect.height) * 0.12)
+        // Round only the external contour. The two fills remain one contiguous
+        // stack, so their internal ratio boundary is still a straight line.
+        return Path { path in
+            path.move(to: CGPoint(x: rect.minX + inset + radius, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - inset - radius, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - inset + radius * inset / max(rect.height, 1), y: rect.minY + radius), control: CGPoint(x: rect.maxX - inset, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - radius * inset / max(rect.height, 1), y: rect.maxY - radius))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - radius, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + radius * inset / max(rect.height, 1), y: rect.maxY - radius), control: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + inset - radius * inset / max(rect.height, 1), y: rect.minY + radius))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + inset + radius, y: rect.minY), control: CGPoint(x: rect.minX + inset, y: rect.minY))
+            path.closeSubpath()
+        }
     }
 }
 
 struct DashboardView: View {
-    @EnvironmentObject var cloudData: CloudDataService
-    @State private var timeRange = TimeRange.today
-    @State private var barProgress: CGFloat = 0
-    @State private var toolsExpanded = false
-    @State private var reposExpanded = false
-    @State private var fetchTask: Task<Void, Never>?
-    @State private var selectedTool: ToolDetailItem? = nil
-
-    private var hasCurrentSnapshot: Bool {
-        cloudData.cachedSnapshot(for: timeRange.cacheKey) != nil
-    }
-
-    private var snap: DashboardSnapshot {
-        cloudData.cachedSnapshot(for: timeRange.cacheKey) ?? DashboardSnapshot()
-    }
-
-    private var totalCost: Double {
-        if snap.pulse != nil { return snap.convertedObservedSpendUSD ?? 0 }
-        switch timeRange {
-        case .today:  return snap.todayCost
-        case .week:   return snap.weekCost
-        case .days30: return snap.monthCost
-        }
-    }
-
-    private var apiSpend: Double {
-        snap.providerBreakdown.reduce(0) { $0 + $1.cost }
-    }
-
-    private var subTotal: Double {
-        snap.subDaily * Double(timeRange.days)
-    }
-
-    // ── Cross-platform Pulse headline ──
-
-    private struct PulseBanner {
-        let text: String
-        let color: Color
-    }
-
-    /// The 2.0 payload renders the same native Pulse state/reason as macOS.
-    private var burnBanner: PulseBanner? {
-        if let pulse = snap.pulse {
-            let color = pulseColor(pulse.tier)
-            let state = I18n.pulseTier(pulse.tier)
-            let reason = I18n.pulseReason(pulse)
-            let money = snap.observedSpend?
-                .filter { $0.amount > 0 }
-                .map { "\($0.currency.uppercased()) \(String(format: "%.2f", $0.amount))" }
-                .joined(separator: " + ")
-            let suffix = money.map { " · \($0) observed" } ?? ""
-            return PulseBanner(text: "\(state) · \(reason)\(suffix)", color: color)
-        }
-        return nil
-    }
-
-    private func pulseColor(_ tier: PulseTier) -> Color {
-        switch tier {
-        case .intense: return .red
-        case .elevated: return .orange
-        case .active: return .yellow
-        case .resting: return .secondary
-        }
-    }
+    @EnvironmentObject private var cloud: CloudDataService
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var scheme
+    @AppStorage("phone_sound_muted") private var muted = false
+    @State private var range = "today"
+    @State private var detail: String?
+    private var snap: DashboardSnapshot? { cloud.cachedSnapshot(for: range) }
+    private var plate: Color { Color(light: Color(red: 233/255, green: 236/255, blue: 229/255), dark: Color(red: 0.14, green: 0.17, blue: 0.15)) }
+    private var inset: Color { Color(light: Color(red: 248/255, green: 249/255, blue: 245/255), dark: Color(red: 0.19, green: 0.22, blue: 0.20)) }
+    private var line: Color { Color(light: Color(red: 212/255, green: 218/255, blue: 209/255), dark: Color(red: 61/255, green: 73/255, blue: 63/255)) }
+    private var earColor: Color { Color(light: Color(red: 218/255, green: 229/255, blue: 218/255), dark: Color(red: 0.32, green: 0.40, blue: 0.34)) }
+    private var cacheColor: Color { scheme == .dark ? Color(red: 0.30, green: 0.43, blue: 0.36) : .marsGreenLight }
+    private let palette: [Color] = [.deepRed, .marsGreen, .deepRed2, .marsGreen2]
+    private func t(_ zh: String, _ en: String) -> String { PhoneText.t(zh, en) }
+    private func count(_ value: Int64) -> String { ChartMath.compactCount(value) }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                Picker("", selection: $timeRange) {
-                    Text(I18n.t("time.today")).tag(TimeRange.today)
-                    Text(I18n.t("time.week")).tag(TimeRange.week)
-                    Text(I18n.t("time.30d")).tag(TimeRange.days30)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 4).padding(.bottom, 12)
-                .sensoryFeedback(.selection, trigger: timeRange)
-                .onChange(of: timeRange) { _, newRange in
-                    barProgress = 0
-                    withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 }
-                    fetchTask?.cancel()
-                    let key = newRange.cacheKey
-                    fetchTask = Task { try? await cloudData.fetchSnapshot(for: key) }
-                }
-                .onChange(of: hasCurrentSnapshot) { _, isReady in
-                    guard isReady else { return }
-                    barProgress = 0
-                    withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) { barProgress = 1 }
-                }
-
-                // ── Robot head frame (face) — spending + output ──
+        GeometryReader { geometry in
+            let width = min(440.0, geometry.size.width - 56)
+            let scale = width / 440
+            ScrollView {
                 VStack(spacing: 12) {
-                    // Big total
-                    VStack(spacing: 2) {
-                        Text(snap.pulse != nil && snap.convertedObservedSpendUSD == nil ? "—" : usd(totalCost))
-                            .font(.system(size: 40, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.deepRed)
-                            .scaleEffect(0.8 + 0.2 * barProgress)
-                            .overlay(alignment: .trailing) {
-                                HStack(spacing: 4) {
-                                    if snap.pulse == nil, timeRange == .today, snap.yesterdaySpend > 0.001 {
-                                        comparisonBadge(current: totalCost, previous: snap.yesterdaySpend)
-                                    }
-                                    if snap.pulse == nil, timeRange == .days30, snap.previousPeriodSpend > 0.001 {
-                                        comparisonBadge(current: totalCost, previous: snap.previousPeriodSpend)
-                                    }
-                                }
-                                .offset(x: 44)
-                            }
-                        HStack(spacing: 4) {
-                            Text("\(timeRange.label)\(I18n.t("dashboard.total"))")
-                                .font(.caption).foregroundColor(.secondary)
-                            // Per-tab context: today=projected, week/30d=daily avg + projected + remaining
-                            if let p = snap.prediction, p.monthProjected > 0.001 {
-                                if timeRange == .today {
-                                    Text("· \(String(format: I18n.t("dashboard.today_expected"), String(format: "%.2f", p.dailyRate)))")
-                                } else if timeRange == .week {
-                                    Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 7), 7 - timeRange.days))")
-                                } else {
-                                    Text("· \(String(format: I18n.t("dashboard.range_context"), String(format: "%.2f", p.dailyRate * 30), p.daysRemaining))")
-                                }
-                            }
-                        }
-                        .font(.caption2).foregroundColor(.secondary)
+                    if cloud.isPreview { Text(t("预览数据 · 不连接 iCloud", "Preview · iCloud disconnected")).font(.caption).foregroundStyle(.secondary) }
+                    VStack(spacing: 0) {
+                        VStack(spacing: 0) {
+                            Circle().fill(earColor).frame(width: 13, height: 13).overlay(Circle().stroke(line, lineWidth: 1))
+                            Rectangle().fill(Color.marsGreenLight).frame(width: 2, height: 10)
+                        }.frame(height: 23)
+                        head.frame(width: 440, height: 440)
+                            .background(plate, in: RoundedRectangle(cornerRadius: 29))
+                            .overlay(RoundedRectangle(cornerRadius: 29).stroke(.primary.opacity(0.14)))
+                            .overlay(alignment: .leading) { ear(left: true).offset(x: -20) }
+                            .overlay(alignment: .trailing) { ear(left: false).offset(x: 20) }
+                        Rectangle().fill(plate).frame(width: 76, height: 8)
+                            .overlay(HStack { Rectangle().fill(.primary.opacity(0.14)).frame(width: 1); Spacer(); Rectangle().fill(.primary.opacity(0.14)).frame(width: 1) })
+                        expenses.frame(width: 440, height: 152)
                     }
-
-                    // ── v2 P2 全端感知: burn-rate banner (today tab) ──
-                    if timeRange == .today, let banner = burnBanner {
-                        HStack(spacing: 6) {
-                            Image(systemName: "flame.fill")
-                                .foregroundStyle(banner.color)
-                            Text(banner.text)
-                                .font(.caption.weight(.medium).monospacedDigit())
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 6).padding(.horizontal, 12)
-                        .background(banner.color.opacity(0.12), in: Capsule())
-                    }
-
-                    // Donuts + stats — centered
-                    HStack(alignment: .top, spacing: 6) {
-                        Spacer(minLength: 0)
-                        subVsApiDonut.id(timeRange)
-                        noseStatCards
-                        providerDonut.id(timeRange)
-                        Spacer(minLength: 0)
-                    }
-
-                    // Tool + repo ("mouth")
-                    outputSection.id(timeRange)
+                    .background(RobotSilhouette().fill(plate).shadow(color: .black.opacity(0.27), radius: 14, y: 5))
+                    .frame(width: 440, height: 623)
+                    .scaleEffect(scale, anchor: .topLeading)
+                    .frame(width: width, height: 623 * scale, alignment: .topLeading)
                 }
-                .padding(.top, 28).padding(.horizontal, 12).padding(.bottom, 14)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
-                )
-                .overlay(alignment: .top) {
-                    // Antenna
-                    ZStack(alignment: .top) {
-                        Path { p in
-                            p.addArc(center: CGPoint(x: 16, y: 2), radius: 16,
-                                     startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
-                        }
-                        .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
-                        .frame(width: 32, height: 18)
-                        Circle().fill(Color.marsGreen.opacity(0.4)).frame(width: 5, height: 5).offset(y: -6)
-                    }
-                    .offset(y: -3)
-                }
-                .overlay(alignment: .leading) {
-                    // Left ears
-                    HStack(spacing: 4) {
-                        earBar(width: 10, height: 26)
-                        earBar(width: 6, height: 16)
-                    }
-                    .offset(x: -10, y: -60)
-                }
-                .overlay(alignment: .trailing) {
-                    // Right ears
-                    HStack(spacing: 4) {
-                        earBar(width: 6, height: 16)
-                        earBar(width: 10, height: 26)
-                    }
-                    .offset(x: 10, y: -60)
-                }
-
-                // ── Trend section (body) ──
-                if timeRange != .today {
-                    trendChart
-                } else if !snap.remainingBalances.isEmpty || !snap.quotaStatus.isEmpty {
-                    remainingBalanceRow
-                        .padding(12)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
-                        )
-                }
-
-                HStack(spacing: 6) {
-                    Text("AI Pulse v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0")/CloudKit \(CKSchema.payloadVersion)")
-                        .font(.caption2).foregroundColor(.secondary)
-                    if let updated = cloudData.lastUpdated {
-                        Text("\(I18n.t("dashboard.updated")) \(updated, format: .dateTime.month(.abbreviated).day().hour().minute().locale(.current))")
-                            .font(.caption2).foregroundColor(.secondary)
-                    }
-                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 28)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: geometry.size.height, alignment: .center)
             }
-            .padding()
+            .refreshable { await cloud.fetchAndStore(range: range); cloud.loadSnapshot(for: range); await cloud.fetchCurrentPulse() }
         }
-        .environment(\.locale, Locale(identifier: {
-            switch I18n.lang {
-            case "zh-Hans":    return "zh_CN"
-            case "zh-Hant-TW": return "zh_TW"
-            case "zh-Hant-HK": return "zh_HK"
-            case "ja":         return "ja_JP"
-            case "ko":         return "ko_KR"
-            case "de":         return "de_DE"
-            case "fr":         return "fr_FR"
-            case "es":         return "es_ES"
-            case "pt-BR":      return "pt_BR"
-            default:           return "en_US"
+        .background(Color(.systemBackground))
+        .toolbar(.hidden, for: .navigationBar)
+        .task(id: range) { try? await cloud.fetchSnapshot(for: range) }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await cloud.fetchCurrentPulse()
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
             }
-        }()))
-        .refreshable {
-            await cloudData.refresh()
-        }
-        .onAppear {
-            barProgress = 1
-            let key = timeRange.cacheKey
-            fetchTask = Task { try? await cloudData.fetchSnapshot(for: key) }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            fetchTask?.cancel()
-            let key = timeRange.cacheKey
-            fetchTask = Task { try? await cloudData.fetchSnapshot(for: key) }
-        }
-        .sheet(item: $selectedTool) { detail in
-            ToolDetailSheetView(detail: detail)
         }
     }
 
-    // MARK: - Donuts
-
-    @ViewBuilder
-    private var subVsApiDonut: some View {
-        let t = ChartMath.finite(apiSpend + subTotal, fallback: 0)
-        VStack(spacing: 2) {
-            ZStack {
-                if t > 0.001 {
-                    Chart {
-                        if ChartMath.finite(apiSpend, fallback: 0) > 0.001 {
-                            SectorMark(angle: .value("API", apiSpend), innerRadius: .ratio(0.5))
-                                .foregroundStyle(Color.deepRed)
-                        }
-                        if ChartMath.finite(subTotal, fallback: 0) > 0.001 {
-                            SectorMark(angle: .value("Sub", subTotal), innerRadius: .ratio(0.5))
-                                .foregroundStyle(Color.marsGreen)
-                        }
-                    }
-                    .frame(width: 80, height: 80)
-                } else {
-                    Circle().stroke(.secondary.opacity(0.15), lineWidth: 10).frame(width: 80, height: 80)
-                }
-                Text(usd(t))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-            }
-            VStack(spacing: 2) {
-                let apiPct = ChartMath.safeInt(ChartMath.ratio(apiSpend, denominator: t, fallback: 0) * 100)
-                let subPct = ChartMath.safeInt(ChartMath.ratio(subTotal, denominator: t, fallback: 0) * 100)
-                if apiSpend > 0.001 { HStack(spacing: 2) { Circle().fill(Color.deepRed).frame(width: 6, height: 6); (Text(I18n.t("stat.api")) + Text(verbatim: " " + apiPct.formatted(.percent))).font(.caption2) } }
-                if subTotal > 0.001 { HStack(spacing: 2) { Circle().fill(Color.marsGreen).frame(width: 6, height: 6); (Text(I18n.t("stat.sub")) + Text(verbatim: " " + subPct.formatted(.percent))).font(.caption2) } }
-            }
-        }
-        .frame(width: 90)
-    }
-
-    @ViewBuilder
-    private var providerDonut: some View {
-        // SectorMark cannot safely render a zero/NaN angle set; keep only
-        // finite positive segments in chart geometry.
-        let segments = snap.providerBreakdown.filter { $0.cost.isFinite && $0.cost > 0.001 }
-        VStack(spacing: 2) {
-            ZStack {
-                if !segments.isEmpty {
-                    Chart {
-                        ForEach(segments, id: \.providerId) { p in
-                            SectorMark(angle: .value("Cost", p.cost), innerRadius: .ratio(0.5))
-                                .foregroundStyle(by: .value("Name", p.name))
-                        }
-                    }
-                    .chartLegend(.hidden).frame(width: 80, height: 80)
-                    .chartForegroundStyleScale(domain: segments.map(\.name),
-                        range: [Color.deepRed, .marsGreen, Color.deepRed2])
-                } else {
-                    Circle().stroke(.secondary.opacity(0.15), lineWidth: 10).frame(width: 80, height: 80)
-                }
-                Text(usd(apiSpend))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-            }
-            ForEach(segments.prefix(3), id: \.providerId) { p in
-                HStack(spacing: 2) {
-                    Circle().fill(Color.deepRed).frame(width: 6, height: 6)
-                    let pctStr = ChartMath.safeInt(ChartMath.ratio(p.cost, denominator: apiSpend, fallback: 0) * 100).formatted(.percent)
-                    Text(verbatim: "\(p.name) \(pctStr)")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-            }
-        }
-        .frame(width: 90)
-    }
-
-    private var noseStatCards: some View {
-        let f = snap.codeChanges
-        return VStack(spacing: 6) {
-            statCard(I18n.t("dashboard.net_lines"), value: "\(f.reduce(0) { $0 + $1.netLines })")
-            statCard(I18n.t("dashboard.added"), value: "+\(f.reduce(0) { $0 + $1.added })", color: .marsGreen)
-            statCard(I18n.t("dashboard.deleted"), value: "-\(f.reduce(0) { $0 + $1.deleted })", color: .deepRed)
-            if timeRange == .today {
-                statCard(I18n.t("dashboard.calls"), value: "\(snap.todayCalls)")
-                statCard(I18n.t("dashboard.tokens"), value: tokenShort(snap.todayTokens))
-            }
-        }.frame(width: 90)
-    }
-
-    // MARK: - Tool & Repo (output section)
-
-    @ViewBuilder
-    private var outputSection: some View {
-        if !snap.toolBreakdown.isEmpty {
-            toolBars
-        }
-        if !snap.topRepos.isEmpty {
-            repoList
-        }
-    }
-
-    @ViewBuilder
-    private var remainingBalanceRow: some View {
-        let items = snap.remainingBalances.filter { $0.balance > 0.001 }
-        let quotas = snap.quotaStatus.filter { $0.utilization > 0 }
-        if items.isEmpty && quotas.isEmpty {
-            EmptyView()
+    @ViewBuilder private var head: some View {
+        if let detail {
+            VStack(alignment: .leading, spacing: 12) {
+                Button { self.detail = nil } label: { Label(t("返回", "Back"), systemImage: "chevron.left") }.font(.subheadline.weight(.medium))
+                Text(detail).font(.headline)
+                ScrollView { detailContent(detail).frame(maxWidth: .infinity, alignment: .leading) }
+            }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
-            VStack(spacing: 10) {
-                Text(I18n.t("dashboard.remaining_balance")).font(.headline)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                ForEach(items, id: \.providerId) { item in
-                    HStack {
-                        Text(item.displayName)
-                            .font(.caption).foregroundColor(.secondary)
-                        Spacer()
-                        Text(balanceShort(item.balance, currency: item.currency))
-                            .font(.caption).fontWeight(.semibold).monospacedDigit()
-                    }
-                }
-                // Subscription quotas (Claude / Copilot utilization + reset countdown)
-                ForEach(quotas, id: \.stableId) { q in
-                    HStack {
-                        Text(toolDisplayName(q.toolId) + (q.windowId.map { " · \($0)" } ?? ""))
-                            .font(.caption).foregroundColor(.secondary)
-                        Spacer()
-                        if q.isStale() {
-                            Text(I18n.t("dashboard.quota_stale"))
-                                .font(.caption2).foregroundColor(.secondary)
-                        } else {
-                            Text((q.utilization / 100).formatted(.percent.precision(.fractionLength(0))))
-                                .font(.caption).monospacedDigit().foregroundColor(quotaColor(q.utilization))
-                        }
-                        if !q.isStale(), q.resetAt > 0 {
-                            Text(quotaCountdownText(q.resetAt))
-                                .font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func balanceShort(_ v: Double, currency: String) -> String {
-        let symbol: String = {
-            switch currency { case "CNY": return "¥"; case "EUR": return "€"; default: return "$" }
-        }()
-        if v >= 1000 { return "\(symbol)\(String(format: "%.0f", v))" }
-        return "\(symbol)\(String(format: "%.2f", v))"
-    }
-
-    private func toolDisplayName(_ toolId: String) -> String {
-        switch toolId {
-        case "claude-code": return "Claude Code"
-        case "copilot":     return "GitHub Copilot"
-        default:            return toolId
-        }
-    }
-
-    private func matchingToolDetail(for displayName: String) -> ToolDetailItem? {
-        let source: String
-        switch displayName {
-        case "ChatGPT":        source = "codex"
-        case "Claude Code":    source = "claude-code"
-        case "GitHub Copilot": source = "copilot"
-        default:               return nil
-        }
-        // Fall back to an empty entry so the sheet opens with a "no session
-        // data" state instead of a dead tap (e.g. old macOS snapshots that
-        // predate toolDetails, or tools without session data).
-        return snap.toolDetails.first { $0.source == source }
-            ?? ToolDetailItem(source: source, conclusion: ToolConclusionItem(), sessions: [])
-    }
-
-    private func quotaColor(_ percent: Double) -> Color {
-        switch percent {
-        case 0..<75:  return .marsGreen
-        case 75..<90: return .marsGreenLight
-        default:      return .deepRed
-        }
-    }
-
-    private func quotaCountdownText(_ resetAt: Double) -> String {
-        let remaining = resetAt - Date().timeIntervalSince1970
-        guard remaining > 0 else { return I18n.t("dashboard.quota_stale") }
-        let fmt = DateComponentsFormatter()
-        fmt.allowedUnits = [.day, .hour, .minute]
-        fmt.unitsStyle = .abbreviated
-        fmt.maximumUnitCount = 2
-        return fmt.string(from: remaining) ?? ""
-    }
-
-    @ViewBuilder
-    private var toolBars: some View {
-        let all = snap.toolBreakdown
-        let shown = toolsExpanded ? all : Array(all.prefix(3))
-        let maxCost = all.compactMap { $0.cost.isFinite && $0.cost >= 0 ? $0.cost : nil }.max() ?? 1
-        VStack(alignment: .leading, spacing: 6) {
-            Text(I18n.t("dashboard.by_tool")).font(.caption).foregroundColor(.secondary)
-            ForEach(shown, id: \.name) { tool in
-                Button {
-                    selectedTool = matchingToolDetail(for: tool.name)
-                } label: {
-                    HStack {
-                        Text(tool.name).font(.caption).frame(width: 90, alignment: .leading)
-                        GeometryReader { geo in
-                            RoundedRectangle(cornerRadius: 3).fill(Color.marsGreenBar)
-                                .frame(width: max(geo.size.width * CGFloat(ChartMath.ratio(tool.cost, denominator: maxCost, fallback: 0)), 2))
-                        }.frame(height: 8)
-                        Spacer()
-                        Text(usd(tool.cost)).font(.caption2).monospacedDigit()
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            if all.count > 3 {
-                Button(toolsExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
-                    withAnimation { toolsExpanded.toggle() }
-                }
-                .font(.caption2)
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
-        }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
-    }
-
-    @ViewBuilder
-    private var repoList: some View {
-        let all = snap.topRepos.filter { $0.added > 0 || $0.deleted > 0 }
-        let shown = reposExpanded ? all : Array(all.prefix(3))
-        let maxCost = all.compactMap { $0.cost.isFinite && $0.cost >= 0 ? $0.cost : nil }.max() ?? 1
-        let maxCPL = all.compactMap { $0.cpl.isFinite && $0.cpl > 0 ? $0.cpl : nil }.max() ?? 1
-        VStack(alignment: .leading, spacing: 6) {
-            Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-            ForEach(shown, id: \.name) { repo in
-                HStack {
-                    Text(repo.name).font(.caption).lineLimit(1)
+            VStack(spacing: 7) {
+                HStack(alignment: .top) {
+                    Color.clear.frame(width: 16, height: 24)
                     Spacer()
-                    Text("+\(repo.added)/-\(repo.deleted)").font(.caption2).foregroundColor(.secondary)
+                    TimelineView(.periodic(from: .now, by: 15)) { context in
+                        let pulse = cloud.pulseEnvelope?.currentPulse(asOf: context.date)
+                        Button { detail = t("当前活动强度", "Current activity") } label: {
+                            Group {
+                                if pulse == nil { Text(cloud.pulseEnvelope?.pulse == nil ? t("暂无当前观测", "No current signal") : t("观测已过期", "Signal expired")).font(.system(size: 14)) }
+                                else { RobotPulseCurve(tier: pulse?.tier).stroke(pulse?.tier == .active ? Color.marsGreen : pulse?.tier == .resting ? .secondary : .deepRed, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)).frame(width: 125, height: 38) }
+                            }.frame(width: 270, height: 57).background(inset, in: RoundedRectangle(cornerRadius: 13)).overlay(RoundedRectangle(cornerRadius: 13).stroke(line))
+                        }.buttonStyle(.plain).accessibilityLabel(t("查看当前活动强度依据", "Current activity details"))
+                    }
+                    Spacer()
+                    NavigationLink { PhoneSettingsView() } label: { Image(systemName: "gearshape").font(.system(size: 14)).foregroundStyle(.secondary) }.accessibilityLabel(t("设置", "Settings"))
                 }
-                HStack(spacing: 4) {
-                    Text(usd(repo.cost)).font(.caption2).monospacedDigit().frame(width: 56, alignment: .leading)
-                    GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 2).fill(Color.marsGreenBar)
-                            .frame(width: max(geo.size.width * CGFloat(ChartMath.ratio(repo.cost, denominator: maxCost, fallback: 0)), 2))
-                    }.frame(height: 4)
-                }
-                HStack(spacing: 4) {
-                    Text("CPL \(usd(repo.cpl))").font(.caption2).foregroundColor(.secondary).frame(width: 56, alignment: .leading)
-                    GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 2).fill(Color.deepRedBar.opacity(0.5))
-                            .frame(width: max(geo.size.width * CGFloat(ChartMath.ratio(repo.cpl, denominator: maxCPL, fallback: 0)), 2))
-                    }.frame(height: 4)
-                }
-            }
-            if all.count > 3 {
-                Button(reposExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
-                    withAnimation { reposExpanded.toggle() }
-                }
-                .font(.caption2)
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
-        }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
-    }
-
-    private func earBar(width: CGFloat, height: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(Color.marsGreen.opacity(0.2))
-            .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .stroke(Color.marsGreen.opacity(0.35), lineWidth: 1))
-            .frame(width: width, height: height)
-    }
-
-    /// Axis calculation — moved outside ViewBuilder to avoid control-flow restriction.
-    private func trendAxis(cal: Calendar, chartStart: Date, chartDays: Int) -> (costMax: Double, codeMax: Double, scale: Double, costStep: Double) {
-        let padResult = TrendPadding.pad(snap: snap, days: chartDays, cal: cal, chartStart: chartStart)
-        if padResult.noData { return (0, 0, 1, 1) }
-        let paddedStats = padResult.stats
-        let paddedCode = padResult.code
-
-        let rawCostMax = ChartMath.axisMax(paddedStats.map { s -> Double in
-            let api = snap.balanceDaily.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: Date(timeIntervalSince1970: s.ts)) })?.value ?? 0
-            return ChartMath.finite(api + snap.subDaily, fallback: 0)
-        }.max() ?? 5, fallback: 5)
-        let cStep = ChartMath.niceStep(rawCostMax / 4)
-        let cMax = ChartMath.axisMax(ceil(rawCostMax / cStep) * cStep, fallback: cStep)
-
-        let rawCodeMax = paddedCode.compactMap { c -> Double? in
-            let total = Int64(c.added) + Int64(c.deleted)
-            return total > 0 ? Double(total) : nil
-        }.max() ?? 1
-        let sec = cMax / cStep
-        var cdStep = ChartMath.niceStep(rawCodeMax / sec)
-        while cdStep * sec < rawCodeMax { cdStep = ChartMath.nextNiceStep(cdStep) }
-        let cdMax = cdStep * sec
-        let sc = cdMax > 0 ? cMax / cdMax : 1
-        return (cMax, cdMax, sc, cStep)
-    }
-
-    // MARK: - Trend (duplicate of macOS logic)
-
-    private var trendChart: some View {
-        Group {
-            if hasCurrentSnapshot {
-                trendChartBody
-                    .id(timeRange)
-            }
+                HStack(spacing: 0) {
+                    ForEach(["today", "week", "30d"], id: \.self) { key in
+                        Button { range = key } label: {
+                            Text(key == "today" ? t("今日", "Today") : key == "week" ? t("本周", "Week") : t("30 天", "30 days"))
+                                .font(.system(size: 14)).foregroundStyle(range == key ? (scheme == .dark ? Color(red: 0.76, green: 0.83, blue: 0.78) : .primary) : .secondary)
+                                .frame(maxWidth: .infinity).frame(height: 24)
+                                .background(range == key ? (scheme == .dark ? Color(red: 0.19, green: 0.30, blue: 0.24) : Color.white.opacity(0.8)) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        }.buttonStyle(.plain).accessibilityAddTraits(range == key ? .isSelected : [])
+                    }
+                }.padding(2).frame(width: 240).background(inset, in: RoundedRectangle(cornerRadius: 8))
+                HStack(alignment: .center, spacing: 16) {
+                    eye(tokens: true)
+                    nose
+                    eye(tokens: false)
+                }.frame(height: 210, alignment: .top)
+                VStack(spacing: 5) {
+                    HStack { Text(t("活动节奏（词元｜行数）", "Activity rhythm (Tokens | Lines)")); Spacer(); Text(range == "today" ? t("按小时", "Hourly") : t("按天", "Daily")) }.font(.system(size: 11)).foregroundStyle(.secondary)
+                    rhythm(tokens: true).frame(height: 23)
+                    rhythm(tokens: false).frame(height: 23)
+                }.frame(width: 350, height: 70).padding(10)
+                    .background(inset, in: RoundedRectangle(cornerRadius: 11))
+                    .overlay(RoundedRectangle(cornerRadius: 11).stroke(line))
+            }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    @ViewBuilder
-    private var trendChartBody: some View {
-        let chartDays = timeRange.chartDays
-        let cal = Calendar.current
-        let chartStart: Date = {
-            if case .week = timeRange {
-                var mc = cal; mc.firstWeekday = 2
-                return mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))
-                    ?? mc.startOfDay(for: Date())
+    private func ear(left: Bool) -> some View {
+        Button { muted.toggle() } label: {
+            RoundedRectangle(cornerRadius: 4).fill(earColor)
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(line))
+                .overlay { Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: 12, weight: .medium)).scaleEffect(x: left ? -1 : 1, y: 1).foregroundStyle(muted ? Color.secondary : .primary.opacity(0.7)) }
+                .frame(width: 16, height: 39).frame(width: 24, height: 47).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityLabel(muted ? t("开启 iPhone 声音", "Unmute iPhone") : t("静音 iPhone", "Mute iPhone"))
+    }
+    private func parts(tokens: Bool) -> [(String, Double)] {
+        let values = tokens ? (snap?.toolBreakdown ?? []).map { ($0.name, Double($0.tokens ?? 0)) }
+            : (snap?.topRepos ?? []).map { ($0.name, Double($0.totalChanges)) }
+        let sorted = values.filter { $0.1 > 0 }.sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
+        return sorted.count > 3 ? Array(sorted.prefix(3)) + [(t("其他", "Other"), sorted.dropFirst(3).reduce(0) { $0 + $1.1 })] : sorted
+    }
+    private func eye(tokens: Bool) -> some View {
+        let values = parts(tokens: tokens)
+        let total = values.reduce(0) { $0 + $1.1 }
+        let value = tokens ? snap.map { $0.readFailures.contains("toolUsage") ? "—" : count(Int64(total)) } : values.isEmpty ? nil : count(Int64(total))
+        return VStack(spacing: 6) {
+            Text(tokens ? t("工具用量", "Tool usage") : t("仓库变化", "Repository changes")).font(.system(size: 14)).foregroundStyle(.secondary)
+            Button { detail = tokens ? t("工具与模型", "Tools & models") : t("仓库变化", "Repository changes") } label: {
+                ZStack {
+                    Circle().fill(inset).frame(width: 120, height: 120)
+                    Circle().stroke(line, lineWidth: 1).frame(width: 132, height: 132)
+                    Circle().stroke(.primary.opacity(0.07), lineWidth: 10).frame(width: 110, height: 110)
+                    ForEach(Array(values.enumerated()), id: \.offset) { index, item in
+                        let start = total > 0 ? values.prefix(index).reduce(0) { $0 + $1.1 } / total : 0
+                        Circle().trim(from: start, to: total > 0 ? start + item.1 / total : 0).stroke(palette[index % 4], style: StrokeStyle(lineWidth: 10, lineCap: .butt)).rotationEffect(.degrees(-90)).frame(width: 110, height: 110)
+                    }
+                    VStack(spacing: 2) { Text(value ?? "—").font(.system(size: 25, weight: .semibold, design: .rounded)).minimumScaleFactor(0.65); Text(tokens ? "TOKENS" : "LINES").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary) }.padding(15)
+                }.frame(width: 132, height: 132)
+            }.buttonStyle(.plain)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)], alignment: .leading, spacing: 3) {
+                ForEach(Array(values.prefix(4).enumerated()), id: \.offset) { i, item in HStack(spacing: 3) { Circle().fill(palette[i]).frame(width: 4, height: 4); Text(item.0).font(.system(size: 12)).lineLimit(1) }.frame(maxWidth: .infinity, alignment: .leading) }
+            }.frame(height: 33, alignment: .top)
+            Button { detail = tokens ? t("工具与模型", "Tools & models") : t("仓库变化", "Repository changes") } label: { HStack(spacing: 2) { Text(tokens ? t("工具与模型", "Tools & models") : t("全部仓库", "All repositories")); Image(systemName: "arrow.up.right").font(.system(size: 10)) }.font(.system(size: 12)).foregroundStyle(.secondary) }.buttonStyle(.plain)
+        }.frame(width: 145)
+    }
+
+    private var nose: some View {
+        let c = snap?.tokenComposition
+        let values = [c?.nonCachedInput ?? 0, c?.cachedInput ?? 0, c?.output ?? 0]
+        let widths = PhoneDashboardData.noseWidths(values)
+        let totalInput = Double(values[0]) + Double(values[1])
+        return Button { detail = t("词元构成", "Token composition") } label: {
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    ForEach(0..<3) { i in
+                        Rectangle().fill(i == 0 ? Color.marsGreen : i == 1 ? cacheColor : .deepRed)
+                            .opacity(values[i] > 0 ? 1 : 0.25).frame(width: geo.size.width * widths[i])
+                            .overlay { if i == 1 { Text(c == nil || totalInput == 0 ? "—" : "\(Int(Double(values[1]) / totalInput * 100))%").font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5) } }
+                    }
+                }.clipShape(CodeChangeTrapezoid())
+            }.frame(width: 44, height: 55).opacity(c == nil ? 0.25 : 1)
+        }.frame(width: 60).buttonStyle(.plain).accessibilityLabel(t("缓存率与词元构成", "Cache rate and token composition"))
+    }
+
+    private func rhythm(tokens: Bool) -> some View {
+        let values = snap.map { PhoneDashboardData.rhythm(tokens ? $0.dailyStats : $0.codeChanges, period: $0.period, tokens: tokens) } ?? Array(repeating: -1, count: 24)
+        let peak = max(1, values.max() ?? 1)
+        return GeometryReader { geo in HStack(alignment: tokens ? .top : .bottom, spacing: 3) { ForEach(values.indices, id: \.self) { i in Capsule().fill(values[i] < 0 ? Color.secondary.opacity(0.15) : (tokens ? Color.marsGreen : Color.deepRed2).opacity(values[i] == 0 ? 0.15 : 0.9)).frame(height: values[i] < 0 ? 3 : max(3, geo.size.height * values[i] / peak)).frame(maxWidth: .infinity) } }.frame(height: geo.size.height, alignment: tokens ? .top : .bottom) }
+    }
+    private var spendText: String {
+        guard let items = snap?.observedSpend, !items.isEmpty else { return "—" }
+        let sums = Dictionary(grouping: items, by: \.currency).map { currency, items in "\(currency) \(items.reduce(0) { $0 + $1.amount }.formatted(.number.precision(.fractionLength(2))))" }
+        return sums.sorted().joined(separator: " · ")
+    }
+    private var expenses: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                expense(t("账户观测", "Account observations"), value: spendText, link: t("账户观测明细", "Observation details"), detail: t("API 已观测支出", "Observed API spend"))
+                Divider()
+                expense(t("固定月费 · 声明值", "Fixed monthly fees · declared"), value: snap?.declaredMonthlyCostUSD.map { "USD \($0.formatted(.number.precision(.fractionLength(2))))" + t(" / 月", " / mo") } ?? "—", link: t("固定费用说明", "Fixed cost context"), detail: t("固定月费", "Fixed monthly fees"))
+            }.fixedSize(horizontal: false, vertical: true).padding(.horizontal, 20).padding(.vertical, 16)
+            Divider()
+            VStack(spacing: 5) {
+                HStack {
+                    Text(snap.map { t("Mac 上次更新 ", "Last Mac observation ") + $0.updatedAt.formatted(date: .omitted, time: .shortened) } ?? t("此范围尚无数据", "No snapshot for this range"))
+                    Spacer()
+                    Button { detail = t("数据说明", "Data details") } label: { Label(t("数据说明", "Data details"), systemImage: "arrow.up.right") }
+                }
+                HStack { Text("AI Pulse " + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")); Spacer(); Text(t("数据版本 ", "Data format ") + (snap?.payloadVersion ?? "2.0.0")) }
+            }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 10).background(.primary.opacity(0.035))
+        }.background(inset, in: RoundedRectangle(cornerRadius: 16)).clipShape(RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(.primary.opacity(0.14))).buttonStyle(.plain)
+    }
+    private func expense(_ title: String, value: String, link: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 22, weight: .medium)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
+            Button { self.detail = detail } label: { HStack(spacing: 4) { Text(link); Image(systemName: "arrow.up.right").font(.system(size: 10)) }.font(.system(size: 12)).foregroundStyle(.secondary) }.buttonStyle(.plain)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+    @ViewBuilder private func detailContent(_ title: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if title == t("当前活动强度", "Current activity") {
+                Text(t("这是 Mac 最近的活动观测，不随统计范围切换。过期观测不代表平静。", "Recent Mac activity, independent of the selected period. An expired observation does not mean resting."))
+                if let pulse = cloud.pulseEnvelope?.currentPulse() { Text(I18n.pulseReason(pulse)); if let facts = pulse.activityFacts { row(t("最近词元", "Recent tokens"), count(facts.recentTokens)); row(t("观测窗口", "Observation window"), "\(facts.windowSeconds / 60) min") } }
+                else { Text(t("尚无有效的当前强度，请确认 Mac 正在运行并同步。", "No valid current signal. Check that your Mac is running and syncing.")) }
+            } else if title == t("词元构成", "Token composition") {
+                if let c = snap?.tokenComposition { row(t("非缓存输入", "Uncached input"), count(c.nonCachedInput)); row(t("缓存输入", "Cached input"), count(c.cachedInput)); row(t("输出", "Output"), count(c.output)); Text(t("缓存属于输入。鼻梁采用非线性宽度，让较小部分也可见；数值按实际数据展示。", "Cache is a subset of input. Nonlinear widths keep small components visible; counts are actual observations.")) } else { Text(t("尚无词元构成数据", "No composition data")) }
+            } else if title == t("工具与模型", "Tools & models") {
+                ForEach(Array((snap?.toolBreakdown ?? []).enumerated()), id: \.offset) { _, item in row(item.name, item.tokens.map(count) ?? "—") }
+                Divider()
+                ForEach(Array((snap?.modelBreakdown ?? []).enumerated()), id: \.offset) { _, item in row(item.model, count(item.tokens)) }
+                if (snap?.toolBreakdown ?? []).isEmpty { Text(t("尚无工具活动数据", "No tool activity data")) }
+            } else if title == t("仓库变化", "Repository changes") {
+                ForEach(snap?.topRepos ?? []) { repo in VStack(alignment: .leading, spacing: 4) { row(repo.name, "+\(repo.added) / −\(repo.deleted)"); Text(repo.repoPath).font(.caption).foregroundStyle(.secondary) } }
+                if (snap?.topRepos ?? []).isEmpty { Text(t("未观测到仓库变化；可在 Mac 上配置开发目录。", "No repository changes observed. Configure development directories on your Mac.")) }
+            } else if title == t("活动节奏", "Activity rhythm") {
+                Text(t("按 Mac 时区统计。上行为词元，下行为新增与删除行数。灰色侧栏是相邻周占位，不代表已观测活动。", "Uses your Mac’s time zone. Tokens above, added and deleted lines below. Gray neighboring weeks are placeholders."))
+                rhythm(tokens: true).frame(height: 50); rhythm(tokens: false).frame(height: 50)
+                ForEach(Array((snap?.dailyStats ?? []).enumerated()), id: \.offset) { _, point in row(Date(timeIntervalSince1970: point.ts).formatted(date: .abbreviated, time: .shortened), count(point.tokens)) }
+            } else if title == t("API 已观测支出", "Observed API spend") {
+                Text(t("账户返回的已观测支出，保留原币种与观测区间，不等同于选定范围的全部消费。", "Account observations retain their currency and observation interval; they are not the entire spend for the selected period."))
+                ForEach(Array((snap?.observedSpend ?? []).enumerated()), id: \.offset) { _, item in VStack(alignment: .leading, spacing: 4) { row(item.providerId, "\(item.currency) \(item.amount.formatted(.number.precision(.fractionLength(2))))"); Text(Date(timeIntervalSince1970: item.observedAt).formatted()).font(.caption).foregroundStyle(.secondary) } }
+                ForEach(Array((snap?.remainingBalances ?? []).enumerated()), id: \.offset) { _, item in row(item.displayName, "\(item.currency) \(item.balance.formatted())") }
+            } else if title == t("固定月费", "Fixed monthly fees") {
+                Text(t("由 Mac 设置中的套餐与固定费用声明汇总，单位为 USD/月。它不表示已用额度，也不与 API 观测支出相加。请在 Mac 上修改。", "Declared plans and fixed fees from Mac settings, in USD/month. This is not consumed quota and is not added to API observations. Edit on your Mac."))
+                row(t("月费", "Monthly fees"), snap?.declaredMonthlyCostUSD.map { "USD \($0.formatted())" } ?? "—")
+            } else {
+                Text(t("这里只显示 Mac 同步的摘要。词元、代码变化和账户费用各有独立的数据来源。缺失数据不代表零。", "Mac-synced summaries only. Tokens, code changes and account observations have independent sources. Missing data is not zero."))
+                row(t("数据版本", "Data version"), snap?.payloadVersion ?? "—"); row(t("Mac 版本", "Mac version"), snap?.writerAppVersion ?? "—")
+                if let snap { row(t("已观测事件", "Observed events"), snap.activityCoverage.observedEvents.map(count) ?? "—"); ForEach(snap.readFailures, id: \.self) { Text($0).foregroundStyle(.secondary) } }
             }
-            return cal.date(byAdding: .day, value: -(chartDays - 1), to: cal.startOfDay(for: Date()))
-                ?? cal.startOfDay(for: Date())
-        }()
-        let chartXEnd = cal.date(byAdding: .day, value: chartDays, to: cal.startOfDay(for: chartStart))
-            ?? cal.startOfDay(for: chartStart).addingTimeInterval(Double(chartDays) * 86_400)
-        let axis = trendAxis(cal: cal, chartStart: chartStart, chartDays: chartDays)
-        if axis.costMax == 0 { EmptyView() }
-        
-        let padResult = TrendPadding.pad(snap: snap, days: chartDays, cal: cal, chartStart: chartStart)
-        let paddedStats = padResult.stats
-        let paddedCode = padResult.code
-        let costMax = axis.costMax
-        let scale = axis.scale
-
-        VStack(spacing: 8) {
-            Text(I18n.t("dashboard.daily_trend")).font(.headline)
-            Chart {
-                ForEach(paddedStats, id: \.ts) { s in
-                    let d = Date(timeIntervalSince1970: s.ts)
-                    let api = snap.balanceDaily.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: d) })?.value ?? 0
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", ChartMath.barValue(base: api, progress: Double(barProgress))))
-                        .foregroundStyle(Color.marsGreen).position(by: .value("Series", "Cost"))
-                }
-                ForEach(paddedStats.filter { $0.ts <= Date().timeIntervalSince1970 }, id: \.ts) { s in
-                    let d = Date(timeIntervalSince1970: s.ts)
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", ChartMath.barValue(base: snap.subDaily, progress: Double(barProgress))))
-                        .foregroundStyle(Color.marsGreenLight).position(by: .value("Series", "Cost"))
-                }
-                ForEach(paddedCode, id: \.ts) { c in
-                    let d = Date(timeIntervalSince1970: c.ts)
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", ChartMath.barValue(base: Double(c.added), progress: Double(barProgress), scale: scale)))
-                        .foregroundStyle(Color.deepRed2).position(by: .value("Series", "Code"))
-                }
-                ForEach(paddedCode, id: \.ts) { c in
-                    let d = Date(timeIntervalSince1970: c.ts)
-                    BarMark(x: .value("Date", d, unit: .day), y: .value("Value", ChartMath.barValue(base: Double(c.deleted), progress: Double(barProgress), scale: scale)))
-                        .foregroundStyle(Color.deepRed.opacity(0.35)).position(by: .value("Series", "Code"))
-                }
-            }
-            .chartXScale(domain: chartStart...chartXEnd)
-            .chartYScale(domain: 0...costMax)
-            .chartYAxis {
-                AxisMarks(position: .leading, values: .automatic) { v in
-                    AxisGridLine().foregroundStyle(.gray.opacity(0.2))
-                    if let d = v.as(Double.self) { AxisValueLabel("$\(String(format: "%.0f", d))") }
-                }
-                AxisMarks(position: .trailing, values: .automatic) { v in
-                    AxisGridLine().foregroundStyle(.gray.opacity(0.1))
-                    if let d = v.as(Double.self) { AxisValueLabel(shortNum(ChartMath.safeInt(d / scale))) }
-                }
-            }
-            .frame(height: 200)
-            HStack(spacing: 12) {
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.marsGreen).frame(width: 8, height: 8); Text(I18n.t("stat.api")).font(.caption2) }
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.marsGreenLight).frame(width: 8, height: 8); Text(I18n.t("stat.sub")).font(.caption2) }
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.deepRed2).frame(width: 8, height: 8); Text(I18n.t("chart.added")).font(.caption2) }
-                HStack(spacing: 2) { RoundedRectangle(cornerRadius: 1).fill(Color.deepRed.opacity(0.35)).frame(width: 8, height: 8); Text(I18n.t("chart.deleted")).font(.caption2) }
-            }
-        }
-        .padding(12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.marsGreen.opacity(0.25), lineWidth: 2))
+        }.font(.subheadline).textSelection(.enabled)
     }
-
-    // MARK: - Helpers
-
-    private func statCard(_ label: String, value: String, color: Color = .primary) -> some View {
-        VStack(spacing: 1) {
-            Text(value).font(.caption).fontWeight(.semibold).foregroundStyle(color)
-            Text(label).font(.caption2).foregroundColor(.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private func comparisonBadge(current: Double, previous: Double) -> some View {
-        let pct = ChartMath.percentageDelta(current: current, previous: previous, fallback: 0)
-        if abs(pct) < 1 {
-            Text("→")
-                .font(.caption2).foregroundColor(.secondary)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
-        } else if pct > 0 {
-            let badge = "↑" + ChartMath.safeInt(round(pct)).formatted(.percent)
-            Text(verbatim: badge)
-                .font(.caption2).foregroundColor(.deepRed)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(Color.deepRed.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
-        } else {
-            let badge = "↓" + ChartMath.safeInt(round(-pct)).formatted(.percent)
-            Text(verbatim: badge)
-                .font(.caption2).foregroundColor(.marsGreen)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(Color.marsGreen.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
-        }
-    }
-    private func shortNum(_ n: Int) -> String { ChartMath.compactCount(Int64(n)) }
-    private static let usdFormatter: NumberFormatter = {
-        let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = "USD"
-        f.locale = Locale(identifier: "en_US"); return f
-    }()
-    private func usd(_ v: Double) -> String {
-        Self.usdFormatter.string(from: NSNumber(value: v)) ?? "$0.00"
-    }
-
-    private func tokenShort(_ n: Int64) -> String {
-        ChartMath.compactCount(n)
-    }
-}
-
-struct TrendPadding {
-    let stats: [TrendPoint]; let code: [TrendPoint]; let noData: Bool
-    static func pad(snap: DashboardSnapshot, days: Int, cal: Calendar, chartStart: Date) -> TrendPadding {
-        var s = [TrendPoint](), c = [TrendPoint]()
-        for i in 0..<days {
-            guard let d = cal.date(byAdding: .day, value: i, to: chartStart) else { continue }
-            let ts = d.timeIntervalSince1970
-            let zero = TrendPoint(ts: ts, value: 0, calls: 0, tokens: 0, netLines: 0)
-            s.append(snap.dailyStats.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: d) }) ?? zero)
-            c.append(snap.codeChanges.first(where: { cal.isDate(Date(timeIntervalSince1970: $0.ts), inSameDayAs: d) }) ?? zero)
-        }
-        let nd = s.allSatisfy({ $0.value == 0 }) && c.allSatisfy({ $0.added == 0 })
-        return TrendPadding(stats: s, code: c, noData: nd)
-    }
-}
-
-enum TimeRange: Hashable {
-    case today, week, days30
-    var days: Int {
-        switch self {
-        case .today: return 1
-        case .week:
-            let cal = Calendar.current; var mc = cal; mc.firstWeekday = 2
-            let mon = mc.date(from: mc.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date()))
-                ?? mc.startOfDay(for: Date())
-            let days = cal.dateComponents([.day], from: mon, to: cal.startOfDay(for: Date())).day ?? 0
-            return max(days + 1, 1)
-        case .days30: return 30
-        }
-    }
-    var label: String { switch self { case .today: I18n.t("time.today"); case .week: I18n.t("time.week"); case .days30: I18n.t("time.30d") } }
-    var chartDays: Int { switch self { case .week: 7; default: days } }
-    var cacheKey: String { switch self { case .today: "today"; case .week: "week"; case .days30: "30d" } }
+    private func row(_ key: String, _ value: String) -> some View { HStack(alignment: .top) { Text(key); Spacer(minLength: 8); Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing) } }
 }

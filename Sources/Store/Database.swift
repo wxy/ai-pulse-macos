@@ -3,6 +3,7 @@ import GRDB
 
 final class AppDatabase: @unchecked Sendable {
     static let shared = AppDatabase()
+    private(set) var databaseURL: URL?
     private var dbQueue: DatabaseQueue?
 
     /// Debug builds must not contend with an installed release for SQLite locks
@@ -61,6 +62,7 @@ final class AppDatabase: @unchecked Sendable {
     /// preference domain without touching the user's active profile.
     func setup(at dbPath: String, defaults: UserDefaults) throws {
         dbQueue = try DatabaseQueue(path: dbPath)
+        databaseURL = URL(fileURLWithPath: dbPath)
         Logger.info("DB opened at \(dbPath)")
 
         try dbQueue?.write { try AppDatabase.createAllTables($0) }

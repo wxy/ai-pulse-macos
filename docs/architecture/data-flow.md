@@ -39,9 +39,9 @@ Single record type: `DashboardCache_v2`
 
 | Record Name | Content | Sync Frequency |
 |-------------|---------|---------------|
-| `snapshot-today` | Full snapshot (today perspective) | ~5 min |
-| `snapshot-week` | Full snapshot (week perspective) | ~1 hour |
-| `snapshot-30d` | Full snapshot (30d perspective) | ~12 hours |
+| `snapshot-v2-today` | Full snapshot (today perspective) | ~5 min |
+| `snapshot-v2-week` | Full snapshot (week perspective) | ~1 hour |
+| `snapshot-v2-30d` | Full snapshot (30d perspective) | ~12 hours |
 
 Each record stores a JSON blob (`DashboardSnapshot`) under the `json` field.
 
@@ -50,10 +50,10 @@ Each record stores a JSON blob (`DashboardSnapshot`) under the `json` field.
 ```swift
 struct DashboardSnapshot: Codable {
     // Primary cost data
-    var todayCost: Double       // From snapshot-today
-    var weekCost: Double        // From snapshot-week
-    var monthCost: Double       // From snapshot-30d
-    var yesterdaySpend: Double  // From snapshot-today
+    var todayCost: Double       // From snapshot-v2-today
+    var weekCost: Double        // From snapshot-v2-week
+    var monthCost: Double       // From snapshot-v2-30d
+    var yesterdaySpend: Double  // From snapshot-v2-today
     var subDaily: Double        // Subscription daily amortization
 
     // Volume data
@@ -81,9 +81,9 @@ Each platform fetches all three records but only merges range-specific fields:
 
 | Record | Fields Merged |
 |--------|--------------|
-| `snapshot-today` | `todayCost`, `yesterdaySpend` |
-| `snapshot-week` | `weekCost` |
-| `snapshot-30d` | `monthCost`, `prediction` |
+| `snapshot-v2-today` | `todayCost`, `yesterdaySpend` |
+| `snapshot-v2-week` | `weekCost` |
+| `snapshot-v2-30d` | `monthCost`, `prediction` |
 
 This prevents the week record's stale `todayCost` from overwriting the fresh today record's value.
 
@@ -100,7 +100,7 @@ This prevents the week record's stale `todayCost` from overwriting the fresh tod
 ### iOS — Data Consumer
 
 1. **Launch**: `ContentView` splash → `checkCloud()` → parallel with 1s minimum
-2. **Fetch Today**: `hasData()` → CK fetch `snapshot-today` → DashboardView appears
+2. **Fetch Today**: `hasData()` → CK fetch `snapshot-v2-today` → DashboardView appears
 3. **Fill Week/Month**: `fetchAndMergeWeek()` + `fetchAndMergeMonth()` → merge into snapshot
 4. **No local cache**: Every open fetches from iCloud. Sub-second latency on good network.
 

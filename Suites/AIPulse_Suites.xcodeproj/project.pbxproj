@@ -304,14 +304,10 @@
 				C0D7701730090D2E00BC1E54 /* Sources */,
 				C0D7701830090D2E00BC1E54 /* Frameworks */,
 				C0D7701930090D2E00BC1E54 /* Resources */,
-				C096E2EE300E5D05004D0062 /* CopyFiles */,
-				C096EA9A3014F1C7004D0062 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				C05F66EE300E50C300D40121 /* PBXTargetDependency */,
-				C096EA983014F1C7004D0062 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C05A70163009E26B00B99D6F /* Shared */,

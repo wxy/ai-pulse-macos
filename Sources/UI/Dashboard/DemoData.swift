@@ -22,8 +22,7 @@ enum DemoData {
     static var isActive: Bool {
         if isManual { return true }
         if isSuppressed { return false }
-        return IntegrationRegistry.activeCostSources().isEmpty
-            && IntegrationRegistry.all.allSatisfy { IntegrationRegistry.config(for: $0.id).enabled == false }
+        return false // Missing configuration is real empty data, never an implicit demo.
     }
 
     struct RangeData {

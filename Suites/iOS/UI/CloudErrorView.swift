@@ -17,7 +17,7 @@ struct CloudErrorView: View {
             Text(I18n.t("cloud.error.title"))
                 .font(.title3).foregroundColor(.secondary)
 
-            Text(I18n.t("cloud.error.body"))
+            Text(CloudDataService.cloudAvailable ? I18n.t("cloud.error.body") : PhoneText.t("当前模拟器包未启用 iCloud 权限。可运行预览数据检查界面；真实同步需要在签名设备包中验证。", "This simulator build has no iCloud access. Use explicit preview data to inspect the UI; verify real sync on a signed device build."))
                 .multilineTextAlignment(.leading)
                 .font(.body).foregroundColor(.secondary)
                 .padding(.horizontal, 40)

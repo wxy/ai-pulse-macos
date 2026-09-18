@@ -9,7 +9,7 @@ import AIPulseShared
 final class NotificationService: NSObject {
     static let shared = NotificationService()
 
-    private let database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
+    private lazy var database = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
     private static let log = Logger(subsystem: "com.wxy.aipulse", category: "Notify")
     private static var audioPlayer: AVAudioPlayer?
     private static var lastSoundTime: Date = .distantPast
@@ -27,7 +27,7 @@ final class NotificationService: NSObject {
     /// Play coin sound scaled to the spend delta. Respects notification setting + 60s throttle.
     /// - Parameter delta: absolute cost change since last known value.
     static func playCoinSound(for delta: Double) {
-        guard notificationSoundEnabled else {
+        guard !UserDefaults.standard.bool(forKey: "phone_sound_muted"), notificationSoundEnabled else {
             log.debug("playCoinSound: skipped — notification sound disabled in Settings")
             return
         }
@@ -75,57 +75,28 @@ final class NotificationService: NSObject {
     /// see `CloudKitGate` for why bursts of concurrent CK/APNs traffic at
     /// launch must be avoided on some devices (e.g. iPhone SE 2nd gen).
     func setup() async {
-        do {
-            let granted = try await UNUserNotificationCenter.current()
-                .requestAuthorization(options: [.alert, .badge, .sound])
-            if granted {
-                await registerSubscription()
-                await registerSpendAlertSubscription()
-            }
-        } catch {
-            print("[Notify] permission error: \(error)")
+        guard !CloudDataService.shared.isPreview, CloudDataService.cloudAvailable else { return }
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+            await registerSubscription()
+            await registerSpendAlertSubscription()
         }
         await NotificationService.refreshSoundSetting()
     }
 
     // MARK: - Push handling
 
-    private var lastKnownCost: Double = 0
 
     /// Handle remote push: fetch updated data without changing the user's
     /// currently-displayed time-range tab. Previously fetchSnapshot() defaulted
     /// to "today", which would overwrite whatever tab the user was viewing.
     func didReceiveRemoteNotification() {
+        guard CloudDataService.cloudAvailable, !CloudDataService.shared.isPreview else { return }
         Self.log.info("didReceiveRemoteNotification: push arrived")
-        let oldCost = CloudDataService.shared.snapshot?.todayCost ?? lastKnownCost
-        let currentRange = CloudDataService.shared.currentRange
         Task {
-            // Fetch today only (fast) for cost comparison + sound.
-            // Do NOT switch the displayed tab — just update the cache.
             await CloudDataService.shared.fetchAndStore(range: "today")
-            // Reload the current range so the UI reflects any changes
-            // without switching to a different tab.
-            CloudDataService.shared.loadSnapshot(for: currentRange)
-            let newCost = CloudDataService.shared.snapshot?.todayCost ?? 0
-            let delta = abs(newCost - oldCost)
-
-            if delta > 0.01 {
-                NotificationService.playCoinSound(for: delta)
-            }
-
-            if newCost > 0.001, delta > 0.01 {
-                lastKnownCost = newCost
-
-                let content = UNMutableNotificationContent()
-                content.title = I18n.t("notify.title")
-                content.body = String(format: I18n.t("notify.body"), newCost)
-                content.sound = nil       // silent — coin sound already played above
-                content.badge = 1
-                content.interruptionLevel = .timeSensitive
-                try? await UNUserNotificationCenter.current().add(
-                    UNNotificationRequest(identifier: "cost-update", content: content, trigger: nil))
-            }
-
+            CloudDataService.shared.loadSnapshot(for: CloudDataService.shared.currentRange)
+            await CloudDataService.shared.fetchCurrentPulse()
             await checkSpendAlert()
         }
     }
@@ -136,7 +107,7 @@ final class NotificationService: NSObject {
     /// the CloudKit round trip entirely — previously this ran on *every*
     /// launch (an `allSubscriptions()` fetch, plus occasionally a save),
     /// adding an extra network op to the launch burst forever.
-    private static let subscriptionRegisteredKey = "ck_subscription_registered_v1"
+    private static let subscriptionRegisteredKey = "ck_subscription_registered_v2"
 
     private func registerSubscription() async {
         if UserDefaults.standard.bool(forKey: Self.subscriptionRegisteredKey) { return }
@@ -205,7 +176,7 @@ final class NotificationService: NSObject {
     private func checkSpendAlert() async {
         do {
             let recordID = CKRecord.ID(recordName: CKSchema.SpendAlert.recordName)
-            let record = try await database.record(for: recordID)
+            let record = try await CloudKitGate.shared.run("spendAlert") { try await self.database.record(for: recordID) }
             guard let json = record[CKSchema.SpendAlert.Field.json] as? String,
                   let data = json.data(using: .utf8),
                   let payload = try? JSONDecoder().decode(SpendAlertPayload.self, from: data)
@@ -218,7 +189,7 @@ final class NotificationService: NSObject {
             let content = UNMutableNotificationContent()
             content.title = I18n.t("alert.l\(payload.level).title")
             content.body = alertBody(payload)
-            content.sound = .default
+            content.sound = UserDefaults.standard.bool(forKey: "phone_sound_muted") ? nil : .default
             content.interruptionLevel = .timeSensitive
 
             try? await UNUserNotificationCenter.current().add(
@@ -245,6 +216,6 @@ final class NotificationService: NSObject {
 extension NotificationService: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        UserDefaults.standard.bool(forKey: "phone_sound_muted") ? [.banner] : [.banner, .sound]
     }
 }

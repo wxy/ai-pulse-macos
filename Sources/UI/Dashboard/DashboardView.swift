@@ -72,6 +72,7 @@ struct DashboardView: View {
     let initialTimeRange: TimeRange
 
     @State private var timeRange: TimeRange
+    @State private var soundMuted = AppSoundControl.isMuted()
     @State private var robotDetail: String?
     @State private var costHoverDate: Date? = nil
     @State private var isRefreshing = false
@@ -107,6 +108,7 @@ struct DashboardView: View {
     @State private var reposExpanded = false
     @State private var modelsExpanded = false
     @State private var isImportingHistory = LogWatcher.backfill.isActive
+    @State private var localDataStatus = LocalDataStatus.current()
     @State private var localScanStatus = LogScanObservation.Status.inactive
     @State private var showScanCompletion = false
     @State private var showScanDetails = false
@@ -250,6 +252,7 @@ struct DashboardView: View {
     }
 
     private func refreshLocalScanStatus() {
+        localDataStatus = LocalDataStatus.current(hasActivity: (currentPulse?.activityFacts?.todayTokens ?? 0) > 0)
         let failed = AppHealthMonitor.shared.failingIngestSources.contains {
             $0.lowercased().hasPrefix("log.")
         }
@@ -288,14 +291,32 @@ struct DashboardView: View {
         totalChanges > 0 || tokens > 0 || commits > 0
     }
 
-    private func earView(width: CGFloat, height: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(robotEarSurface)
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(robotLine, lineWidth: 1)
-            )
-            .frame(width: width, height: height)
+    private func earView(width: CGFloat, height: CGFloat, side: String) -> some View {
+        let action = soundMuted
+            ? SetupCopy.text("恢复声音", "Restore sound")
+            : SetupCopy.text("关闭声音", "Mute sound")
+        return Button {
+            soundMuted = AppSoundControl.toggle()
+        } label: {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(robotEarSurface)
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(robotLine, lineWidth: 1))
+                .overlay {
+                    Image(systemName: soundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 10, weight: .medium))
+                        .scaleEffect(x: side == "left" ? -1 : 1, y: 1)
+                        .foregroundStyle(soundMuted ? Color.secondary : Color.primary.opacity(0.7))
+                }
+                .frame(width: width, height: height)
+                .frame(width: 24, height: height + 8)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor(true)
+        .robotHelp((soundMuted ? SetupCopy.text("声音已关闭", "Sound is muted") : SetupCopy.text("声音已开启", "Sound is enabled")) + " · " + action)
+        .accessibilityIdentifier("robot-sound-" + side)
+        .accessibilityLabel(action)
+        .accessibilityValue(soundMuted ? SetupCopy.text("已静音", "Muted") : SetupCopy.text("已开启", "Enabled"))
     }
 
     var body: some View {
@@ -490,6 +511,9 @@ struct DashboardView: View {
             codeHoverDate = nil
             scheduleLoad(for: newValue)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .soundMuteDidChange)) { _ in
+            soundMuted = AppSoundControl.isMuted()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             // Manual refresh / forceRefresh — immediate, no throttle
             scheduleLoad(for: timeRange)
@@ -525,6 +549,10 @@ struct DashboardView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: IngestionBackfillState.changeNotification)) { _ in
             isImportingHistory = LogWatcher.backfill.isActive
+        }
+        .onReceive(NotificationCenter.default.publisher(for: BookmarkManager.didChange)) { _ in
+            refreshLocalScanStatus()
+            Task { await forceRefresh() }
         }
         .onReceive(NotificationCenter.default.publisher(for: LogScanObservation.didChange)) { _ in
             refreshLocalScanStatus()
@@ -824,7 +852,7 @@ struct DashboardView: View {
                     Circle().stroke(Color.secondary.opacity(0.15), lineWidth: 10).frame(width: 110, height: 110)
                 }
                 VStack(spacing: 2) {
-                    Text(!available
+                    Text(!available || (!localDataStatus.canReportCurrentActivity && totalTokens == 0)
                          ? "—" : tokenShort(Int(clamping: Int64(min(totalTokens, Double(Int64.max).nextDown)))))
                         .font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit()
                         .foregroundStyle(Color.primary)
@@ -862,9 +890,9 @@ struct DashboardView: View {
                       pct: totalTokens > 0 ? s.tokens / totalTokens * 100 : 0,
                       color: Self.donutPalette[i % Self.donutPalette.count], id: s.id)
         }
-        let centerText = available ? ChartMath.compactCount(Int64(min(totalTokens, Double(Int64.max).nextDown))) : "—"
+        let centerText = available && (localDataStatus.repositories == .ready || totalTokens > 0) ? ChartMath.compactCount(Int64(min(totalTokens, Double(Int64.max).nextDown))) : "—"
         VStack(spacing: 6) {
-            Text(pulseText("仓库变化", "Repository changes"))
+            Text(localDataStatus.repositories == .ready ? pulseText("仓库变化", "Repository changes") : SetupCopy.repositories(localDataStatus.repositories))
                 .font(.caption2).foregroundStyle(.secondary)
                 .lineLimit(1).minimumScaleFactor(0.8)
             ZStack {
@@ -1877,16 +1905,7 @@ private extension DashboardView {
                         Button { DashboardWindowManager.shared.close() } label: { Image(systemName: "xmark") }
                             .robotHelp(pulseText("收起仪表盘", "Dismiss dashboard"))
                         Spacer()
-                        Group {
-                            RobotPulseCurve(tier: currentPulse?.tier)
-                                .stroke(robotPulseColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                                .frame(width: 125, height: 38)
-                                .frame(width: 270, height: 57)
-                                .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 13))
-                                .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.primary.opacity(0.1)))
-                        }
-                        .robotHelp(PulseAppearance(tier: currentPulse?.tier).label + "\n" + PulseCopy.recentFacts(currentPulse?.activityFacts) + "\n" + StatusItemController.detail(snapshot: currentPulse) + "\n" + pulseText("当前强度独立于下方统计范围，基于最近一小时活动及历史活跃小时基准。", "Current intensity is independent of the selected range, based on recent activity and historical active hours."))
-                        .accessibilityLabel(pulseText("当前 AI 活动强度：", "Current AI activity: ") + PulseAppearance(tier: currentPulse?.tier).label)
+                        robotForehead
                         Spacer()
                         Button { DashboardWindowManager.shared.openSettings() } label: { Image(systemName: "gearshape") }
                             .robotHelp(I18n.t("menu.preferences"))
@@ -1913,8 +1932,8 @@ private extension DashboardView {
                 .frame(width: 440, height: 440)
                 .background(RoundedRectangle(cornerRadius: 29).fill(robotSurface))
                 .overlay(RoundedRectangle(cornerRadius: 29).stroke(Color.primary.opacity(0.14)))
-                .overlay(alignment: .leading) { earView(width: 9, height: 39).offset(x: -9) }
-                .overlay(alignment: .trailing) { earView(width: 9, height: 39).offset(x: 9) }
+                .overlay(alignment: .leading) { earView(width: 16, height: 39, side: "left").offset(x: -20) }
+                .overlay(alignment: .trailing) { earView(width: 16, height: 39, side: "right").offset(x: 20) }
                 Rectangle().fill(robotSurface).frame(width: 76, height: 8)
                     .overlay(HStack { Rectangle().fill(Color.primary.opacity(0.14)).frame(width: 1); Spacer(); Rectangle().fill(Color.primary.opacity(0.14)).frame(width: 1) })
                 robotBase
@@ -1948,6 +1967,45 @@ private extension DashboardView {
             else if robotDetail != nil { robotDetail = nil }
             else { DashboardWindowManager.shared.close() }
         }
+    }
+
+    var foreheadMessage: String? {
+        if isDemoMode { return I18n.t("demo.banner") }
+        if !localDataStatus.canReportCurrentActivity { return SetupCopy.activity(localDataStatus.activity) }
+        if healthSeverity >= .impaired { return healthMessages.first ?? robotDataStatus }
+        if isImportingHistory { return I18n.t("menu.loading") }
+        if showScanCompletion { return SetupCopy.activity(.ready) }
+        return nil
+    }
+
+    var robotForehead: some View {
+        Group {
+            if let message = foreheadMessage {
+                HStack(spacing: 8) {
+                    Text(message).font(.system(size: 11)).lineLimit(2)
+                    if localDataStatus.activity == .needsAccess || localDataStatus.activity == .accessExpired {
+                        Button {
+                            guard BookmarkManager.requestHomeAccess(message: I18n.t("bookmark.home_message")) != nil else { return }
+                            LogWatcher.shared.start()
+                            DataRefreshCoordinator.shared.triggerIngest()
+                            refreshLocalScanStatus()
+                        } label: { Image(systemName: "arrow.up.right") }
+                        .robotHelp(SetupCopy.text("授权主目录", "Authorize home folder"))
+                    } else if localDataStatus.activity == .failed || localDataStatus.activity == .stale || healthSeverity >= .impaired {
+                        Button { robotDetail = "metadata" } label: { Image(systemName: "arrow.up.right") }
+                    }
+                }.padding(.horizontal, 12)
+            } else {
+                RobotPulseCurve(tier: currentPulse?.isCurrent() == true ? currentPulse?.tier : nil)
+                    .stroke(robotPulseColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                    .frame(width: 125, height: 38)
+                    .robotHelp(PulseAppearance(tier: currentPulse?.tier).label + "\n" + PulseCopy.recentFacts(currentPulse?.activityFacts) + "\n" + StatusItemController.detail(snapshot: currentPulse) + "\n" + SetupCopy.text("当前强度不受下方时间范围影响。", "Current intensity is independent of the range below."))
+                    .accessibilityLabel(SetupCopy.text("当前 AI 活动强度：", "Current AI activity: ") + PulseAppearance(tier: currentPulse?.tier).label)
+            }
+        }
+        .frame(width: 270, height: 57)
+        .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 13))
+        .overlay(RoundedRectangle(cornerRadius: 13).stroke(robotLine))
     }
 
     func robotHeadDetail(_ detail: String) -> some View {
@@ -2022,7 +2080,7 @@ private extension DashboardView {
     }
 
     var robotPulseColor: Color {
-        switch currentPulse?.tier {
+        switch localDataStatus.canReportCurrentActivity ? currentPulse?.tier : nil {
         case .active: return .marsGreen
         case .elevated, .intense: return .deepRed
         default: return .secondary
@@ -2084,13 +2142,20 @@ private extension DashboardView {
     func robotRhythmRow(label: String, values: [Double], color: Color, growsDownward: Bool) -> some View {
         let slots = DashboardDataPresentation.rhythmSlots(values: values, count: timeRange == .today ? 24 : chartDays, surroundingWeeks: timeRange == .thisWeek)
         let peak = max(values.max() ?? 0, 1)
-        return HStack(alignment: growsDownward ? .top : .bottom, spacing: 3) {
+        return Group {
+            if values.allSatisfy({ $0 == 0 }) && ((growsDownward && !localDataStatus.canReportCurrentActivity) || (!growsDownward && localDataStatus.repositories != .ready)) {
+                Text(growsDownward ? SetupCopy.activity(localDataStatus.activity) : SetupCopy.repositories(localDataStatus.repositories))
+                    .font(.system(size: 9)).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+            } else {
+        HStack(alignment: growsDownward ? .top : .bottom, spacing: 3) {
             ForEach(Array(slots.enumerated()), id: \.offset) { index, value in
                 Capsule()
                     .fill(value.map { $0 > 0 ? color : Color.secondary.opacity(0.14) } ?? Color.secondary.opacity(0.14))
                     .frame(maxWidth: .infinity)
                     .frame(height: value.map { max(3, 21 * $0 / peak) } ?? 3)
                     .robotHelp(value.map { label + ": " + ChartMath.compactCount(Int64($0)) } ?? (index < 7 ? pulseText("上一周占位", "Previous week placeholder") : pulseText("下一周占位", "Next week placeholder")))
+            }
+        }
             }
         }.frame(height: 23, alignment: growsDownward ? .top : .bottom)
         .accessibilityLabel(label)
@@ -2145,6 +2210,7 @@ private extension DashboardView {
 
     var robotDataStatus: String {
         if isDemoMode { return pulseText("演示数据", "Demo data") }
+        if !localDataStatus.canReportCurrentActivity { return SetupCopy.activity(localDataStatus.activity) + (lastUpdated.map { " · " + $0.formatted(date: .omitted, time: .shortened) } ?? "") }
         if healthSeverity != .nominal { return healthBannerText }
         if !(activeSnapshot?.readFailures ?? []).isEmpty { return pulseText("部分读取失败", "Some queries failed") }
         if tokenCoverageNote != nil { return pulseText("部分采集 · ", "Partial coverage · ") + (lastUpdated?.formatted(date: .omitted, time: .shortened) ?? "—") }

@@ -15,12 +15,14 @@ struct SubscriptionTier: Identifiable {
     let label: String
     let fee: Double
     let currency: String
+    var isLegacy: Bool = false
 }
 
 /// Registry of subscription-based AI coding tools that can be detected on disk.
 enum SubscriptionRegistry {
     static func tool(forName name: String) -> SubscriptionTool? {
-        tools.first { $0.name == name }
+        let catalogName = name == "Codex" ? "ChatGPT" : name
+        return tools.first { $0.name == catalogName }
     }
 
     static func tool(forBundleId id: String) -> SubscriptionTool? {
@@ -51,22 +53,23 @@ enum SubscriptionRegistry {
 
         let defs: [(name: String, bundleIds: [String], tiers: [(String, Double)])] = [
             ("ChatGPT", ["com.openai.codex"], [
-                ("Plus", 20), ("Pro", 200),
+                ("Plus", 20), ("Pro 5x", 100), ("Pro 20x", 200), ("Business", 25), ("Pro", 200),
             ]),
             ("Claude Code", ["com.anthropic.claude"], [
-                ("Pro", 20), ("Max 5x", 100), ("Max 20x", 200),
+                ("Pro", 20), ("Max 5x", 100), ("Max 20x", 200), ("Team Standard", 25), ("Team Premium", 125),
             ]),
+            ("OpenCode", [], [("Go", 10)]),
             ("Cursor",   ["com.todesktop.230313mzl4w4u92"], [
-                ("Pro", 20), ("Business", 40),
+                ("Pro", 20), ("Pro+", 60), ("Ultra", 200), ("Teams", 40), ("Business", 40),
             ]),
             ("Windsurf", ["com.codeium.windsurf"], [
-                ("Pro", 15),
+                ("Devin Pro", 20), ("Devin Max", 200), ("Pro", 15),
             ]),
             ("Trae",     ["com.trae.app"], [
                 ("Pro", 10),
             ]),
             ("GitHub Copilot", ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"], [
-                ("Pro", 10), ("Pro+", 39), ("Business", 19), ("Enterprise", 39),
+                ("Pro", 10), ("Pro+", 39), ("Max", 100), ("Business", 19), ("Enterprise", 39),
             ]),
             ("Augment Code", ["com.augmentcode.augmentcode"], [
                 ("Pro", 30), ("Business", 60),
@@ -74,7 +77,12 @@ enum SubscriptionRegistry {
         ]
 
         return defs.map { d in
-            let tiers = d.tiers.map { SubscriptionTier(label: $0.0, fee: $0.1, currency: "USD") }
+            let tiers = d.tiers.map { label, fee in
+                let legacy = (d.name == "ChatGPT" && label == "Pro")
+                    || (d.name == "Cursor" && label == "Business")
+                    || (d.name == "Windsurf" && label == "Pro")
+                return SubscriptionTier(label: label, fee: fee, currency: "USD", isLegacy: legacy)
+            }
             return SubscriptionTool(name: d.name, bundleIds: d.bundleIds, tiers: tiers, installed: isInstalled(d.bundleIds))
         }
     }()

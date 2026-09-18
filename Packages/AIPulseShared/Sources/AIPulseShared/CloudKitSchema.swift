@@ -4,7 +4,7 @@ import Foundation
 /// iOS/watchOS/widget readers.
 ///
 /// Architecture: a single `DashboardCache_v2` record type with one record per
-/// time range. Each record stores a JSON blob of the full dashboard snapshot
+/// time range, plus an independent current activity record. Each stores a JSON blob
 /// under the `json` field, plus an `updatedAt` timestamp.
 ///
 /// 2.x intentionally uses a separate record type from the 1.x contract so a
@@ -26,14 +26,16 @@ public enum CKSchema {
     }
     #endif
 
+    // Record IDs are unique by database/zone, not by record type.
+    // Keep v1 records untouched when writing the v2 contract.
     public enum RecordName {
-        public static let today = "snapshot-today"
-        public static let week = "snapshot-week"
-        public static let month = "snapshot-30d"
+        public static let today = "snapshot-v2-today"
+        public static let week = "snapshot-v2-week"
+        public static let month = "snapshot-v2-30d"
     }
 
     public enum CurrentPulse {
-        public static let recordType = "CurrentPulse_v2"
+        public static let recordType = CKSchema.recordType
         public static let recordName = "current-pulse"
     }
 

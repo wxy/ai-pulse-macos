@@ -5,8 +5,17 @@ final class CloudKitSchemaTests: XCTestCase {
     func testDashboardContractUsesTheUnreleasedTwoPointZeroSeries() throws {
         XCTAssertEqual(CKSchema.recordType, "DashboardCache_v2")
         XCTAssertEqual(CKSchema.payloadVersion, "2.0.0")
+        XCTAssertEqual(CKSchema.CurrentPulse.recordType, CKSchema.recordType)
+        XCTAssertFalse([CKSchema.RecordName.today, CKSchema.RecordName.week, CKSchema.RecordName.month].contains(CKSchema.CurrentPulse.recordName))
         XCTAssertNotEqual(CKSchema.Subscription.dashboardChanges, "dashboard-changes")
         XCTAssertEqual(CKSchema.SpendAlert.recordType, "SpendAlert_v1")
+    }
+
+    func testV2RecordIdsCannotCollideWithExistingV1Records() {
+        let names = [CKSchema.RecordName.today, CKSchema.RecordName.week, CKSchema.RecordName.month]
+        XCTAssertEqual(Set(names).count, 3)
+        XCTAssertTrue(Set(names).isDisjoint(with: ["snapshot-today", "snapshot-week", "snapshot-30d"]))
+        XCTAssertEqual(CKSchema.RecordName.today, "snapshot-v2-today")
     }
 
     func testDashboardSnapshotEmitsTheTwoPointZeroEnvelope() throws {
