@@ -1,21 +1,21 @@
 import AppKit
 import AIPulseShared
 
-/// Shared state and palette, not a budget-progress gauge. Menu uses a flame;
+/// Shared state and palette, not a budget-progress gauge. Menu uses a monochrome robot;
 /// Dock keeps the robot and lights a fixed status lamp only for meaningful activity.
 struct PulseAppearance {
     let tier: PulseTier?
     var cooling = false
-    static let symbolName = "flame.fill"
     var hasActivity: Bool { tier != nil && tier != .resting }
 
     var color: NSColor {
+        let rgb: (CGFloat, CGFloat, CGFloat)
         switch tier {
-        case .active: return NSColor(calibratedRed: 0.74, green: 0.48, blue: 0.06, alpha: 1)
-        case .elevated: return .systemOrange
-        case .intense: return .systemRed
-        case .resting, .none: return .systemGray
+        case .active: rgb = (0.26, 0.52, 0.40)
+        case .elevated, .intense: rgb = (0.72, 0.32, 0.27)
+        case .resting, .none: return .secondaryLabelColor
         }
+        return NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
     }
 
     var label: String {
@@ -32,16 +32,23 @@ struct PulseAppearance {
 
     func image(size: CGFloat = 18, beat: Bool = false) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
-            guard let symbol = NSImage(systemSymbolName: Self.symbolName, accessibilityDescription: self.label)?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: size - 3, weight: .medium)) else { return false }
-            // Preserve proportions and size on every state/beat; tint only the glyph.
-            let factor = min(rect.width / symbol.size.width, rect.height / symbol.size.height)
-            let width = symbol.size.width * factor
-            let height = symbol.size.height * factor
-            let target = CGRect(x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height)
-            symbol.draw(in: target)
-            self.feedbackColor(beat: beat).withAlphaComponent(beat ? 1 : 0.8).setFill()
-            target.fill(using: .sourceAtop)
+            // Draw in an 18-point grid; facial cutouts remain transparent at menu-bar scale.
+            NSGraphicsContext.saveGraphicsState()
+            defer { NSGraphicsContext.restoreGraphicsState() }
+            let transform = NSAffineTransform()
+            transform.scaleX(by: rect.width / 18, yBy: rect.height / 18)
+            transform.concat()
+            self.feedbackColor(beat: beat).setFill()
+            let shell = NSBezierPath(roundedRect: NSRect(x: 3, y: 2, width: 12, height: 12), xRadius: 3, yRadius: 3)
+            shell.windingRule = .evenOdd
+            shell.appendOval(in: NSRect(x: 5, y: 8, width: 2.5, height: 3))
+            shell.appendOval(in: NSRect(x: 10.5, y: 8, width: 2.5, height: 3))
+            shell.append(NSBezierPath(roundedRect: NSRect(x: 6, y: 4.5, width: 6, height: 1.5), xRadius: 0.75, yRadius: 0.75))
+            shell.fill()
+            NSBezierPath(roundedRect: NSRect(x: 0.5, y: 6, width: 2, height: 5), xRadius: 0.8, yRadius: 0.8).fill()
+            NSBezierPath(roundedRect: NSRect(x: 15.5, y: 6, width: 2, height: 5), xRadius: 0.8, yRadius: 0.8).fill()
+            NSRect(x: 8.25, y: 13.5, width: 1.5, height: 2).fill()
+            NSBezierPath(ovalIn: NSRect(x: 7.5, y: 15, width: 3, height: 3)).fill()
             return true
         }
         image.isTemplate = false
