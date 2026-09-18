@@ -37,7 +37,7 @@ final class CloudDataService: ObservableObject {
     @Published private(set) var pulseError: String?
     var isPreview: Bool {
         #if DEBUG
-        return ProcessInfo.processInfo.arguments.contains("--iphone-preview")
+        return ProcessInfo.processInfo.arguments.contains("--iphone-preview") || ProcessInfo.processInfo.arguments.contains("--watch-preview")
         #else
         return false
         #endif
@@ -247,6 +247,8 @@ final class CloudDataService: ObservableObject {
         await fetchAndStore(range: "today")
         await fetchAndStore(range: "week")
         await fetchAndStore(range: "30d")
+        // Current activity is independent of the historical range snapshots.
+        await fetchCurrentPulse()
         // Reload the currently displayed range so the UI reflects new data
         loadSnapshot(for: currentRange)
     }
