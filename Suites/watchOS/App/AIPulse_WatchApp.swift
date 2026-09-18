@@ -103,7 +103,7 @@ struct WatchDashboardView: View {
                 let lineRatio = WatchDashboardData.ratio(value: lines(snapshot), baseline: WatchDashboardData.baseline(history, tokens: false, now: now))
                 let pulse = cloud.pulseEnvelope?.currentPulse(asOf: now)
                 // Size against the full display width, as in the original corner-overlay layout.
-                let side = geometry.size.width * 0.93
+                let side = geometry.size.width * 0.90
                 let thickness = side * 13 / 184
                 ZStack {
                     Color.black
@@ -122,7 +122,7 @@ struct WatchDashboardView: View {
                                 } else { Text("—").font(.system(size: 10)).foregroundStyle(.secondary) }
                             }.frame(width: side * 0.49)
                         }.buttonStyle(.plain).accessibilityHint(t("查看数据说明与同步状态", "View data explanation and sync status"))
-                    }.frame(width: side, height: side).position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 6)
+                    }.frame(width: side, height: side).position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 8)
                     VStack {
                         HStack(alignment: .top) {
                             corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: red, alignment: .leading, numberFirst: false)
@@ -135,7 +135,7 @@ struct WatchDashboardView: View {
                             Spacer()
                             corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: green, alignment: .trailing, numberFirst: true)
                         }
-                    }.padding(.horizontal, 10).padding(.top, 14).padding(.bottom, 6)
+                    }.padding(.horizontal, 16).padding(.top, 18).padding(.bottom, 6)
                     if cloud.isPreview { Text(t("演示", "Demo")).font(.system(size: 8)).foregroundStyle(.secondary).position(x: geometry.size.width / 2, y: geometry.size.height - 8) }
                 }
             }
