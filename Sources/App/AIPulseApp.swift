@@ -302,6 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @MainActor @objc private func onLanguageChange() {
         DashboardWindowManager.shared.window?.title = I18n.t("menu.dashboard_label")
+        SettingsWindowManager.shared.window?.title = I18n.t("settings.title")
         buildMainMenu()
     }
 
