@@ -30,7 +30,7 @@ final class StatusItemController: NSObject {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
             button.image = PulseAppearance(tier: nil).image()
-            button.imagePosition = .imageLeading
+            button.imagePosition = .imageOnly
             button.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
         }
         contextMenu = buildMenu()
@@ -127,7 +127,7 @@ final class StatusItemController: NSObject {
         currentTier = snapshot?.isCurrent() == true ? snapshot?.tier : nil
         currentCooling = validSnapshot?.activity?.freshness == .aging
         renderMark()
-        button.title = " " + PulseAppearance(tier: currentTier, cooling: validSnapshot?.activity?.freshness == .aging).label
+        button.title = ""
         button.setAccessibilityLabel(Self.headline(snapshot: validSnapshot))
         button.toolTip = [Self.detail(snapshot: validSnapshot), PulseCopy.recentFacts(validSnapshot?.activityFacts),
                           I18n.t("pulse.activity.legend")].joined(separator: "\n")
@@ -222,7 +222,7 @@ final class StatusItemController: NSObject {
         return "\(I18n.t("pulse.observed_today")) " + values.joined(separator: " + ")
     }
 
-    // MARK: - Tier-colored flame
+    // MARK: - Tier-colored robot
 
     // MARK: - Menu
 

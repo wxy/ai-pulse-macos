@@ -63,6 +63,7 @@ private final class DashboardLoadThrottle {
 }
 
 struct DashboardView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
@@ -371,20 +372,43 @@ struct DashboardView: View {
     }
 
     private var periodPicker: some View {
-        Picker("", selection: Binding(
-            get: { timeRange },
-            set: { newValue in
-                // Stamp intent before selection changes, retaining range isolation.
-                rangeChangeStartedAt = Date()
-                timeRange = newValue
+        Group {
+            if colorScheme == .dark {
+                HStack(spacing: 0) {
+                    ForEach(TimeRange.allCases, id: \.self) { range in
+                        Button {
+                            rangeChangeStartedAt = Date()
+                            timeRange = range
+                        } label: {
+                            Text(range.label).font(.system(size: 11))
+                                .foregroundStyle(timeRange == range ? Color(red: 0.76, green: 0.83, blue: 0.78) : Color.secondary)
+                                .frame(maxWidth: .infinity).frame(height: 24)
+                                .background(timeRange == range ? Color(red: 0.19, green: 0.30, blue: 0.24) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(timeRange == range ? .isSelected : [])
+                    }
+                }
+                .padding(2).frame(width: 240)
+                .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 8))
+                .pointingHandCursor()
+            } else {
+                Picker("", selection: Binding(
+                    get: { timeRange },
+                    set: { newValue in
+                        // Stamp intent before selection changes, retaining range isolation.
+                        rangeChangeStartedAt = Date()
+                        timeRange = newValue
+                    }
+                )) {
+                    Text(I18n.t("dashboard.today")).tag(TimeRange.today)
+                    Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
+                    Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
+                }
+                .pickerStyle(.segmented).labelsHidden()
+                .frame(width: 240).pointingHandCursor()
             }
-        )) {
-            Text(I18n.t("dashboard.today")).tag(TimeRange.today)
-            Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
-            Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
         }
-        .pickerStyle(.segmented).labelsHidden()
-        .frame(width: 240).pointingHandCursor()
     }
 
     private var foreheadStatusRow: some View {
@@ -1965,6 +1989,10 @@ private extension DashboardView {
         })
     }
 
+    var robotCacheColor: Color {
+        colorScheme == .dark ? Color(red: 0.30, green: 0.43, blue: 0.36) : .marsGreenLight
+    }
+
     var robotEarSurface: Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -2016,7 +2044,7 @@ private extension DashboardView {
             GeometryReader { geometry in
                 HStack(spacing: 0) {
                     ForEach(0..<3, id: \.self) { index in
-                        Rectangle().fill([Color.marsGreen, .marsGreenLight, .deepRed][index])
+                        Rectangle().fill([Color.marsGreen, robotCacheColor, .deepRed][index])
                             .opacity(values[index] > 0 ? 1 : 0.25)
                             .frame(width: geometry.size.width * fractions[index])
                             .overlay {
