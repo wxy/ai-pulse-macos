@@ -60,6 +60,7 @@ struct GeneralTab: View {
 
                     Divider()
 
+                    if ProcessInfo.processInfo.arguments.contains("--show-demo-controls") {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(demoActive ? I18n.t("demo.exit") : I18n.t("demo.enter"))
@@ -82,6 +83,8 @@ struct GeneralTab: View {
                     }
 
                     Divider()
+
+                    }
 
                     Text(I18n.t("general.rerun_welcome_desc"))
                         .font(.caption).foregroundColor(.secondary)
