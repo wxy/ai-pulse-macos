@@ -10,7 +10,7 @@ struct AIPulse_iOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            NavigationStack { ContentView() }
                 .environmentObject(cloudData)
         }
     }
@@ -20,7 +20,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UserDefaults.standard.register(defaults: ["coin_sound_enabled": true])
-        application.registerForRemoteNotifications()
+        if !CloudDataService.shared.isPreview && CloudDataService.cloudAvailable { application.registerForRemoteNotifications() }
         return true
     }
 
@@ -68,7 +68,7 @@ struct ContentView: View {
             } else if case .ready = state {
                 DashboardView()
             } else if case .noData = state {
-                WelcomeView()
+                WelcomeView { await checkCloud(isRetry: true) }
             } else if case .needsUpgrade = state {
                 VersionMismatchView(
                     macosTooOld: upgradeInfo?.macosTooOld ?? true,
@@ -81,7 +81,20 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
             Task { await NotificationService.refreshSoundSetting() }
         }
+        .toolbar {
+            if state != .ready {
+                ToolbarItem(placement: .topBarTrailing) { NavigationLink { PhoneSettingsView() } label: { Image(systemName: "gearshape") } }
+            }
+        }
         .task {
+            #if DEBUG
+            if cloudData.isPreview {
+                PhonePreviewData.install(on: cloudData)
+                state = .ready
+                splashVisible = false
+                return
+            }
+            #endif
             try? await UNUserNotificationCenter.current().setBadgeCount(0)
             await NotificationService.shared.setup()
             let hasCache = cloudData.snapshot != nil
@@ -113,7 +126,7 @@ struct ContentView: View {
             state = .ready
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } catch CloudError.noData {
-            state = .noData
+            state = hasCache ? .ready : .noData
         } catch CloudError.versionMismatch(let macosTooOld, let recordVersion) {
             upgradeInfo = (macosTooOld, recordVersion)
             state = .needsUpgrade

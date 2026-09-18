@@ -47,6 +47,13 @@ final class CloudDataService: ObservableObject {
     /// All three per-range snapshots. Keyed by "today" / "week" / "30d".
     @Published private var snapshots: [String: DashboardSnapshot] = [:]
 
+    static var cloudAvailable: Bool {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return true
+        #endif
+    }
     private lazy var database: CKDatabase = {
         let db = CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
         return db
@@ -156,11 +163,12 @@ final class CloudDataService: ObservableObject {
     /// This preserves previously-cached week/30d breakdowns if they can't be
     /// refreshed right now.
     func hasData() async throws -> Bool {
+        guard Self.cloudAvailable else { throw CloudError.unavailable }
         // Gated: this is the very first CloudKit call at launch, so it also
         // enforces the minimum spacing after NotificationService's setup()
         // (permission request + CK subscription registration) ran moments
         // earlier. See CloudKitGate for why this matters.
-        try await CloudKitGate.shared.run("hasData(today)") {
+        return try await CloudKitGate.shared.run("hasData(today)") {
             let recordID = CKRecord.ID(recordName: self.recordName(for: "today"))
             do {
                 let record = try await self.database.record(for: recordID)
@@ -181,8 +189,7 @@ final class CloudDataService: ObservableObject {
                 }
                 // Store today's snapshot independently (with CK updatedAt timestamp)
                 guard PhoneDashboardData.accepts(snap, range: "today") else { throw CloudError.noData }
-                var stored = snap
-                self.snapshots["today"] = stored.sanitized()
+                self.snapshots["today"] = snap.sanitized()
                 if self.snapshot == nil { self.loadSnapshot(for: "today") }
                 self.saveLocalCache()
                 // DashboardView.onAppear fires a fetchSnapshot("today") right
@@ -211,6 +218,7 @@ final class CloudDataService: ObservableObject {
 
     /// Lightweight refresh for watchOS — fetch today snapshot with detailed error reporting.
     func refresh() async {
+        guard Self.cloudAvailable else { return }
         let container = CKContainer(identifier: "iCloud.com.wxy.aipulse")
         log.info("refresh: container=\(container.containerIdentifier ?? "nil")")
 
@@ -247,7 +255,10 @@ final class CloudDataService: ObservableObject {
     func fetchAndMergeMonth() async { await fetchAndStore(range: "30d") }
 
     func fetchAndStore(range: String) async {
-        guard !isPreview else { return }
+        guard !isPreview, Self.cloudAvailable else {
+            if !isPreview { rangeErrors[range] = "Cloud unavailable" }
+            return
+        }
         do {
             _ = try await CloudKitGate.shared.runDeduped("fetch(\(range))", dedupeKey: "fetch-\(range)") {
                 let record = try await self.database.record(for: CKRecord.ID(recordName: self.recordName(for: range)))
@@ -266,7 +277,7 @@ final class CloudDataService: ObservableObject {
     }
 
     func fetchCurrentPulse() async {
-        guard !isPreview else { return }
+        guard !isPreview, Self.cloudAvailable else { return }
         do {
             _ = try await CloudKitGate.shared.runDeduped("currentPulse", dedupeKey: "current-pulse") {
                 let record = try await self.database.record(for: CKRecord.ID(recordName: "current-pulse"))
