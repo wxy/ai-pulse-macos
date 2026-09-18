@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 import AIPulseShared
 
-/// Full-window overlay exploring one tool's sessions: sessions grouped by repo,
+/// Same-window detail destination exploring one tool's sessions: grouped by repo,
 /// each row expandable to show the per-turn context-window trend chart.
 /// Covers the whole dashboard window, so its internal scrolling never
 /// conflicts with the dashboard's scroll area.
@@ -10,7 +10,7 @@ struct ToolDetailOverlayView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let toolId: String
     let sinceMs: Int64
-    let onClose: () -> Void
+    let onBack: () -> Void
 
     @State private var groups: [RepoSessionGroup] = []
     @State private var expandedSessionId: String? = nil
@@ -75,9 +75,9 @@ struct ToolDetailOverlayView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial)
+        .background(Color(nsColor: .windowBackgroundColor))
         .task(id: "\(toolId)/\(sinceMs)/\(retryGeneration)") { await load() }
-        .onExitCommand(perform: onClose)
+        .onExitCommand(perform: onBack)
     }
 
     private var toolDisplayName: String {
@@ -90,6 +90,13 @@ struct ToolDetailOverlayView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
+            Button(action: onBack) {
+                Label(I18n.t("panel.back_to_dashboard"), systemImage: "arrow.left")
+                    .font(.caption)
+            }
+            .keyboardShortcut(.cancelAction)
+            .buttonStyle(.borderless)
+            .pointingHandCursor()
             Image(systemName: toolId == "deepseek-harness"
                   ? "terminal" : toolId == "codex" ? "sparkles" : "bubble.left.and.bubble.right")
                 .foregroundColor(.accentColor)
@@ -108,14 +115,8 @@ struct ToolDetailOverlayView: View {
             }
             .pickerStyle(.segmented).frame(width: 170).labelsHidden()
             .pointingHandCursor()
-            Button(action: onClose) {
-                Image(systemName: "xmark.circle.fill")
-            }
-            .keyboardShortcut(.cancelAction)
-            .buttonStyle(.plain).foregroundColor(.secondary)
-            .pointingHandCursor()
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
+        .padding(.horizontal, 14).padding(.top, 30).padding(.bottom, 10)
     }
 
     private var emptyState: some View {

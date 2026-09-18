@@ -103,8 +103,12 @@ struct DashboardView: View {
     @State private var codexDetailExpanded = false
     @State private var selectedToolForOverlay: String? = nil
     @State private var reposExpanded = false
+    @State private var modelsExpanded = false
     @State private var isImportingHistory = LogWatcher.backfill.isActive
     @State private var localScanStatus = LogScanObservation.Status.inactive
+    @State private var showScanCompletion = false
+    @State private var showScanDetails = false
+    @State private var matrixViewportWidth: CGFloat = 0
 
     var hasActiveCostSources: Bool {
         !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
@@ -177,10 +181,8 @@ struct DashboardView: View {
     private var todayTokens: Int { Int(activeSnapshot?.todayTokens ?? 0) }
 
 
-    private var repoTokens: [String: Int64] {
-        activeSnapshot?.topRepos.reduce(into: [String: Int64]()) { map, repo in
-            map[repo.repoPath, default: 0] += repo.tokens ?? 0
-        } ?? [:]
+    private var codeComposition: CodeChangeComposition? {
+        CodeChangeComposition.period(in: activeSnapshot)
     }
 
     private var periodSessionCount: Int {
@@ -200,7 +202,7 @@ struct DashboardView: View {
     /// horizon (24 hours / 7 days / 30 days), matching the fixed rhythm slots;
     /// this is an arithmetic display rate, not a provider-billing estimate.
     private var rangeTokenRateText: String {
-        guard activeSnapshot?.readFailures.contains("dashboardUsageStats") != true else {
+        guard activeSnapshot != nil, activeSnapshot?.readFailures.contains("dashboardUsageStats") != true else {
             return pulseText("词元均速不可用", "Token pace unavailable")
         }
         let total = dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
@@ -249,7 +251,11 @@ struct DashboardView: View {
         let failed = AppHealthMonitor.shared.failingIngestSources.contains {
             $0.lowercased().hasPrefix("log.")
         }
-        localScanStatus = LogScanObservation.shared.status(hasReadFailure: failed)
+        let next = LogScanObservation.shared.status(hasReadFailure: failed)
+        if next != localScanStatus {
+            showScanCompletion = next == .available && localScanStatus == .scanning
+            localScanStatus = next
+        }
     }
 
     private func pulseText(_ zh: String, _ en: String) -> String {
@@ -293,6 +299,7 @@ struct DashboardView: View {
     var body: some View {
         ZStack {
             dashboardContent
+                .opacity(selectedToolForOverlay == nil ? 1 : 0)
                 .disabled(selectedToolForOverlay != nil)
                 .allowsHitTesting(selectedToolForOverlay == nil)
                 .accessibilityHidden(selectedToolForOverlay != nil)
@@ -300,119 +307,143 @@ struct DashboardView: View {
                 ToolDetailOverlayView(
                     toolId: toolId,
                     sinceMs: rangeSinceMs(),
-                    onClose: { selectedToolForOverlay = nil })
+                    onBack: { selectedToolForOverlay = nil })
                     .transition(.opacity)
             }
         }
+        .overlay(alignment: .top) {
+            // Detail still has a reserved notice strip above its back navigation.
+            if selectedToolForOverlay != nil { statusOverlay }
+        }
+        .task(id: localScanStatusKey) {
+            guard localScanStatus == .available else { return }
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            showScanCompletion = false
+        }
+    }
+
+    /// Notice content is embedded in the forehead's stable-height status row.
+    /// Detail uses the same content above its own navigation.
+    @ViewBuilder
+    private var statusOverlay: some View {
+        if healthSeverity >= .degraded {
+            Button { showHealthDetails.toggle() } label: {
+                Label(healthBannerText, systemImage: healthSeverity == .critical
+                      ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                    .font(.caption).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(healthSeverity == .critical ? Color.white : Color.primary)
+            .background(healthBannerColor, in: RoundedRectangle(cornerRadius: 6))
+            .popover(isPresented: $showHealthDetails) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(healthBannerText).font(.headline)
+                    ForEach(healthMessages.suffix(5), id: \.self) { message in
+                        Text(message).font(.caption).textSelection(.enabled)
+                    }
+                    Button(I18n.t("health.open_log")) {
+                        NSWorkspace.shared.activateFileViewerSelecting([Logger.logFileURL])
+                    }
+                    Text(I18n.t("health.send_to_dev")).font(.caption).foregroundStyle(.secondary)
+                }.padding(16).frame(width: 360)
+            }
+            .padding(.horizontal, 12).padding(.top, 2)
+        } else if let notice = statusNotice {
+            let warning = !isDemoMode && (localScanStatus == .failed || localScanStatus == .stale)
+            Button { showScanDetails = true } label: {
+                HStack {
+                    Label(notice, systemImage: warning ? "exclamationmark.triangle" : "info.circle")
+                        .lineLimit(1)
+                    Spacer()
+                    if warning { Image(systemName: "chevron.right") }
+                }
+                .font(.caption).foregroundStyle(warning ? Color.orange : Color.secondary)
+                .padding(.horizontal, 12).padding(.vertical, 4)
+            }
+            .buttonStyle(.plain).disabled(!warning)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            .popover(isPresented: $showScanDetails) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(localScanStatusText).font(.headline)
+                    Text(I18n.t("dashboard.scan_warning_help")).font(.caption)
+                    Button(I18n.t("health.open_log")) {
+                        NSWorkspace.shared.activateFileViewerSelecting([Logger.logFileURL])
+                    }
+                }.padding(16).frame(width: 340)
+            }
+            .help(notice)
+            .padding(.horizontal, 12).padding(.top, 2)
+        }
+    }
+
+    private var statusNotice: String? {
+        if isDemoMode { return I18n.t("demo.banner") }
+        if localScanStatus == .failed || localScanStatus == .stale { return localScanStatusText }
+        if isImportingHistory { return I18n.t("menu.loading") }
+        if localScanStatus != .available || showScanCompletion { return localScanStatusText }
+        return nil
+    }
+
+    private var periodPicker: some View {
+        Picker("", selection: Binding(
+            get: { timeRange },
+            set: { newValue in
+                // Stamp intent before selection changes, retaining range isolation.
+                rangeChangeStartedAt = Date()
+                timeRange = newValue
+            }
+        )) {
+            Text(I18n.t("dashboard.today")).tag(TimeRange.today)
+            Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
+            Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
+        }
+        .pickerStyle(.segmented).labelsHidden()
+        .frame(width: 240).pointingHandCursor()
+    }
+
+    private var foreheadStatusRow: some View {
+        ZStack {
+            if selectedToolForOverlay != nil {
+                // The mounted-but-hidden dashboard must not create a second
+                // popover presenter for the detail page's shared notice state.
+                Color.clear
+            } else if healthSeverity >= .degraded || statusNotice != nil {
+                statusOverlay
+            } else {
+                let snapshot = currentPulse?.isCurrent() == true ? currentPulse : nil
+                let appearance = PulseAppearance(tier: snapshot?.tier,
+                                                 cooling: snapshot?.activity?.freshness == .aging)
+                HStack(spacing: 6) {
+                    Circle().fill(Color(nsColor: appearance.color)).frame(width: 8, height: 8)
+                    Text(appearance.label).font(.caption).foregroundStyle(.secondary)
+                }
+                .help(snapshot != nil
+                      ? StatusItemController.detail(snapshot: snapshot) + "\n" + I18n.t("pulse.activity.legend")
+                      : I18n.t("pulse.reason.unavailable"))
+            }
+        }
+        .frame(maxWidth: .infinity).frame(height: 26)
+    }
+
+    private var robotAntenna: some View {
+        VStack(spacing: 0) {
+            Circle().fill(Color.marsGreen.opacity(0.5)).frame(width: 6, height: 6)
+            Rectangle().fill(Color.marsGreen.opacity(0.35)).frame(width: 2, height: 6)
+            Path { path in
+                path.addArc(center: CGPoint(x: 20, y: 20), radius: 20,
+                            startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+            }.stroke(Color.marsGreen.opacity(0.35), lineWidth: 2).frame(width: 40, height: 20)
+        }
+        .accessibilityHidden(true).allowsHitTesting(false)
     }
 
     private var dashboardContent: some View {
         VStack(spacing: 0) {
-            // Error banner — visible when health is not nominal
-            if healthSeverity >= .degraded {
-                VStack(spacing: 0) {
-                    Button {
-                        withAnimation(reduceMotion ? nil : .default) { showHealthDetails.toggle() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: healthSeverity == .critical
-                                  ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
-                            Text(healthBannerText)
-                                .font(.caption).fontWeight(.medium)
-                            Spacer()
-                            if !healthMessages.isEmpty {
-                                Image(systemName: showHealthDetails
-                                      ? "chevron.up" : "chevron.down")
-                                    .font(.caption2)
-                            }
-                        }
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .foregroundColor(healthSeverity == .critical ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
-                    .background(healthBannerColor)
-
-                    if showHealthDetails {
-                        VStack(alignment: .leading, spacing: 4) {
-                            if !healthMessages.isEmpty {
-                                ForEach(healthMessages.suffix(5), id: \.self) { msg in
-                                    Text(msg).font(.caption2).foregroundColor(.secondary)
-                                }
-                            }
-
-                            HStack(spacing: 4) {
-                                Button {
-                                    NSWorkspace.shared.activateFileViewerSelecting(
-                                        [Logger.logFileURL])
-                                } label: {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: "folder").font(.caption2)
-                                        Text(I18n.t("health.open_log")).font(.caption2)
-                                    }
-                                }
-                                .buttonStyle(.link)
-
-                                Text(I18n.t("health.send_to_dev"))
-                                    .font(.caption2).foregroundColor(.secondary)
-                            }
-                        }
-                        .padding(.horizontal, 12).padding(.bottom, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(healthBannerColor.opacity(0.3))
-                    }
-                }
-                .cornerRadius(6)
-                .padding(.horizontal).padding(.bottom, 8)
-            }
-
-            HStack {
-                Text(I18n.t("dashboard.title")).font(.title2).fontWeight(.bold)
-                Spacer()
-                Picker("", selection: Binding(
-                    get: { timeRange },
-                    set: { newValue in
-                        // Child .task runs before onChange, so stamp the intent
-                        // before committing the range to keep render timing honest.
-                        rangeChangeStartedAt = Date()
-                        timeRange = newValue
-                    }
-                )) {
-                    Text(I18n.t("dashboard.today")).tag(TimeRange.today)
-                    Text(I18n.t("dashboard.this_week")).tag(TimeRange.thisWeek)
-                    Text(I18n.t("dashboard.days_30")).tag(TimeRange.days30)
-                }.pickerStyle(.segmented).frame(width: 240).pointingHandCursor()
-            }
-            .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
 
             ScrollView {
                 VStack(spacing: 0) {
-                    if isDemoMode {
-                        HStack(spacing: 6) {
-                            Text(I18n.t("demo.banner"))
-                                .font(.caption).foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 20).padding(.vertical, 8)
-                        .background(Color.accentColor.opacity(0.08))
-                    }
-                    if isImportingHistory {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .scaleEffect(0.6)
-                                .frame(width: 12, height: 12)
-                            Text(I18n.t("menu.loading"))
-                                .font(.caption).foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 20).padding(.vertical, 8)
-                        .background(Color.secondary.opacity(0.08))
-                    }
-                    if !isDemoMode {
-                        Text(localScanStatusText)
-                            .font(.caption2).foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 20).padding(.vertical, 8)
-                    }
                     if hasActiveCostSources || !balanceSpend.isEmpty || hasPulseActivity || isDemoMode {
                         // ── Robot head frame — pulse, activity, distribution, output ──
                         VStack(spacing: 16) {
@@ -424,21 +455,7 @@ struct DashboardView: View {
                             RoundedRectangle(cornerRadius: 22, style: .continuous)
                                 .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
                                 .overlay(alignment: .top) {
-                                    ZStack(alignment: .top) {
-                                        Path { p in
-                                            p.addArc(center: CGPoint(x: 20, y: 2),
-                                                     radius: 20,
-                                                     startAngle: .degrees(180), endAngle: .degrees(0),
-                                                     clockwise: false)
-                                        }
-                                        .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
-                                        .frame(width: 40, height: 22)
-                                        Circle()
-                                            .fill(Color.marsGreen.opacity(0.4))
-                                            .frame(width: 6, height: 6)
-                                            .offset(y: -10)
-                                    }
-                                    .offset(y: -6)
+                                    robotAntenna.offset(y: -32)
                                 }
                                 .overlay(alignment: .leading) {
                                     HStack(spacing: 6) {
@@ -455,7 +472,7 @@ struct DashboardView: View {
                                     .offset(x: 16, y: -80)
                                 }
                         )
-                        .padding(.horizontal, 60).padding(.top, 60).padding(.bottom, 12)
+                        .padding(.horizontal, 60).padding(.top, 32).padding(.bottom, 12)
 
                         // Body: one outer frame hosting trend/balance + repos
                         VStack(spacing: 12) {
@@ -471,7 +488,13 @@ struct DashboardView: View {
                         .padding(.horizontal, 60)
                         Spacer().frame(height: 60)
                     } else {
-                        emptyStateCard
+                        VStack(spacing: 12) {
+                            periodPicker
+                            foreheadStatusRow
+                            emptyStateCard
+                        // Match the robot's 32 + 20 + 16 top insets so switching
+                        // into an empty period does not move the picker mid-click.
+                        }.padding(.top, 68)
                     }
 
                     lastUpdatedFooter
@@ -492,6 +515,9 @@ struct DashboardView: View {
         }
         .task {
             refreshLocalScanStatus()
+            let health = AppHealthMonitor.shared.current
+            healthSeverity = health.severity
+            healthMessages = health.messages
             await refreshCurrentPulse()
             await hydrateRangeSnapshotCache()
             let selectedRange = timeRange
@@ -717,92 +743,86 @@ struct DashboardView: View {
         .padding(6).background(.regularMaterial).cornerRadius(6)
     }
 
-    /// Nose: vertical overlapping bars. Added runs top-down, deleted runs
-    /// bottom-up; the overlap is the net line change. Max height is the larger
-    /// of the two, so the visible difference is exactly |added−deleted|/max.
-    /// Labels sit inside the bar at top (added), middle (net), bottom (deleted).
+    /// A short, lowered nose. Labels are outside the ratio geometry.
     @ViewBuilder var noseStatCards: some View {
-        let added = codeChanges.reduce(0) { $0 + $1.added }
-        let deleted = codeChanges.reduce(0) { $0 + $1.deleted }
-        let netLines = added - deleted
-        let maxVal = Double(max(added, deleted, 1))
-        GeometryReader { geo in
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(nsColor: .quaternarySystemFill).opacity(0.35))
-                VStack {
-                    Spacer()
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.deepRed.opacity(0.55))
-                        .frame(height: geo.size.height * Double(deleted) / maxVal)
+        let composition = codeComposition
+        VStack(spacing: 5) {
+            Text(composition.map { "−" + ChartMath.compactCount($0.deleted) } ?? "—")
+                .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                .foregroundStyle(Color.deepRed)
+            GeometryReader { geo in
+                ZStack {
+                    Color.secondary.opacity(0.12)
+                    if let composition, let deletedFraction = composition.deletedFraction {
+                        VStack(spacing: 0) {
+                            Color.deepRed.opacity(0.65)
+                                .frame(height: geo.size.height * deletedFraction)
+                            Color.marsGreen.opacity(0.8)
+                                .frame(height: geo.size.height * (composition.addedFraction ?? 0))
+                        }
+                    }
                 }
-                VStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.marsGreen.opacity(0.85))
-                        .frame(height: geo.size.height * Double(added) / maxVal)
-                    Spacer()
-                }
-                VStack(spacing: 0) {
-                    Text("+\(ChartMath.compactCount(Int64(added)))")
-                        .font(.caption2).fontWeight(.semibold).monospacedDigit()
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(Color.marsGreen.opacity(0.85), in: RoundedRectangle(cornerRadius: 5))
-                    Spacer()
-                    Text(netLines >= 0
-                         ? "+\(ChartMath.compactCount(Int64(netLines)))"
-                         : ChartMath.compactCount(Int64(netLines)))
-                        .font(.system(size: 13, weight: .bold)).monospacedDigit()
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
-                    Spacer()
-                    Text("-\(ChartMath.compactCount(Int64(deleted)))")
-                        .font(.caption2).fontWeight(.semibold).monospacedDigit()
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(Color.deepRed.opacity(0.8), in: RoundedRectangle(cornerRadius: 5))
-                }
+                .clipShape(CodeChangeTrapezoid())
+                .overlay(CodeChangeTrapezoid().stroke(Color.secondary.opacity(0.3), lineWidth: 1))
             }
+            .frame(width: 56, height: 64)
+            Text(composition.map { "+" + ChartMath.compactCount($0.added) } ?? "—")
+                .font(.caption2).fontWeight(.semibold).monospacedDigit()
+                .foregroundStyle(Color.marsGreen)
         }
-        .frame(width: 64, height: 150)
+        .help(I18n.t("dashboard.code_composition_help"))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(I18n.t("dashboard.code_composition_help"))
+        .accessibilityValue(composition.map {
+            "−\(ChartMath.compactCount($0.deleted)), +\(ChartMath.compactCount($0.added))"
+        } ?? I18n.t("pulse.tier.unknown"))
     }
 
     // MARK: - Head overview (forehead activity · eyes distributions · nose output)
 
+    private var tokenCoverageNote: String? {
+        guard !isDemoMode else { return nil }
+        guard let isPartial = activeSnapshot?.activityCoverage.isPartial else {
+            return I18n.t("dashboard.token_coverage_unavailable")
+        }
+        return isPartial ? I18n.t("dashboard.token_coverage_partial") : nil
+    }
+
+    private func noteIcon(_ text: String) -> some View {
+        DashboardNoteButton(text: text, enabled: selectedToolForOverlay == nil)
+    }
+
     var spendingOverview: some View {
         // Forehead: usage is the primary number — pure JSONL facts.
         let rangeTokens = dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
-        let pulseTier = currentPulse?.isCurrent() == true ? currentPulse?.tier : nil
-
         return VStack(spacing: 16) {
-            HStack(spacing: 6) {
-                Circle().fill(pulseColor(pulseTier)).frame(width: 8, height: 8)
-                    .help(currentPulse?.isCurrent() == true
-                          ? StatusItemController.detail(snapshot: currentPulse) + "\n" + I18n.t("pulse.activity.legend")
-                          : I18n.t("pulse.reason.unavailable"))
-                Text(rangeTokenRateText)
-                    .font(.caption).foregroundColor(.secondary).lineLimit(1)
-            }
+            periodPicker.frame(maxWidth: .infinity)
             // ── Forehead: usage ──
             VStack(spacing: 4) {
-                Text(activeSnapshot?.readFailures.contains("dashboardUsageStats") == true
-                     ? "—" : tokenShort(Int(clamping: rangeTokens)))
-                    .font(.system(size: 48, weight: .bold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(Color.marsGreen)
-                    .scaleEffect(loadedTimeRange == timeRange ? (0.8 + 0.2 * barProgress) : 0.8)
-                    .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
+                foreheadStatusRow
+                HStack(spacing: 4) {
+                    Text(activeSnapshot == nil || activeSnapshot?.readFailures.contains("dashboardUsageStats") == true
+                         ? "—" : tokenShort(Int(clamping: rangeTokens)))
+                        .font(.system(size: 48, weight: .bold, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(Color.marsGreen)
+                        .scaleEffect(loadedTimeRange == timeRange ? (0.8 + 0.2 * barProgress) : 0.8)
+                        .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
+                    if let note = tokenCoverageNote { noteIcon(note) }
+                }
                 HStack(spacing: 4) {
                     Text("\(timeRange.label) · \(activeSnapshot?.readFailures.contains("toolUsage") == true ? "—" : String(periodSessionCount)) \(pulseText("个会话", "sessions")) · \(activeSnapshot?.readFailures.contains("dashboardUsageStats") == true ? "—" : String(periodActiveDays)) \(pulseText("个活跃日", "active days")) · \(pulseText("词元", "tokens"))")
                         .font(.caption).foregroundColor(.secondary)
                     Text(I18n.t("dashboard.source_logs"))
                         .font(.caption2).foregroundColor(.secondary)
+                        .help(I18n.t("dashboard.local_activity_scope"))
                 }
+                Text(rangeTokenRateText)
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5).allowsHitTesting(false))
             .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
 
             // ── Eyes + nose ──
@@ -810,19 +830,20 @@ struct DashboardView: View {
                 toolTokenDonut()
 
                 // Nose: code lines
-                VStack(spacing: 6) {
+                VStack(spacing: 12) {
                     noseStatCards
-                    Text("\(ChartMath.compactCount(Int64(periodCommitCount))) \(I18n.t("dashboard.commits"))")
+                    Text("\(codeComposition == nil ? "—" : ChartMath.compactCount(Int64(periodCommitCount))) \(I18n.t("dashboard.commits"))")
                         .font(.caption2).foregroundColor(.secondary).monospacedDigit()
                 }
                 .frame(width: 100)
+                .padding(.top, 54)
 
-                repoTokenDonut()
+                repoCodeDonut()
             }
         }
         .padding(16)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5).allowsHitTesting(false))
         .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
@@ -830,7 +851,9 @@ struct DashboardView: View {
     /// not enter the robot face.
     @ViewBuilder
     func toolTokenDonut() -> some View {
-        let rawSegments = (activeSnapshot?.toolBreakdown ?? []).compactMap { item -> DonutItem? in
+        let available = activeSnapshot != nil && activeSnapshot?.readFailures.contains("toolUsage") != true
+        let tools = available ? (activeSnapshot?.toolBreakdown ?? []) : []
+        let rawSegments = tools.compactMap { item -> DonutItem? in
             guard let tokens = item.tokens, tokens > 0 else { return nil }
             return DonutItem(label: item.name, tokens: Double(tokens), pct: 0, color: .secondary)
         }
@@ -843,6 +866,9 @@ struct DashboardView: View {
                       color: Self.donutPalette[i % Self.donutPalette.count])
         }
         VStack(spacing: 6) {
+            Text(I18n.t("dashboard.tool_tokens"))
+                .font(.caption2).foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(0.8)
             ZStack {
                 if !segments.isEmpty {
                     Chart(segments) { item in
@@ -859,9 +885,13 @@ struct DashboardView: View {
                 } else {
                     emptyDonut()
                 }
-                Text(tokenShort(Int(clamping: Int64(totalTokens))))
-                    .font(.system(size: Self.donutCenterFontSize(for: totalTokens), weight: .semibold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(Color.deepRed)
+                VStack(spacing: 2) {
+                    Text(!available
+                         ? "—" : tokenShort(Int(clamping: Int64(min(totalTokens, Double(Int64.max).nextDown)))))
+                        .font(.system(size: Self.donutCenterFontSize(for: totalTokens), weight: .semibold, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(Color.deepRed)
+                    Text(I18n.t("dashboard.chart_tokens")).font(.system(size: 9)).foregroundStyle(.secondary)
+                }
             }
             VStack(spacing: 2) {
                 ForEach(segments.prefix(3)) { item in
@@ -878,15 +908,17 @@ struct DashboardView: View {
         .frame(maxWidth: 150)
     }
 
-    /// Right eye: usage donut — token share per repo (log facts). Users often
-    /// work across several repos with one tool, so repo is the more useful
-    /// split than tool. Center shows the attributed token total.
+    /// Right eye: repository code changes. Deletion and addition have equal
+    /// weight; tokens, net growth and commits never become slices here.
     @ViewBuilder
-    func repoTokenDonut() -> some View {
-        let labels = RepositoryLabels.make(for: Array(repoTokens.keys))
-        let items = repoTokens.compactMap { (name, tokens) -> DonutItem? in
-            guard tokens > 0 else { return nil }
-            return DonutItem(label: labels[name] ?? name, tokens: Double(tokens), pct: 0, color: .secondary, id: name)
+    func repoCodeDonut() -> some View {
+        let totals = CodeChangeComposition.repositoryTotals(in: activeSnapshot)
+        let available = totals != nil
+        let changes = totals ?? [:]
+        let labels = RepositoryLabels.make(for: Array(changes.keys))
+        let items = changes.compactMap { (name, change) -> DonutItem? in
+            guard change.total > 0 else { return nil }
+            return DonutItem(label: labels[name] ?? name, tokens: change.total, pct: 0, color: .secondary, id: name)
         }
         let totalTokens = items.reduce(0.0) { $0 + $1.tokens }
         let segments = Self.topSegments(items).enumerated().map { i, s in
@@ -894,12 +926,15 @@ struct DashboardView: View {
                       pct: totalTokens > 0 ? s.tokens / totalTokens * 100 : 0,
                       color: Self.donutPalette[i % Self.donutPalette.count], id: s.id)
         }
-        let centerText = tokenShort(Int(clamping: Int64(totalTokens)))
+        let centerText = available ? ChartMath.compactCount(Int64(min(totalTokens, Double(Int64.max).nextDown))) : "—"
         VStack(spacing: 6) {
+            Text(I18n.t("dashboard.repo_code_changes"))
+                .font(.caption2).foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(0.8)
             ZStack {
                 if !segments.isEmpty {
                     Chart(segments) { item in
-                        SectorMark(angle: .value("Tokens", item.tokens), innerRadius: .ratio(0.5), angularInset: 1)
+                        SectorMark(angle: .value("Code changes", item.tokens), innerRadius: .ratio(0.5), angularInset: 1)
                             .foregroundStyle(item.color)
                     }
                     .chartLegend(.hidden)
@@ -912,16 +947,19 @@ struct DashboardView: View {
                 } else {
                     emptyDonut()
                 }
-                Text(centerText)
-                    .font(.system(size: Self.donutCenterFontSize(for: totalTokens), weight: .semibold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(Color.marsGreen)
+                VStack(spacing: 2) {
+                    Text(centerText)
+                        .font(.system(size: Self.donutCenterFontSize(for: totalTokens), weight: .semibold, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(Color.marsGreen)
+                    Text(I18n.t("dashboard.lines_unit")).font(.system(size: 9)).foregroundStyle(.secondary)
+                }
             }
             VStack(spacing: 2) {
                 ForEach(segments.prefix(3)) { item in
                     HStack(spacing: 4) {
                         Circle().fill(item.color).frame(width: 6, height: 6)
                         Text(item.label).font(.caption2).foregroundColor(.secondary).lineLimit(1)
-                            .help(repoTokens[item.id] == nil ? item.label : item.id)
+                            .help(changes[item.id] == nil ? item.label : item.id)
                         Spacer()
                         Text(verbatim: ChartMath.safeInt(item.pct).formatted(.percent))
                             .font(.caption2).monospacedDigit().foregroundColor(.secondary)
@@ -930,6 +968,7 @@ struct DashboardView: View {
             }
         }
         .frame(maxWidth: 150)
+        .help(I18n.t("dashboard.repo_code_changes_help"))
     }
 
     /// Canonical four-color donut palette (deepRed / marsGreen / deepRed2 /
@@ -942,7 +981,9 @@ struct DashboardView: View {
     /// Keeps at most `limit` largest segments and folds the rest into an
     /// "Other" slice so donut legends stay readable.
     static func topSegments(_ items: [DonutItem], limit: Int = 3) -> [DonutItem] {
-        let sorted = items.sorted { $0.tokens > $1.tokens }
+        let sorted = items.sorted {
+            $0.tokens == $1.tokens ? $0.id < $1.id : $0.tokens > $1.tokens
+        }
         guard sorted.count > limit else { return sorted }
         let top = Array(sorted.prefix(limit))
         let otherTokens = sorted.dropFirst(limit).reduce(0.0) { $0 + $1.tokens }
@@ -1081,18 +1122,26 @@ struct DashboardView: View {
         growsDownward: Bool = false
     ) -> some View {
         let slotCount = timeRange == .today ? 24 : chartDays
-        let displayedValues = Array((values + Array(repeating: 0, count: slotCount)).prefix(slotCount))
-        let peak = max(displayedValues.max() ?? 0, 1)
+        let slots = DashboardDataPresentation.rhythmSlots(values: values, count: slotCount, surroundingWeeks: timeRange == .thisWeek)
+        let peak = max(slots.compactMap { $0 }.max() ?? 0, 1)
         VStack(alignment: .leading, spacing: 4) {
             if growsDownward {
                 Text(label).font(.caption2).foregroundColor(.secondary)
             }
-            HStack(alignment: growsDownward ? .top : .bottom, spacing: timeRange == .today ? 3 : 5) {
-                ForEach(Array(displayedValues.enumerated()), id: \.offset) { _, value in
-                    Capsule()
-                        .fill(value > 0 ? color : Color.secondary.opacity(0.14))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: max(3, 26 * value / peak))
+            HStack(alignment: growsDownward ? .top : .bottom, spacing: 3) {
+                ForEach(Array(slots.enumerated()), id: \.offset) { _, value in
+                    if let value {
+                        Capsule()
+                            .fill(value > 0 ? color : Color.secondary.opacity(0.14))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: max(3, 26 * value / peak))
+                    } else {
+                        Capsule()
+                            .fill(Color.secondary.opacity(0.14))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 3)
+                            .accessibilityHidden(true)
+                    }
                 }
             }
             .frame(height: 28, alignment: growsDownward ? .top : .bottom)
@@ -1141,69 +1190,68 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var pulseFactsSection: some View {
-        let observed = (activeSnapshot?.observedSpend ?? []).filter { $0.amount > 0 }
-        let freshQuotas = (activeSnapshot?.quotaStatus ?? usageData).filter { !$0.isStale() }
-        VStack(alignment: .leading, spacing: 10) {
-            Text(timeRange == .days30
-                 ? pulseText("近 30 天的订阅与工具使用", "Subscription and tool use · 30 days")
-                 : pulseText("已观察到的事实", "Observed facts"))
-                .font(.caption).foregroundColor(.secondary)
-
-            if !isDemoMode {
-                if let failures = activeSnapshot?.readFailures, !failures.isEmpty {
-                    Label(pulseText("部分统计读取失败，空图和零值不代表没有活动。", "Some statistics could not be read; empty charts and zero values do not mean no activity."),
-                          systemImage: "exclamationmark.triangle")
-                        .font(.caption).foregroundColor(.orange)
-                        .help(failures.joined(separator: ", "))
+        let observed = (activeSnapshot?.observedSpend ?? []).filter { $0.amount.isFinite && $0.amount > 0 }
+        let quotas = activeSnapshot?.quotaStatus ?? usageData
+        let monthly = timeRange == .days30 ? activeSnapshot?.declaredMonthlyCostUSD : nil
+        let failures = activeSnapshot?.readFailures ?? []
+        VStack(alignment: .leading, spacing: 12) {
+            // Actual read failures remain prominent. Token completeness is
+            // explained by the note icon beside the forehead token total.
+            if !isDemoMode && !failures.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    if !failures.isEmpty {
+                        Label(pulseText("部分统计读取失败，空图和零值不代表没有活动。", "Some statistics could not be read; empty charts and zero values do not mean no activity."),
+                              systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundColor(.orange)
+                            .help(failures.joined(separator: ", "))
+                    }
                 }
-                if activeSnapshot?.activityCoverage.isPartial == true {
-                    Text(pulseText("部分日志缺少词元分项，当前总量只包含可确认部分，可能偏低。",
-                                   "Some logs lack token components. Totals include confirmed components only and may be lower."))
-                        .font(.caption2).foregroundColor(.secondary)
-                } else if activeSnapshot?.activityCoverage.isPartial == nil {
-                    Text(pulseText("观察完整性暂不可用，不能据此判断没有活动。",
-                                   "Observation completeness is unavailable; this does not mean there was no activity."))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-                Text(pulseText("词元来自支持的本地工具日志，不代表整个 AI 账户用量或账单。",
-                               "Tokens come from supported local tool logs—not entire-account usage or billing."))
-                    .font(.caption2).foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
             }
-
-            if timeRange == .days30 {
-                HStack(spacing: 14) {
-                    Label("\(periodActiveDays) \(pulseText("个活跃日", "active days"))", systemImage: "calendar")
-                    Label("\(periodSessionCount) \(pulseText("个会话", "sessions"))", systemImage: "bubble.left.and.bubble.right")
-                    Label("\(tokenShort(todayTokens)) \(pulseText("词元", "tokens"))", systemImage: "waveform.path.ecg")
-                }
-                .font(.caption).foregroundColor(.secondary)
-            }
-
             if !observed.isEmpty {
-                Text(pulseText("以下为采样间余额净下降，可能包含充值、退款及其他活动的影响，并非逐笔账单。",
-                               "Net balance decreases between samples, affected by top-ups, refunds and other activity—not itemized bills."))
-                    .font(.caption2).foregroundColor(.secondary)
-            }
-            ForEach(observed, id: \.stableId) { item in
-                HStack {
-                    Text(ProviderRegistry.byId(item.providerId)?.name ?? item.providerId)
-                    Spacer()
-                    Text("\(item.currency.uppercased()) \(String(format: "%.1f", item.amount))")
-                        .monospacedDigit()
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 4) {
+                        Text(I18n.t("dashboard.account_observations")).font(.headline)
+                        noteIcon(I18n.t("dashboard.balance_observation_help"))
+                    }
+                    ForEach(observed, id: \.stableId) { item in
+                        HStack {
+                            Text(ProviderRegistry.byId(item.providerId)?.name ?? item.providerId)
+                            Spacer()
+                            Text("\(item.currency.uppercased()) \(String(format: "%.1f", item.amount))")
+                                .fontWeight(.semibold).monospacedDigit()
+                        }
+                        .font(.body)
+                        .help(observedAmountIntervalHelp(item))
+                    }
                 }
-                .font(.caption)
-                .help(observedAmountIntervalHelp(item))
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
-            ForEach(freshQuotas, id: \.stableId) { quota in quotaRow(data: quota) }
-
-            if observed.isEmpty && freshQuotas.isEmpty && timeRange != .days30 {
-                Text(pulseText("这个时段没有观察到余额净下降或新鲜额度数据。", "No net balance decrease or fresh quota was observed in this period."))
-                    .font(.caption).foregroundColor(.secondary)
+            if !quotas.isEmpty || (monthly ?? 0) > 0 {
+                VStack(alignment: .leading, spacing: 10) {
+                    if !quotas.isEmpty {
+                        Text(I18n.t("dashboard.quota_context_title")).font(.caption).foregroundStyle(.secondary)
+                        ForEach(quotas, id: \.stableId) { quota in quotaRow(data: quota) }
+                    }
+                    if let monthly, monthly > 0 {
+                        HStack {
+                            Text(I18n.t("dashboard.fixed_monthly_context"))
+                            Spacer()
+                            Text("USD \(String(format: "%.1f", monthly))").monospacedDigit()
+                        }.font(.caption)
+                        Text(I18n.t("dashboard.fixed_monthly_help"))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func observedAmountIntervalHelp(_ item: ObservedSpendItem) -> String {
@@ -1229,52 +1277,48 @@ struct DashboardView: View {
         let matrix = ActivityMatrix(matrixRows)
         let toolIds = matrix.tools
         let modelNames = matrix.models
+        let visibleModels = matrix.visibleModels(expanded: modelsExpanded)
         let cellTokens = { (model: ActivityMatrix.ModelKey, tool: String) in matrix.tokens(model: model, tool: tool) }
         let toolTokens = { (tool: String) in matrix.tokens(tool: tool) }
         let modelTokens = { (model: ActivityMatrix.ModelKey) in matrix.tokens(model: model) }
         let grandTotal = matrix.grandTotal
+        let toolColumnMaxima = Dictionary(uniqueKeysWithValues: toolIds.map { tool in
+            (tool, modelNames.map { cellTokens($0, tool) }.max() ?? 0)
+        })
+        let modelTotalMaximum = modelNames.map { modelTokens($0) }.max() ?? 0
+        let layout = DashboardMatrixLayout(viewportWidth: matrixViewportWidth, toolCount: toolIds.count)
 
-        // ── Tool × model matrix ──
-        if !matrixRows.isEmpty {
-            VStack(spacing: 12) {
-                Text(I18n.t("dashboard.by_tool_model"))
-                    .font(.caption).foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                HStack {
-                    Text(I18n.t("panel.detail_entry_hint"))
-                        .font(.caption2).foregroundColor(.secondary)
-                    Spacer()
-                    Menu(I18n.t("panel.view_tool_details")) {
-                        ForEach(Array(Set(matrixRows.compactMap(\.toolId))).sorted(), id: \.self) { tool in
-                            Button(toolIdToDisplay(tool) ?? tool) { selectedToolForOverlay = tool }
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                }
-                ScrollView(.horizontal) {
-                Grid(alignment: .trailing, horizontalSpacing: 1, verticalSpacing: 1) {
+        let fillsViewport = toolIds.count <= 2
+        let table = Grid(alignment: .trailing, horizontalSpacing: 1, verticalSpacing: 1) {
 	                        GridRow {
 	                            Text(I18n.t("dashboard.model"))
 	                                .font(.caption2).bold().foregroundColor(.secondary)
-	                                .dashboardTableCell(isHeader: true, alignment: .leading)
+	                                .dashboardTableCell(isHeader: true, alignment: .leading, width: fillsViewport ? nil : layout.modelWidth)
 	                            ForEach(toolIds, id: \.self) { t in
-	                                Text(t.isEmpty ? I18n.t("dashboard.unattributed_tool") : (toolIdToDisplay(t) ?? t))
-	                                    .font(.caption2).bold().foregroundColor(.secondary).lineLimit(1)
-	                                    .dashboardTableCell(isHeader: true, alignment: .trailing)
+	                                Button { selectedToolForOverlay = t } label: {
+	                                    HStack(spacing: 4) {
+	                                        Text(t.isEmpty ? I18n.t("dashboard.unattributed_tool") : (toolIdToDisplay(t) ?? t))
+	                                            .lineLimit(1)
+	                                        if !t.isEmpty { Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color.accentColor) }
+	                                    }
+	                                    .font(.caption2).bold()
+	                                    .dashboardTableCell(isHeader: true, alignment: .trailing, width: fillsViewport ? nil : layout.numericWidth)
 	                                    .contentShape(Rectangle())
-	                                    .onTapGesture { if !t.isEmpty { selectedToolForOverlay = t } }
-	                                    .pointingHandCursor()
+	                                }
+	                                .buttonStyle(.plain).disabled(t.isEmpty)
+	                                .help(t.isEmpty ? I18n.t("dashboard.unattributed_tool") : String(format: I18n.t("panel.open_tool_detail"), toolIdToDisplay(t) ?? t))
+	                                .accessibilityLabel(t.isEmpty ? I18n.t("dashboard.unattributed_tool") : String(format: I18n.t("panel.open_tool_detail"), toolIdToDisplay(t) ?? t))
+	                                .pointingHandCursor(!t.isEmpty)
 	                            }
 	                            Text(I18n.t("dashboard.total"))
 	                                .font(.caption2).bold().foregroundColor(.secondary)
-	                                .dashboardTableCell(isHeader: true)
+	                                .dashboardTableCell(isHeader: true, width: fillsViewport ? nil : layout.numericWidth)
 	                        }
-	                        ForEach(Array(modelNames.enumerated()), id: \.element) { idx, m in
+	                        ForEach(Array(visibleModels.enumerated()), id: \.element) { idx, m in
 	                            GridRow {
 	                                Text((m.model.isEmpty ? I18n.t("dashboard.unknown_model") : m.model) + " · " + m.provider)
 	                                    .font(.caption).lineLimit(1)
-	                                    .dashboardTableCell(rowIndex: idx, alignment: .leading)
+	                                    .dashboardTableCell(rowIndex: idx, alignment: .leading, width: fillsViewport ? nil : layout.modelWidth)
 	                                    .contentShape(Rectangle())
 	                                    .onTapGesture {
 	                                        if let tool = matrixRows.first(where: { $0.model == m.model && $0.providerId == m.provider })?.toolId {
@@ -1285,11 +1329,13 @@ struct DashboardView: View {
 	                                ForEach(toolIds, id: \.self) { t in
 	                                    Text(tokenShort(Int(clamping: cellTokens(m, t))))
 	                                        .font(.caption).monospacedDigit()
-	                                        .dashboardTableCell(rowIndex: idx)
+	                                        .dashboardTableCell(rowIndex: idx, width: fillsViewport ? nil : layout.numericWidth,
+                                                            barFraction: DashboardDataPresentation.barFraction(value: Double(cellTokens(m, t)), maximum: Double(toolColumnMaxima[t] ?? 0)), barColor: .marsGreen)
 	                                }
 	                                Text(tokenShort(Int(clamping: modelTokens(m))))
 	                                    .font(.caption).bold().monospacedDigit()
-	                                    .dashboardTableCell(rowIndex: idx)
+	                                    .dashboardTableCell(rowIndex: idx, width: fillsViewport ? nil : layout.numericWidth,
+                                                        barFraction: DashboardDataPresentation.barFraction(value: Double(modelTokens(m)), maximum: Double(modelTotalMaximum)))
 	                            }
 	                        }
 	                        // Total row participates in the zebra pattern (its shade
@@ -1297,18 +1343,50 @@ struct DashboardView: View {
 	                        GridRow {
 	                            Text(I18n.t("dashboard.total"))
 	                                .font(.caption).bold()
-	                                .dashboardTableCell(rowIndex: modelNames.count, alignment: .leading)
+	                                .dashboardTableCell(rowIndex: visibleModels.count, alignment: .leading, width: fillsViewport ? nil : layout.modelWidth)
 	                            ForEach(toolIds, id: \.self) { t in
 	                                Text(tokenShort(Int(clamping: toolTokens(t))))
 	                                    .font(.caption).bold().monospacedDigit()
-	                                    .dashboardTableCell(rowIndex: modelNames.count)
+	                                    .dashboardTableCell(rowIndex: visibleModels.count, width: fillsViewport ? nil : layout.numericWidth)
 	                            }
 	                            Text(tokenShort(Int(clamping: grandTotal)))
 	                                .font(.caption).bold().monospacedDigit()
-	                                .dashboardTableCell(rowIndex: modelNames.count)
+	                                .dashboardTableCell(rowIndex: visibleModels.count, width: fillsViewport ? nil : layout.numericWidth)
 	                            }
                 }
-                .frame(maxWidth: .infinity)
+
+        // ── Tool × model matrix ──
+        if !modelNames.isEmpty {
+            VStack(spacing: 12) {
+                Text(I18n.t("dashboard.by_tool_model"))
+                    .font(.caption).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(I18n.t("dashboard.model_data_bar_help"))
+                if fillsViewport {
+                    // Same flexible Grid layout as the repository table.
+                    table.frame(maxWidth: .infinity)
+                } else {
+                    ScrollView(.horizontal) {
+                        table.frame(width: layout.contentWidth, alignment: .leading)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear.preference(key: MatrixViewportWidthPreference.self, value: geometry.size.width)
+                        }
+                    }
+                    .onPreferenceChange(MatrixViewportWidthPreference.self) { width in
+                        guard width.isFinite, width > 0, abs(width - matrixViewportWidth) > 0.5 else { return }
+                        matrixViewportWidth = width
+                    }
+                }
+                if modelNames.count > ActivityMatrix.collapsedRowLimit {
+                    Button(modelsExpanded ? I18n.t("dashboard.show_less") : I18n.t("dashboard.show_all")) {
+                        withAnimation(reduceMotion ? nil : .default) { modelsExpanded.toggle() }
+                    }
+                    .font(.caption2)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .pointingHandCursor()
                 }
             }
             .padding(12)
@@ -1331,8 +1409,15 @@ struct DashboardView: View {
         }
         if !shownRepos.isEmpty {
             let shown = reposExpanded ? shownRepos : Array(shownRepos.prefix(5))
+            let totals = RepositoryTableTotals(repositories: shownRepos)
+            let codeAvailable = activeSnapshot?.readFailures.contains("repositoryCode") != true
+            // Use all eligible repositories, not just the collapsed first five.
+            let tokenMaximum = shownRepos.compactMap(\.tokens).max() ?? 0
+            let lineMaximum = shownRepos.map { max($0.added, $0.deleted) }.max() ?? 0
+            let commitMaximum = shownRepos.map(\.commits).max() ?? 0
             VStack(alignment: .leading, spacing: 6) {
                 Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
+                    .help(I18n.t("dashboard.repo_data_bar_help"))
                 Grid(alignment: .leading, horizontalSpacing: 1, verticalSpacing: 1) {
                     GridRow {
                         Text(I18n.t("dashboard.repo"))
@@ -1358,17 +1443,38 @@ struct DashboardView: View {
                                 .dashboardTableCell(rowIndex: idx, alignment: .leading)
                             Text(tokenShort(Int(clamping: r.tokens ?? 0)))
                                 .font(.caption).monospacedDigit()
-                                .dashboardTableCell(rowIndex: idx)
-                            Text("+\(r.added)")
+                                .dashboardTableCell(rowIndex: idx,
+                                                    barFraction: DashboardDataPresentation.barFraction(value: r.tokens.map(Double.init), maximum: Double(tokenMaximum)))
+                            Text("+" + ChartMath.compactCount(Int64(r.added)))
                                 .font(.caption).monospacedDigit().foregroundColor(.marsGreen)
-                                .dashboardTableCell(rowIndex: idx)
-                            Text("-\(r.deleted)")
+                                .dashboardTableCell(rowIndex: idx,
+                                                    barFraction: DashboardDataPresentation.barFraction(value: Double(r.added), maximum: Double(lineMaximum)), barColor: .marsGreen)
+                            Text("−" + ChartMath.compactCount(Int64(r.deleted)))
                                 .font(.caption).monospacedDigit().foregroundColor(.red)
-                                .dashboardTableCell(rowIndex: idx)
+                                .dashboardTableCell(rowIndex: idx,
+                                                    barFraction: DashboardDataPresentation.barFraction(value: Double(r.deleted), maximum: Double(lineMaximum)), barColor: .deepRed)
                             Text(ChartMath.compactCount(Int64(r.commits)))
                                 .font(.caption).monospacedDigit()
-                                .dashboardTableCell(rowIndex: idx)
+                                .dashboardTableCell(rowIndex: idx,
+                                                    barFraction: DashboardDataPresentation.barFraction(value: Double(r.commits), maximum: Double(commitMaximum)))
                         }
+                    }
+                    GridRow {
+                        Text(I18n.t("dashboard.total"))
+                            .font(.caption).bold()
+                            .dashboardTableCell(rowIndex: shown.count, alignment: .leading)
+                        Text(totals.tokens.map { ChartMath.compactCount($0) } ?? "—")
+                            .font(.caption).bold().monospacedDigit()
+                            .dashboardTableCell(rowIndex: shown.count)
+                        Text(codeAvailable ? "+" + ChartMath.compactCount(totals.added) : "—")
+                            .font(.caption).bold().monospacedDigit().foregroundStyle(Color.marsGreen)
+                            .dashboardTableCell(rowIndex: shown.count)
+                        Text(codeAvailable ? "−" + ChartMath.compactCount(totals.deleted) : "—")
+                            .font(.caption).bold().monospacedDigit().foregroundStyle(Color.deepRed)
+                            .dashboardTableCell(rowIndex: shown.count)
+                        Text(codeAvailable ? ChartMath.compactCount(totals.commits) : "—")
+                            .font(.caption).bold().monospacedDigit()
+                            .dashboardTableCell(rowIndex: shown.count)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -1778,6 +1884,11 @@ struct DashboardView: View {
 
 }
 
+private struct MatrixViewportWidthPreference: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 /// The one dashboard table cell style. Padding, row tint and hairline border
 /// are applied to the same cell frame. The 1px Grid spacing is only the gap
 /// between cells; it never becomes a second container around the cell.
@@ -1785,10 +1896,25 @@ private extension View {
     func dashboardTableCell(
         rowIndex: Int? = nil,
         isHeader: Bool = false,
-        alignment: Alignment = .trailing
+        alignment: Alignment = .trailing,
+        width: CGFloat? = nil,
+        barFraction: Double? = nil,
+        barColor: Color = .accentColor
     ) -> some View {
         frame(maxWidth: .infinity, alignment: alignment)
             .padding(2)
+            .frame(width: width, alignment: alignment)
+            .background(alignment: .leading) {
+                if let barFraction, barFraction > 0 {
+                    GeometryReader { geometry in
+                        Rectangle()
+                            .fill(barColor.opacity(0.16))
+                            .frame(width: geometry.size.width * barFraction)
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
             .background(cellBackground(rowIndex: rowIndex, isHeader: isHeader))
             .overlay(
                 Rectangle()

@@ -1,7 +1,8 @@
 import AppKit
 import AIPulseShared
 
-/// The Dock is the large version of the menu bar's token-activity mark.
+/// The robot lamp shares the menu flame's state, palette and observation beat,
+/// without converting activity into a budget ring or replacing the robot art.
 @MainActor
 final class DockManager {
     static let shared = DockManager()

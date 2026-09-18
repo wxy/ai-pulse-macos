@@ -22,80 +22,9 @@ enum AppIconLoader {
     /// rendered once and reused. Identical to the static `.icns`.
     private static let baseTile: NSImage = renderBase()
 
-    /// Load the icon with a linear progress ring, optional lap counter and health dot.
-    /// - Parameter progress: 0...1 fraction of the rounded-rectangle perimeter.
-    /// - Parameter lap: number of completed laps (first lap = 0). Shown as a small
-    ///   digit in the bottom-left corner when ≥ 1.
-    /// - Parameter healthDot: nil → no dot; non-nil → coloured dot at bottom-right.
-    /// - Parameter ringColor: progress ring stroke colour (v2 §3.3: burn tier
-    ///   green→yellow→orange→red; defaults to the legacy systemGreen).
-    static func load(progress: Double = 0, lap: Int = 0,
-                     healthDot: AppHealthMonitor.Severity? = nil,
-                     ringColor: NSColor = .systemGreen) -> NSImage {
-        return renderProgress(fraction: CGFloat(max(progress, 0)),
-                              lap: lap, healthDot: healthDot, ringColor: ringColor)
-    }
-
-    /// Render a pulse frame: artwork scaled up with a gold overlay.
-    /// - Parameter scale: artwork scale multiplier (1.0 = normal, 1.3 = 30% larger)
-    /// - Parameter tintAmount: 0 = no gold, 1 = full gold overlay
-    @MainActor private static let pulseFrameCache = NSCache<NSString, NSImage>()
-
-    @MainActor
-    static func pulseFrame(scale: CGFloat, tintAmount: CGFloat) -> NSImage {
-        let key = "\(scale.rounded(toPlaces: 3))|\(tintAmount.rounded(toPlaces: 3))" as NSString
-        if let cached = pulseFrameCache.object(forKey: key) {
-            return cached
-        }
-
-        let px = Int(size)
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: px, pixelsHigh: px,
-            bitsPerSample: 8, samplesPerPixel: 4,
-            hasAlpha: true, isPlanar: false,
-            colorSpaceName: .deviceRGB,
-            bytesPerRow: 0, bitsPerPixel: 0
-        ) else { return baseTile }
-
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-
-        let body = bodyRect
-        NSBezierPath(roundedRect: body, xRadius: cornerRadius, yRadius: cornerRadius).addClip()
-
-        // White background
-        NSColor.white.setFill()
-        body.fill()
-
-        // Artwork with scale
-        if let art = artwork {
-            let maxDim = max(art.size.width, art.size.height)
-            let baseScale = (coverage * body.width) / maxDim
-            let s = baseScale * scale
-            let w = art.size.width * s
-            let h = art.size.height * s
-            let target = CGRect(x: body.midX - w / 2, y: body.midY - h / 2, width: w, height: h)
-            art.image.draw(in: target)
-        }
-
-        #if DEBUG
-        drawDebugNotch(in: body)
-        #endif
-
-        // Gold overlay on top (tintAmount controls opacity)
-        if tintAmount > 0.01 {
-            let gold = NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.08, alpha: tintAmount * 0.55)
-            gold.setFill()
-            body.fill()
-        }
-
-        NSGraphicsContext.restoreGraphicsState()
-
-        let img = NSImage(size: NSSize(width: size, height: size))
-        img.addRepresentation(rep)
-        pulseFrameCache.setObject(img, forKey: key)
-        return img
+    /// Original robot artwork with an independent collection-health badge.
+    static func load(healthDot: AppHealthMonitor.Severity? = nil) -> NSImage {
+        renderHealthImage(healthDot: healthDot)
     }
 
     static func uiImage(size: CGFloat) -> NSImage {
@@ -106,52 +35,24 @@ enum AppIconLoader {
         }
     }
 
-    /// Fixed twelve-segment intensity mark; never a fraction of a budget.
+    /// A fixed lamp in the robot tile's lower whitespace, away from the health
+    /// badge. Resting/unavailable retain the original artwork without a ring.
     @MainActor
     static func pulseIcon(appearance: PulseAppearance, beat: Bool,
                           healthDot: AppHealthMonitor.Severity) -> NSImage {
         let image = load(healthDot: healthDot)
-        image.lockFocus()
-        let width: CGFloat = beat ? 28 : 22
-        let inset: CGFloat = 4 + width / 2
-        let rect = bodyRect.insetBy(dx: inset, dy: inset)
-        let points = perimeterPoints(rect: rect, cornerRadius: cornerRadius - inset)
-        var lengths: [CGFloat] = [0]
-        for index in 1..<points.count {
-            lengths.append(lengths[index - 1] + hypot(points[index].x - points[index - 1].x,
-                                                     points[index].y - points[index - 1].y))
-        }
-        let total = lengths.last ?? 0
-        for segment in 0..<PulseAppearance.segmentCount {
-            let start = (CGFloat(segment) + 0.15) / 12 * total
-            let end = (CGFloat(segment) + 0.85) / 12 * total
-            let path = NSBezierPath()
-            var started = false
-            for index in 1..<points.count where lengths[index] > start && lengths[index - 1] < end {
-                let length = lengths[index] - lengths[index - 1]
-                guard length > 0 else { continue }
-                func point(_ distance: CGFloat) -> CGPoint {
-                    let fraction = (distance - lengths[index - 1]) / length
-                    return CGPoint(x: points[index - 1].x + (points[index].x - points[index - 1].x) * fraction,
-                                   y: points[index - 1].y + (points[index].y - points[index - 1].y) * fraction)
-                }
-                if !started { path.move(to: point(max(start, lengths[index - 1]))); started = true }
-                path.line(to: point(min(end, lengths[index])))
+        if appearance.showsLamp(beat: beat) {
+            image.lockFocus()
+            let center = CGPoint(x: bodyRect.midX, y: bodyRect.minY + 64)
+            let color = appearance.feedbackColor(beat: beat)
+            if beat {
+                color.withAlphaComponent(0.22).setFill()
+                NSBezierPath(ovalIn: CGRect(x: center.x - 56, y: center.y - 56, width: 112, height: 112)).fill()
             }
-            appearance.color.withAlphaComponent(appearance.opacity(at: segment, beat: beat)).setStroke()
-            path.lineWidth = width
-            path.lineCapStyle = .round
-            path.stroke()
+            color.withAlphaComponent(beat ? 1 : 0.8).setFill()
+            NSBezierPath(ovalIn: CGRect(x: center.x - 40, y: center.y - 40, width: 80, height: 80)).fill()
+            image.unlockFocus()
         }
-        if appearance.tier == nil {
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 72, weight: .semibold),
-                .foregroundColor: NSColor.systemGray
-            ]
-            ("?" as NSString).draw(at: CGPoint(x: bodyRect.midX - 22, y: bodyRect.minY + 25),
-                                   withAttributes: attributes)
-        }
-        image.unlockFocus()
         image.accessibilityDescription = appearance.label
         return image
     }
@@ -215,64 +116,10 @@ enum AppIconLoader {
         path.fill()
     }
 
-    /// Draw a single-colour Pulse ring, an optional lap-counter digit in the
-    /// bottom-left corner, and an optional health dot at the bottom-right.
-    private static func renderProgress(fraction: CGFloat,
-                                       lap: Int,
-                                       healthDot: AppHealthMonitor.Severity?,
-                                       ringColor: NSColor = .systemGreen,
-                                       ringWidth: CGFloat = 14) -> NSImage {
+    private static func renderHealthImage(healthDot: AppHealthMonitor.Severity?) -> NSImage {
         let img = NSImage(size: NSSize(width: size, height: size))
         img.lockFocus()
         baseTile.draw(in: canvasRect)
-
-        // ── Progress ring ──
-        // Keep the stroke close to the icon body's perimeter while leaving a
-        // few pixels inside the edge for clean antialiasing at every Dock size.
-        let inset: CGFloat = 4 + ringWidth / 2
-        let barRect = bodyRect.insetBy(dx: inset, dy: inset)
-        let barCr = max(cornerRadius - inset, 0)
-        // Use remainder so lap 2 starts fresh from 0% instead of staying at 100%
-        let remainder = fraction.truncatingRemainder(dividingBy: 1.0)
-        let ringFraction = (remainder == 0 && fraction >= 1.0) ? 1.0 : remainder
-
-        if ringFraction > 0.001 {
-            let path = progressPath(rect: barRect, cornerRadius: barCr,
-                                    fraction: ringFraction)
-            ringColor.setStroke()
-            path.lineWidth = ringWidth
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            path.stroke()
-        }
-
-        // ── Lap counter (bottom-left corner) ──
-        if lap >= 1 {
-            let text = "\(min(lap, 9))"
-            let fontSize: CGFloat = 80
-            let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)
-            let attr: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: NSColor.white,
-            ]
-            let textSize = (text as NSString).size(withAttributes: attr)
-
-            // Bottom-left, halfway between arc centre and corner
-            let cx = bodyRect.minX + cornerRadius * 0.65
-            let cy = bodyRect.minY + cornerRadius * 0.65
-            let r: CGFloat = 52
-
-            let circlePath = NSBezierPath(
-                ovalIn: CGRect(x: cx - r, y: cy - r,
-                               width: r * 2, height: r * 2))
-            NSColor.systemGreen.setFill()
-            circlePath.fill()
-
-            let textRect = CGRect(x: cx - textSize.width / 2,
-                                  y: cy - textSize.height / 2,
-                                  width: textSize.width, height: textSize.height)
-            (text as NSString).draw(in: textRect, withAttributes: attr)
-        }
 
         // ── Health dot (bottom-right) ──
         if let sev = healthDot, sev >= .degraded {
@@ -296,71 +143,7 @@ enum AppIconLoader {
         return img
     }
 
-    // MARK: - Progress bar along the rounded-rect perimeter
 
-    /// Build a polyline that walks the rounded-rect border starting at the
-    /// 12 o'clock position (top edge, horizontally centered) and running clockwise,
-    /// cut off at `fraction` of the total perimeter. Sampling the corners as short
-    /// line segments avoids the winding-direction ambiguity of `appendArc`, which
-    /// is where earlier attempts went wrong.
-    private static func progressPath(rect: CGRect, cornerRadius cr: CGFloat, fraction: CGFloat) -> NSBezierPath {
-        let pts = perimeterPoints(rect: rect, cornerRadius: cr)
-        let path = NSBezierPath()
-        guard pts.count > 1 else { return path }
-
-        // Cumulative arc length along the sampled perimeter.
-        var lengths: [CGFloat] = [0]
-        var total: CGFloat = 0
-        for i in 1..<pts.count {
-            total += hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
-            lengths.append(total)
-        }
-
-        let target = min(max(fraction, 0), 1) * total
-        guard target > 0 else { return path }
-
-        path.move(to: pts[0])
-        for i in 1..<pts.count {
-            if lengths[i] <= target {
-                path.line(to: pts[i])
-            } else {
-                let segLen = lengths[i] - lengths[i - 1]
-                let t = segLen > 0 ? (target - lengths[i - 1]) / segLen : 0
-                path.line(to: NSPoint(x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
-                                       y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t))
-                break
-            }
-        }
-        return path
-    }
-
-    /// Ordered points tracing the rounded rectangle clockwise from the 12 o'clock
-    /// position. In this non-flipped bitmap context y increases upward.
-    private static func perimeterPoints(rect: CGRect, cornerRadius cr: CGFloat) -> [CGPoint] {
-        let minX = rect.minX, maxX = rect.maxX, minY = rect.minY, maxY = rect.maxY
-        let midX = rect.midX
-        let steps = 24  // samples per corner
-        var pts: [CGPoint] = []
-
-        func arc(center: CGPoint, from startDeg: CGFloat, to endDeg: CGFloat) {
-            for i in 0...steps {
-                let a = (startDeg + (endDeg - startDeg) * CGFloat(i) / CGFloat(steps)) * .pi / 180
-                pts.append(CGPoint(x: center.x + cr * cos(a), y: center.y + cr * sin(a)))
-            }
-        }
-
-        pts.append(CGPoint(x: midX, y: maxY))                 // start: 12 o'clock (top-middle)
-        pts.append(CGPoint(x: maxX - cr, y: maxY))            // top edge →
-        arc(center: CGPoint(x: maxX - cr, y: maxY - cr), from: 90, to: 0)     // top-right
-        pts.append(CGPoint(x: maxX, y: minY + cr))            // right edge ↓
-        arc(center: CGPoint(x: maxX - cr, y: minY + cr), from: 0, to: -90)    // bottom-right
-        pts.append(CGPoint(x: minX + cr, y: minY))            // bottom edge ←
-        arc(center: CGPoint(x: minX + cr, y: minY + cr), from: -90, to: -180) // bottom-left
-        pts.append(CGPoint(x: minX, y: maxY - cr))            // left edge ↑
-        arc(center: CGPoint(x: minX + cr, y: maxY - cr), from: 180, to: 90)   // top-left
-        pts.append(CGPoint(x: midX, y: maxY))                 // top edge → back to start
-        return pts
-    }
 
     // MARK: - Artwork
 
@@ -423,12 +206,5 @@ enum AppIconLoader {
             }
         }
         return nil
-    }
-}
-
-private extension CGFloat {
-    func rounded(toPlaces places: Int) -> CGFloat {
-        let divisor = pow(10.0, CGFloat(places))
-        return (self * divisor).rounded() / divisor
     }
 }

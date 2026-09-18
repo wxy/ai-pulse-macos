@@ -1,12 +1,13 @@
 import AppKit
 import AIPulseShared
 
-/// One visual vocabulary for the menu bar, dashboard and Dock. Segments are
-/// distributed around the entire perimeter: this is intensity, not progress.
+/// Shared state and palette, not a budget-progress gauge. Menu uses a flame;
+/// Dock keeps the robot and lights a fixed status lamp only for meaningful activity.
 struct PulseAppearance {
     let tier: PulseTier?
     var cooling = false
-    static let segmentCount = 12
+    static let symbolName = "flame.fill"
+    var hasActivity: Bool { tier != nil && tier != .resting }
 
     var color: NSColor {
         switch tier {
@@ -22,43 +23,25 @@ struct PulseAppearance {
             ? I18n.t("pulse.activity.cooling")
             : I18n.t("pulse.tier.\(tier?.rawValue ?? "unknown")")
     }
-    var litSegments: Int { (tier?.rank ?? 0) * 4 }
-
-    func isLit(_ index: Int) -> Bool {
-        guard (0..<Self.segmentCount).contains(index) else { return false }
-        return index % 3 < (tier?.rank ?? 0)
+    // A new balance observation can flash without manufacturing a token tier.
+    func feedbackColor(beat: Bool) -> NSColor {
+        beat && !hasActivity ? PulseAppearance(tier: .active).color : color
     }
 
-    func opacity(at index: Int, beat: Bool = false) -> CGFloat {
-        if beat { return 1 }
-        if tier == nil { return index.isMultiple(of: 2) ? 0.35 : 0.10 }
-        if tier == .resting { return 0.55 }
-        return isLit(index) ? 0.80 : 0.18
-    }
+    func showsLamp(beat: Bool) -> Bool { hasActivity || beat }
 
     func image(size: CGFloat = 18, beat: Bool = false) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
-            let radius = rect.width * 0.38
-            for index in 0..<Self.segmentCount {
-                let path = NSBezierPath()
-                let start = CGFloat(90 - index * 30 - 5)
-                path.appendArc(withCenter: CGPoint(x: rect.midX, y: rect.midY), radius: radius,
-                               startAngle: start, endAngle: start - 20, clockwise: true)
-                self.color.withAlphaComponent(self.opacity(at: index, beat: beat)).setStroke()
-                path.lineWidth = max(1.5, size * (beat ? 0.14 : 0.10))
-                path.lineCapStyle = .round
-                path.stroke()
-            }
-            if self.tier == nil {
-                let attributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: size * 0.55, weight: .semibold),
-                    .foregroundColor: NSColor.labelColor
-                ]
-                let text = "?" as NSString
-                let bounds = text.size(withAttributes: attributes)
-                text.draw(at: CGPoint(x: rect.midX - bounds.width / 2,
-                                      y: rect.midY - bounds.height / 2), withAttributes: attributes)
-            }
+            guard let symbol = NSImage(systemSymbolName: Self.symbolName, accessibilityDescription: self.label)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: size - 3, weight: .medium)) else { return false }
+            // Preserve proportions and size on every state/beat; tint only the glyph.
+            let factor = min(rect.width / symbol.size.width, rect.height / symbol.size.height)
+            let width = symbol.size.width * factor
+            let height = symbol.size.height * factor
+            let target = CGRect(x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height)
+            symbol.draw(in: target)
+            self.feedbackColor(beat: beat).withAlphaComponent(beat ? 1 : 0.8).setFill()
+            target.fill(using: .sourceAtop)
             return true
         }
         image.isTemplate = false

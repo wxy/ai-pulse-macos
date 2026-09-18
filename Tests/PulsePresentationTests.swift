@@ -99,7 +99,12 @@ final class PulsePresentationTests: XCTestCase {
                     "pulse.activity.reference", "pulse.activity.personal", "pulse.activity.recent", "pulse.activity.today",
                     "pulse.activity.partial", "pulse.activity.recent_signal", "pulse.activity.quota_context",
                     "pulse.activity.quota_stale", "pulse.activity.quota_unavailable", "pulse.activity.legend",
-                    "pulse.activity.cooling"]
+                    "pulse.activity.cooling", "dashboard.tool_tokens", "dashboard.repo_code_changes",
+                    "dashboard.repo_code_changes_help", "dashboard.code_composition_help",
+                    "dashboard.account_observations", "dashboard.quota_context_title",
+                    "dashboard.fixed_monthly_context", "dashboard.fixed_monthly_help",
+                    "panel.back_to_dashboard", "panel.open_tool_detail", "dashboard.local_activity_scope",
+                    "dashboard.scan_warning_help", "dashboard.lines_unit"]
         for key in keys {
             let entry = try XCTUnwrap(strings[key])
             let locales = try XCTUnwrap(entry["localizations"] as? [String: [String: Any]])
@@ -109,7 +114,13 @@ final class PulsePresentationTests: XCTestCase {
                 let text = try XCTUnwrap(unit["value"])
                 XCTAssertFalse(text.isEmpty)
                 XCTAssertEqual(unit["state"], "translated")
-                if key == "pulse.activity.recent" {
+                if key == "pulse.tier.active" {
+                    if language == "fr" { XCTAssertEqual(text, "Activité en cours") }
+                    if language == "es" { XCTAssertEqual(text, "Actividad en curso") }
+                }
+                if key == "panel.open_tool_detail" {
+                    XCTAssertTrue(String(format: text, "Codex").contains("Codex"))
+                } else if key == "pulse.activity.recent" {
                     let formatted = String(format: text, 10, "350K")
                     XCTAssertTrue(formatted.contains("10"))
                     XCTAssertTrue(formatted.contains("350K"))

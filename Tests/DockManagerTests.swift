@@ -11,26 +11,47 @@ final class DockManagerTests: XCTestCase {
         DockManager.shared.stop()
     }
 
-    func testBothSurfacesUseDistributedTierSegmentsNotBudgetProgress() {
-        for (tier, count) in [(PulseTier.resting, 0), (.active, 4), (.elevated, 8), (.intense, 12)] {
+    func testFlameAndRobotLampUseOnePaletteWithoutProgress() {
+        XCTAssertEqual(PulseAppearance.symbolName, "flame.fill")
+        for tier in PulseTier.allCases {
             let appearance = PulseAppearance(tier: tier)
-            XCTAssertEqual(appearance.litSegments, count)
-            XCTAssertEqual((0..<12).filter { appearance.isLit($0) }.count, count)
-            XCTAssertFalse(appearance.isLit(-1))
-            XCTAssertFalse(appearance.isLit(12))
             XCTAssertEqual(StatusItemController.tintColor(for: tier), appearance.color)
+            XCTAssertEqual(appearance.showsLamp(beat: false), tier != .resting)
+            XCTAssertEqual(appearance.feedbackColor(beat: false), appearance.color)
+            if tier != .resting { XCTAssertEqual(appearance.feedbackColor(beat: true), appearance.color) }
         }
-        XCTAssertTrue(PulseAppearance(tier: .active).isLit(9), "Lit marks span the whole ring")
-        XCTAssertFalse(PulseAppearance(tier: .active).isLit(1))
     }
 
-    func testUnavailableIsVisuallyDifferentFromRestingAndNeverGreen() {
+    func testUnavailableAndRestingKeepRobotAndUseDistinctText() {
         let unknown = PulseAppearance(tier: nil)
         let resting = PulseAppearance(tier: .resting)
-        XCTAssertEqual(unknown.litSegments, 0)
         XCTAssertEqual(unknown.color, resting.color)
-        XCTAssertNotEqual(unknown.opacity(at: 1), resting.opacity(at: 1))
-        XCTAssertEqual(unknown.opacity(at: 0, beat: true), 1)
+        XCTAssertFalse(unknown.showsLamp(beat: false))
+        XCTAssertFalse(resting.showsLamp(beat: false))
+        XCTAssertNotEqual(unknown.label, resting.label)
+        XCTAssertTrue(unknown.showsLamp(beat: true))
+        XCTAssertEqual(unknown.feedbackColor(beat: true), PulseAppearance(tier: .active).color)
+        XCTAssertNil(unknown.tier, "An observation flash must not manufacture token activity")
+    }
+
+    @MainActor
+    func testDockPreservesBaseArtworkAndHasNoActivityPerimeter() throws {
+        let base = try XCTUnwrap(AppIconLoader.load(healthDot: .nominal).tiffRepresentation)
+        let resting = AppIconLoader.pulseIcon(appearance: PulseAppearance(tier: .resting), beat: false, healthDot: .nominal)
+        let unknown = AppIconLoader.pulseIcon(appearance: PulseAppearance(tier: nil), beat: false, healthDot: .nominal)
+        XCTAssertEqual(resting.tiffRepresentation, base)
+        XCTAssertEqual(unknown.tiffRepresentation, base)
+        let active = AppIconLoader.pulseIcon(appearance: PulseAppearance(tier: .intense), beat: false, healthDot: .nominal)
+        let activeData = try XCTUnwrap(active.tiffRepresentation)
+        XCTAssertNotEqual(activeData, base)
+        let before = try XCTUnwrap(NSBitmapImageRep(data: base))
+        let after = try XCTUnwrap(NSBitmapImageRep(data: activeData))
+        XCTAssertEqual(before.pixelsWide, after.pixelsWide)
+        for (x, y) in [(120, 512), (904, 512), (512, 120), (512, 904)] {
+            let px = x * before.pixelsWide / 1024
+            let py = y * before.pixelsHigh / 1024
+            XCTAssertEqual(before.colorAt(x: px, y: py), after.colorAt(x: px, y: py), "Activity must not repaint the perimeter")
+        }
     }
 
     @MainActor
