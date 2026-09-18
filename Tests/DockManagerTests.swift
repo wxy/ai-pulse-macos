@@ -1,33 +1,81 @@
+import AppKit
 import XCTest
 @testable import AIPulse
 import AIPulseShared
 
 final class DockManagerTests: XCTestCase {
-
+    @MainActor
     func testStartAndStopDoesNotCrash() {
-        let manager = DockManager.shared
-        manager.start()
-        manager.stop()
+        DockManager.shared.start()
+        DockManager.shared.start()
+        DockManager.shared.stop()
     }
 
-    func testDockRingUsesPulseScoreInsteadOfMoney() {
-        let signal = PulseSignal(
-            kind: .activity, rawValue: 50_000, unit: "tokens/h", baseline: 25_000,
-            normalized: 2, freshness: .fresh, completeness: .complete,
-            observedAt: Date(), reason: "token_rate_2_0x")
-        let pulse = PulseSnapshot(tier: .elevated, primarySignal: .activity,
-                                  reason: signal.reason, signals: [signal], asOf: Date())
-        XCTAssertEqual(DockManager.pulseFillFraction(pulse), 2.0 / 3.0, accuracy: 1e-9)
-        XCTAssertEqual(DockManager.pulseFillFraction(nil), 0)
+    func testFlameAndRobotLampUseOnePaletteWithoutProgress() {
+        XCTAssertEqual(PulseAppearance.symbolName, "flame.fill")
+        for tier in PulseTier.allCases {
+            let appearance = PulseAppearance(tier: tier)
+            XCTAssertEqual(StatusItemController.tintColor(for: tier), appearance.color)
+            XCTAssertEqual(appearance.showsLamp(beat: false), tier != .resting)
+            XCTAssertEqual(appearance.feedbackColor(beat: false), appearance.color)
+            if tier != .resting { XCTAssertEqual(appearance.feedbackColor(beat: true), appearance.color) }
+        }
     }
 
-    func testDockRingKeepsGapAtVeryHighPressure() {
-        let signal = PulseSignal(
-            kind: .activity, rawValue: 250_000, unit: "tokens/h", baseline: 25_000,
-            normalized: 10, freshness: .fresh, completeness: .complete,
-            observedAt: Date(), reason: "token_rate_10_0x")
-        let pulse = PulseSnapshot(tier: .intense, primarySignal: .activity,
-                                  reason: signal.reason, signals: [signal], asOf: Date())
-        XCTAssertEqual(DockManager.pulseFillFraction(pulse), 0.92, accuracy: 1e-9)
+    func testUnavailableAndRestingKeepRobotAndUseDistinctText() {
+        let unknown = PulseAppearance(tier: nil)
+        let resting = PulseAppearance(tier: .resting)
+        XCTAssertEqual(unknown.color, resting.color)
+        XCTAssertFalse(unknown.showsLamp(beat: false))
+        XCTAssertFalse(resting.showsLamp(beat: false))
+        XCTAssertNotEqual(unknown.label, resting.label)
+        XCTAssertTrue(unknown.showsLamp(beat: true))
+        XCTAssertEqual(unknown.feedbackColor(beat: true), PulseAppearance(tier: .active).color)
+        XCTAssertNil(unknown.tier, "An observation flash must not manufacture token activity")
+    }
+
+    @MainActor
+    func testDockPreservesBaseArtworkAndHasNoActivityPerimeter() throws {
+        let base = try XCTUnwrap(AppIconLoader.load(healthDot: .nominal).tiffRepresentation)
+        let resting = AppIconLoader.pulseIcon(appearance: PulseAppearance(tier: .resting), beat: false, healthDot: .nominal)
+        let unknown = AppIconLoader.pulseIcon(appearance: PulseAppearance(tier: nil), beat: false, healthDot: .nominal)
+        XCTAssertEqual(resting.tiffRepresentation, base)
+        XCTAssertEqual(unknown.tiffRepresentation, base)
+        let active = AppIconLoader.pulseIcon(appearance: PulseAppearance(tier: .intense), beat: false, healthDot: .nominal)
+        let activeData = try XCTUnwrap(active.tiffRepresentation)
+        XCTAssertNotEqual(activeData, base)
+        let before = try XCTUnwrap(NSBitmapImageRep(data: base))
+        let after = try XCTUnwrap(NSBitmapImageRep(data: activeData))
+        XCTAssertEqual(before.pixelsWide, after.pixelsWide)
+        for (x, y) in [(120, 512), (904, 512), (512, 120), (512, 904)] {
+            let px = x * before.pixelsWide / 1024
+            let py = y * before.pixelsHigh / 1024
+            XCTAssertEqual(before.colorAt(x: px, y: py), after.colorAt(x: px, y: py), "Activity must not repaint the perimeter")
+        }
+    }
+
+    @MainActor
+    func testSharedBeatGateCoalescesAndExpires() async throws {
+        let feedback = PulseFeedbackController(loadSnapshot: { nil })
+        let now = Date(timeIntervalSince1970: 1000)
+        XCTAssertTrue(feedback.beat(at: now))
+        XCTAssertTrue(feedback.isBeating)
+        XCTAssertFalse(feedback.beat(at: now.addingTimeInterval(1)))
+        XCTAssertFalse(feedback.beat(at: now.addingTimeInterval(-1)))
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertFalse(feedback.isBeating)
+        XCTAssertTrue(feedback.beat(at: now.addingTimeInterval(2)))
+        feedback.stop()
+        XCTAssertFalse(feedback.isBeating)
+    }
+
+    @MainActor
+    func testRefreshAndStartupCannotCreateConsumptionBeat() {
+        let feedback = PulseFeedbackController(loadSnapshot: { nil })
+        feedback.start()
+        NotificationCenter.default.post(name: .dataDidChange, object: nil)
+        NotificationCenter.default.post(name: .pulseDidChange, object: nil)
+        XCTAssertFalse(feedback.isBeating)
+        feedback.stop()
     }
 }

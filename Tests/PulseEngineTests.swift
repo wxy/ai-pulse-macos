@@ -22,11 +22,12 @@ final class PulseEngineTests: XCTestCase {
             XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event"), 4)
         }
     }
-    func testOutputOnlyDrivesPulseWhenDirectSignalsAreAbsent() {
+    func testOutputNeverManufacturesConsumptionPulse() {
         let direct = signal(.activity, score: 0.5, reason: "activity")
         let output = signal(.attributedOutput, score: 8, reason: "output")
         XCTAssertEqual(PulseEngine.buildSnapshot(signals: [direct, output], now: now).primarySignal, .activity)
-        XCTAssertEqual(PulseEngine.buildSnapshot(signals: [output], now: now).primarySignal, .attributedOutput)
+        XCTAssertNil(PulseEngine.buildSnapshot(signals: [output], now: now).primarySignal)
+        XCTAssertEqual(PulseEngine.buildSnapshot(signals: [output], now: now).tier, .resting)
     }
 
     func testInvalidOrFutureSignalCannotDriveCurrentPulse() {
@@ -42,7 +43,6 @@ final class PulseEngineTests: XCTestCase {
                                    limitStatus: "allowed", resetAt: time.timeIntervalSince1970,
                                    windowSeconds: 18_000, updatedAt: time.timeIntervalSince1970 - 10)
         XCTAssertTrue(item.isStale(asOf: time))
-        XCTAssertEqual(PulseEngine.quotaSignal(items: [item], now: time).normalized, 0)
         item.resetAt = time.timeIntervalSince1970 + 1000
         item.updatedAt = time.timeIntervalSince1970 + 1
         XCTAssertTrue(item.isStale(asOf: time))
@@ -82,27 +82,29 @@ final class PulseEngineTests: XCTestCase {
 
         XCTAssertEqual(snapshot.tier, .active,
                        "two unlike 1.4 signals must not add into an elevated 2.8")
-        XCTAssertTrue([PulseSignalKind.activity, .observedSpend]
-            .contains(snapshot.primarySignal))
+        XCTAssertEqual(snapshot.primarySignal, .activity)
     }
 
-    func testStrongestFreshSignalOwnsTierAndReason() {
+    func testQuotaAndMoneyCannotOverrideCurrentTokenActivity() {
         let snapshot = PulseEngine.buildSnapshot(signals: [
             signal(.activity, score: 1.2, reason: "token_rate_1_2x"),
             signal(.quota, score: 3.5, reason: "quota_97_percent"),
             signal(.observedSpend, score: 8, reason: "stale_money", freshness: .stale)
         ], now: now)
 
-        XCTAssertEqual(snapshot.tier, .intense)
-        XCTAssertEqual(snapshot.primarySignal, .quota)
-        XCTAssertEqual(snapshot.reason, "quota_97_percent")
+        XCTAssertEqual(snapshot.tier, .active)
+        XCTAssertEqual(snapshot.primarySignal, .activity)
+        XCTAssertEqual(snapshot.reason, "token_rate_1_2x")
+        XCTAssertEqual(PulseEngine.buildSnapshot(signals: [signal(.quota, score: 3.5, reason: "quota")], now: now).tier, .resting)
     }
 
     func testTokenOnlySpikeCanBecomeIntenseWithoutPricing() {
-        let samples = [
-            PulseSample(timestamp: now.addingTimeInterval(-7_200), value: 1_000),
-            PulseSample(timestamp: now, value: 4_000)
-        ]
+        let history: [PulseSample] = (0..<8).map { index in
+            let dayOffset = (index / 3 + 1) * 86_400
+            let hourOffset = (index % 3) * 3_600
+            return PulseSample(timestamp: now.addingTimeInterval(-Double(dayOffset + hourOffset)), value: 1_000)
+        }
+        let samples = history + [PulseSample(timestamp: now, value: 4_000)]
         let activity = PulseEngine.rateSignal(
             kind: .activity, samples: samples, unit: "tokens/h",
             completeness: .complete, now: now,
@@ -118,13 +120,13 @@ final class PulseEngineTests: XCTestCase {
     func testColdStartTokenSpikeCanBecomeIntenseWithoutHistory() {
         let activity = PulseEngine.rateSignal(
             kind: .activity,
-            samples: [PulseSample(timestamp: now, value: 12_000)],
+            samples: [PulseSample(timestamp: now, value: 16_000)],
             unit: "tokens/h", completeness: .complete, now: now,
             ratioReason: "token_rate", fallbackReason: "recent_token_activity")
 
         XCTAssertNil(activity.baseline)
         XCTAssertEqual(PulseEngine.buildSnapshot(signals: [activity], now: now).tier, .intense)
-        XCTAssertEqual(activity.reason, "token_rate_cold_start_3_6x")
+        XCTAssertEqual(activity.reason, "token_rate_cold_start_3_4x")
     }
 
     func testRecentActivityNaturallyDecaysToRestingWithoutNewRows() {
@@ -150,14 +152,78 @@ final class PulseEngineTests: XCTestCase {
             limitStatus: "allowed", resetAt: now.timeIntervalSince1970 + 1_000,
             windowSeconds: 18_000, updatedAt: now.timeIntervalSince1970)
 
-        let fresh = PulseEngine.quotaSignal(items: [item], now: now)
-        let stale = PulseEngine.quotaSignal(
-            items: [item], now: now.addingTimeInterval(PulseEngine.quotaMaxAge + 1))
+        XCTAssertFalse(item.isStale(asOf: now))
+        XCTAssertTrue(item.isStale(asOf: now.addingTimeInterval(2 * 3_600 + 1)))
+        XCTAssertTrue(StatusItemController.quotaContext(items: [item], now: now)?.contains("96.0%") == true)
+    }
 
-        XCTAssertEqual(fresh.normalized, 3.5)
-        XCTAssertEqual(fresh.reason, "quota_96_percent")
-        XCTAssertEqual(stale.normalized, 0)
-        XCTAssertEqual(stale.freshness, .stale)
+    func testSparseHistoryAndCurrentSpikeCannotDefinePersonalBaseline() {
+        XCTAssertNil(PulseEngine.recentBaseline(samples: [
+            PulseSample(timestamp: now.addingTimeInterval(-7_200), value: 10_000),
+            PulseSample(timestamp: now.addingTimeInterval(-1_800), value: 1_000_000)
+        ], now: now))
+        let oneDay = (2..<12).map {
+            PulseSample(timestamp: now.addingTimeInterval(-Double($0 * 3_600)), value: 10_000)
+        }
+        XCTAssertNil(PulseEngine.recentBaseline(samples: oneDay, now: now))
+    }
+
+    func testSmallActualActivityRemainsVisibleAgainstLargeHistory() {
+        let history: [PulseSample] = (0..<8).map { index in
+            let offset = (index / 3 + 1) * 86_400 + (index % 3) * 3_600
+            return PulseSample(timestamp: now.addingTimeInterval(-Double(offset)), value: 1_000_000)
+        }
+        let activity = PulseEngine.rateSignal(kind: .activity,
+            samples: history + [PulseSample(timestamp: now, value: 1)],
+            unit: "tokens/h", completeness: .complete, now: now,
+            ratioReason: "token_rate", fallbackReason: "recent_token_activity")
+        XCTAssertEqual(activity.baseline, 1_000_000)
+        XCTAssertEqual(PulseEngine.buildSnapshot(signals: [activity], now: now).tier, .active)
+        XCTAssertEqual(activity.reason, "recent_token_activity")
+    }
+
+    func testHugeFinishedBurstCannotStayAtMaximumUntilTheWindowEnds() {
+        let sample = PulseSample(timestamp: now, value: 100_000_000)
+        func activity(at date: Date) -> PulseSignal {
+            PulseEngine.rateSignal(kind: .activity, samples: [sample], unit: "tokens/h",
+                completeness: .complete, now: date, ratioReason: "token_rate", fallbackReason: "recent_token_activity")
+        }
+        let initial = activity(at: now)
+        let later = activity(at: now.addingTimeInterval(20 * 60))
+        XCTAssertEqual(initial.normalized, 8)
+        XCTAssertEqual(later.normalized, 2, accuracy: 0.001)
+        XCTAssertEqual(PulseEngine.buildSnapshot(signals: [later], now: now.addingTimeInterval(20 * 60)).tier, .elevated)
+        XCTAssertEqual(later.freshness, .aging)
+        XCTAssertEqual(PulseAppearance(tier: .elevated, cooling: true).label, I18n.t("pulse.activity.cooling"))
+    }
+
+    func testSmoothedIntensityIsNormalizedForAConstantFlow() {
+        let samples = (0..<3600).map {
+            PulseSample(timestamp: now.addingTimeInterval(-Double($0)), value: 20_000 / 3_600)
+        }
+        XCTAssertEqual(PulseEngine.decayedHourlyRate(samples: samples, now: now), 20_000, accuracy: 30)
+    }
+
+    func testExactFactsShareBoundariesWithoutFutureOrSyntheticActivity() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let time = Date(timeIntervalSince1970: 86_400 + 300)
+        let queue = try DatabaseQueue()
+        try queue.write { db in
+            try AppDatabase.createAllTables(db)
+            for (offset, model) in [(-600, "m"), (-601, "m"), (0, "m"), (1, "m"), (0, "<synthetic>")] {
+                let event = UsageEvent(ts: Int((time.timeIntervalSince1970 + Double(offset)) * 1_000),
+                                       source: "aider", model: model, inTokens: 10, outTokens: 2,
+                                       cacheTokens: 0, repoPath: nil, sessionId: nil,
+                                       dedupeKey: "facts-\(offset)-\(model)")
+                _ = try LogWatcher.persistObservedEvents(in: db, rows: [(event, "deepseek")],
+                                                        nowMs: Int64(time.timeIntervalSince1970 * 1_000))
+            }
+            let facts = try PulseEngine.activityFacts(in: db, now: time, calendar: calendar)
+            XCTAssertEqual(facts.recentTokens, 24, "Recent window can span midnight")
+            XCTAssertEqual(facts.todayTokens, 12)
+            XCTAssertEqual(facts.windowSeconds, 600)
+        }
     }
 
 }

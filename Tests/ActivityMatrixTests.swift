@@ -4,6 +4,34 @@ import AIPulseShared
 @testable import AIPulse
 
 final class ActivityMatrixTests: XCTestCase {
+    func testFoldingKeepsTopFiveModelsAndAllTotals() {
+        let matrix = ActivityMatrix((1...8).map {
+            ModelActivityItem(model: "model-\($0)", providerId: "p", toolId: "tool", tokens: Int64($0 * 10), calls: 1)
+        })
+        let collapsed = matrix.visibleModels(expanded: false)
+        XCTAssertEqual(collapsed.count, 5)
+        XCTAssertEqual(collapsed.map(\.model), ["model-8", "model-7", "model-6", "model-5", "model-4"])
+        XCTAssertEqual(matrix.visibleModels(expanded: true), matrix.models)
+        XCTAssertEqual(matrix.grandTotal, 360)
+        XCTAssertEqual(matrix.tokens(tool: "tool"), 360)
+        XCTAssertEqual(collapsed.reduce(0) { $0 + matrix.tokens(model: $1) }, 300)
+        XCTAssertEqual(matrix.visibleModels(expanded: false), collapsed)
+    }
+
+    func testZeroOnlyUnknownModelsAreHiddenWithoutChangingTokenTotals() {
+        let matrix = ActivityMatrix([
+            ModelActivityItem(model: "", providerId: "empty", toolId: "empty-tool", tokens: 0, calls: 3),
+            ModelActivityItem(model: " ", providerId: "empty", tokens: 0, calls: 0),
+            ModelActivityItem(model: "known", providerId: "p", toolId: "tool", tokens: 20, calls: 1),
+            ModelActivityItem(model: "", providerId: "p", toolId: "tool", tokens: 5, calls: 1),
+            ModelActivityItem(model: "", providerId: "p", toolId: "other", tokens: 0, calls: 1)
+        ])
+        XCTAssertEqual(matrix.models.count, 2)
+        XCTAssertFalse(matrix.tools.contains("empty-tool"))
+        XCTAssertEqual(matrix.tokens(model: .init(provider: "p", model: "")), 5)
+        XCTAssertEqual(matrix.grandTotal, 25)
+    }
+
     func testRealQueryKeepsMissingModelAndUsesHalfOpenPeriodBounds() throws {
         let queue = try DatabaseQueue()
         try queue.write { db in

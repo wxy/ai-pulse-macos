@@ -1,8 +1,6 @@
 import Foundation
 
-/// Cross-platform, unit-preserving description of the current AI-consumption
-/// pulse. Channels are normalized independently; consumers must never add raw
-/// values from different units together.
+/// Current token activity, not a bill, quota gauge or attribution claim.
 public enum PulseTier: String, Codable, Sendable, Equatable, CaseIterable {
     case resting
     case active
@@ -59,21 +57,40 @@ public struct PulseSignal: Codable, Sendable, Equatable {
     }
 }
 
+public struct PulseActivityFacts: Codable, Sendable, Equatable {
+    /// Exact observed totals, never the exponentially weighted intensity.
+    public var recentTokens: Int64
+    public var todayTokens: Int64
+    public var windowSeconds: Int
+    public var isPartial: Bool
+
+    public init(recentTokens: Int64, todayTokens: Int64, windowSeconds: Int = 600,
+                isPartial: Bool = false) {
+        self.recentTokens = recentTokens
+        self.todayTokens = todayTokens
+        self.windowSeconds = windowSeconds
+        self.isPartial = isPartial
+    }
+}
+
 public struct PulseSnapshot: Codable, Sendable, Equatable {
     public var tier: PulseTier
     public var primarySignal: PulseSignalKind?
     public var reason: String
     public var signals: [PulseSignal]
+    public var activityFacts: PulseActivityFacts?
     public var asOf: Date
     /// A current-state observation is not a historical period summary.
     public var validUntil: Date
 
     public init(tier: PulseTier, primarySignal: PulseSignalKind?, reason: String,
-                signals: [PulseSignal], asOf: Date, validUntil: Date? = nil) {
+                signals: [PulseSignal], asOf: Date, validUntil: Date? = nil,
+                activityFacts: PulseActivityFacts? = nil) {
         self.tier = tier
         self.primarySignal = primarySignal
         self.reason = reason
         self.signals = signals
+        self.activityFacts = activityFacts
         self.asOf = asOf
         self.validUntil = validUntil ?? asOf.addingTimeInterval(60)
     }
@@ -93,6 +110,10 @@ public struct PulseSnapshot: Codable, Sendable, Equatable {
             result.baseline = signal.baseline.map(safe)
             result.normalized = safe(signal.normalized)
             return result
+        }
+        if let facts = activityFacts,
+           facts.recentTokens < 0 || facts.todayTokens < 0 || facts.windowSeconds != 600 {
+            clean.activityFacts = nil // Invalid facts are unavailable, not fabricated zeros.
         }
         return clean
     }

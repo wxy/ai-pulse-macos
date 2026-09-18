@@ -83,7 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // ~/.claude. LogWatcher.start() is safe to call again (idempotent scans).
         if !RuntimeQA.isEnabled { LogWatcher.shared.start() }
         Logger.debug("LogWatcher started")
-        // P3: Dock fuel gauge
+        // One consumption-event clock for the menu bar and Dock.
+        PulseFeedbackController.shared.start()
         DockManager.shared.start()
 
         // Dashboard opens on Dock click or Cmd+Tab — not auto-launched
@@ -353,6 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         DataRefreshCoordinator.shared.stop()
         IntegrationRegistry.stopAll()
         DockManager.shared.stop()
+        PulseFeedbackController.shared.stop()
         BookmarkManager.stopAll(securityScopedURLs)
         // Intentionally skip GitRepo.teardown() (git_libgit2_shutdown). GitMonitor
         // can have a libgit2 op in flight on its utility-qos queue at quit; shutdown

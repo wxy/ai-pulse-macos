@@ -242,9 +242,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
             let (spend, quotas, output) = await (observed, quota, try? counts)
             let code = try? await codeOutput
             let freshQuota = quotas.filter {
-                guard let updatedAt = $0.updatedAt, $0.utilization.isFinite else { return false }
-                let age = now.timeIntervalSince1970 - updatedAt
-                return age.isFinite && age >= 0 && age <= PulseEngine.quotaMaxAge
+                !$0.isStale(asOf: now) && $0.utilization.isFinite && (0...100).contains($0.utilization)
             }.map(\.utilization).max()
             let summary = ClosingBellSummary(
                 tier: pulse?.tier ?? .resting,

@@ -67,7 +67,7 @@ final class MenuBarController: NSObject {
         )
         NotificationCenter.default.addObserver(
             self, selector: #selector(onPulseChanged),
-            name: .pulseDidChange, object: nil
+            name: .pulseAppearanceDidChange, object: nil
         )
         NotificationCenter.default.addObserver(
             self, selector: #selector(onSoundMuteChanged),
@@ -100,12 +100,12 @@ final class MenuBarController: NSObject {
         Task {
             let demoActive = DemoData.isActive
             let statsItems = await statsMenuItems()
-            let snapshot = await PulseEngine.shared.snapshot()
             let todayStartMs = Int64(Calendar.current.startOfDay(for: Date()).timeIntervalSince1970 * 1000)
             let observedSpend = await StatsService.observedSpendForMenu(sinceMs: todayStartMs)
 
             DispatchQueue.main.async {
                 guard self.refreshGeneration.isCurrent(request) else { return }
+                let snapshot = PulseFeedbackController.shared.snapshot
                 self.menu.removeAllItems()
 
                 let headline = NSMenuItem(
