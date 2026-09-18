@@ -11,8 +11,9 @@ final class DockManagerTests: XCTestCase {
         DockManager.shared.stop()
     }
 
-    func testFlameAndRobotLampUseOnePaletteWithoutProgress() {
-        XCTAssertEqual(PulseAppearance.symbolName, "flame.fill")
+    func testMenuRobotAndDockLampUseOnePaletteWithoutProgress() {
+        XCTAssertEqual(PulseAppearance(tier: .elevated).color, PulseAppearance(tier: .intense).color)
+        XCTAssertNotEqual(PulseAppearance(tier: .active).color, PulseAppearance(tier: .intense).color)
         for tier in PulseTier.allCases {
             let appearance = PulseAppearance(tier: tier)
             XCTAssertEqual(StatusItemController.tintColor(for: tier), appearance.color)
