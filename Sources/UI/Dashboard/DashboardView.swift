@@ -817,6 +817,7 @@ struct DashboardView: View {
             }.frame(height: 28, alignment: .topLeading)
         }
         .frame(width: 145)
+        .robotHelp(pulseText("各工具可确认的词元用量及占比；不是额度、账单或工作效率。缓存词元属于输入，不重复累加。", "Confirmed token usage and share by tool; not quota, billing or productivity. Cached tokens are part of input and are not counted twice."))
     }
 
     /// Right eye: repository code changes. Deletion and addition have equal
@@ -2040,7 +2041,7 @@ private extension DashboardView {
     var robotMouth: some View {
         VStack(spacing: 5) {
             HStack {
-                Text(pulseText("活动节奏", "Activity rhythm"))
+                Text(pulseText("活动节奏（词元｜行数）", "Activity rhythm (Tokens | Lines)"))
                 Spacer()
                 Text(timeRange == .today ? pulseText("按小时", "Hourly") : pulseText("按天", "Daily"))
             }.font(.system(size: 9)).foregroundStyle(.secondary)
@@ -2055,18 +2056,16 @@ private extension DashboardView {
     func robotRhythmRow(label: String, values: [Double], color: Color, growsDownward: Bool) -> some View {
         let slots = DashboardDataPresentation.rhythmSlots(values: values, count: timeRange == .today ? 24 : chartDays, surroundingWeeks: timeRange == .thisWeek)
         let peak = max(values.max() ?? 0, 1)
-        return HStack(spacing: 8) {
-            Text(verbatim: label).font(.system(size: 9)).foregroundStyle(.secondary).frame(width: 34, alignment: .leading)
-            HStack(alignment: growsDownward ? .top : .bottom, spacing: 3) {
-                ForEach(Array(slots.enumerated()), id: \.offset) { index, value in
-                    Capsule()
-                        .fill(value.map { $0 > 0 ? color : Color.secondary.opacity(0.14) } ?? Color.secondary.opacity(0.14))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: value.map { max(3, 21 * $0 / peak) } ?? 3)
-                        .robotHelp(value.map { label + ": " + ChartMath.compactCount(Int64($0)) } ?? (index < 7 ? pulseText("上一周占位", "Previous week placeholder") : pulseText("下一周占位", "Next week placeholder")))
-                }
-            }.frame(height: 23, alignment: growsDownward ? .top : .bottom)
-        }
+        return HStack(alignment: growsDownward ? .top : .bottom, spacing: 3) {
+            ForEach(Array(slots.enumerated()), id: \.offset) { index, value in
+                Capsule()
+                    .fill(value.map { $0 > 0 ? color : Color.secondary.opacity(0.14) } ?? Color.secondary.opacity(0.14))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: value.map { max(3, 21 * $0 / peak) } ?? 3)
+                    .robotHelp(value.map { label + ": " + ChartMath.compactCount(Int64($0)) } ?? (index < 7 ? pulseText("上一周占位", "Previous week placeholder") : pulseText("下一周占位", "Next week placeholder")))
+            }
+        }.frame(height: 23, alignment: growsDownward ? .top : .bottom)
+        .accessibilityLabel(label)
     }
 
     var robotObservedLabel: String {
@@ -2259,6 +2258,7 @@ private struct RobotTooltipModifier: ViewModifier {
     @State private var hovered = false
     func body(content: Content) -> some View {
         content
+            .contentShape(Rectangle())
             .onHover { hovered = $0 }
             .anchorPreference(key: RobotTooltipPreference.self, value: .bounds) { anchor in
                 hovered && !text.isEmpty ? [RobotTooltipHint(text: text, anchor: anchor)] : []
