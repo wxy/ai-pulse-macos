@@ -8,9 +8,8 @@ import AIPulseShared
 final class CloudSyncService {
     static let shared = CloudSyncService()
 
-    /// Do not construct CKContainer until a release build actually needs a
-    /// CloudKit operation. Debug builds disable writes and must not crash while
-    /// initializing an unavailable/misconfigured container.
+    /// Construct CKContainer only when a signed app needs CloudKit.
+    /// Unsigned SwiftPM builds and tests have no CloudKit access.
     static let didChange = Notification.Name("cloudSyncStatusDidChange")
     enum Result: Equatable { case idle, disabled, syncing, succeeded, failed }
     private(set) var result: Result = .idle
@@ -26,7 +25,7 @@ final class CloudSyncService {
     var resultText: String {
         switch result {
         case .idle: return SetupCopy.text("等待同步", "Waiting to sync")
-        case .disabled: return SetupCopy.text("Debug 版本不写入 iCloud", "Debug builds do not write to iCloud")
+        case .disabled: return SetupCopy.text("此构建未启用 iCloud 权限", "Cloud access is not enabled in this build")
         case .syncing: return SetupCopy.text("正在同步摘要…", "Syncing summaries…")
         case .succeeded: return SetupCopy.text("摘要同步成功", "Summaries synced successfully")
         case .failed: return SetupCopy.text("摘要同步失败，可稍后重试", "Summary sync failed; retry later")
@@ -34,7 +33,7 @@ final class CloudSyncService {
     }
     func refreshAccount() async {
         guard Self.allowsCloudWrites else {
-            accountText = SetupCopy.text("Debug 版本不连接 iCloud", "Debug builds do not connect to iCloud")
+            accountText = SetupCopy.text("此构建未启用 iCloud 权限", "Cloud access is not enabled in this build")
             setResult(.disabled)
             return
         }
@@ -54,13 +53,13 @@ final class CloudSyncService {
         CKContainer(identifier: "iCloud.com.wxy.aipulse").privateCloudDatabase
     }
 
-    private static let allowsCloudWrites: Bool = {
-        #if DEBUG
-        return false
-        #else
-        return true
-        #endif
-    }()
+    static func allowsCloudWrites(signingEnabled: String?) -> Bool {
+        signingEnabled?.uppercased() == "YES"
+    }
+
+    private static var allowsCloudWrites: Bool {
+        allowsCloudWrites(signingEnabled: Bundle.main.object(forInfoDictionaryKey: "CloudKitAccessEnabled") as? String)
+    }
 
     /// Content fingerprint (updatedAt excluded) of the last snapshot actually
     /// written per range. Used to skip no-op CloudKit writes — see
@@ -72,7 +71,7 @@ final class CloudSyncService {
     func syncFromCache() async {
         guard Self.allowsCloudWrites else {
             setResult(.disabled)
-            Logger.info("CloudSync: dashboard writes disabled in Debug")
+            Logger.info("CloudSync: dashboard writes disabled in this unsigned build")
             return
         }
 
@@ -139,7 +138,7 @@ final class CloudSyncService {
         let now = Date()
         let pulse = await PulseEngine.shared.snapshot()
         let availability = LocalDataStatus.current(hasActivity: (pulse?.activityFacts?.todayTokens ?? 0) > 0)
-        let envelope = CurrentPulseEnvelope(pulse: availability.canReportCurrentActivity ? pulse : nil,
+        let envelope = CurrentPulseEnvelope.forCloudSync(pulse: availability.canReportCurrentActivity ? pulse : nil,
                                             writerAppVersion: CKSchema.writerAppVersion, generatedAt: now)
         guard let data = try? JSONEncoder().encode(envelope),
               let json = String(data: data, encoding: .utf8) else { return false }
@@ -164,7 +163,7 @@ final class CloudSyncService {
     /// Upsert the latest spend-surge / balance-drop alert for iOS readers.
     func writeSpendAlert(_ payload: SpendAlertPayload) async {
         guard Self.allowsCloudWrites else {
-            Logger.info("CloudSync: spend-alert CloudKit write disabled in Debug")
+            Logger.info("CloudSync: spend-alert CloudKit write disabled in this unsigned build")
             return
         }
 

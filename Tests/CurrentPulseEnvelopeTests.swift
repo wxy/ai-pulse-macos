@@ -4,6 +4,20 @@ import AIPulseShared
 final class CurrentPulseEnvelopeTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1000)
 
+    func testCloudObservationSurvivesNextPublishCycleAndStillExpires() {
+        let pulse = PulseSnapshot(tier: .active, primarySignal: .activity, reason: "activity", signals: [], asOf: now)
+        let envelope = CurrentPulseEnvelope.forCloudSync(pulse: pulse, writerAppVersion: "2.0.0", generatedAt: now)
+        XCTAssertEqual(envelope.currentPulse(asOf: now.addingTimeInterval(360))?.tier, .active)
+        XCTAssertNil(envelope.currentPulse(asOf: now.addingTimeInterval(420)))
+        XCTAssertFalse(pulse.isCurrent(asOf: now.addingTimeInterval(60)))
+    }
+
+    func testCloudPublisherDoesNotReviveExpiredLocalObservation() {
+        let pulse = PulseSnapshot(tier: .active, primarySignal: .activity, reason: "activity", signals: [], asOf: now)
+        let envelope = CurrentPulseEnvelope.forCloudSync(pulse: pulse, writerAppVersion: "2.0.0", generatedAt: now.addingTimeInterval(60))
+        XCTAssertNil(envelope.pulse)
+    }
+
     func testCurrentPulseExpiresRatherThanPretendingToBeResting() {
         let pulse = PulseSnapshot(tier: .intense, primarySignal: .activity, reason: "activity", signals: [], asOf: now)
         let envelope = CurrentPulseEnvelope(pulse: pulse, writerAppVersion: "2.0.0", generatedAt: now)
