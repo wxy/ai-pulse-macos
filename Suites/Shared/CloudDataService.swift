@@ -49,7 +49,9 @@ final class CloudDataService: ObservableObject {
 
     static var cloudAvailable: Bool {
         #if targetEnvironment(simulator)
-        return false
+        // Unsigned preview builds have no CloudKit entitlements. Signed
+        // simulator builds use the same CloudKit path as devices.
+        return (Bundle.main.object(forInfoDictionaryKey: "CloudKitAccessEnabled") as? String)?.uppercased() == "YES"
         #else
         return true
         #endif

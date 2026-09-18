@@ -42,7 +42,7 @@ struct PhoneSettingsView: View {
                 LabeledContent(t("应用版本", "App version"), value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
                 LabeledContent(t("数据格式", "Data format"), value: CKSchema.payloadVersion)
             }
-        }.navigationTitle(t("设置", "Settings"))
+        }.navigationTitle(t("设置", "Settings")).toolbar(.visible, for: .navigationBar)
             .task { await checkStatus() }
     }
     private func checkStatus() async {
@@ -50,7 +50,13 @@ struct PhoneSettingsView: View {
         guard CloudDataService.cloudAvailable else { status = t("模拟器未启用云端访问", "Cloud access unavailable in simulator"); permission = "—"; return }
         do {
             let result = try await CloudKitGate.shared.run("phoneAccountStatus") { try await CKContainer(identifier: "iCloud.com.wxy.aipulse").accountStatus() }
-            status = result == .available ? t("已登录", "Signed in") : t("不可用，请检查系统设置", "Unavailable; check system settings")
+            switch result {
+            case .available: status = t("已登录", "Signed in")
+            case .noAccount: status = t("尚未登录 Apple 账户", "Not signed into an Apple account")
+            case .restricted: status = t("iCloud 访问受限", "iCloud access restricted")
+            case .couldNotDetermine, .temporarilyUnavailable: status = t("暂时无法检查账户", "Account status temporarily unavailable")
+            @unknown default: status = t("不可用，请检查系统设置", "Unavailable; check system settings")
+            }
         } catch { status = t("连接未成功", "Connection failed") }
         let result = await UNUserNotificationCenter.current().notificationSettings()
         permission = result.authorizationStatus == .authorized || result.authorizationStatus == .provisional ? t("已授权", "Allowed") : t("未授权", "Not allowed")
