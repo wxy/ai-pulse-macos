@@ -42,6 +42,7 @@ struct SettingsView: View {
                 Label(labelFor("Repos"), systemImage: "folder").tag("Repos")
                 Label(labelFor("integrations.dev"), systemImage: "hammer").tag("integrations.dev")
                 Label(SetupCopy.text("账户与固定费用", "Accounts & fixed costs"), systemImage: "creditcard").tag("integrations.api")
+                Label(SetupCopy.text("数据与同步", "Data & sync"), systemImage: "externaldrive").tag("Data")
                 Label(labelFor("About"), systemImage: "info.circle")
                     .tag("About")
             }
@@ -56,6 +57,7 @@ struct SettingsView: View {
                 case "integrations.api": AccountAndCostsTab().id("integrations.api.\(lang)")
                 case "integrations.dev": DevToolsTab().id("integrations.dev.\(lang)")
                 case "Repos":          ReposTab().id("repos.\(lang)")
+                case "Data":           DataAndSyncTab().id("data.\(lang)")
                 case "About":          AboutTab().id("about.\(lang)")
                 default: EmptyView()
                 }

@@ -10,6 +10,11 @@ final class LogScanObservation: @unchecked Sendable {
     private var scanning = false
     private var completedAt: Date?
 
+    var lastCompletedAt: Date? {
+        lock.lock(); defer { lock.unlock() }
+        return completedAt
+    }
+
     func begin() {
         lock.lock(); active = true; scanning = true; lock.unlock()
         notify()
