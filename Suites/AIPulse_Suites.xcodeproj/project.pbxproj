@@ -304,10 +304,12 @@
 				C0D7701730090D2E00BC1E54 /* Sources */,
 				C0D7701830090D2E00BC1E54 /* Frameworks */,
 				C0D7701930090D2E00BC1E54 /* Resources */,
+				C096E2EE300E5D05004D0062 /* CopyFiles */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C05F66EE300E50C300D40121 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C05A70163009E26B00B99D6F /* Shared */,
@@ -328,12 +330,10 @@
 				C0D7702A30090F0600BC1E54 /* Sources */,
 				C0D7702B30090F0600BC1E54 /* Frameworks */,
 				C0D7702C30090F0600BC1E54 /* Resources */,
-				C0CB1FF23055005C00440E51 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				C0CB1FF03055005C00440E51 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C05A70163009E26B00B99D6F /* Shared */,
