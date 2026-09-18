@@ -604,6 +604,22 @@ enum StatsService {
         }
     }
 
+    static func tokenComposition(in db: Database, sinceMs: Int64, beforeMs: Int64) throws -> TokenComposition {
+                let input = TokenAccounting.inputSQL()
+                let output = TokenAccounting.outputSQL()
+                let cache = "MIN(\(input), MAX(COALESCE(cache_tokens, 0), 0))"
+                let row = try Row.fetchOne(db, sql: """
+                    SELECT COALESCE(SUM(\(input) - \(cache)), 0) AS uncached,
+                           COALESCE(SUM(\(cache)), 0) AS cached,
+                           COALESCE(SUM(\(output)), 0) AS output,
+                           COALESCE(SUM(CASE WHEN \(TokenAccounting.missingComponentsSQL) THEN 1 ELSE 0 END), 0) AS missing
+                    FROM usage_event WHERE ts >= ? AND ts < ?
+                      AND (model IS NULL OR model != '<synthetic>')
+                    """, arguments: [sinceMs, beforeMs])!
+                return TokenComposition(nonCachedInput: row["uncached"], cachedInput: row["cached"],
+                                        output: row["output"], isPartial: (row["missing"] as Int64? ?? 0) > 0)
+    }
+
     private static func buildDashboardSnapshot(period: DashboardPeriodKind) async -> DashboardSnapshot {
         let snapshotStartedAt = Date()
         let cal = Calendar.current
@@ -618,6 +634,11 @@ enum StatsService {
         let lookbackStart = cal.date(byAdding: .day, value: -14, to: monthStart) ?? monthStart
         let lookbackStartMs = Int64(lookbackStart.timeIntervalSince1970 * 1000)
 
+        async let compositionR: TokenComposition? = resultOrLog("tokenComposition", nil) {
+            try await AppDatabase.shared.read { db in
+                try tokenComposition(in: db, sinceMs: rangeStartMs, beforeMs: rangeEndMs)
+            }
+        }
         async let observedSpendItemsR = StatsService.observedSpendItems(sinceMs: rangeStartMs, now: snapshotStartedAt)
         async let coverageR = resultOrLog("activityCoverage", ActivityCoverage()) {
             try await AppDatabase.shared.read { db in
@@ -747,6 +768,7 @@ enum StatsService {
             modelBreakdown: modelItems,
             updatedAt: Date()
         )
+        snap.tokenComposition = await compositionR
         snap.period = horizon
         snap.readFailures = await observationFailures?.snapshot() ?? []
         snap.periodSessions = sourceAgg.reduce(Int64(0)) { $0 + $1.sessions }

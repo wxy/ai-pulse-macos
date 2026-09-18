@@ -11,6 +11,7 @@ struct ToolDetailOverlayView: View {
     let toolId: String
     let sinceMs: Int64
     let onBack: () -> Void
+    var embedded = false
 
     @State private var groups: [RepoSessionGroup] = []
     @State private var expandedSessionId: String? = nil
@@ -75,7 +76,7 @@ struct ToolDetailOverlayView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(embedded ? Color.clear : Color(nsColor: .windowBackgroundColor))
         .task(id: "\(toolId)/\(sinceMs)/\(retryGeneration)") { await load() }
         .onExitCommand(perform: onBack)
     }
@@ -91,7 +92,7 @@ struct ToolDetailOverlayView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Button(action: onBack) {
-                Label(I18n.t("panel.back_to_dashboard"), systemImage: "arrow.left")
+                Label(embedded ? detailText("返回", "Back") : I18n.t("panel.back_to_dashboard"), systemImage: "arrow.left")
                     .font(.caption)
             }
             .keyboardShortcut(.cancelAction)
@@ -113,10 +114,10 @@ struct ToolDetailOverlayView: View {
                 Text(I18n.t("panel.recent")).tag(false)
                 Text(I18n.t("panel.most_active")).tag(true)
             }
-            .pickerStyle(.segmented).frame(width: 170).labelsHidden()
+            .pickerStyle(.segmented).frame(width: embedded ? 110 : 170).labelsHidden()
             .pointingHandCursor()
         }
-        .padding(.horizontal, 14).padding(.top, 30).padding(.bottom, 10)
+        .padding(.horizontal, embedded ? 0 : 14).padding(.top, embedded ? 0 : 30).padding(.bottom, 10)
     }
 
     private var emptyState: some View {

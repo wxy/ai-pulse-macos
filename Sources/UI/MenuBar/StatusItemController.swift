@@ -12,6 +12,7 @@ final class StatusItemController: NSObject {
     static let shared = StatusItemController()
 
     private var statusItem: NSStatusItem?
+    private var contextMenu: NSMenu?
     private var headlineCache = ""
     private var detailCache = ""
     private let refreshGeneration = RefreshGeneration()
@@ -32,7 +33,11 @@ final class StatusItemController: NSObject {
             button.imagePosition = .imageLeading
             button.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
         }
-        item.menu = buildMenu()
+        contextMenu = buildMenu()
+        item.button?.target = self
+        item.button?.action = #selector(statusClicked)
+        item.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
+        DashboardWindowManager.shared.anchorButton = item.button
         statusItem = item
         refresh()
 
@@ -48,6 +53,15 @@ final class StatusItemController: NSObject {
                                                name: I18n.didChangeLanguage, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(onSoundMuteChanged),
                                                name: .soundMuteDidChange, object: nil)
+    }
+
+    @objc private func statusClicked() {
+        DiagnosticJournal.log("dashboard_status_click", ["right": .bool(NSApp.currentEvent?.type == .rightMouseDown)])
+        if NSApp.currentEvent?.type == .rightMouseDown, let contextMenu, let button = statusItem?.button {
+            contextMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY), in: button)
+        } else {
+            DashboardWindowManager.shared.toggle()
+        }
     }
 
     // MARK: - Refresh
@@ -69,12 +83,12 @@ final class StatusItemController: NSObject {
     @objc private func onLanguageChanged() {
         headlineCache = ""
         detailCache = ""
-        statusItem?.menu = buildMenu()
+        contextMenu = buildMenu()
         onPulseChanged()
     }
 
     @objc private func onSoundMuteChanged() {
-        guard let row = statusItem?.menu?.items.first(where: {
+        guard let row = contextMenu?.items.first(where: {
             ($0.representedObject as? String) == "sound-mute"
         }) else { return }
         row.state = AppSoundControl.isMuted() ? .on : .off
@@ -120,7 +134,7 @@ final class StatusItemController: NSObject {
 
         let headline = Self.headline(snapshot: validSnapshot)
         let detail = Self.detail(snapshot: validSnapshot)
-        if let menu = item.menu {
+        if let menu = contextMenu {
             menu.items.first { ($0.representedObject as? String) == "pulse-recent-facts" }?.title =
                 PulseCopy.recentFacts(validSnapshot?.activityFacts)
             menu.items.first { ($0.representedObject as? String) == "pulse-today-facts" }?.title =
@@ -155,7 +169,7 @@ final class StatusItemController: NSObject {
     }
 
     private func updateQuota(items: [QuotaStatusItem]?) {
-        guard let row = statusItem?.menu?.items.first(where: { ($0.representedObject as? String) == "quota-context" }) else { return }
+        guard let row = contextMenu?.items.first(where: { ($0.representedObject as? String) == "quota-context" }) else { return }
         let text = Self.quotaContext(items: items)
         row.title = text ?? ""
         row.isHidden = text == nil

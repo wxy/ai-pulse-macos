@@ -71,6 +71,7 @@ struct DashboardView: View {
     let initialTimeRange: TimeRange
 
     @State private var timeRange: TimeRange
+    @State private var robotDetail: String?
     @State private var costHoverDate: Date? = nil
     @State private var isRefreshing = false
     @State private var lastChartJournalKey: String = ""
@@ -288,33 +289,16 @@ struct DashboardView: View {
 
     private func earView(width: CGFloat, height: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(Color.marsGreen.opacity(0.20))
+            .fill(robotEarSurface)
             .overlay(
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(Color.marsGreen.opacity(0.35), lineWidth: 1.5)
+                    .stroke(robotLine, lineWidth: 1)
             )
             .frame(width: width, height: height)
     }
 
     var body: some View {
-        ZStack {
-            dashboardContent
-                .opacity(selectedToolForOverlay == nil ? 1 : 0)
-                .disabled(selectedToolForOverlay != nil)
-                .allowsHitTesting(selectedToolForOverlay == nil)
-                .accessibilityHidden(selectedToolForOverlay != nil)
-            if let toolId = selectedToolForOverlay {
-                ToolDetailOverlayView(
-                    toolId: toolId,
-                    sinceMs: rangeSinceMs(),
-                    onBack: { selectedToolForOverlay = nil })
-                    .transition(.opacity)
-            }
-        }
-        .overlay(alignment: .top) {
-            // Detail still has a reserved notice strip above its back navigation.
-            if selectedToolForOverlay != nil { statusOverlay }
-        }
+        dashboardContent
         .task(id: localScanStatusKey) {
             guard localScanStatus == .available else { return }
             do { try await Task.sleep(for: .seconds(5)) } catch { return }
@@ -373,7 +357,7 @@ struct DashboardView: View {
                     }
                 }.padding(16).frame(width: 340)
             }
-            .help(notice)
+            .robotHelp(notice)
             .padding(.horizontal, 12).padding(.top, 2)
         }
     }
@@ -419,7 +403,7 @@ struct DashboardView: View {
                     Circle().fill(Color(nsColor: appearance.color)).frame(width: 8, height: 8)
                     Text(appearance.label).font(.caption).foregroundStyle(.secondary)
                 }
-                .help(snapshot != nil
+                .robotHelp(snapshot != nil
                       ? StatusItemController.detail(snapshot: snapshot) + "\n" + I18n.t("pulse.activity.legend")
                       : I18n.t("pulse.reason.unavailable"))
             }
@@ -440,69 +424,9 @@ struct DashboardView: View {
     }
 
     private var dashboardContent: some View {
-        VStack(spacing: 0) {
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    if hasActiveCostSources || !balanceSpend.isEmpty || hasPulseActivity || isDemoMode {
-                        // ── Robot head frame — pulse, activity, distribution, output ──
-                        VStack(spacing: 16) {
-                            spendingOverview
-                            activityRhythmSection
-                        }
-                        .padding(20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .stroke(Color.marsGreen.opacity(0.3), lineWidth: 2)
-                                .overlay(alignment: .top) {
-                                    robotAntenna.offset(y: -32)
-                                }
-                                .overlay(alignment: .leading) {
-                                    HStack(spacing: 6) {
-                                        earView(width: 14, height: 34)
-                                        earView(width: 8, height: 22)
-                                    }
-                                    .offset(x: -16, y: -80)
-                                }
-                                .overlay(alignment: .trailing) {
-                                    HStack(spacing: 6) {
-                                        earView(width: 8, height: 22)
-                                        earView(width: 14, height: 34)
-                                    }
-                                    .offset(x: 16, y: -80)
-                                }
-                        )
-                        .padding(.horizontal, 60).padding(.top, 32).padding(.bottom, 12)
-
-                        // Body: one outer frame hosting trend/balance + repos
-                        VStack(spacing: 12) {
-                            pulseFactsSection
-                            outputSection
-                            repoListSection
-                        }
-                        .padding(20)
-                        .background(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .stroke(Color.marsGreen.opacity(0.25), lineWidth: 2)
-                        )
-                        .padding(.horizontal, 60)
-                        Spacer().frame(height: 60)
-                    } else {
-                        VStack(spacing: 12) {
-                            periodPicker
-                            foreheadStatusRow
-                            emptyStateCard
-                        // Match the robot's 32 + 20 + 16 top insets so switching
-                        // into an empty period does not move the picker mid-click.
-                        }.padding(.top, 68)
-                    }
-
-                    lastUpdatedFooter
-                }
-            }
-        }
-        .frame(width: 700, height: 660)
-        .background(Color(nsColor: .windowBackgroundColor))
+        robotDashboard
+        .frame(width: 560, height: 640)
+        .background(Color.clear)
         .environment(\.locale, I18n.resolvedLocale)
         .transaction {
             if reduceMotion {
@@ -658,7 +582,7 @@ struct DashboardView: View {
             }
             .frame(width: 40, height: 5)
         }
-        .help(clamped > 90 ? I18n.t("dashboard.usage_help") : I18n.t("dashboard.usage_percent"))
+        .robotHelp(clamped > 90 ? I18n.t("dashboard.usage_help") : I18n.t("dashboard.usage_percent"))
     }
 
 
@@ -770,7 +694,7 @@ struct DashboardView: View {
                 .font(.caption2).fontWeight(.semibold).monospacedDigit()
                 .foregroundStyle(Color.marsGreen)
         }
-        .help(I18n.t("dashboard.code_composition_help"))
+        .robotHelp(I18n.t("dashboard.code_composition_help"))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(I18n.t("dashboard.code_composition_help"))
         .accessibilityValue(composition.map {
@@ -814,7 +738,7 @@ struct DashboardView: View {
                         .font(.caption).foregroundColor(.secondary)
                     Text(I18n.t("dashboard.source_logs"))
                         .font(.caption2).foregroundColor(.secondary)
-                        .help(I18n.t("dashboard.local_activity_scope"))
+                        .robotHelp(I18n.t("dashboard.local_activity_scope"))
                 }
                 Text(rangeTokenRateText)
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -823,7 +747,6 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5).allowsHitTesting(false))
-            .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
 
             // ── Eyes + nose ──
             HStack(alignment: .top, spacing: 12) {
@@ -844,7 +767,6 @@ struct DashboardView: View {
         .padding(16)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.separator.opacity(0.15), lineWidth: 0.5).allowsHitTesting(false))
-        .shadow(color: .black.opacity(0.05), radius: 12, y: 3)
     }
 
     /// Left eye: observed token share by AI tool. Money and subscriptions do
@@ -866,46 +788,36 @@ struct DashboardView: View {
                       color: Self.donutPalette[i % Self.donutPalette.count])
         }
         VStack(spacing: 6) {
-            Text(I18n.t("dashboard.tool_tokens"))
+            Text(pulseText("工具用量", "Tool usage"))
                 .font(.caption2).foregroundStyle(.secondary)
                 .lineLimit(1).minimumScaleFactor(0.8)
             ZStack {
+                Circle().fill(robotEyeSurface).frame(width: 120, height: 120)
+                Circle().stroke(robotLine, lineWidth: 1).frame(width: 132, height: 132)
                 if !segments.isEmpty {
-                    Chart(segments) { item in
-                        SectorMark(angle: .value("Tokens", item.tokens), innerRadius: .ratio(0.5), angularInset: 1)
-                            .foregroundStyle(item.color)
-                    }
-                    .chartLegend(.hidden)
-                    .chartForegroundStyleScale(
-                        domain: segments.map(\.label),
-                        range: segments.map(\.color))
-                    .frame(width: 120, height: 120)
-                    .id("tool-\(timeRange.cacheKey)")
-                    .transaction { $0.animation = nil }
+                    robotFlatRing(segments)
                 } else {
-                    emptyDonut()
+                    Circle().stroke(Color.secondary.opacity(0.15), lineWidth: 10).frame(width: 110, height: 110)
                 }
                 VStack(spacing: 2) {
                     Text(!available
                          ? "—" : tokenShort(Int(clamping: Int64(min(totalTokens, Double(Int64.max).nextDown)))))
-                        .font(.system(size: Self.donutCenterFontSize(for: totalTokens), weight: .semibold, design: .rounded)).monospacedDigit()
-                        .foregroundStyle(Color.deepRed)
-                    Text(I18n.t("dashboard.chart_tokens")).font(.system(size: 9)).foregroundStyle(.secondary)
+                        .font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(Color.primary)
+                    Text(verbatim: "TOKENS").font(.system(size: 9)).foregroundStyle(.secondary)
                 }
             }
-            VStack(spacing: 2) {
-                ForEach(segments.prefix(3)) { item in
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 5, alignment: .leading), GridItem(.flexible(), spacing: 5, alignment: .leading)], spacing: 4) {
+                ForEach(Array(segments.prefix(4))) { item in
                     HStack(spacing: 4) {
                         Circle().fill(item.color).frame(width: 6, height: 6)
-                        Text(item.label).font(.caption2).foregroundColor(.secondary).lineLimit(1)
-                        Spacer()
-                        Text(verbatim: ChartMath.safeInt(item.pct).formatted(.percent))
-                            .font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                    }
+                        Text(item.label).font(.system(size: 9)).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
                 }
-            }
+            }.frame(height: 28, alignment: .topLeading)
         }
-        .frame(maxWidth: 150)
+        .frame(width: 145)
+        .robotHelp(pulseText("各工具可确认的词元用量及占比；不是额度、账单或工作效率。缓存词元属于输入，不重复累加。", "Confirmed token usage and share by tool; not quota, billing or productivity. Cached tokens are part of input and are not counted twice."))
     }
 
     /// Right eye: repository code changes. Deletion and addition have equal
@@ -928,47 +840,36 @@ struct DashboardView: View {
         }
         let centerText = available ? ChartMath.compactCount(Int64(min(totalTokens, Double(Int64.max).nextDown))) : "—"
         VStack(spacing: 6) {
-            Text(I18n.t("dashboard.repo_code_changes"))
+            Text(pulseText("仓库变化", "Repository changes"))
                 .font(.caption2).foregroundStyle(.secondary)
                 .lineLimit(1).minimumScaleFactor(0.8)
             ZStack {
+                Circle().fill(robotEyeSurface).frame(width: 120, height: 120)
+                Circle().stroke(robotLine, lineWidth: 1).frame(width: 132, height: 132)
                 if !segments.isEmpty {
-                    Chart(segments) { item in
-                        SectorMark(angle: .value("Code changes", item.tokens), innerRadius: .ratio(0.5), angularInset: 1)
-                            .foregroundStyle(item.color)
-                    }
-                    .chartLegend(.hidden)
-                    .chartForegroundStyleScale(
-                        domain: segments.map(\.label),
-                        range: segments.map(\.color))
-                    .frame(width: 120, height: 120)
-                    .id("repo-\(timeRange.cacheKey)")
-                    .transaction { $0.animation = nil }
+                    robotFlatRing(segments)
                 } else {
-                    emptyDonut()
+                    Circle().stroke(Color.secondary.opacity(0.15), lineWidth: 10).frame(width: 110, height: 110)
                 }
                 VStack(spacing: 2) {
                     Text(centerText)
-                        .font(.system(size: Self.donutCenterFontSize(for: totalTokens), weight: .semibold, design: .rounded)).monospacedDigit()
-                        .foregroundStyle(Color.marsGreen)
-                    Text(I18n.t("dashboard.lines_unit")).font(.system(size: 9)).foregroundStyle(.secondary)
+                        .font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(Color.primary)
+                    Text(verbatim: "LINES").font(.system(size: 9)).foregroundStyle(.secondary)
                 }
             }
-            VStack(spacing: 2) {
-                ForEach(segments.prefix(3)) { item in
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 5, alignment: .leading), GridItem(.flexible(), spacing: 5, alignment: .leading)], spacing: 4) {
+                ForEach(Array(segments.prefix(4))) { item in
                     HStack(spacing: 4) {
                         Circle().fill(item.color).frame(width: 6, height: 6)
-                        Text(item.label).font(.caption2).foregroundColor(.secondary).lineLimit(1)
-                            .help(changes[item.id] == nil ? item.label : item.id)
-                        Spacer()
-                        Text(verbatim: ChartMath.safeInt(item.pct).formatted(.percent))
-                            .font(.caption2).monospacedDigit().foregroundColor(.secondary)
-                    }
+                        Text(item.label).font(.system(size: 9)).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
+                            .robotHelp(changes[item.id] == nil ? item.label : item.id)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
                 }
-            }
+            }.frame(height: 28, alignment: .topLeading)
         }
-        .frame(maxWidth: 150)
-        .help(I18n.t("dashboard.repo_code_changes_help"))
+        .frame(width: 145)
+        .robotHelp(I18n.t("dashboard.repo_code_changes_help"))
     }
 
     /// Canonical four-color donut palette (deepRed / marsGreen / deepRed2 /
@@ -1038,7 +939,7 @@ struct DashboardView: View {
                     .font(.caption2).monospacedDigit().foregroundColor(.secondary)
             }
         }
-        .help(String(format: I18n.t("dashboard.quota_help"),
+        .robotHelp(String(format: I18n.t("dashboard.quota_help"),
                      (data.utilization / 100).formatted(.percent.precision(.fractionLength(0))),
                      data.limitStatus))
     }
@@ -1203,7 +1104,7 @@ struct DashboardView: View {
                         Label(pulseText("部分统计读取失败，空图和零值不代表没有活动。", "Some statistics could not be read; empty charts and zero values do not mean no activity."),
                               systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundColor(.orange)
-                            .help(failures.joined(separator: ", "))
+                            .robotHelp(failures.joined(separator: ", "))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1224,7 +1125,7 @@ struct DashboardView: View {
                                 .fontWeight(.semibold).monospacedDigit()
                         }
                         .font(.body)
-                        .help(observedAmountIntervalHelp(item))
+                        .robotHelp(observedAmountIntervalHelp(item))
                     }
                 }
                 .padding(12)
@@ -1306,7 +1207,7 @@ struct DashboardView: View {
 	                                    .contentShape(Rectangle())
 	                                }
 	                                .buttonStyle(.plain).disabled(t.isEmpty)
-	                                .help(t.isEmpty ? I18n.t("dashboard.unattributed_tool") : String(format: I18n.t("panel.open_tool_detail"), toolIdToDisplay(t) ?? t))
+	                                .robotHelp(t.isEmpty ? I18n.t("dashboard.unattributed_tool") : String(format: I18n.t("panel.open_tool_detail"), toolIdToDisplay(t) ?? t))
 	                                .accessibilityLabel(t.isEmpty ? I18n.t("dashboard.unattributed_tool") : String(format: I18n.t("panel.open_tool_detail"), toolIdToDisplay(t) ?? t))
 	                                .pointingHandCursor(!t.isEmpty)
 	                            }
@@ -1361,7 +1262,7 @@ struct DashboardView: View {
                 Text(I18n.t("dashboard.by_tool_model"))
                     .font(.caption).foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .help(I18n.t("dashboard.model_data_bar_help"))
+                    .robotHelp(I18n.t("dashboard.model_data_bar_help"))
                 if fillsViewport {
                     // Same flexible Grid layout as the repository table.
                     table.frame(maxWidth: .infinity)
@@ -1417,7 +1318,7 @@ struct DashboardView: View {
             let commitMaximum = shownRepos.map(\.commits).max() ?? 0
             VStack(alignment: .leading, spacing: 6) {
                 Text(I18n.t("dashboard.by_repo")).font(.caption).foregroundColor(.secondary)
-                    .help(I18n.t("dashboard.repo_data_bar_help"))
+                    .robotHelp(I18n.t("dashboard.repo_data_bar_help"))
                 Grid(alignment: .leading, horizontalSpacing: 1, verticalSpacing: 1) {
                     GridRow {
                         Text(I18n.t("dashboard.repo"))
@@ -1438,7 +1339,7 @@ struct DashboardView: View {
                     }
                     ForEach(Array(shown.enumerated()), id: \.element.id) { idx, r in
                         GridRow {
-                            Text(r.name).help(r.repoPath)
+                            Text(r.name).robotHelp(r.repoPath)
                                 .font(.caption).fontWeight(.medium).lineLimit(1)
                                 .dashboardTableCell(rowIndex: idx, alignment: .leading)
                             Text(tokenShort(Int(clamping: r.tokens ?? 0)))
@@ -1649,7 +1550,7 @@ struct DashboardView: View {
         Circle()
             .stroke(Color.secondary.opacity(0.12), lineWidth: 30)
             .frame(width: 90, height: 90)
-            .frame(width: 120, height: 120)
+            .frame(width: 100, height: 100)
     }
 
     /// Sync the cached dashboard snapshot to iCloud, throttled to 5 min.
@@ -1821,7 +1722,8 @@ struct DashboardView: View {
             switch requestedRange { case .today: return 300; case .thisWeek: return 3600; default: return 43200 }
         }()
         if !DemoData.isActive,
-           let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: cacheMaxAge) {
+           let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: cacheMaxAge),
+           cached.tokenComposition != nil || cached.readFailures.contains("tokenComposition") {
             guard !Task.isCancelled,
                   myGen == loadGenerationByRange[requestedRange, default: 0] else { return }
             // Debounce data-change reloads only when staying on the same range;
@@ -1926,5 +1828,446 @@ private extension View {
         if isHeader { return Color.secondary.opacity(0.08) }
         guard let rowIndex else { return .clear }
         return rowIndex.isMultiple(of: 2) ? .clear : Color.secondary.opacity(0.04)
+    }
+}
+
+// Compact robot overview. Existing range snapshots and drill-downs remain the source of truth.
+private extension DashboardView {
+    var robotDashboard: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    Circle().fill(robotEarSurface).frame(width: 13, height: 13)
+                        .overlay(Circle().stroke(robotLine, lineWidth: 1))
+                    Rectangle().fill(Color.marsGreenLight).frame(width: 2, height: 10)
+                }.frame(height: 23).accessibilityHidden(true)
+                Group {
+                    if let toolId = selectedToolForOverlay {
+                        ToolDetailOverlayView(toolId: toolId, sinceMs: rangeSinceMs(), onBack: { selectedToolForOverlay = nil }, embedded: true)
+                            .padding(14)
+                    } else if let detail = robotDetail {
+                        robotHeadDetail(detail)
+                    } else {
+                VStack(spacing: 9) {
+                    HStack(alignment: .top) {
+                        Button { DashboardWindowManager.shared.close() } label: { Image(systemName: "xmark") }
+                            .robotHelp(pulseText("收起仪表盘", "Dismiss dashboard"))
+                        Spacer()
+                        Group {
+                            RobotPulseCurve(tier: currentPulse?.tier)
+                                .stroke(robotPulseColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                                .frame(width: 125, height: 38)
+                                .frame(width: 270, height: 57)
+                                .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 13))
+                                .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.primary.opacity(0.1)))
+                        }
+                        .robotHelp(PulseAppearance(tier: currentPulse?.tier).label + "\n" + PulseCopy.recentFacts(currentPulse?.activityFacts) + "\n" + StatusItemController.detail(snapshot: currentPulse) + "\n" + pulseText("当前强度独立于下方统计范围，基于最近一小时活动及历史活跃小时基准。", "Current intensity is independent of the selected range, based on recent activity and historical active hours."))
+                        .accessibilityLabel(pulseText("当前 AI 活动强度：", "Current AI activity: ") + PulseAppearance(tier: currentPulse?.tier).label)
+                        Spacer()
+                        Button { DashboardWindowManager.shared.openSettings() } label: { Image(systemName: "gearshape") }
+                            .robotHelp(I18n.t("menu.preferences"))
+                    }
+                    .foregroundStyle(.secondary)
+                    periodPicker
+                    HStack(alignment: .center, spacing: 16) {
+                        VStack(spacing: 7) {
+                            toolTokenDonut()
+                            robotLink(pulseText("工具与模型", "Tools & models"), detail: "tools")
+                        }
+                        robotNose
+                        VStack(spacing: 7) {
+                            repoCodeDonut()
+                            robotLink(pulseText("全部仓库", "All repositories"), detail: "repos")
+                        }
+                    }
+                    .frame(height: 200, alignment: .top)
+                    robotMouth
+                }
+                .padding(14)
+                    }
+                }
+                .frame(width: 440, height: 440)
+                .background(RoundedRectangle(cornerRadius: 29).fill(robotSurface))
+                .overlay(RoundedRectangle(cornerRadius: 29).stroke(Color.primary.opacity(0.14)))
+                .overlay(alignment: .leading) { earView(width: 9, height: 39).offset(x: -9) }
+                .overlay(alignment: .trailing) { earView(width: 9, height: 39).offset(x: 9) }
+                Rectangle().fill(robotSurface).frame(width: 76, height: 8)
+                    .overlay(HStack { Rectangle().fill(Color.primary.opacity(0.14)).frame(width: 1); Spacer(); Rectangle().fill(Color.primary.opacity(0.14)).frame(width: 1) })
+                robotBase
+            }
+            .background(RobotSilhouette().fill(robotSurface).shadow(color: .black.opacity(0.27), radius: 14, y: 5))
+            .padding(.horizontal, 60)
+            .padding(.vertical, 14)
+            .buttonStyle(.plain)
+        }
+        .overlayPreferenceValue(RobotTooltipPreference.self) { hints in
+            GeometryReader { geometry in
+                if let hint = hints.last {
+                    let bounds = geometry[hint.anchor]
+                    let below = bounds.midY < geometry.size.height / 2
+                    Text(hint.text)
+                        .font(.system(size: 11)).foregroundStyle(Color.primary)
+                        .lineSpacing(3).padding(12)
+                        .frame(width: 280, alignment: .leading)
+                        .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(robotLine))
+                        .frame(width: 280, height: 190, alignment: below ? .top : .bottom)
+                        .offset(x: min(max(bounds.midX - 140, 12), geometry.size.width - 292), y: below ? bounds.maxY + 7 : bounds.minY - 197)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .allowsHitTesting(false)
+        }
+        .onExitCommand {
+            if selectedToolForOverlay != nil { selectedToolForOverlay = nil }
+            else if robotDetail != nil { robotDetail = nil }
+            else { DashboardWindowManager.shared.close() }
+        }
+    }
+
+    func robotHeadDetail(_ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Button { robotDetail = nil } label: {
+                    Label(pulseText("返回", "Back"), systemImage: "arrow.left")
+                        .font(.system(size: 11))
+                }
+
+            }.foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                Text(robotDetailTitle(detail)).font(.headline)
+                Spacer()
+                Text(timeRange.label).font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
+            ScrollView {
+                robotDetailContent(detail)
+                    .font(.system(size: 13))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(22)
+    }
+
+    var robotSurface: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(srgbRed: 0.14, green: 0.17, blue: 0.15, alpha: 1)
+                : NSColor(srgbRed: 233/255, green: 236/255, blue: 229/255, alpha: 1)
+        })
+    }
+    var robotEyeSurface: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(srgbRed: 0.19, green: 0.22, blue: 0.20, alpha: 1)
+                : NSColor(srgbRed: 248/255, green: 249/255, blue: 245/255, alpha: 1)
+        })
+    }
+
+    var robotEarSurface: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(srgbRed: 0.32, green: 0.40, blue: 0.34, alpha: 1)
+                : NSColor(srgbRed: 218/255, green: 229/255, blue: 218/255, alpha: 1)
+        })
+    }
+
+    var robotLine: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(srgbRed: 61/255, green: 73/255, blue: 63/255, alpha: 1)
+                : NSColor(srgbRed: 212/255, green: 218/255, blue: 209/255, alpha: 1)
+        })
+    }
+
+    func robotFlatRing(_ segments: [DonutItem]) -> some View {
+        let total = segments.reduce(0.0) { $0 + $1.tokens }
+        return ZStack {
+            ForEach(Array(segments.enumerated()), id: \.element.id) { index, item in
+                let start = segments.prefix(index).reduce(0.0) { $0 + $1.tokens } / max(total, 1)
+                Circle().trim(from: start, to: start + item.tokens / max(total, 1))
+                    .stroke(item.color, style: StrokeStyle(lineWidth: 10, lineCap: .butt))
+                    .rotationEffect(.degrees(-90)).frame(width: 110, height: 110)
+            }
+        }.frame(width: 120, height: 120)
+    }
+
+    var robotPulseColor: Color {
+        switch currentPulse?.tier {
+        case .active: return .marsGreen
+        case .elevated, .intense: return .deepRed
+        default: return .secondary
+        }
+    }
+
+    func robotLink(_ title: String, detail: String) -> some View {
+        Button { selectedToolForOverlay = nil; robotDetail = detail } label: {
+            HStack(spacing: 4) { Text(title); Image(systemName: "arrow.up.right").font(.system(size: 8)) }
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+        }.buttonStyle(.plain)
+    }
+
+    var robotNose: some View {
+        let composition = activeSnapshot?.tokenComposition
+        let values = [Double(composition?.nonCachedInput ?? 0), Double(composition?.cachedInput ?? 0), Double(composition?.output ?? 0)]
+        let fractions = DashboardDataPresentation.noseFractions(values: values)
+        return Group {
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Rectangle().fill([Color.marsGreen, .marsGreenLight, .deepRed][index])
+                            .opacity(values[index] > 0 ? 1 : 0.25)
+                            .frame(width: geometry.size.width * fractions[index])
+                            .overlay {
+                                if index == 1 {
+                                    let input = values[0] + values[1]
+                                    Text(input > 0 ? String(format: "%.0f%%", values[1] / input * 100) : "—")
+                                        .font(.system(size: 8, weight: .semibold)).foregroundStyle(Color(nsColor: .labelColor))
+                                        .lineLimit(1).minimumScaleFactor(0.5)
+                                }
+                            }
+                    }
+                }
+                .opacity(composition != nil ? 1 : 0.25)
+                .clipShape(CodeChangeTrapezoid())
+            }.frame(width: 44, height: 55)
+        }
+        .frame(width: 60)
+        .accessibilityLabel(pulseText("词元构成，已知输入缓存率", "Token composition, cache rate of known input"))
+        .accessibilityValue(values[0] + values[1] > 0 ? String(format: "%.1f%%", values[1] / (values[0] + values[1]) * 100) : "—")
+    }
+
+    var robotMouth: some View {
+        VStack(spacing: 5) {
+            HStack {
+                Text(pulseText("活动节奏（词元｜行数）", "Activity rhythm (Tokens | Lines)"))
+                Spacer()
+                Text(timeRange == .today ? pulseText("按小时", "Hourly") : pulseText("按天", "Daily"))
+            }.font(.system(size: 9)).foregroundStyle(.secondary)
+            robotRhythmRow(label: pulseText("词元", "Tokens"), values: tokenRhythmValues, color: .marsGreen, growsDownward: true)
+            robotRhythmRow(label: pulseText("行数", "Lines"), values: codeRhythmValues, color: .deepRed2, growsDownward: false)
+        }
+        .frame(width: 350, height: 70).padding(10)
+        .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(robotLine, lineWidth: 1))
+    }
+
+    func robotRhythmRow(label: String, values: [Double], color: Color, growsDownward: Bool) -> some View {
+        let slots = DashboardDataPresentation.rhythmSlots(values: values, count: timeRange == .today ? 24 : chartDays, surroundingWeeks: timeRange == .thisWeek)
+        let peak = max(values.max() ?? 0, 1)
+        return HStack(alignment: growsDownward ? .top : .bottom, spacing: 3) {
+            ForEach(Array(slots.enumerated()), id: \.offset) { index, value in
+                Capsule()
+                    .fill(value.map { $0 > 0 ? color : Color.secondary.opacity(0.14) } ?? Color.secondary.opacity(0.14))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: value.map { max(3, 21 * $0 / peak) } ?? 3)
+                    .robotHelp(value.map { label + ": " + ChartMath.compactCount(Int64($0)) } ?? (index < 7 ? pulseText("上一周占位", "Previous week placeholder") : pulseText("下一周占位", "Next week placeholder")))
+            }
+        }.frame(height: 23, alignment: growsDownward ? .top : .bottom)
+        .accessibilityLabel(label)
+    }
+
+    var robotObservedLabel: String {
+        guard let snapshot = activeSnapshot, !snapshot.readFailures.contains("observedSpend") else { return "—" }
+        let amounts = snapshot.observedSpend ?? []
+        guard !amounts.isEmpty else { return pulseText("暂无观测", "No observations") }
+        let currencies = Set(amounts.map { $0.currency.uppercased() })
+        guard currencies.count == 1, let currency = currencies.first else { return pulseText("多币种 · 查看", "Multiple currencies") }
+        return currency + " " + String(format: "%.2f", amounts.reduce(0) { $0 + $1.amount })
+    }
+
+    var robotBase: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(I18n.t("dashboard.account_observations")).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(robotObservedLabel).font(.system(size: 18, weight: .medium)).monospacedDigit()
+                    robotLink(pulseText("账户观测明细", "Observation details"), detail: "spend")
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                Divider()
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(I18n.t("dashboard.fixed_monthly_context")).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(activeSnapshot?.declaredMonthlyCostUSD.map { "USD " + String(format: "%.2f", $0) + pulseText(" / 月", " / mo") } ?? "—")
+                        .font(.system(size: 18, weight: .medium)).monospacedDigit()
+                    robotLink(pulseText("固定费用说明", "Fixed cost context"), detail: "subscription")
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }.fixedSize(horizontal: false, vertical: true).padding(.horizontal, 20).padding(.vertical, 16)
+            Divider()
+            VStack(spacing: 5) {
+                HStack {
+                    Text(robotDataStatus).foregroundStyle(healthSeverity >= .impaired ? Color.deepRed : Color.secondary)
+                    Spacer()
+                    robotLink(pulseText("数据说明", "Data details"), detail: "metadata")
+                }
+                HStack {
+                    Text("AI Pulse " + Self.appVersion)
+                    Spacer()
+                    Text(pulseText("数据版本 ", "Data format ") + (activeSnapshot?.payloadVersion ?? CKSchema.payloadVersion))
+                }.foregroundStyle(.secondary)
+            }.font(.system(size: 9)).padding(.horizontal, 20).padding(.vertical, 10)
+                .background(Color.primary.opacity(0.035))
+        }
+        .frame(width: 440, height: 128)
+        .background(RoundedRectangle(cornerRadius: 16).fill(robotEyeSurface))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.14)))
+
+    }
+
+    var robotDataStatus: String {
+        if isDemoMode { return pulseText("演示数据", "Demo data") }
+        if healthSeverity != .nominal { return healthBannerText }
+        if !(activeSnapshot?.readFailures ?? []).isEmpty { return pulseText("部分读取失败", "Some queries failed") }
+        if tokenCoverageNote != nil { return pulseText("部分采集 · ", "Partial coverage · ") + (lastUpdated?.formatted(date: .omitted, time: .shortened) ?? "—") }
+        return pulseText("本地数据 · ", "Local data · ") + (lastUpdated?.formatted(date: .omitted, time: .shortened) ?? "—")
+    }
+
+    func robotDetailTitle(_ detail: String) -> String {
+        switch detail {
+        case "pulse": return pulseText("当前 AI 活动强度", "Current AI activity intensity")
+        case "tools": return pulseText("工具与模型", "Tools & models")
+        case "repos": return pulseText("仓库明细", "Repository details")
+        case "composition": return pulseText("词元构成", "Token composition")
+        case "rhythm": return pulseText("活动趋势", "Activity trends")
+        case "spend": return I18n.t("dashboard.account_observations")
+        case "subscription": return I18n.t("dashboard.fixed_monthly_context")
+        default: return pulseText("数据说明", "Data details")
+        }
+    }
+
+    @ViewBuilder func robotDetailContent(_ detail: String) -> some View {
+        switch detail {
+        case "pulse":
+            VStack(alignment: .leading, spacing: 12) {
+                Text(PulseAppearance(tier: currentPulse?.tier).label).font(.title2)
+                Text(PulseCopy.recentFacts(currentPulse?.activityFacts))
+                Text(StatusItemController.detail(snapshot: currentPulse))
+                Text(pulseText("基于最近一小时的词元活动，约每 10 分钟权重减半；参照最近 7 天活跃小时的中位数。历史不足时使用固定参考。", "Based on the last hour of token activity, with a ten-minute half-life and a median active-hour baseline over seven days. Limited history uses a fixed reference."))
+                Text(pulseText("状态始终代表当前时刻，不表示额度、费用或工作效率。", "This state is current, independent of the selected range; it is not quota, money or productivity."))
+            }.font(.callout)
+        case "tools":
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(activeSnapshot?.toolBreakdown ?? [], id: \.toolId) { tool in
+                    Button { selectedToolForOverlay = tool.toolId } label: {
+                        HStack { Text(tool.name); Spacer(); Text(tool.tokens.map { ChartMath.compactCount($0) } ?? "—"); Image(systemName: "chevron.right") }
+                    }.buttonStyle(.plain).padding(9)
+                }
+                outputSection
+            }
+        case "repos": repoListSection
+        case "composition":
+            if let parts = activeSnapshot?.tokenComposition {
+                VStack(alignment: .leading, spacing: 14) {
+                    robotCompositionRow(pulseText("未缓存输入", "Uncached input"), value: parts.nonCachedInput, color: .marsGreen)
+                    robotCompositionRow(pulseText("缓存命中输入", "Cached input"), value: parts.cachedInput, color: .marsGreenLight)
+                    robotCompositionRow(pulseText("输出", "Output"), value: parts.output, color: .deepRed)
+                    Text(pulseText("前两段共同构成输入；缓存命中不重复累加，缓存写入不标为缓存命中。鼻梁为可读性给每段保留最小宽度，剩余宽度按真实比例分配；准确数值在明细中显示。", "The first two segments form input. Cache reads are not counted twice; cache creation is not a cache hit. Segment widths include a visibility floor; details show exact amounts."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if parts.isPartial { Text(pulseText("部分字段缺失，仅包含已知词元。", "Some components are missing; totals contain known tokens only.")).foregroundStyle(.secondary) }
+                }
+            } else { Text(pulseText("词元构成暂不可用，刷新后重试。", "Token composition unavailable; refresh and retry.")) }
+        case "rhythm": activityRhythmSection
+        case "spend":
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(activeSnapshot?.observedSpend ?? [], id: \.stableId) { item in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack { Text(ProviderRegistry.byId(item.providerId)?.name ?? item.providerId); Spacer(); Text(item.currency.uppercased() + " " + String(format: "%.2f", item.amount)) }
+                        Text(observedAmountIntervalHelp(item)).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text(I18n.t("dashboard.balance_observation_help")).font(.caption).foregroundStyle(.secondary)
+                if (activeSnapshot?.observedSpend ?? []).isEmpty { Text(robotObservedLabel) }
+            }
+        case "subscription":
+            VStack(alignment: .leading, spacing: 12) {
+                Text(I18n.t("dashboard.fixed_monthly_help"))
+                Text(pulseText("声明固定月费：", "Declared monthly cost: ") + (activeSnapshot?.declaredMonthlyCostUSD.map { "USD " + String(format: "%.2f", $0) } ?? "—"))
+                ForEach(IntegrationRegistry.activeCostSources(editorMappings: editorMappings)) { source in
+                    if case .subscription(_, _, let fee) = source.kind {
+                        HStack { Text(source.label); Spacer(); Text("USD " + String(format: "%.2f", fee)) }
+                    }
+                }
+                Button(I18n.t("menu.preferences")) { DashboardWindowManager.shared.openSettings() }
+            }
+        default:
+            VStack(alignment: .leading, spacing: 12) {
+                Text(robotDataStatus)
+                if let note = tokenCoverageNote { Text(note) }
+                ForEach(activeSnapshot?.readFailures ?? [], id: \.self) { Text($0) }
+                ForEach(healthMessages, id: \.self) { Text($0) }
+                Text(pulseText("本地活动与账户观测分别更新；费用与代码产出分别呈现。", "Local activity and account observations update separately; money and Git output remain independent."))
+                Text("AI Pulse " + Self.appVersion + " / " + (activeSnapshot?.payloadVersion ?? CKSchema.payloadVersion))
+                Button(pulseText("刷新数据", "Refresh data")) { Task { await forceRefresh() } }.disabled(isRefreshing)
+            }
+        }
+    }
+
+    func robotCompositionRow(_ title: String, value: Int64, color: Color) -> some View {
+        HStack { Circle().fill(color).frame(width: 7, height: 7); Text(title); Spacer(); Text(ChartMath.compactCount(value)).monospacedDigit() }
+    }
+}
+
+// A single filled silhouette casts the shadow without shadowing interior widgets.
+private struct RobotSilhouette: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addRoundedRect(in: CGRect(x: 0, y: 23, width: 440, height: 440), cornerSize: CGSize(width: 29, height: 29))
+        path.addRect(CGRect(x: 182, y: 462, width: 76, height: 10))
+        path.addRoundedRect(in: CGRect(x: 0, y: 471, width: 440, height: 128), cornerSize: CGSize(width: 16, height: 16))
+        path.addRoundedRect(in: CGRect(x: -9, y: 223.5, width: 10, height: 39), cornerSize: CGSize(width: 4, height: 4))
+        path.addRoundedRect(in: CGRect(x: 439, y: 223.5, width: 10, height: 39), cornerSize: CGSize(width: 4, height: 4))
+        path.addEllipse(in: CGRect(x: 213.5, y: 0, width: 13, height: 13))
+        path.addRect(CGRect(x: 219, y: 12, width: 2, height: 12))
+        return path
+    }
+}
+
+private struct RobotPulseCurve: Shape {
+    var tier: PulseTier?
+    func path(in rect: CGRect) -> Path {
+        let strength: CGFloat = tier == nil || tier == .resting ? 0.15 : tier == .intense ? 1 : tier == .elevated ? 0.88 : 0.72
+        // Unequal peaks and troughs follow the approved symbol; not a fabricated time series.
+        let points: [(CGFloat, CGFloat)] = [(0,0),(0.18,0),(0.28,-0.28),(0.37,0.22),(0.46,-0.46),(0.57,0.42),(0.67,-0.18),(0.77,0.08),(0.87,0),(1,0)]
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        for index in 1..<points.count {
+            let a = points[index-1], b = points[index]
+            let x1 = rect.minX + rect.width * a.0, x2 = rect.minX + rect.width * b.0
+            let y1 = rect.midY + rect.height * a.1 * strength, y2 = rect.midY + rect.height * b.1 * strength
+            path.addCurve(to: CGPoint(x: x2, y: y2), control1: CGPoint(x: (x1+x2)/2, y: y1), control2: CGPoint(x: (x1+x2)/2, y: y2))
+        }
+        return path
+    }
+}
+
+struct RobotTooltipHint {
+    let text: String
+    let anchor: Anchor<CGRect>
+}
+
+struct RobotTooltipPreference: PreferenceKey {
+    static var defaultValue: [RobotTooltipHint] { [] }
+    static func reduce(value: inout [RobotTooltipHint], nextValue: () -> [RobotTooltipHint]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+private struct RobotTooltipModifier: ViewModifier {
+    let text: String
+    @State private var hovered = false
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .onHover { hovered = $0 }
+            .anchorPreference(key: RobotTooltipPreference.self, value: .bounds) { anchor in
+                hovered && !text.isEmpty ? [RobotTooltipHint(text: text, anchor: anchor)] : []
+            }
+    }
+}
+
+extension View {
+    func robotHelp(_ text: String) -> some View {
+        modifier(RobotTooltipModifier(text: text))
     }
 }

@@ -36,6 +36,17 @@ enum DashboardDataPresentation {
         return Array(repeating: nil, count: 7) + activity + Array(repeating: nil, count: 7)
     }
 
+    /// Reserve visible nose categories, then distribute the remaining width by data.
+    static func noseFractions(values: [Double]) -> [Double] {
+        let values = values.map { $0.isFinite ? max(0, $0) : 0 }
+        guard !values.isEmpty else { return [] }
+        let total = values.reduce(0, +)
+        guard total > 0 else { return Array(repeating: 1 / Double(values.count), count: values.count) }
+        let floor = min(0.15, 1 / Double(values.count))
+        let remainder = 1 - floor * Double(values.count)
+        return values.map { floor + remainder * $0 / total }
+    }
+
     /// Linear scale, without a minimum visible width or logarithmic exaggeration.
     static func barFraction(value: Double?, maximum: Double) -> Double? {
         guard let value, value.isFinite, value >= 0, maximum.isFinite, maximum > 0 else { return nil }
