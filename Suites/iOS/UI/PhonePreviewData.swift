@@ -28,7 +28,14 @@ enum PhonePreviewData {
             }
             snapshots[kind.rawValue] = snap
         }
-        let pulse = PulseSnapshot(tier: .active, primarySignal: .activity, reason: "Preview observation", signals: [], asOf: now, validUntil: now.addingTimeInterval(1800), activityFacts: PulseActivityFacts(recentTokens: 45_000, todayTokens: 2_450_000))
+        let activity = PulseSignal(kind: .activity, rawValue: 45_000, unit: "tokens/10m",
+                       baseline: 32_000, normalized: 1.4, freshness: .fresh,
+                       completeness: .complete, observedAt: now,
+                       reason: "Preview observation")
+        let pulse = PulseSnapshot(tier: .active, primarySignal: .activity,
+                      reason: "Preview observation", signals: [activity], asOf: now,
+                      validUntil: now.addingTimeInterval(1800),
+                      activityFacts: PulseActivityFacts(recentTokens: 45_000, todayTokens: 2_450_000))
         cloud.installPreview(snapshots: snapshots, pulse: CurrentPulseEnvelope(pulse: pulse, writerAppVersion: "2.0 preview", generatedAt: now))
     }
 }

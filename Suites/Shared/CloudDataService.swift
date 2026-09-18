@@ -73,6 +73,12 @@ final class CloudDataService: ObservableObject {
         return dir.appendingPathComponent("dashboard_cache.json")
     }
 
+    private var widgetCacheDirectory: URL? {
+        FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.wxy.aipulse"
+        )
+    }
+
     private func loadLocalCache() {
         guard let data = try? Data(contentsOf: localCacheURL),
               let dict = try? JSONDecoder().decode([String: DashboardSnapshot].self, from: data) else { return }
@@ -92,9 +98,7 @@ final class CloudDataService: ObservableObject {
         // Primary cache
         try? data.write(to: localCacheURL, options: .atomic)
         // Widget cache — write to App Group container so Widget Extension can read it
-        if let groupURL = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: "group.com.wxy.aipulse"
-        ) {
+        if let groupURL = widgetCacheDirectory {
             let widgetCacheURL = groupURL.appendingPathComponent("dashboard_cache.json")
             try? FileManager.default.createDirectory(at: groupURL,
                 withIntermediateDirectories: true)
@@ -298,6 +302,11 @@ final class CloudDataService: ObservableObject {
                 self.pulseEnvelope = envelope
                 self.pulseError = nil
                 try? data.write(to: self.localCacheURL.deletingLastPathComponent().appendingPathComponent("current_pulse_v2.json"), options: .atomic)
+                if let groupURL = self.widgetCacheDirectory {
+                    try? FileManager.default.createDirectory(at: groupURL, withIntermediateDirectories: true)
+                    try? data.write(to: groupURL.appendingPathComponent("current_pulse_v2.json"), options: .atomic)
+                    self.scheduleWidgetReload()
+                }
             }
         } catch { pulseError = error.localizedDescription }
     }
@@ -311,6 +320,15 @@ final class CloudDataService: ObservableObject {
         self.rangeErrors = rangeErrors
         self.missingRanges = missingRanges
         loadSnapshot(for: "today")
+        if ProcessInfo.processInfo.arguments.contains("--iphone-preview"),
+           let groupURL = widgetCacheDirectory,
+           let snapshotData = try? JSONEncoder().encode(snapshots),
+           let pulseData = try? JSONEncoder().encode(pulse) {
+            try? FileManager.default.createDirectory(at: groupURL, withIntermediateDirectories: true)
+            try? snapshotData.write(to: groupURL.appendingPathComponent("dashboard_cache.json"), options: .atomic)
+            try? pulseData.write(to: groupURL.appendingPathComponent("current_pulse_v2.json"), options: .atomic)
+            scheduleWidgetReload()
+        }
     }
     #endif
 

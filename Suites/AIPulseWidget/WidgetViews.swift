@@ -2,279 +2,261 @@ import SwiftUI
 import WidgetKit
 import AIPulseShared
 
-struct AIPulseWidgetEntryView: View {
-    var entry: WidgetEntry
+private enum WidgetCopy {
+    static func text(_ simplifiedChinese: String, _ english: String) -> String {
+        let language = Locale.preferredLanguages.first ?? "en"
+        if language.hasPrefix("zh-Hant") {
+            return simplifiedChinese.applyingTransform(StringTransform("Hans-Hant"), reverse: false)
+                ?? simplifiedChinese
+        }
+        return language.hasPrefix("zh") ? simplifiedChinese : english
+    }
+}
 
-    @Environment(\.widgetFamily) var family
+private struct WidgetActivityRing: View {
+    let ratio: Double?
+    let color: Color
+    let trackColor: Color
+    let width: CGFloat
+    var allowsLaps = true
 
     var body: some View {
-        if let pulse = entry.pulse {
-            pulseView(pulse)
-        } else {
-            switch family {
-            case .systemSmall:
-                systemSmallView
-            case .systemMedium:
-                systemMediumView
-            case .accessoryCircular:
-                accessoryCircularView
-            case .accessoryRectangular:
-                accessoryRectangularView
-            default:
-                systemSmallView
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func pulseView(_ pulse: PulseSnapshot) -> some View {
-        let primary = pulse.primarySignal.flatMap { kind in
-            pulse.signals.first { $0.kind == kind }
-        }
-        let progress = min(max((primary?.normalized ?? 0) / 3, 0), 1)
-        if family == .accessoryCircular {
-            Gauge(value: progress) {
-                Image(systemName: "waveform.path.ecg")
-            } currentValueLabel: {
-                Text(String(pulse.tier.rawValue.prefix(1)).uppercased())
-                    .font(.caption.bold())
-            }
-            .gaugeStyle(.accessoryCircular)
-            .tint(pulseColor(pulse.tier))
-            .containerBackground(.fill.tertiary, for: .widget)
-        } else {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Image(systemName: "waveform.path.ecg")
-                    Text(I18n.pulseTier(pulse.tier)).fontWeight(.bold)
-                }
-                .foregroundStyle(pulseColor(pulse.tier))
-                Text(I18n.pulseReason(pulse))
-                    .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
-                if let money = entry.observedSpend {
-                    Text(money).font(.caption.monospacedDigit()).lineLimit(1)
-                }
-                Text(entry.updatedAt, format: .dateTime.hour().minute())
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding()
-            .containerBackground(.fill.tertiary, for: .widget)
-        }
-    }
-
-    private func pulseColor(_ tier: PulseTier) -> Color {
-        switch tier {
-        case .intense: .red
-        case .elevated: .orange
-        case .active: .yellow
-        case .resting: .secondary
-        }
-    }
-
-    // MARK: - Helpers (same compute pattern as watchOS SpendView)
-
-    private var dailyRate: Double { max(entry.dailyRate, 0.01) }
-    private var weeklyAvg: Double { dailyRate * 7 }
-    private var todayPct: Double { ChartMath.ratio(entry.todayCost, denominator: dailyRate, fallback: 0) }
-    private var todayLaps: Int { ChartMath.safeInt(todayPct) }
-    private var weekPct: Double { ChartMath.ratio(entry.weekCost, denominator: weeklyAvg, fallback: 0) }
-    private var monthPct: Double {
-        guard entry.monthProjected > 0.001 else { return 0 }
-        return ChartMath.unit(entry.monthSoFar / entry.monthProjected)
-    }
-    private var yesterdayDelta: Double {
-        ChartMath.percentageDelta(current: entry.todayCost, previous: entry.yesterdaySpend, fallback: 0)
-    }
-
-    // MARK: - systemSmall
-
-    var systemSmallView: some View {
-        // anchor = outerRing + 8 (same formula as watchOS: 160+8=168)
-        let outer: CGFloat = 116
-        let off: CGFloat = 7
-
-        return ZStack {
-            Rectangle().fill(.clear).frame(width: outer + 8, height: outer + 8)
-                .overlay(alignment: .topLeading) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(I18n.t("time.today")).font(.system(size: 8)).foregroundColor(.secondary)
-                        Text(formatUSD(entry.todayCost)).font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.deepRed)
-                    }.offset(x: -off, y: -off)
-                }
-                .overlay(alignment: .topTrailing) {
-                    VStack(alignment: .trailing, spacing: 0) {
-                        Text(I18n.t("time.week")).font(.system(size: 8)).foregroundColor(.secondary)
-                        Text(formatUSD(entry.weekCost)).font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.marsGreen)
-                    }.offset(x: off, y: -off)
-                }
-                .overlay(alignment: .bottomLeading) {
-                    if entry.yesterdaySpend > 0.001 {
-                        let badge = yesterdayDelta > 0
-                            ? "↑" + ChartMath.safeInt(yesterdayDelta * 100).formatted(.percent)
-                            : "↓" + ChartMath.safeInt(-yesterdayDelta * 100).formatted(.percent)
-Text(verbatim: badge)
-                            .font(.system(size: 8, weight: .medium, design: .rounded))
-                            .foregroundColor(yesterdayDelta > 0 ? .deepRed : .marsGreen)
-                            .offset(x: -off, y: off)
-                    }
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    VStack(alignment: .trailing, spacing: 0) {
-                        Text(I18n.t("time.30d")).font(.system(size: 8)).foregroundColor(.secondary)
-                        Text(formatUSD(entry.monthCost)).font(.system(size: 9, weight: .semibold, design: .rounded)).foregroundColor(.marsGreenLight)
-                    }.offset(x: off, y: off)
-                }
-
-            ActivityRing(progress: monthPct, thickness: 4, color: .marsGreenLight)
-                .frame(width: outer, height: outer)
-            ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1),
-                         thickness: 4, color: .marsGreen)
-                .frame(width: outer - 12, height: outer - 12)
-            ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1),
-                         thickness: 4, color: .deepRed)
-                .frame(width: outer - 24, height: outer - 24)
-
-            VStack(spacing: 1) {
-                if todayLaps > 0 {
-                    Text("\(todayLaps)×")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
-                Text(formatUSD(entry.todayCost))
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.5).lineLimit(1)
-                Text(entry.updatedAt, format: .dateTime.hour().minute())
-                    .font(.system(size: 8))
-                    .foregroundColor(.secondary)
-            }
-        }
-        .containerBackground(.fill.tertiary, for: .widget)
-    }
-
-    // MARK: - systemMedium
-
-    var systemMediumView: some View {
-        let outer: CGFloat = 120
-
-        return HStack(spacing: 20) {
+        GeometryReader { geometry in
+            let diameter = min(geometry.size.width, geometry.size.height)
+            let radius = (diameter - width) / 2
+            let value = ratio.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+            let arc = WatchDashboardData.remainingArc(value ?? 0)
             ZStack {
-                ActivityRing(progress: monthPct, thickness: 5, color: .marsGreenLight)
-                    .frame(width: outer, height: outer)
-                ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1),
-                             thickness: 5, color: .marsGreen)
-                    .frame(width: outer - 14, height: outer - 14)
-                ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1),
-                             thickness: 5, color: .deepRed)
-                    .frame(width: outer - 28, height: outer - 28)
-
-                VStack(spacing: 1) {
-                    if todayLaps > 0 {
-                        Text("\(todayLaps)×")
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundColor(.secondary)
+                Circle()
+                    .stroke(value == nil ? Color.gray.opacity(0.24) : trackColor,
+                            lineWidth: width)
+                if let value {
+                    if value >= 1 {
+                        Circle().stroke(color.opacity(allowsLaps ? 0.48 : 1), lineWidth: width)
                     }
-                    Text(formatUSD(entry.todayCost))
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .minimumScaleFactor(0.5).lineLimit(1)
-                    Text(entry.updatedAt, format: .dateTime.hour().minute())
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondary)
+                    if arc > 0 {
+                        Circle()
+                            .trim(from: 0, to: arc)
+                            .stroke(color, style: StrokeStyle(lineWidth: width, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                    }
+                    if value >= 1 {
+                        let angle = (arc * 360 - 90) * Double.pi / 180
+                        Circle()
+                            .fill(color)
+                            .frame(width: width, height: width)
+                            .position(x: radius + radius * cos(angle),
+                                      y: radius + radius * sin(angle))
+                    }
                 }
             }
-            .frame(width: outer, height: outer)
+            .frame(width: diameter - width, height: diameter - width)
+            .position(x: diameter / 2, y: diameter / 2)
+        }
+        .accessibilityHidden(true)
+    }
+}
 
-            // Text breakdown on the right
-            VStack(alignment: .leading, spacing: 8) {
-                Text(I18n.t("welcome.title"))
-                    .font(.caption).foregroundColor(.secondary)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Circle().fill(Color.deepRed).frame(width: 6, height: 6)
-                        Text("\(I18n.t("time.today")):").font(.caption2)
-                        Text(formatUSD(entry.todayCost))
-                            .font(.caption2).fontWeight(.semibold)
-                    }
-                    HStack {
-                        Circle().fill(Color.marsGreen).frame(width: 6, height: 6)
-                        Text("\(I18n.t("time.week")):").font(.caption2)
-                        Text(formatUSD(entry.weekCost))
-                            .font(.caption2).fontWeight(.semibold)
-                    }
-                    HStack {
-                        Circle().fill(Color.marsGreenLight).frame(width: 6, height: 6)
-                        Text("\(I18n.t("time.30d")):").font(.caption2)
-                        Text(formatUSD(entry.monthCost))
-                            .font(.caption2).fontWeight(.semibold)
-                    }
-                    if entry.yesterdaySpend > 0.001 {
-                        HStack {
-                            Circle().fill(yesterdayDelta > 0 ? Color.deepRed : Color.marsGreen).frame(width: 6, height: 6)
-                            Text(I18n.t("dashboard.vs_yesterday")).font(.caption2)
-                            let badge = yesterdayDelta > 0
-                                ? "↑" + ChartMath.safeInt(yesterdayDelta * 100).formatted(.percent)
-                                : "↓" + ChartMath.safeInt(-yesterdayDelta * 100).formatted(.percent)
-Text(verbatim: badge)
-                                .font(.caption2).fontWeight(.semibold).monospacedDigit()
-                        }
-                    }
+struct AIPulseWidgetEntryView: View {
+    let entry: WidgetEntry
+
+    private let tokenColor = Color.deepRed
+    private let tokenTrackColor = Color.deepRed2.opacity(0.22)
+    private let lineColor = Color.marsGreen
+    private let lineTrackColor = Color.marsGreenLight.opacity(0.22)
+    private let activityColor = Color(red: 212 / 255, green: 163 / 255, blue: 38 / 255)
+    private let activityTrackColor = Color(red: 226 / 255, green: 204 / 255, blue: 126 / 255).opacity(0.20)
+
+    private func text(_ simplifiedChinese: String, _ english: String) -> String {
+        WidgetCopy.text(simplifiedChinese, english)
+    }
+
+    private var todayTokens: Double? {
+        guard let snapshot = entry.todaySnapshot,
+              !snapshot.readFailures.contains("toolUsage"),
+              !snapshot.readFailures.contains("dashboardUsageStats") else { return nil }
+        return Double(snapshot.todayTokens)
+    }
+
+    private var todayLines: Double? {
+        guard let snapshot = entry.todaySnapshot,
+              !snapshot.readFailures.contains("repositoryCode") else { return nil }
+        return snapshot.topRepos.reduce(0) { $0 + Double($1.added) + Double($1.deleted) }
+    }
+
+    private var tokenRatio: Double? {
+        WatchDashboardData.ratio(
+            value: todayTokens,
+            baseline: WatchDashboardData.baseline(entry.historySnapshot, tokens: true, now: entry.date)
+        )
+    }
+
+    private var lineRatio: Double? {
+        WatchDashboardData.ratio(
+            value: todayLines,
+            baseline: WatchDashboardData.baseline(entry.historySnapshot, tokens: false, now: entry.date)
+        )
+    }
+
+    private var currentPulse: PulseSnapshot? {
+        entry.pulseEnvelope?.currentPulse(asOf: entry.date)
+    }
+
+    private var summaryIsStale: Bool {
+        entry.todaySnapshot != nil
+            && !WatchDashboardData.isSummaryFresh(entry.todaySnapshot, now: entry.date)
+    }
+
+    private var status: String? {
+        guard let snapshot = entry.todaySnapshot else { return text("暂无数据", "No data") }
+        guard summaryIsStale else { return nil }
+        return text("缓存 ", "Cached ")
+            + snapshot.updatedAt.formatted(date: .omitted, time: .shortened)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let edge = min(geometry.size.width, geometry.size.height)
+            let side = edge * 0.82
+            let thickness = side * 13 / 184
+            ZStack {
+                Color.black
+                ringCluster(side: side, thickness: thickness)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
+                cornerFacts
+                if let status {
+                    Text(status)
+                        .font(.system(size: 7))
+                        .foregroundStyle(summaryIsStale ? activityColor : secondaryTextColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height - 6)
                 }
             }
         }
-        .containerBackground(.fill.tertiary, for: .widget)
+        .containerBackground(Color.black, for: .widget)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
     }
 
-    // MARK: - accessoryCircular (Lock Screen)
-
-    var accessoryCircularView: some View {
+    private func ringCluster(side: CGFloat, thickness: CGFloat) -> some View {
         ZStack {
-            ActivityRing(progress: monthPct, thickness: 3, color: .marsGreenLight)
-                .frame(width: 52, height: 52)
-            ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1),
-                         thickness: 3, color: .marsGreen)
-                .frame(width: 44, height: 44)
-            ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1),
-                         thickness: 3, color: .deepRed)
-                .frame(width: 36, height: 36)
+            WidgetActivityRing(ratio: tokenRatio, color: tokenColor,
+                               trackColor: tokenTrackColor, width: thickness)
+                .opacity(summaryIsStale ? 0.55 : 1)
+            WidgetActivityRing(ratio: lineRatio, color: lineColor,
+                               trackColor: lineTrackColor, width: thickness)
+                .padding(side * 16 / 184)
+                .opacity(summaryIsStale ? 0.55 : 1)
+            WidgetActivityRing(
+                ratio: WatchDashboardData.intensity(currentPulse, now: entry.date),
+                color: activityColor, trackColor: activityTrackColor,
+                width: thickness, allowsLaps: false
+            )
+            .padding(side * 32 / 184)
+            centerFact
+        }
+        .frame(width: side, height: side)
+    }
+
+    private var centerFact: some View {
+        VStack(spacing: 3) {
+            Text(text("当前强度", "Current activity"))
+                .font(.system(size: 8))
+                .foregroundStyle(secondaryTextColor)
+            Text(pulseText)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if let date = entry.pulseEnvelope?.pulse?.asOf {
+                Text(text("观测于 ", "Observed ")
+                     + date.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 7))
+                    .foregroundStyle(secondaryTextColor)
+                    .lineLimit(1)
+            } else {
+                Text("—").font(.system(size: 7)).foregroundStyle(secondaryTextColor)
+            }
+        }
+        .frame(width: 68)
+    }
+
+    private var pulseText: String {
+        if let currentPulse { return I18n.pulseTier(currentPulse.tier) }
+        return entry.pulseEnvelope?.pulse == nil
+            ? text("暂无观测", "No observation")
+            : text("观测已过期", "Expired")
+    }
+
+    private var cornerFacts: some View {
+        VStack {
+            HStack(alignment: .top) {
+                corner(text("今日词元", "Today tokens"), count(todayTokens),
+                       color: tokenColor, alignment: .leading, numberFirst: false)
+                Spacer()
+                corner(text("今日行数", "Today lines"), count(todayLines),
+                       color: lineColor, alignment: .trailing, numberFirst: false)
+            }
+            Spacer()
+            HStack(alignment: .bottom) {
+                corner(text("词元 / 平常", "Tokens / usual"), multiple(tokenRatio),
+                       color: tokenColor, alignment: .leading, numberFirst: true)
+                Spacer()
+                corner(text("行数 / 平常", "Lines / usual"), multiple(lineRatio),
+                       color: lineColor, alignment: .trailing, numberFirst: true)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .opacity(summaryIsStale ? 0.55 : 1)
+    }
+
+    private func corner(_ label: String, _ value: String, color: Color,
+                        alignment: HorizontalAlignment, numberFirst: Bool) -> some View {
+        VStack(alignment: alignment, spacing: 0) {
+            if numberFirst {
+                Text(value)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+            }
+            Text(label)
+                .font(.system(size: 7))
+                .foregroundStyle(secondaryTextColor)
+                .lineLimit(1)
+            if !numberFirst {
+                Text(value)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+            }
         }
     }
 
-    // MARK: - accessoryRectangular (Lock Screen)
-
-    var accessoryRectangularView: some View {
-        HStack(spacing: 8) {
-            ZStack {
-                ActivityRing(progress: monthPct, thickness: 3, color: .marsGreenLight)
-                    .frame(width: 40, height: 40)
-                ActivityRing(progress: weekPct.truncatingRemainder(dividingBy: 1),
-                             thickness: 3, color: .marsGreen)
-                    .frame(width: 34, height: 34)
-                ActivityRing(progress: todayPct.truncatingRemainder(dividingBy: 1),
-                             thickness: 3, color: .deepRed)
-                    .frame(width: 28, height: 28)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(formatUSD(entry.todayCost))
-                    .font(.headline).bold()
-                Text(I18n.t("welcome.title"))
-                    .font(.caption2).foregroundColor(.secondary)
-            }
-        }
+    private func count(_ value: Double?) -> String {
+        guard let value, value.isFinite, value >= 0,
+              value < Double(Int64.max) else { return "N/A" }
+        return ChartMath.compactCount(Int64(value))
     }
 
-    // MARK: - Formatting
+    private func multiple(_ value: Double?) -> String {
+        guard let value else { return "N/A" }
+        return String(format: "%.1f×", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
 
-    private static let usdFormatter: NumberFormatter = {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        f.locale = Locale(identifier: "en_US")
-        return f
-    }()
+    private var secondaryTextColor: Color { Color.white.opacity(0.62) }
 
-    private func formatUSD(_ v: Double) -> String {
-        if v >= 100 { Self.usdFormatter.maximumFractionDigits = 0 }
-        else { Self.usdFormatter.maximumFractionDigits = 2 }
-        return Self.usdFormatter.string(from: NSNumber(value: v)) ?? "$0"
+    private var accessibilitySummary: String {
+        [
+            "\(text("今日词元", "Today tokens")): \(count(todayTokens))",
+            "\(text("词元相对平常", "Tokens versus usual")): \(multiple(tokenRatio))",
+            "\(text("今日行数", "Today lines")): \(count(todayLines))",
+            "\(text("行数相对平常", "Lines versus usual")): \(multiple(lineRatio))",
+            "\(text("当前强度", "Current activity")): \(pulseText)",
+            status
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
     }
 }
