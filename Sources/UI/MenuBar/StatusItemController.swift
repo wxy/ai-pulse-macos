@@ -43,6 +43,7 @@ final class StatusItemController: NSObject {
 
         NotificationCenter.default.addObserver(self, selector: #selector(onDataChanged),
                                                name: .dataDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(onDataChanged), name: BookmarkManager.didChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(onPulseChanged),
                                                name: .pulseAppearanceDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(onBeatChanged),
@@ -122,17 +123,19 @@ final class StatusItemController: NSObject {
                updateContext: Bool = true) {
         guard let item = statusItem, let button = item.button else { return }
         latestTodayCommits = todayCommits
-        let validSnapshot = snapshot?.isCurrent() == true ? snapshot : nil
+        let availability = LocalDataStatus.current(hasActivity: (snapshot?.activityFacts?.todayTokens ?? 0) > 0)
+        let validSnapshot = snapshot?.isCurrent() == true && availability.canReportCurrentActivity ? snapshot : nil
 
-        currentTier = snapshot?.isCurrent() == true ? snapshot?.tier : nil
+        currentTier = validSnapshot?.tier
         currentCooling = validSnapshot?.activity?.freshness == .aging
         renderMark()
         button.title = ""
-        button.setAccessibilityLabel(Self.headline(snapshot: validSnapshot))
+        button.setAccessibilityLabel(availability.canReportCurrentActivity ? Self.headline(snapshot: validSnapshot) : SetupCopy.activity(availability.activity))
         button.toolTip = [Self.detail(snapshot: validSnapshot), PulseCopy.recentFacts(validSnapshot?.activityFacts),
                           I18n.t("pulse.activity.legend")].joined(separator: "\n")
 
-        let headline = Self.headline(snapshot: validSnapshot)
+        if !availability.canReportCurrentActivity { button.toolTip = SetupCopy.activity(availability.activity) }
+        let headline = availability.canReportCurrentActivity ? Self.headline(snapshot: validSnapshot) : SetupCopy.activity(availability.activity)
         let detail = Self.detail(snapshot: validSnapshot)
         if let menu = contextMenu {
             menu.items.first { ($0.representedObject as? String) == "pulse-recent-facts" }?.title =
