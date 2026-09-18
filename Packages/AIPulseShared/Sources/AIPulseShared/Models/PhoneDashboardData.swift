@@ -24,10 +24,10 @@ public enum PhoneDashboardData {
 
     /// Preserve proportions while keeping very small token components visible.
     public static func noseWidths(_ values: [Int64]) -> [Double] {
-        let roots = values.map { sqrt(Double(max(0, $0))) }
+        let roots = values.map { Double(max(0, $0)) }
         let total = roots.reduce(0, +)
         guard total > 0 else { return values.map { _ in 1 / Double(max(1, values.count)) } }
-        let floor = 0.14
+        let floor = min(0.15, 1 / Double(max(1, values.count)))
         return roots.map { floor + (1 - floor * Double(values.count)) * $0 / total }
     }
 }

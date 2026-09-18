@@ -14,7 +14,7 @@ final class PhoneDashboardDataTests: XCTestCase {
     func testNoseRespondsToDataAndKeeps99PercentCacheVisible() {
         let widths = PhoneDashboardData.noseWidths([10, 9900, 90])
         XCTAssertEqual(widths.reduce(0, +), 1, accuracy: 0.000001)
-        XCTAssertGreaterThan(widths[0], 0.14)
+        XCTAssertGreaterThan(widths[0], 0.15)
         XCTAssertGreaterThan(widths[1], widths[2])
         XCTAssertGreaterThan(widths[2], widths[0])
         XCTAssertNotEqual(widths, PhoneDashboardData.noseWidths([1000, 1000, 1000]))

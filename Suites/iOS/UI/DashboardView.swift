@@ -12,17 +12,56 @@ struct FrostedCard: ViewModifier {
     func body(content: Content) -> some View { content.padding(12).background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14)) }
 }
 
-private struct RobotWave: Shape {
-    var amplitude: CGFloat
+private struct RobotSilhouette: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        for i in 0...100 {
-            let x = CGFloat(i) / 100
-            let wave = sin(x * .pi * 7) * (0.45 + 0.3 * sin(x * .pi * 3)) + 0.2 * sin(x * .pi * 17)
-            let p = CGPoint(x: x * rect.width, y: rect.midY + wave * amplitude * rect.height * 0.42)
-            if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
+        path.addRoundedRect(in: CGRect(x: 0, y: 23, width: 440, height: 440), cornerSize: CGSize(width: 29, height: 29))
+        path.addRect(CGRect(x: 182, y: 462, width: 76, height: 10))
+        path.addRoundedRect(in: CGRect(x: 0, y: 471, width: 440, height: 128), cornerSize: CGSize(width: 16, height: 16))
+        path.addRoundedRect(in: CGRect(x: -9, y: 223.5, width: 10, height: 39), cornerSize: CGSize(width: 4, height: 4))
+        path.addRoundedRect(in: CGRect(x: 439, y: 223.5, width: 10, height: 39), cornerSize: CGSize(width: 4, height: 4))
+        path.addEllipse(in: CGRect(x: 213.5, y: 0, width: 13, height: 13))
+        path.addRect(CGRect(x: 219, y: 12, width: 2, height: 12))
+        return path
+    }
+}
+
+private struct RobotPulseCurve: Shape {
+    var tier: PulseTier?
+    func path(in rect: CGRect) -> Path {
+        let strength: CGFloat = tier == nil || tier == .resting ? 0.15 : tier == .intense ? 1 : tier == .elevated ? 0.88 : 0.72
+        // Unequal peaks and troughs follow the approved symbol; not a fabricated time series.
+        let points: [(CGFloat, CGFloat)] = [(0,0),(0.18,0),(0.28,-0.28),(0.37,0.22),(0.46,-0.46),(0.57,0.42),(0.67,-0.18),(0.77,0.08),(0.87,0),(1,0)]
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        for index in 1..<points.count {
+            let a = points[index-1], b = points[index]
+            let x1 = rect.minX + rect.width * a.0, x2 = rect.minX + rect.width * b.0
+            let y1 = rect.midY + rect.height * a.1 * strength, y2 = rect.midY + rect.height * b.1 * strength
+            path.addCurve(to: CGPoint(x: x2, y: y2), control1: CGPoint(x: (x1+x2)/2, y: y1), control2: CGPoint(x: (x1+x2)/2, y: y2))
         }
         return path
+    }
+}
+
+private struct CodeChangeTrapezoid: Shape {
+    func path(in rect: CGRect) -> Path {
+        let inset = rect.width * 0.25
+        let radius = min(6, min(rect.width, rect.height) * 0.12)
+        // Round only the external contour. The two fills remain one contiguous
+        // stack, so their internal ratio boundary is still a straight line.
+        return Path { path in
+            path.move(to: CGPoint(x: rect.minX + inset + radius, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - inset - radius, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - inset + radius * inset / max(rect.height, 1), y: rect.minY + radius), control: CGPoint(x: rect.maxX - inset, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - radius * inset / max(rect.height, 1), y: rect.maxY - radius))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - radius, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + radius, y: rect.maxY))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + radius * inset / max(rect.height, 1), y: rect.maxY - radius), control: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + inset - radius * inset / max(rect.height, 1), y: rect.minY + radius))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + inset + radius, y: rect.minY), control: CGPoint(x: rect.minX + inset, y: rect.minY))
+            path.closeSubpath()
+        }
     }
 }
 
@@ -34,36 +73,46 @@ struct DashboardView: View {
     @State private var range = "today"
     @State private var detail: String?
     private var snap: DashboardSnapshot? { cloud.cachedSnapshot(for: range) }
-    private var plate: Color { Color(light: Color(red: 0.90, green: 0.91, blue: 0.89), dark: Color(red: 0.17, green: 0.19, blue: 0.18)) }
-    private let greens: [Color] = [.marsGreenBar, Color(red: 0.37, green: 0.53, blue: 0.40), Color(red: 0.53, green: 0.64, blue: 0.49), Color(red: 0.69, green: 0.73, blue: 0.61)]
-    private let reds: [Color] = [.deepRed, Color(red: 0.68, green: 0.38, blue: 0.32), Color(red: 0.76, green: 0.53, blue: 0.44), Color(red: 0.81, green: 0.68, blue: 0.57)]
+    private var plate: Color { Color(light: Color(red: 233/255, green: 236/255, blue: 229/255), dark: Color(red: 0.14, green: 0.17, blue: 0.15)) }
+    private var inset: Color { Color(light: Color(red: 248/255, green: 249/255, blue: 245/255), dark: Color(red: 0.19, green: 0.22, blue: 0.20)) }
+    private var line: Color { Color(light: Color(red: 212/255, green: 218/255, blue: 209/255), dark: Color(red: 61/255, green: 73/255, blue: 63/255)) }
+    private var earColor: Color { Color(light: Color(red: 218/255, green: 229/255, blue: 218/255), dark: Color(red: 0.32, green: 0.40, blue: 0.34)) }
+    private var cacheColor: Color { scheme == .dark ? Color(red: 0.30, green: 0.43, blue: 0.36) : .marsGreenLight }
+    private let palette: [Color] = [.deepRed, .marsGreen, .deepRed2, .marsGreen2]
     private func t(_ zh: String, _ en: String) -> String { PhoneText.t(zh, en) }
     private func count(_ value: Int64) -> String { value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1))) }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                if cloud.isPreview { Text(t("预览数据 · 不连接 iCloud", "Preview · iCloud disconnected")).font(.caption).foregroundStyle(.secondary).padding(.bottom, 12) }
-                Capsule().fill(plate).frame(width: 4, height: 15)
-                    .overlay(alignment: .top) { Circle().fill(Color.marsGreen).frame(width: 9, height: 9).offset(y: -5) }
-                head
-                    .aspectRatio(1, contentMode: .fit)
-                    .background(plate, in: RoundedRectangle(cornerRadius: 32))
-                    .overlay(RoundedRectangle(cornerRadius: 32).stroke(.primary.opacity(0.08)))
-                    .overlay(alignment: .leading) { ear(left: true).offset(x: -19) }
-                    .overlay(alignment: .trailing) { ear(left: false).offset(x: 19) }
-                RoundedRectangle(cornerRadius: 4).fill(plate).frame(width: 100, height: 14)
-                expenses
-                    .background(plate, in: RoundedRectangle(cornerRadius: 24))
+        GeometryReader { geometry in
+            let width = min(440.0, geometry.size.width - 56)
+            let scale = width / 440
+            ScrollView {
+                VStack(spacing: 12) {
+                    if cloud.isPreview { Text(t("预览数据 · 不连接 iCloud", "Preview · iCloud disconnected")).font(.caption).foregroundStyle(.secondary) }
+                    VStack(spacing: 0) {
+                        VStack(spacing: 0) {
+                            Circle().fill(earColor).frame(width: 13, height: 13).overlay(Circle().stroke(line, lineWidth: 1))
+                            Rectangle().fill(Color.marsGreenLight).frame(width: 2, height: 10)
+                        }.frame(height: 23)
+                        head.frame(width: 440, height: 440)
+                            .background(plate, in: RoundedRectangle(cornerRadius: 29))
+                            .overlay(RoundedRectangle(cornerRadius: 29).stroke(.primary.opacity(0.14)))
+                            .overlay(alignment: .leading) { ear(left: true).offset(x: -20) }
+                            .overlay(alignment: .trailing) { ear(left: false).offset(x: 20) }
+                        Rectangle().fill(plate).frame(width: 76, height: 8)
+                            .overlay(HStack { Rectangle().fill(.primary.opacity(0.14)).frame(width: 1); Spacer(); Rectangle().fill(.primary.opacity(0.14)).frame(width: 1) })
+                        expenses.frame(width: 440, height: 128)
+                    }
+                    .background(RobotSilhouette().fill(plate).shadow(color: .black.opacity(0.27), radius: 14, y: 5))
+                    .frame(width: 440, height: 599)
+                    .scaleEffect(scale, anchor: .topLeading)
+                    .frame(width: width, height: 599 * scale, alignment: .topLeading)
+                }.padding(.horizontal, 28).padding(.top, 28).padding(.bottom, 30)
             }
-            .compositingGroup()
-            .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.18), radius: 15, y: 8)
-            .padding(.horizontal, 28).padding(.top, 14).padding(.bottom, 30)
+            .refreshable { await cloud.fetchAndStore(range: range); cloud.loadSnapshot(for: range); await cloud.fetchCurrentPulse() }
         }
         .background(Color(.systemBackground))
-        .navigationTitle(t("仪表盘", "Dashboard"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { PhoneSettingsView() } label: { Image(systemName: "gearshape") }.accessibilityLabel(t("设置", "Settings")) } }
+        .toolbar(.hidden, for: .navigationBar)
         .task(id: range) { try? await cloud.fetchSnapshot(for: range) }
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
@@ -72,7 +121,6 @@ struct DashboardView: View {
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }
             }
         }
-        .refreshable { await cloud.fetchAndStore(range: range); cloud.loadSnapshot(for: range); await cloud.fetchCurrentPulse() }
     }
 
     @ViewBuilder private var head: some View {
@@ -84,77 +132,84 @@ struct DashboardView: View {
             }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
             VStack(spacing: 9) {
-                TimelineView(.periodic(from: .now, by: 15)) { context in
-                    let pulse = cloud.pulseEnvelope?.currentPulse(asOf: context.date)
-                    let resting = pulse?.tier == .resting
-                    let active = pulse?.tier == .active
-                    let color: Color = pulse == nil || resting ? .secondary : active ? .marsGreenBar : Color(red: 0.72, green: 0.58, blue: 0.22)
-                    Button { detail = t("当前活动强度", "Current activity") } label: {
-                        HStack(spacing: 10) {
-                            RobotWave(amplitude: pulse == nil || resting ? 0.07 : active ? 0.55 : 1).stroke(color, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)).frame(maxWidth: .infinity).frame(height: 35)
-                            Text(pulse == nil ? (cloud.pulseEnvelope?.pulse == nil ? t("暂无当前观测", "No current signal") : t("观测已过期", "Signal expired")) : resting ? t("平静", "Resting") : active ? t("活跃", "Active") : t("高强度", "Intense")).font(.caption.weight(.medium)).foregroundStyle(color)
-                        }.padding(.horizontal, 12).padding(.vertical, 5).background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 13))
-                    }.buttonStyle(.plain).accessibilityLabel(t("查看当前活动强度依据", "Current activity details"))
+                HStack(alignment: .top) {
+                    Color.clear.frame(width: 16, height: 24)
+                    Spacer()
+                    TimelineView(.periodic(from: .now, by: 15)) { context in
+                        let pulse = cloud.pulseEnvelope?.currentPulse(asOf: context.date)
+                        Button { detail = t("当前活动强度", "Current activity") } label: {
+                            Group {
+                                if pulse == nil { Text(cloud.pulseEnvelope?.pulse == nil ? t("暂无当前观测", "No current signal") : t("观测已过期", "Signal expired")).font(.system(size: 11)) }
+                                else { RobotPulseCurve(tier: pulse?.tier).stroke(pulse?.tier == .active ? Color.marsGreen : pulse?.tier == .resting ? .secondary : .deepRed, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)).frame(width: 125, height: 38) }
+                            }.frame(width: 270, height: 57).background(inset, in: RoundedRectangle(cornerRadius: 13)).overlay(RoundedRectangle(cornerRadius: 13).stroke(line))
+                        }.buttonStyle(.plain).accessibilityLabel(t("查看当前活动强度依据", "Current activity details"))
+                    }
+                    Spacer()
+                    NavigationLink { PhoneSettingsView() } label: { Image(systemName: "gearshape").font(.system(size: 14)).foregroundStyle(.secondary) }.accessibilityLabel(t("设置", "Settings"))
                 }
-                HStack(spacing: 3) {
+                HStack(spacing: 0) {
                     ForEach(["today", "week", "30d"], id: \.self) { key in
                         Button { range = key } label: {
                             Text(key == "today" ? t("今日", "Today") : key == "week" ? t("本周", "Week") : t("30 天", "30 days"))
-                                .font(.caption.weight(.medium)).frame(maxWidth: .infinity).padding(.vertical, 7)
-                                .background(range == key ? Color.marsGreen.opacity(scheme == .dark ? 0.22 : 0.13) : .clear, in: Capsule())
-                        }.buttonStyle(.plain)
+                                .font(.system(size: 11)).foregroundStyle(range == key ? (scheme == .dark ? Color(red: 0.76, green: 0.83, blue: 0.78) : .primary) : .secondary)
+                                .frame(maxWidth: .infinity).frame(height: 24)
+                                .background(range == key ? (scheme == .dark ? Color(red: 0.19, green: 0.30, blue: 0.24) : Color.white.opacity(0.8)) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        }.buttonStyle(.plain).accessibilityAddTraits(range == key ? .isSelected : [])
                     }
-                }.padding(3).background(.primary.opacity(0.035), in: Capsule()).padding(.horizontal, 26)
-                HStack(alignment: .top, spacing: 8) {
+                }.padding(2).frame(width: 240).background(inset, in: RoundedRectangle(cornerRadius: 8))
+                HStack(alignment: .center, spacing: 16) {
                     eye(tokens: true)
-                    nose.frame(width: 31).padding(.top, 25)
+                    nose
                     eye(tokens: false)
-                }
-                Button { detail = t("活动节奏", "Activity rhythm") } label: {
-                    VStack(spacing: 5) {
-                        HStack(spacing: 3) { Text(t("活动节奏（词元｜行数）", "Activity rhythm (tokens | lines)")); Image(systemName: "chevron.right").font(.system(size: 8)) }.font(.system(size: 10)).foregroundStyle(.secondary)
-                        rhythm(tokens: true).frame(height: 16)
-                        rhythm(tokens: false).frame(height: 16)
-                    }.padding(9).background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
-                }.buttonStyle(.plain).padding(.horizontal, 20)
+                }.frame(height: 200, alignment: .top)
+                VStack(spacing: 5) {
+                    HStack { Text(t("活动节奏（词元｜行数）", "Activity rhythm (Tokens | Lines)")); Spacer(); Text(range == "today" ? t("按小时", "Hourly") : t("按天", "Daily")) }.font(.system(size: 9)).foregroundStyle(.secondary)
+                    rhythm(tokens: true).frame(height: 23)
+                    rhythm(tokens: false).frame(height: 23)
+                }.frame(width: 350, height: 70).padding(10)
+                    .background(inset, in: RoundedRectangle(cornerRadius: 11))
+                    .overlay(RoundedRectangle(cornerRadius: 11).stroke(line))
             }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
     private func ear(left: Bool) -> some View {
         Button { muted.toggle() } label: {
-            Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                .font(.system(size: 11)).scaleEffect(x: left ? -1 : 1, y: 1)
-                .frame(width: 23, height: 59).background(plate, in: RoundedRectangle(cornerRadius: 7))
+            RoundedRectangle(cornerRadius: 4).fill(earColor)
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(line))
+                .overlay { Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: 10, weight: .medium)).scaleEffect(x: left ? -1 : 1, y: 1).foregroundStyle(muted ? Color.secondary : .primary.opacity(0.7)) }
+                .frame(width: 16, height: 39).frame(width: 24, height: 47).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel(muted ? t("开启 iPhone 声音", "Unmute iPhone") : t("静音 iPhone", "Mute iPhone"))
     }
-
     private func parts(tokens: Bool) -> [(String, Double)] {
-        if tokens { return (snap?.toolBreakdown ?? []).map { ($0.name, Double($0.tokens ?? 0)) }.sorted { $0.1 > $1.1 } }
-        return (snap?.topRepos ?? []).map { ($0.name, Double($0.totalChanges)) }.sorted { $0.1 > $1.1 }
+        let values = tokens ? (snap?.toolBreakdown ?? []).map { ($0.name, Double($0.tokens ?? 0)) }
+            : (snap?.topRepos ?? []).map { ($0.name, Double($0.totalChanges)) }
+        let sorted = values.filter { $0.1 > 0 }.sorted { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }
+        return sorted.count > 3 ? Array(sorted.prefix(3)) + [(t("其他", "Other"), sorted.dropFirst(3).reduce(0) { $0 + $1.1 })] : sorted
     }
     private func eye(tokens: Bool) -> some View {
         let values = parts(tokens: tokens)
-        let palette = tokens ? greens : reds
         let total = values.reduce(0) { $0 + $1.1 }
-        let value = tokens ? snap.map { $0.todayTokens == 0 && !$0.readFailures.isEmpty ? "—" : count($0.todayTokens) } : values.isEmpty ? nil : count(Int64(total))
+        let value = tokens ? snap.map { $0.readFailures.contains("toolUsage") ? "—" : count(Int64(total)) } : values.isEmpty ? nil : count(Int64(total))
         return VStack(spacing: 6) {
+            Text(tokens ? t("工具用量", "Tool usage") : t("仓库变化", "Repository changes")).font(.caption2).foregroundStyle(.secondary)
             Button { detail = tokens ? t("工具与模型", "Tools & models") : t("仓库变化", "Repository changes") } label: {
                 ZStack {
-                    Circle().stroke(.primary.opacity(0.13), lineWidth: 0.6).padding(1)
-                    Circle().stroke(.primary.opacity(0.07), lineWidth: 10).padding(7)
+                    Circle().fill(inset).frame(width: 120, height: 120)
+                    Circle().stroke(line, lineWidth: 1).frame(width: 132, height: 132)
+                    Circle().stroke(.primary.opacity(0.07), lineWidth: 10).frame(width: 110, height: 110)
                     ForEach(Array(values.enumerated()), id: \.offset) { index, item in
                         let start = total > 0 ? values.prefix(index).reduce(0) { $0 + $1.1 } / total : 0
-                        Circle().trim(from: start, to: total > 0 ? start + item.1 / total : 0).stroke(palette[index % 4], style: StrokeStyle(lineWidth: 10, lineCap: .butt)).rotationEffect(.degrees(-90)).padding(7)
+                        Circle().trim(from: start, to: total > 0 ? start + item.1 / total : 0).stroke(palette[index % 4], style: StrokeStyle(lineWidth: 10, lineCap: .butt)).rotationEffect(.degrees(-90)).frame(width: 110, height: 110)
                     }
-                    VStack(spacing: 2) { Text(value ?? "—").font(.system(size: 21, weight: .semibold, design: .rounded)).minimumScaleFactor(0.65); Text(tokens ? "TOKENS" : "LINES").font(.system(size: 9, weight: .medium)).tracking(1).foregroundStyle(.secondary) }.padding(15)
-                }.aspectRatio(1, contentMode: .fit)
+                    VStack(spacing: 2) { Text(value ?? "—").font(.system(size: 20, weight: .semibold, design: .rounded)).minimumScaleFactor(0.65); Text(tokens ? "TOKENS" : "LINES").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary) }.padding(15)
+                }.frame(width: 132, height: 132)
             }.buttonStyle(.plain)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)], alignment: .leading, spacing: 3) {
                 ForEach(Array(values.prefix(4).enumerated()), id: \.offset) { i, item in HStack(spacing: 3) { Circle().fill(palette[i]).frame(width: 4, height: 4); Text(item.0).font(.system(size: 10)).lineLimit(1) }.frame(maxWidth: .infinity, alignment: .leading) }
             }.frame(height: 27, alignment: .top)
-            Button { detail = tokens ? t("工具与模型", "Tools & models") : t("仓库变化", "Repository changes") } label: { HStack(spacing: 2) { Text(tokens ? t("工具与模型", "Tools & models") : t("全部仓库", "All repositories")); Image(systemName: "chevron.right") }.font(.system(size: 9)) }.buttonStyle(.plain)
-        }.frame(maxWidth: .infinity)
+            Button { detail = tokens ? t("工具与模型", "Tools & models") : t("仓库变化", "Repository changes") } label: { HStack(spacing: 2) { Text(tokens ? t("工具与模型", "Tools & models") : t("全部仓库", "All repositories")); Image(systemName: "arrow.up.right").font(.system(size: 8)) }.font(.system(size: 10)).foregroundStyle(.secondary) }.buttonStyle(.plain)
+        }.frame(width: 145)
     }
 
     private var nose: some View {
@@ -163,18 +218,22 @@ struct DashboardView: View {
         let widths = PhoneDashboardData.noseWidths(values)
         let totalInput = Double(values[0]) + Double(values[1])
         return Button { detail = t("词元构成", "Token composition") } label: {
-            VStack(spacing: 4) {
-                GeometryReader { geo in HStack(spacing: 0) { ForEach(0..<3) { i in Rectangle().fill(i == 0 ? Color.marsGreenBar : i == 1 ? Color(light: Color(red: 0.63, green: 0.67, blue: 0.58), dark: Color(red: 0.36, green: 0.41, blue: 0.33)) : Color.deepRed).frame(width: geo.size.width * widths[i]) } } }.frame(height: 64).clipShape(RoundedRectangle(cornerRadius: 8))
-                Text(c == nil || totalInput == 0 ? "—" : "\(Int(Double(values[1]) / totalInput * 100))%")
-                    .font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
-            }
-        }.buttonStyle(.plain).accessibilityLabel(t("缓存率与词元构成", "Cache rate and token composition"))
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    ForEach(0..<3) { i in
+                        Rectangle().fill(i == 0 ? Color.marsGreen : i == 1 ? cacheColor : .deepRed)
+                            .opacity(values[i] > 0 ? 1 : 0.25).frame(width: geo.size.width * widths[i])
+                            .overlay { if i == 1 { Text(c == nil || totalInput == 0 ? "—" : "\(Int(Double(values[1]) / totalInput * 100))%").font(.system(size: 8, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5) } }
+                    }
+                }.clipShape(CodeChangeTrapezoid())
+            }.frame(width: 44, height: 55).opacity(c == nil ? 0.25 : 1)
+        }.frame(width: 60).buttonStyle(.plain).accessibilityLabel(t("缓存率与词元构成", "Cache rate and token composition"))
     }
 
     private func rhythm(tokens: Bool) -> some View {
         let values = snap.map { PhoneDashboardData.rhythm(tokens ? $0.dailyStats : $0.codeChanges, period: $0.period, tokens: tokens) } ?? Array(repeating: -1, count: 24)
         let peak = max(1, values.max() ?? 1)
-        return GeometryReader { geo in HStack(alignment: .bottom, spacing: 2) { ForEach(values.indices, id: \.self) { i in RoundedRectangle(cornerRadius: 1).fill(values[i] < 0 ? Color.secondary.opacity(0.15) : (tokens ? Color.marsGreenBar : Color.deepRed).opacity(values[i] == 0 ? 0.15 : 0.9)).frame(height: values[i] < 0 ? 3 : max(2, geo.size.height * values[i] / peak)).frame(maxWidth: .infinity) } }.frame(height: geo.size.height, alignment: .bottom) }
+        return GeometryReader { geo in HStack(alignment: tokens ? .top : .bottom, spacing: 3) { ForEach(values.indices, id: \.self) { i in Capsule().fill(values[i] < 0 ? Color.secondary.opacity(0.15) : (tokens ? Color.marsGreen : Color.deepRed2).opacity(values[i] == 0 ? 0.15 : 0.9)).frame(height: values[i] < 0 ? 3 : max(3, geo.size.height * values[i] / peak)).frame(maxWidth: .infinity) } }.frame(height: geo.size.height, alignment: tokens ? .top : .bottom) }
     }
     private var spendText: String {
         guard let items = snap?.observedSpend, !items.isEmpty else { return "—" }
@@ -182,24 +241,29 @@ struct DashboardView: View {
         return sums.sorted().joined(separator: " · ")
     }
     private var expenses: some View {
-        VStack(spacing: 12) {
-            HStack(alignment: .top, spacing: 16) {
-                expense(t("API 已观测支出", "Observed API spend"), value: spendText)
-                Rectangle().fill(.primary.opacity(0.1)).frame(width: 1, height: 36)
-                expense(t("固定月费", "Fixed monthly fees"), value: snap?.declaredMonthlyCostUSD.map { "USD \($0.formatted(.number.precision(.fractionLength(2))))" } ?? "—")
-            }
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                expense(t("账户观测", "Account observations"), value: spendText, link: t("账户观测明细", "Observation details"), detail: t("API 已观测支出", "Observed API spend"))
+                Divider()
+                expense(t("固定月费 · 声明值", "Fixed monthly fees · declared"), value: snap?.declaredMonthlyCostUSD.map { "USD \($0.formatted(.number.precision(.fractionLength(2))))" + t(" / 月", " / mo") } ?? "—", link: t("固定费用说明", "Fixed cost context"), detail: t("固定月费", "Fixed monthly fees"))
+            }.fixedSize(horizontal: false, vertical: true).padding(.horizontal, 20).padding(.vertical, 16)
             Divider()
-            Button { detail = t("数据说明", "Data details") } label: {
-                VStack(spacing: 4) {
-                    Text(snap.map { t("Mac 上次数据更新 ", "Last Mac observation ") + $0.updatedAt.formatted(date: .abbreviated, time: .shortened) } ?? t("此范围尚无数据", "No snapshot for this range"))
-                    if !(snap?.readFailures ?? []).isEmpty { Text(t("部分数据读取失败", "Some source reads failed")) }
-                    Text(cloud.rangeErrors[range] == nil ? t("本地缓存 · 数据 v2", "Local cache · data v2") : t("同步未成功 · 显示已有缓存", "Sync failed · showing cached data"))
-                }.font(.system(size: 10)).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-            }.buttonStyle(.plain)
-        }.padding(18)
+            VStack(spacing: 5) {
+                HStack {
+                    Text(snap.map { t("Mac 上次更新 ", "Last Mac observation ") + $0.updatedAt.formatted(date: .omitted, time: .shortened) } ?? t("此范围尚无数据", "No snapshot for this range"))
+                    Spacer()
+                    Button { detail = t("数据说明", "Data details") } label: { Label(t("数据说明", "Data details"), systemImage: "arrow.up.right") }
+                }
+                HStack { Text("AI Pulse " + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")); Spacer(); Text(t("数据版本 ", "Data format ") + (snap?.payloadVersion ?? "2.0.0")) }
+            }.font(.system(size: 9)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 10).background(.primary.opacity(0.035))
+        }.background(inset, in: RoundedRectangle(cornerRadius: 16)).clipShape(RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(.primary.opacity(0.14))).buttonStyle(.plain)
     }
-    private func expense(_ title: String, value: String) -> some View {
-        Button { detail = title } label: { VStack(alignment: .leading, spacing: 7) { HStack(spacing: 3) { Text(title); Image(systemName: "chevron.right") }.font(.system(size: 10)).foregroundStyle(.secondary); Text(value).font(.system(size: 15, weight: .semibold, design: .rounded)).lineLimit(2).minimumScaleFactor(0.7) }.frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain)
+    private func expense(_ title: String, value: String, link: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.system(size: 10)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 18, weight: .medium)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
+            Button { self.detail = detail } label: { HStack(spacing: 4) { Text(link); Image(systemName: "arrow.up.right").font(.system(size: 8)) }.font(.system(size: 10)).foregroundStyle(.secondary) }.buttonStyle(.plain)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
     @ViewBuilder private func detailContent(_ title: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
