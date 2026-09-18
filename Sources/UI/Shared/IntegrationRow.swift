@@ -6,7 +6,9 @@ import SwiftUI
 struct IntegrationRow: View {
     let integration: any Detectable
     let detected: DetectionResult
+    let showPlan: Bool
     let onGrant: (() -> Void)?
+    @State private var showKey = false
     @State private var enabled: Bool
     @State private var keyInput: String
     @State private var tierInput: String
@@ -18,11 +20,12 @@ struct IntegrationRow: View {
     /// from an earlier cycle can't clobber a newer one's result.
     @State private var checkGeneration: Int = 0
 
-    enum KeyStatus { case none, checking, valid, invalid }
+    enum KeyStatus { case none, checking, valid, invalid, connectionFailed, unsupported }
 
-    init(integration: any Detectable, detected: DetectionResult, onGrant: (() -> Void)? = nil) {
+    init(integration: any Detectable, detected: DetectionResult, showPlan: Bool = true, onGrant: (() -> Void)? = nil) {
         self.integration = integration
         self.detected = detected
+        self.showPlan = showPlan
         self.onGrant = onGrant
         let cfg = IntegrationRegistry.config(for: integration.id)
         let hasKey = !(ApiKeyManager.shared.get(integration.id) ?? "").isEmpty
@@ -33,7 +36,7 @@ struct IntegrationRow: View {
         if hasKey {
             let cached = ApiPoller.shared.cachedBalance(for: integration.id)
             if let cb = cached {
-                _keyStatus = State(initialValue: (cb.error != nil) ? .invalid : .valid)
+                _keyStatus = State(initialValue: cb.error.map { Self.isCredentialRejection($0) ? .invalid : .connectionFailed } ?? .valid)
             }
         }
     }
@@ -102,8 +105,8 @@ struct IntegrationRow: View {
 
                     Spacer()
 
-                    if detected.found {
-                        if isSubscriptionType {
+                    if detected.found || (showPlan && isSubscriptionType) {
+                        if isSubscriptionType && showPlan {
                             planPicker
                         }
                     } else {
@@ -114,11 +117,10 @@ struct IntegrationRow: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
-        .opacity((detected.found || isAPIKeyType) ? 1 : 0.5)
+        .opacity((detected.found || isAPIKeyType || (showPlan && isSubscriptionType)) ? 1 : 0.5)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill((detected.found || isAPIKeyType) ? Color(nsColor: .controlBackgroundColor) : Color(nsColor: .controlBackgroundColor).opacity(0.4))
-                .shadow(color: .black.opacity((detected.found || isAPIKeyType) ? 0.06 : 0), radius: 3, y: 1.5)
+                .fill((detected.found || isAPIKeyType || (showPlan && isSubscriptionType)) ? Color(nsColor: .controlBackgroundColor) : Color(nsColor: .controlBackgroundColor).opacity(0.4))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
@@ -163,14 +165,20 @@ struct IntegrationRow: View {
             balanceText = nil
             return
         }
+        if ProviderRegistry.byId(integration.id)?.canFetchBalance != true {
+            keyStatus = .unsupported
+            balanceText = SetupCopy.text("已保存 · 不支持账户观测", "Saved · account API unsupported")
+            return
+        }
         if let cb = ApiPoller.shared.cachedBalance(for: integration.id) {
             if let err = cb.error {
                 balanceText = I18n.t("apikeys.error") + ": \(err)"
-                keyStatus = .invalid
+                keyStatus = Self.isCredentialRejection(err) ? .invalid : .connectionFailed
             } else if let b = cb.balances.first {
                 // Preserve the provider's denomination; no unlabelled static FX estimate.
-                balanceText = "\(b.currency.uppercased()) \(String(format: "%.1f", b.totalBalance))"
-                keyStatus = .valid
+                balanceText = "\(b.currency.uppercased()) \(String(format: "%.1f", b.totalBalance))" + " · " + Date(timeIntervalSince1970: Double(cb.lastFetchTimestamp) / 1000).formatted(date: .omitted, time: .shortened)
+                keyStatus = .unsupported
+                balanceText = SetupCopy.text("已保存 · 不支持账户观测", "Saved · account API unsupported")
             }
         }
     }
@@ -181,8 +189,8 @@ struct IntegrationRow: View {
     func scheduleCheckTimeout(generation: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 35) {
             guard generation == checkGeneration, keyStatus == .checking else { return }
-            keyStatus = .invalid
-            balanceText = I18n.t("apikeys.error") + ": timeout"
+            keyStatus = .connectionFailed
+            balanceText = SetupCopy.text("连接超时，稍后重试", "Connection timed out; retry later")
         }
     }
 
@@ -191,7 +199,7 @@ struct IntegrationRow: View {
     /// For API key types the key's validated status takes precedence.
     var isActive: Bool {
         if isAPIKeyType { return keyStatus == .valid }
-        return detected.found || saved
+        return !showPlan ? detected.found : (isSubscriptionType ? !tierInput.isEmpty : detected.found || saved)
     }
 
     var iconName: String {
@@ -202,6 +210,8 @@ struct IntegrationRow: View {
             case .checking: return "arrow.triangle.2circlepath"
             case .valid:    return "checkmark.circle.fill"
             case .invalid:  return "xmark.circle.fill"
+            case .connectionFailed: return "wifi.exclamationmark"
+            case .unsupported: return "info.circle"
             }
         }
         return isActive ? "checkmark.circle.fill" : "questionmark.circle"
@@ -215,6 +225,8 @@ struct IntegrationRow: View {
             case .checking: return .blue
             case .valid:    return .green
             case .invalid:  return .red
+            case .connectionFailed: return .orange
+            case .unsupported: return .secondary
             }
         }
         return isActive ? .green : .orange
@@ -226,7 +238,7 @@ struct IntegrationRow: View {
     @ViewBuilder
     var planPicker: some View {
         Picker("", selection: $tierInput) {
-            Text(I18n.t("integrations.select_plan")).tag("")
+            Text(SetupCopy.text("无固定订阅", "No fixed subscription")).tag("")
             ForEach(SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? [], id: \.label) { t in
                 Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
             }
@@ -234,7 +246,7 @@ struct IntegrationRow: View {
         .pickerStyle(.menu)
         .frame(width: 184, alignment: .leading)
         .onChange(of: tierInput) { _, v in
-            if !v.isEmpty { enabled = true; saveConfig(); saveSub(v) }
+            saveSub(v)
         }
     }
 
@@ -249,6 +261,10 @@ struct IntegrationRow: View {
         case .valid:
             Image(systemName: "checkmark.circle.fill")
                 .foregroundColor(.green).font(.caption)
+        case .connectionFailed:
+            Image(systemName: "wifi.exclamationmark").foregroundStyle(.orange)
+        case .unsupported:
+            Image(systemName: "info.circle").foregroundStyle(.secondary)
         case .invalid:
             Image(systemName: "xmark.circle.fill")
                 .foregroundColor(.red).font(.caption)
@@ -258,9 +274,12 @@ struct IntegrationRow: View {
     @ViewBuilder
     var apiKeyControls: some View {
         HStack(spacing: 6) {
-            PasteableTextField(text: $keyInput,
-                               placeholder: I18n.t("integrations.key_placeholder"))
-                .frame(width: 200, height: 22)
+            Group {
+                if showKey { PasteableTextField(text: $keyInput, placeholder: I18n.t("integrations.key_placeholder")) }
+                else { SecureField(I18n.t("integrations.key_placeholder"), text: $keyInput).textFieldStyle(.roundedBorder) }
+            }.frame(width: 170, height: 22)
+            Button { showKey.toggle() } label: { Image(systemName: showKey ? "eye.slash" : "eye") }
+                .buttonStyle(.plain).accessibilityLabel(SetupCopy.text("显示或隐藏密钥", "Show or hide key"))
             Button(I18n.t("integrations.key_save")) {
                 commitKey()
             }
@@ -295,7 +314,8 @@ struct IntegrationRow: View {
                 ApiPoller.shared.fetchNow(providerId: integration.id)
                 scheduleCheckTimeout(generation: checkGeneration)
             } else {
-                keyStatus = .valid
+                keyStatus = .unsupported
+                balanceText = SetupCopy.text("已保存 · 不支持账户观测", "Saved · account API unsupported")
             }
         }
     }
@@ -315,7 +335,12 @@ struct IntegrationRow: View {
 
     private func saveSub(_ tier: String) {
         var cfg = IntegrationRegistry.config(for: integration.id)
-        cfg.subscriptionTier = tier
+        cfg = cfg.declaringSubscription(tier)
         IntegrationRegistry.setConfig(for: integration.id, cfg)
+        Task { await DashboardCache.invalidateAll(); DataRefreshCoordinator.shared.notifyDataChange() }
+    }
+
+    nonisolated static func isCredentialRejection(_ error: String) -> Bool {
+        error == "HTTP 401" || error.hasPrefix("HTTP 401:") || error.lowercased().contains("invalid_api_key")
     }
 }

@@ -39,19 +39,9 @@ struct SettingsView: View {
                     .tag("General")
                 Label(labelFor("Notifications"), systemImage: "bell.badge")
                     .tag("Notifications")
-                // Parent "Integrations" is clickable (shows an overview in the
-                // detail pane) and expands into its two sub-tabs.
-                DisclosureGroup(isExpanded: $integrationsExpanded) {
-                    Label(labelFor("integrations.api"), systemImage: "server.rack")
-                        .tag("integrations.api")
-                    Label(labelFor("integrations.dev"), systemImage: "hammer")
-                        .tag("integrations.dev")
-                } label: {
-                    Label(labelFor("Integrations"), systemImage: "square.grid.2x2")
-                        .tag("integrations")
-                }
-                Label(labelFor("Repos"), systemImage: "folder")
-                    .tag("Repos")
+                Label(labelFor("Repos"), systemImage: "folder").tag("Repos")
+                Label(labelFor("integrations.dev"), systemImage: "hammer").tag("integrations.dev")
+                Label(SetupCopy.text("账户与固定费用", "Accounts & fixed costs"), systemImage: "creditcard").tag("integrations.api")
                 Label(labelFor("About"), systemImage: "info.circle")
                     .tag("About")
             }
@@ -63,7 +53,7 @@ struct SettingsView: View {
                 case "General":         GeneralTab(lang: langBinding).id("general.\(lang)")
                 case "Notifications":   NotificationsTab().id("notifications.\(lang)")
                 case "integrations":    IntegrationsOverviewTab().id("integrations.\(lang)")
-                case "integrations.api": ApiProvidersTab().id("integrations.api.\(lang)")
+                case "integrations.api": AccountAndCostsTab().id("integrations.api.\(lang)")
                 case "integrations.dev": DevToolsTab().id("integrations.dev.\(lang)")
                 case "Repos":          ReposTab().id("repos.\(lang)")
                 case "About":          AboutTab().id("about.\(lang)")
@@ -106,7 +96,7 @@ struct IntegrationsOverviewTab: View {
                     body: I18n.t("integrations.group_editors_desc"))
             infoRow(systemImage: "lock.shield",
                     title: I18n.t("settings.integrations_privacy_title"),
-                    body: I18n.t("settings.integrations_privacy_body"))
+                    body: SetupCopy.text("日志在本机读取；正式版同步仪表盘摘要到你的 iCloud 私有数据库，不同步 API 密钥。", "Logs are read locally; release builds sync dashboard summaries to your private iCloud database, without API keys."))
 
             Spacer()
         }
@@ -174,8 +164,8 @@ struct IntegrationGroupedTab: View {
             // Category-specific description (substantive, not a repetition of
             // the sidebar label).
             Text(category == .apiKeys
-                 ? I18n.t("integrations.group_api_key_desc")
-                 : I18n.t("integrations.group_editors_desc"))
+                 ? SetupCopy.text("可选账户观测，不补全本地词元，也不影响基础活动统计。", "Optional account observations; they do not complete local tokens or affect activity tracking.")
+                 : SetupCopy.text("自动读取支持的本地日志；套餐配置与活动读取无关。", "Supported local logs are read automatically, independently of subscription plans."))
                 .font(.caption).foregroundColor(.secondary)
 
             ScrollView {
@@ -185,7 +175,7 @@ struct IntegrationGroupedTab: View {
                     }
                     ForEach(results.filter { IntegrationCategory.category(for: $0.0) == category },
                             id: \.0.id) { (i, r) in
-                        IntegrationRow(integration: i, detected: r,
+                        IntegrationRow(integration: i, detected: r, showPlan: category != .devTools,
                                        onGrant: { runDetection() })
                     }
                 }
@@ -211,9 +201,9 @@ struct IntegrationGroupedTab: View {
     private var devToolsAccessBanner: some View {
         if BookmarkManager.isSandboxed {
             HStack(spacing: 8) {
-                Image(systemName: BookmarkManager.hasHomeAccess ? "checkmark.shield" : "lock.open")
-                    .foregroundColor(BookmarkManager.hasHomeAccess ? .green : .secondary)
-                if BookmarkManager.hasHomeAccess {
+                Image(systemName: BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) ? "checkmark.shield" : "lock.open")
+                    .foregroundColor(BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) ? .green : .secondary)
+                if BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) {
                     Text("\(I18n.t("settings.granted_path")) \(BookmarkManager.homeDirPath)")
                         .font(.caption).foregroundColor(.secondary)
                 } else {
@@ -221,7 +211,7 @@ struct IntegrationGroupedTab: View {
                         .font(.caption).foregroundColor(.secondary)
                 }
                 Spacer()
-                if !BookmarkManager.hasHomeAccess {
+                if !BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) {
                     Button(I18n.t("bookmark.grant_to_detect")) { grantHomeAccess() }
                         .buttonStyle(.bordered).controlSize(.small)
                 }
@@ -247,7 +237,35 @@ struct IntegrationGroupedTab: View {
     private func grantHomeAccess() {
         guard BookmarkManager.requestHomeAccess(message: I18n.t("bookmark.home_message")) != nil
         else { return }
+        LogWatcher.shared.start()
+        DataRefreshCoordinator.shared.triggerIngest()
         reDetect()
+    }
+}
+
+struct AccountAndCostsTab: View {
+    @State private var revision = 0
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(SetupCopy.text("账户与固定费用", "Accounts & fixed costs")).font(.title3).bold()
+                Text(SetupCopy.text("这些都是可选项，不影响词元活动与仓库变化。账户观测、固定月费各自呈现，不合并成账单。", "These optional settings do not affect token activity or repository changes. Account observations and fixed monthly costs remain separate, not a combined bill."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(SetupCopy.text("账户观测", "Account observations")).font(.headline)
+                Text(SetupCopy.text("仅支持服务商提供的账户接口。密钥保存在本机偏好设置中，不使用钥匙串、不随 iCloud 摘要同步。", "Uses account APIs provided by each service. Keys are stored in local preferences, not Keychain, and are excluded from iCloud summaries."))
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(IntegrationRegistry.visible.filter { IntegrationCategory.category(for: $0) == .apiKeys }, id: \.id) { integration in
+                    IntegrationRow(integration: integration, detected: integration.detect())
+                }
+                Text(SetupCopy.text("声明固定月费", "Declared fixed monthly costs")).font(.headline)
+                Text(SetupCopy.text("由你声明的套餐背景，不是实际付款、剩余额度或词元统计的依据。选择无固定订阅可以移除这项月费。", "Plans you declare are context, not payment receipts, remaining quota or the basis of token statistics. Choose no fixed subscription to remove a monthly cost."))
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(IntegrationRegistry.visible.filter { ["claude-code", "codex", "cursor", "copilot", "windsurf"].contains($0.id) }, id: \.id) { integration in
+                    IntegrationRow(integration: integration, detected: integration.detect())
+                }
+            }.padding(.trailing, 12)
+        }
+        .onAppear { ApiPoller.shared.pollAll() }
     }
 }
 
@@ -327,7 +345,7 @@ struct ReposTab: View {
                     save()
                 }
             }
-        } message: { Text(String(format: I18n.t("repos.delete_msg"), deleteTarget ?? "")) }
+        } message: { Text(String(format: I18n.t("repos.delete_msg"), deleteTarget ?? "") + "\n" + SetupCopy.text("只停止后续监控，已有历史记录保留。", "Only future monitoring stops; existing history is retained.")) }
     }
 
     // MARK: - Scanning
@@ -427,7 +445,7 @@ struct AboutTab: View {
                 )
             }
 
-            Text(I18n.t("about.privacy")).font(.caption2).foregroundColor(.secondary)
+            Text(SetupCopy.text("本地日志保留在本机；正式版通过你的 iCloud 私有数据库同步仪表盘摘要。", "Local logs stay on this Mac; release builds sync dashboard summaries through your private iCloud database.")).font(.caption2).foregroundColor(.secondary)
             HStack(spacing: 16) {
                 Button(I18n.t("about.privacy_link")) {
                     NSWorkspace.shared.open(URL(string: "https://xingyu.wang/apps/ai-pulse/privacy")!)
