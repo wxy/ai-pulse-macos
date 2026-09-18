@@ -304,6 +304,7 @@ struct DashboardView: View {
                 .overlay {
                     Image(systemName: soundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                         .font(.system(size: 10, weight: .medium))
+                        .scaleEffect(x: side == "left" ? -1 : 1, y: 1)
                         .foregroundStyle(soundMuted ? Color.secondary : Color.primary.opacity(0.7))
                 }
                 .frame(width: width, height: height)
