@@ -260,7 +260,7 @@ struct AccountAndCostsTab: View {
                 Text(SetupCopy.text("声明固定月费", "Declared fixed monthly costs")).font(.headline)
                 Text(SetupCopy.text("由你声明的套餐背景，不是实际付款、剩余额度或词元统计的依据。选择无固定订阅可以移除这项月费。", "Plans you declare are context, not payment receipts, remaining quota or the basis of token statistics. Choose no fixed subscription to remove a monthly cost."))
                     .font(.caption).foregroundStyle(.secondary)
-                ForEach(IntegrationRegistry.visible.filter { ["claude-code", "codex", "cursor", "copilot", "windsurf"].contains($0.id) }, id: \.id) { integration in
+                ForEach(IntegrationRegistry.visible.filter { ["claude-code", "codex", "cursor", "copilot", "windsurf", "opencode"].contains($0.id) }, id: \.id) { integration in
                     IntegrationRow(integration: integration, detected: integration.detect())
                 }
             }.padding(.trailing, 12)

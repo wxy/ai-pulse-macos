@@ -45,7 +45,7 @@ struct IntegrationRow: View {
     private static let apiKeyIds: Set<String> = ["deepseek", "openai", "moonshot", "zhipu", "anthropic"]
 
     /// Known subscription integration IDs (always show tier picker).
-    private static let subscriptionIds: Set<String> = ["claude-code", "codex", "cursor", "copilot", "windsurf"]
+    private static let subscriptionIds: Set<String> = ["claude-code", "codex", "cursor", "copilot", "windsurf", "opencode"]
 
     /// Is this integration primarily an apiKey type?
     var isAPIKeyType: Bool { Self.apiKeyIds.contains(integration.id) }
@@ -149,9 +149,10 @@ struct IntegrationRow: View {
         // Under sandbox without the home grant, we cannot yet tell whether a
         // log-based tool is installed — report "needs grant" rather than
         // a definitive "not installed".
-        if needsHomeGrant && BookmarkManager.isSandboxed && !BookmarkManager.hasHomeAccess {
+        if needsHomeGrant && BookmarkManager.isSandboxed && !BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) {
             return I18n.t("onboarding.grant_home_hint")
         }
+        if needsHomeGrant || integration.id == "aider" { return detected.summary }
         if isAPIKeyType { return I18n.t("integrations.needs_config_note") }
         return I18n.t("integrations.not_installed_note")
     }
@@ -239,8 +240,8 @@ struct IntegrationRow: View {
     var planPicker: some View {
         Picker("", selection: $tierInput) {
             Text(SetupCopy.text("无固定订阅", "No fixed subscription")).tag("")
-            ForEach(SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? [], id: \.label) { t in
-                Text("\(t.label) ($\(Int(t.fee))/mo)").tag(t.label)
+            ForEach((SubscriptionRegistry.tool(forName: toolDisplayName)?.tiers ?? []).filter { !$0.isLegacy || $0.label == tierInput }, id: \.label) { t in
+                Text(t.label + (t.isLegacy ? SetupCopy.text("（原套餐）", " (previous plan)") : "") + " ($\(Int(t.fee))/mo)").tag(t.label)
             }
         }
         .pickerStyle(.menu)

@@ -369,7 +369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UserDefaults.standard.set(true, forKey: key)
 
         for i in IntegrationRegistry.all {
-            guard i.detect().found else { continue }
+            guard i.id != "opencode", i.detect().found else { continue }
             var cfg = IntegrationRegistry.config(for: i.id)
             guard cfg.subscriptionTier.isEmpty,
                   let tool = SubscriptionRegistry.tool(forName: i.displayName),
