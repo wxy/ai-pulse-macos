@@ -123,6 +123,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @MainActor @objc private func onSoundMuteChange() {
         if AppSoundControl.isMuted() { CoinSound.stopPlayback() }
+        NSApp.mainMenu?.items.first?.submenu?.items.first(where: { ($0.representedObject as? String) == "sound-mute" })?.state = AppSoundControl.isMuted() ? .on : .off
+    }
+
+    @MainActor @objc private func toggleSoundMute() {
+        AppSoundControl.toggle()
     }
 
     /// Re-open handler: Dock click or Cmd+Tab → show Dashboard
@@ -203,6 +208,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let prefsItem = NSMenuItem(title: I18n.t("menu.preferences"), action: #selector(openPreferences), keyEquivalent: ",")
         prefsItem.target = self
         appSubmenu.addItem(prefsItem)
+        let muteItem = NSMenuItem(title: I18n.t("perception.mute_all"), action: #selector(toggleSoundMute), keyEquivalent: "")
+        muteItem.target = self
+        muteItem.representedObject = "sound-mute"
+        muteItem.state = AppSoundControl.isMuted() ? .on : .off
+        appSubmenu.addItem(muteItem)
 
         appSubmenu.addItem(.separator())
 

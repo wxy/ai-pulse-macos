@@ -72,6 +72,7 @@ struct DashboardView: View {
     let initialTimeRange: TimeRange
 
     @State private var timeRange: TimeRange
+    @State private var soundMuted = AppSoundControl.isMuted()
     @State private var robotDetail: String?
     @State private var costHoverDate: Date? = nil
     @State private var isRefreshing = false
@@ -290,14 +291,31 @@ struct DashboardView: View {
         totalChanges > 0 || tokens > 0 || commits > 0
     }
 
-    private func earView(width: CGFloat, height: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(robotEarSurface)
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(robotLine, lineWidth: 1)
-            )
-            .frame(width: width, height: height)
+    private func earView(width: CGFloat, height: CGFloat, side: String) -> some View {
+        let action = soundMuted
+            ? SetupCopy.text("恢复声音", "Restore sound")
+            : SetupCopy.text("关闭声音", "Mute sound")
+        return Button {
+            soundMuted = AppSoundControl.toggle()
+        } label: {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(robotEarSurface)
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(robotLine, lineWidth: 1))
+                .overlay {
+                    Image(systemName: soundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(soundMuted ? Color.secondary : Color.primary.opacity(0.7))
+                }
+                .frame(width: width, height: height)
+                .frame(width: 24, height: height + 8)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor(true)
+        .robotHelp((soundMuted ? SetupCopy.text("声音已关闭", "Sound is muted") : SetupCopy.text("声音已开启", "Sound is enabled")) + " · " + action)
+        .accessibilityIdentifier("robot-sound-" + side)
+        .accessibilityLabel(action)
+        .accessibilityValue(soundMuted ? SetupCopy.text("已静音", "Muted") : SetupCopy.text("已开启", "Enabled"))
     }
 
     var body: some View {
@@ -491,6 +509,9 @@ struct DashboardView: View {
             costHoverDate = nil
             codeHoverDate = nil
             scheduleLoad(for: newValue)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .soundMuteDidChange)) { _ in
+            soundMuted = AppSoundControl.isMuted()
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             // Manual refresh / forceRefresh — immediate, no throttle
@@ -1910,8 +1931,8 @@ private extension DashboardView {
                 .frame(width: 440, height: 440)
                 .background(RoundedRectangle(cornerRadius: 29).fill(robotSurface))
                 .overlay(RoundedRectangle(cornerRadius: 29).stroke(Color.primary.opacity(0.14)))
-                .overlay(alignment: .leading) { earView(width: 9, height: 39).offset(x: -9) }
-                .overlay(alignment: .trailing) { earView(width: 9, height: 39).offset(x: 9) }
+                .overlay(alignment: .leading) { earView(width: 16, height: 39, side: "left").offset(x: -20) }
+                .overlay(alignment: .trailing) { earView(width: 16, height: 39, side: "right").offset(x: 20) }
                 Rectangle().fill(robotSurface).frame(width: 76, height: 8)
                     .overlay(HStack { Rectangle().fill(Color.primary.opacity(0.14)).frame(width: 1); Spacer(); Rectangle().fill(Color.primary.opacity(0.14)).frame(width: 1) })
                 robotBase
