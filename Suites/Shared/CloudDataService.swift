@@ -256,13 +256,13 @@ final class CloudDataService: ObservableObject {
     func fetchAndMergeWeek() async { await fetchAndStore(range: "week") }
     func fetchAndMergeMonth() async { await fetchAndStore(range: "30d") }
 
-    func fetchAndStore(range: String) async {
+    func fetchAndStore(range: String, force: Bool = false) async {
         guard !isPreview, Self.cloudAvailable else {
             if !isPreview { rangeErrors[range] = "Cloud unavailable" }
             return
         }
         do {
-            _ = try await CloudKitGate.shared.runDeduped("fetch(\(range))", dedupeKey: "fetch-\(range)") {
+            _ = try await CloudKitGate.shared.runDeduped("fetch(\(range))", dedupeKey: "fetch-\(range)", force: force) {
                 let record = try await self.database.record(for: CKRecord.ID(recordName: self.recordName(for: range)))
                 guard record.recordType == CKSchema.recordType,
                       let json = record[CKSchema.Field.json] as? String, let data = json.data(using: .utf8) else { throw CloudError.noData }
@@ -278,10 +278,10 @@ final class CloudDataService: ObservableObject {
         }
     }
 
-    func fetchCurrentPulse() async {
+    func fetchCurrentPulse(force: Bool = false) async {
         guard !isPreview, Self.cloudAvailable else { return }
         do {
-            _ = try await CloudKitGate.shared.runDeduped("currentPulse", dedupeKey: "current-pulse") {
+            _ = try await CloudKitGate.shared.runDeduped("currentPulse", dedupeKey: "current-pulse", force: force) {
                 let record = try await self.database.record(for: CKRecord.ID(recordName: CKSchema.CurrentPulse.recordName))
                 guard record.recordType == CKSchema.CurrentPulse.recordType,
                       let json = record[CKSchema.Field.json] as? String, let data = json.data(using: .utf8) else { throw CloudError.noData }

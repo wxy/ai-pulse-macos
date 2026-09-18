@@ -77,8 +77,8 @@ final class CloudKitGate {
     /// simultaneous fetches of the same time range from both hitting the
     /// network.
     @discardableResult
-    func runDeduped<T>(_ label: String, dedupeKey key: String, _ operation: () async throws -> T) async throws -> T? {
-        if let last = recentKeys[key], Date().timeIntervalSince(last) < dedupeWindow {
+    func runDeduped<T>(_ label: String, dedupeKey key: String, force: Bool = false, _ operation: () async throws -> T) async throws -> T? {
+        if !force, let last = recentKeys[key], Date().timeIntervalSince(last) < dedupeWindow {
             Self.log.debug("gate: skip '\(label, privacy: .public)' — deduped")
             return nil
         }
