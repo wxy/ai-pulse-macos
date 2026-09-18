@@ -43,13 +43,27 @@ struct PulseAppearance {
             shell.windingRule = .evenOdd
             shell.appendOval(in: NSRect(x: 5, y: 8, width: 2.5, height: 3))
             shell.appendOval(in: NSRect(x: 10.5, y: 8, width: 2.5, height: 3))
-            let smile = NSBezierPath()
-            smile.move(to: NSPoint(x: 5.5, y: 6.5))
-            smile.curve(to: NSPoint(x: 12.5, y: 6.5), controlPoint1: NSPoint(x: 7.5, y: 3), controlPoint2: NSPoint(x: 10.5, y: 3))
-            smile.line(to: NSPoint(x: 11.3, y: 7.1))
-            smile.curve(to: NSPoint(x: 6.7, y: 7.1), controlPoint1: NSPoint(x: 10.1, y: 4.7), controlPoint2: NSPoint(x: 7.9, y: 4.7))
-            smile.close()
-            shell.append(smile)
+            let displayedTier = beat && !self.hasActivity ? PulseTier.active : self.tier
+            switch displayedTier {
+            case .resting, .none:
+                shell.append(NSBezierPath(roundedRect: NSRect(x: 6, y: 4.5, width: 6, height: 1.5), xRadius: 0.75, yRadius: 0.75))
+            case .active:
+                let smile = NSBezierPath()
+                smile.move(to: NSPoint(x: 5.5, y: 6))
+                smile.curve(to: NSPoint(x: 12.5, y: 6), controlPoint1: NSPoint(x: 7.5, y: 4.6), controlPoint2: NSPoint(x: 10.5, y: 4.6))
+                smile.line(to: NSPoint(x: 12.1, y: 7.2))
+                smile.curve(to: NSPoint(x: 5.9, y: 7.2), controlPoint1: NSPoint(x: 10.3, y: 6), controlPoint2: NSPoint(x: 7.7, y: 6))
+                smile.close()
+                shell.append(smile)
+            case .elevated, .intense:
+                let smile = NSBezierPath()
+                smile.move(to: NSPoint(x: 5.5, y: 6.5))
+                smile.curve(to: NSPoint(x: 12.5, y: 6.5), controlPoint1: NSPoint(x: 7.5, y: 3), controlPoint2: NSPoint(x: 10.5, y: 3))
+                smile.line(to: NSPoint(x: 11.3, y: 7.1))
+                smile.curve(to: NSPoint(x: 6.7, y: 7.1), controlPoint1: NSPoint(x: 10.1, y: 4.7), controlPoint2: NSPoint(x: 7.9, y: 4.7))
+                smile.close()
+                shell.append(smile)
+            }
             shell.fill()
             NSBezierPath(roundedRect: NSRect(x: 0.5, y: 6, width: 2, height: 5), xRadius: 0.8, yRadius: 0.8).fill()
             NSBezierPath(roundedRect: NSRect(x: 15.5, y: 6, width: 2, height: 5), xRadius: 0.8, yRadius: 0.8).fill()
