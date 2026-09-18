@@ -17,7 +17,7 @@ private struct RobotSilhouette: Shape {
         var path = Path()
         path.addRoundedRect(in: CGRect(x: 0, y: 23, width: 440, height: 440), cornerSize: CGSize(width: 29, height: 29))
         path.addRect(CGRect(x: 182, y: 462, width: 76, height: 10))
-        path.addRoundedRect(in: CGRect(x: 0, y: 471, width: 440, height: 128), cornerSize: CGSize(width: 16, height: 16))
+        path.addRoundedRect(in: CGRect(x: 0, y: 471, width: 440, height: 152), cornerSize: CGSize(width: 16, height: 16))
         path.addRoundedRect(in: CGRect(x: -9, y: 223.5, width: 10, height: 39), cornerSize: CGSize(width: 4, height: 4))
         path.addRoundedRect(in: CGRect(x: 439, y: 223.5, width: 10, height: 39), cornerSize: CGSize(width: 4, height: 4))
         path.addEllipse(in: CGRect(x: 213.5, y: 0, width: 13, height: 13))
@@ -101,13 +101,17 @@ struct DashboardView: View {
                             .overlay(alignment: .trailing) { ear(left: false).offset(x: 20) }
                         Rectangle().fill(plate).frame(width: 76, height: 8)
                             .overlay(HStack { Rectangle().fill(.primary.opacity(0.14)).frame(width: 1); Spacer(); Rectangle().fill(.primary.opacity(0.14)).frame(width: 1) })
-                        expenses.frame(width: 440, height: 128)
+                        expenses.frame(width: 440, height: 152)
                     }
                     .background(RobotSilhouette().fill(plate).shadow(color: .black.opacity(0.27), radius: 14, y: 5))
-                    .frame(width: 440, height: 599)
+                    .frame(width: 440, height: 623)
                     .scaleEffect(scale, anchor: .topLeading)
-                    .frame(width: width, height: 599 * scale, alignment: .topLeading)
-                }.padding(.horizontal, 28).padding(.top, 28).padding(.bottom, 30)
+                    .frame(width: width, height: 623 * scale, alignment: .topLeading)
+                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 28)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: geometry.size.height, alignment: .center)
             }
             .refreshable { await cloud.fetchAndStore(range: range); cloud.loadSnapshot(for: range); await cloud.fetchCurrentPulse() }
         }
@@ -131,7 +135,7 @@ struct DashboardView: View {
                 ScrollView { detailContent(detail).frame(maxWidth: .infinity, alignment: .leading) }
             }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
-            VStack(spacing: 9) {
+            VStack(spacing: 7) {
                 HStack(alignment: .top) {
                     Color.clear.frame(width: 16, height: 24)
                     Spacer()
@@ -139,7 +143,7 @@ struct DashboardView: View {
                         let pulse = cloud.pulseEnvelope?.currentPulse(asOf: context.date)
                         Button { detail = t("当前活动强度", "Current activity") } label: {
                             Group {
-                                if pulse == nil { Text(cloud.pulseEnvelope?.pulse == nil ? t("暂无当前观测", "No current signal") : t("观测已过期", "Signal expired")).font(.system(size: 11)) }
+                                if pulse == nil { Text(cloud.pulseEnvelope?.pulse == nil ? t("暂无当前观测", "No current signal") : t("观测已过期", "Signal expired")).font(.system(size: 14)) }
                                 else { RobotPulseCurve(tier: pulse?.tier).stroke(pulse?.tier == .active ? Color.marsGreen : pulse?.tier == .resting ? .secondary : .deepRed, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)).frame(width: 125, height: 38) }
                             }.frame(width: 270, height: 57).background(inset, in: RoundedRectangle(cornerRadius: 13)).overlay(RoundedRectangle(cornerRadius: 13).stroke(line))
                         }.buttonStyle(.plain).accessibilityLabel(t("查看当前活动强度依据", "Current activity details"))
@@ -151,7 +155,7 @@ struct DashboardView: View {
                     ForEach(["today", "week", "30d"], id: \.self) { key in
                         Button { range = key } label: {
                             Text(key == "today" ? t("今日", "Today") : key == "week" ? t("本周", "Week") : t("30 天", "30 days"))
-                                .font(.system(size: 11)).foregroundStyle(range == key ? (scheme == .dark ? Color(red: 0.76, green: 0.83, blue: 0.78) : .primary) : .secondary)
+                                .font(.system(size: 14)).foregroundStyle(range == key ? (scheme == .dark ? Color(red: 0.76, green: 0.83, blue: 0.78) : .primary) : .secondary)
                                 .frame(maxWidth: .infinity).frame(height: 24)
                                 .background(range == key ? (scheme == .dark ? Color(red: 0.19, green: 0.30, blue: 0.24) : Color.white.opacity(0.8)) : .clear, in: RoundedRectangle(cornerRadius: 6))
                         }.buttonStyle(.plain).accessibilityAddTraits(range == key ? .isSelected : [])
@@ -161,9 +165,9 @@ struct DashboardView: View {
                     eye(tokens: true)
                     nose
                     eye(tokens: false)
-                }.frame(height: 200, alignment: .top)
+                }.frame(height: 210, alignment: .top)
                 VStack(spacing: 5) {
-                    HStack { Text(t("活动节奏（词元｜行数）", "Activity rhythm (Tokens | Lines)")); Spacer(); Text(range == "today" ? t("按小时", "Hourly") : t("按天", "Daily")) }.font(.system(size: 9)).foregroundStyle(.secondary)
+                    HStack { Text(t("活动节奏（词元｜行数）", "Activity rhythm (Tokens | Lines)")); Spacer(); Text(range == "today" ? t("按小时", "Hourly") : t("按天", "Daily")) }.font(.system(size: 11)).foregroundStyle(.secondary)
                     rhythm(tokens: true).frame(height: 23)
                     rhythm(tokens: false).frame(height: 23)
                 }.frame(width: 350, height: 70).padding(10)
@@ -177,7 +181,7 @@ struct DashboardView: View {
         Button { muted.toggle() } label: {
             RoundedRectangle(cornerRadius: 4).fill(earColor)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(line))
-                .overlay { Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: 10, weight: .medium)).scaleEffect(x: left ? -1 : 1, y: 1).foregroundStyle(muted ? Color.secondary : .primary.opacity(0.7)) }
+                .overlay { Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill").font(.system(size: 12, weight: .medium)).scaleEffect(x: left ? -1 : 1, y: 1).foregroundStyle(muted ? Color.secondary : .primary.opacity(0.7)) }
                 .frame(width: 16, height: 39).frame(width: 24, height: 47).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel(muted ? t("开启 iPhone 声音", "Unmute iPhone") : t("静音 iPhone", "Mute iPhone"))
     }
@@ -192,7 +196,7 @@ struct DashboardView: View {
         let total = values.reduce(0) { $0 + $1.1 }
         let value = tokens ? snap.map { $0.readFailures.contains("toolUsage") ? "—" : count(Int64(total)) } : values.isEmpty ? nil : count(Int64(total))
         return VStack(spacing: 6) {
-            Text(tokens ? t("工具用量", "Tool usage") : t("仓库变化", "Repository changes")).font(.caption2).foregroundStyle(.secondary)
+            Text(tokens ? t("工具用量", "Tool usage") : t("仓库变化", "Repository changes")).font(.system(size: 14)).foregroundStyle(.secondary)
             Button { detail = tokens ? t("工具与模型", "Tools & models") : t("仓库变化", "Repository changes") } label: {
                 ZStack {
                     Circle().fill(inset).frame(width: 120, height: 120)
@@ -202,13 +206,13 @@ struct DashboardView: View {
                         let start = total > 0 ? values.prefix(index).reduce(0) { $0 + $1.1 } / total : 0
                         Circle().trim(from: start, to: total > 0 ? start + item.1 / total : 0).stroke(palette[index % 4], style: StrokeStyle(lineWidth: 10, lineCap: .butt)).rotationEffect(.degrees(-90)).frame(width: 110, height: 110)
                     }
-                    VStack(spacing: 2) { Text(value ?? "—").font(.system(size: 20, weight: .semibold, design: .rounded)).minimumScaleFactor(0.65); Text(tokens ? "TOKENS" : "LINES").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary) }.padding(15)
+                    VStack(spacing: 2) { Text(value ?? "—").font(.system(size: 25, weight: .semibold, design: .rounded)).minimumScaleFactor(0.65); Text(tokens ? "TOKENS" : "LINES").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary) }.padding(15)
                 }.frame(width: 132, height: 132)
             }.buttonStyle(.plain)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)], alignment: .leading, spacing: 3) {
-                ForEach(Array(values.prefix(4).enumerated()), id: \.offset) { i, item in HStack(spacing: 3) { Circle().fill(palette[i]).frame(width: 4, height: 4); Text(item.0).font(.system(size: 10)).lineLimit(1) }.frame(maxWidth: .infinity, alignment: .leading) }
-            }.frame(height: 27, alignment: .top)
-            Button { detail = tokens ? t("工具与模型", "Tools & models") : t("仓库变化", "Repository changes") } label: { HStack(spacing: 2) { Text(tokens ? t("工具与模型", "Tools & models") : t("全部仓库", "All repositories")); Image(systemName: "arrow.up.right").font(.system(size: 8)) }.font(.system(size: 10)).foregroundStyle(.secondary) }.buttonStyle(.plain)
+                ForEach(Array(values.prefix(4).enumerated()), id: \.offset) { i, item in HStack(spacing: 3) { Circle().fill(palette[i]).frame(width: 4, height: 4); Text(item.0).font(.system(size: 12)).lineLimit(1) }.frame(maxWidth: .infinity, alignment: .leading) }
+            }.frame(height: 33, alignment: .top)
+            Button { detail = tokens ? t("工具与模型", "Tools & models") : t("仓库变化", "Repository changes") } label: { HStack(spacing: 2) { Text(tokens ? t("工具与模型", "Tools & models") : t("全部仓库", "All repositories")); Image(systemName: "arrow.up.right").font(.system(size: 10)) }.font(.system(size: 12)).foregroundStyle(.secondary) }.buttonStyle(.plain)
         }.frame(width: 145)
     }
 
@@ -223,7 +227,7 @@ struct DashboardView: View {
                     ForEach(0..<3) { i in
                         Rectangle().fill(i == 0 ? Color.marsGreen : i == 1 ? cacheColor : .deepRed)
                             .opacity(values[i] > 0 ? 1 : 0.25).frame(width: geo.size.width * widths[i])
-                            .overlay { if i == 1 { Text(c == nil || totalInput == 0 ? "—" : "\(Int(Double(values[1]) / totalInput * 100))%").font(.system(size: 8, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5) } }
+                            .overlay { if i == 1 { Text(c == nil || totalInput == 0 ? "—" : "\(Int(Double(values[1]) / totalInput * 100))%").font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5) } }
                     }
                 }.clipShape(CodeChangeTrapezoid())
             }.frame(width: 44, height: 55).opacity(c == nil ? 0.25 : 1)
@@ -255,14 +259,14 @@ struct DashboardView: View {
                     Button { detail = t("数据说明", "Data details") } label: { Label(t("数据说明", "Data details"), systemImage: "arrow.up.right") }
                 }
                 HStack { Text("AI Pulse " + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")); Spacer(); Text(t("数据版本 ", "Data format ") + (snap?.payloadVersion ?? "2.0.0")) }
-            }.font(.system(size: 9)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 10).background(.primary.opacity(0.035))
+            }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 10).background(.primary.opacity(0.035))
         }.background(inset, in: RoundedRectangle(cornerRadius: 16)).clipShape(RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(.primary.opacity(0.14))).buttonStyle(.plain)
     }
     private func expense(_ title: String, value: String, link: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.system(size: 10)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 18, weight: .medium)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
-            Button { self.detail = detail } label: { HStack(spacing: 4) { Text(link); Image(systemName: "arrow.up.right").font(.system(size: 8)) }.font(.system(size: 10)).foregroundStyle(.secondary) }.buttonStyle(.plain)
+            Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 22, weight: .medium)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
+            Button { self.detail = detail } label: { HStack(spacing: 4) { Text(link); Image(systemName: "arrow.up.right").font(.system(size: 10)) }.font(.system(size: 12)).foregroundStyle(.secondary) }.buttonStyle(.plain)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     @ViewBuilder private func detailContent(_ title: String) -> some View {
