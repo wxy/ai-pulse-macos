@@ -136,6 +136,18 @@ struct ApiProvidersTab: View {
 
 /// 开发工具 — log-based (Claude/Codex/Qwen) + subscription (Cursor/Copilot/Windsurf).
 /// Includes the home-directory grant (sandbox) since it gates log-based detection.
+enum ToolLogLocation {
+    case home, repository, application
+
+    static func forIntegration(_ id: String) -> Self {
+        switch id {
+        case "claude-code", "codex", "qwen-code", "opencode", "deepseek-harness": return .home
+        case "aider": return .repository
+        default: return .application
+        }
+    }
+}
+
 struct DevToolsTab: View {
     var body: some View {
         IntegrationGroupedTab(category: .devTools)
@@ -169,15 +181,21 @@ struct IntegrationGroupedTab: View {
                  : SetupCopy.text("自动读取支持的本地日志；套餐配置与活动读取无关。", "Supported local logs are read automatically, independently of subscription plans."))
                 .font(.caption).foregroundColor(.secondary)
 
+            if category == .devTools {
+                Button(SetupCopy.text("在账户与固定费用中配置套餐 →", "Configure plans in Accounts & fixed costs →")) {
+                    NotificationCenter.default.post(name: .settingsSwitchTab, object: nil, userInfo: ["tab": "integrations.api"])
+                }.font(.caption)
+            }
             ScrollView {
                 VStack(spacing: 12) {
                     if category == .devTools {
-                        devToolsAccessBanner
-                    }
-                    ForEach(results.filter { IntegrationCategory.category(for: $0.0) == category },
-                            id: \.0.id) { (i, r) in
-                        IntegrationRow(integration: i, detected: r, showPlan: category != .devTools,
-                                       onGrant: { runDetection() })
+                        sourceGroup(.home)
+                        sourceGroup(.repository)
+                        sourceGroup(.application)
+                    } else {
+                        ForEach(results.filter { IntegrationCategory.category(for: $0.0) == category }, id: \.0.id) { i, r in
+                            IntegrationRow(integration: i, detected: r, onGrant: { runDetection() })
+                        }
                     }
                 }
                 .padding(.trailing, 16)
@@ -195,31 +213,55 @@ struct IntegrationGroupedTab: View {
         .onReceive(NotificationCenter.default.publisher(for: RepoScanCache.didChange)) { _ in
             runDetection()
         }
+        .onReceive(NotificationCenter.default.publisher(for: BookmarkManager.didChange)) { _ in runDetection() }
+        .onReceive(NotificationCenter.default.publisher(for: .dataDidChange)) { _ in runDetection() }
     }
 
-    /// Sandbox: home-directory grant state for log-based tool detection.
-    @ViewBuilder
-    private var devToolsAccessBanner: some View {
-        if BookmarkManager.isSandboxed {
-            HStack(spacing: 8) {
-                Image(systemName: BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) ? "checkmark.shield" : "lock.open")
-                    .foregroundColor(BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) ? .green : .secondary)
-                if BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) {
-                    Text("\(I18n.t("settings.granted_path")) \(BookmarkManager.homeDirPath)")
-                        .font(.caption).foregroundColor(.secondary)
+    private func sourceGroup(_ location: ToolLogLocation) -> some View {
+        SetupCard {
+            switch location {
+            case .home:
+                HStack {
+                    Label(SetupCopy.text("主目录中的工具日志", "Tool logs in your home folder"), systemImage: "house").font(.headline)
+                    Spacer()
+                    if BookmarkManager.isSandboxed {
+                        Button(BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath)
+                               ? SetupCopy.text("重新授权", "Renew access") : SetupCopy.text("授权主目录", "Authorize home")) { grantHomeAccess() }
+                    }
+                }
+                Text(BookmarkManager.homeDirPath).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Text(SetupCopy.text("授权此目录后，可检测并读取下面这些工具保存的本地日志。", "Access to this folder allows detection and reading of the local logs below."))
+                    .font(.caption).foregroundStyle(.secondary)
+            case .repository:
+                HStack {
+                    Label(SetupCopy.text("开发目录中的工具日志", "Tool logs in development folders"), systemImage: "folder").font(.headline)
+                    Spacer()
+                    Button(SetupCopy.text("授权与管理目录", "Authorize & manage folders")) { manageFolders() }
+                }
+                if RepositoryScope.configuredRoots().isEmpty {
+                    Text(SetupCopy.text("尚未配置开发目录", "No development folders configured")).font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Text(I18n.t("onboarding.grant_home_hint"))
-                        .font(.caption).foregroundColor(.secondary)
+                    ForEach(RepositoryScope.configuredRoots(), id: \.self) { path in
+                        Text(path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
                 }
-                Spacer()
-                if !BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) {
-                    Button(I18n.t("bookmark.grant_to_detect")) { grantHomeAccess() }
-                        .buttonStyle(.bordered).controlSize(.small)
-                }
+                Text(SetupCopy.text("下面的工具把日志保存在仓库内，需要指定开发目录才能发现。", "The tools below store logs inside repositories and need a development folder to be found."))
+                    .font(.caption).foregroundStyle(.secondary)
+            case .application:
+                Label(SetupCopy.text("应用安装检测", "Installed applications"), systemImage: "app").font(.headline)
+                Text(SetupCopy.text("只检测应用是否安装，不通过主目录或开发目录读取这些应用的词元用量。", "Checks whether an application is installed; home and development folder access do not provide its token usage."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            .padding(10)
-            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            VStack(spacing: 8) {
+                ForEach(results.filter { IntegrationCategory.category(for: $0.0) == .devTools && ToolLogLocation.forIntegration($0.0.id) == location }, id: \.0.id) { i, r in
+                    IntegrationRow(integration: i, detected: r, showPlan: false, onGrant: { runDetection() })
+                }
+            }.padding(.leading, 18)
         }
+    }
+
+    private func manageFolders() {
+        NotificationCenter.default.post(name: .settingsSwitchTab, object: nil, userInfo: ["tab": "Repos"])
     }
 
     func runDetection() {
