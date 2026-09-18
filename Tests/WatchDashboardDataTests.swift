@@ -48,4 +48,14 @@ final class WatchDashboardDataTests: XCTestCase {
         XCTAssertNil(WatchDashboardData.intensity(pulse, now: now.addingTimeInterval(60)))
         XCTAssertNil(WatchDashboardData.intensity(nil, now: now))
     }
+    func testSummaryFreshnessAllowsPublishDelayButRejectsStaleOrFutureData() {
+        var snapshot = history(7)
+        snapshot.updatedAt = now.addingTimeInterval(-WatchDashboardData.summaryFreshnessInterval)
+        XCTAssertTrue(WatchDashboardData.isSummaryFresh(snapshot, now: now))
+        snapshot.updatedAt = snapshot.updatedAt.addingTimeInterval(-1)
+        XCTAssertFalse(WatchDashboardData.isSummaryFresh(snapshot, now: now))
+        snapshot.updatedAt = now.addingTimeInterval(61)
+        XCTAssertFalse(WatchDashboardData.isSummaryFresh(snapshot, now: now))
+        XCTAssertFalse(WatchDashboardData.isSummaryFresh(nil, now: now))
+    }
 }

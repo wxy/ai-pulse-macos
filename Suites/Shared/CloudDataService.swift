@@ -34,6 +34,7 @@ final class CloudDataService: ObservableObject {
     @Published var lastUpdated: Date?
     @Published private(set) var pulseEnvelope: CurrentPulseEnvelope?
     @Published private(set) var rangeErrors: [String: String] = [:]
+    @Published private(set) var missingRanges: Set<String> = []
     @Published private(set) var pulseError: String?
     var isPreview: Bool {
         #if DEBUG
@@ -273,9 +274,14 @@ final class CloudDataService: ObservableObject {
                 guard PhoneDashboardData.accepts(snap, range: range) else { throw CloudError.noData }
                 self.snapshots[range] = snap.sanitized()
                 self.rangeErrors[range] = nil
+                self.missingRanges.remove(range)
                 self.saveLocalCache()
             }
+        } catch CloudError.noData {
+            rangeErrors[range] = nil
+            missingRanges.insert(range)
         } catch {
+            missingRanges.remove(range)
             rangeErrors[range] = error.localizedDescription
         }
     }
@@ -297,10 +303,13 @@ final class CloudDataService: ObservableObject {
     }
 
     #if DEBUG
-    func installPreview(snapshots: [String: DashboardSnapshot], pulse: CurrentPulseEnvelope) {
+    func installPreview(snapshots: [String: DashboardSnapshot], pulse: CurrentPulseEnvelope,
+                        rangeErrors: [String: String] = [:], missingRanges: Set<String> = []) {
         guard isPreview else { return }
         self.snapshots = snapshots
-        pulseEnvelope = pulse
+        self.pulseEnvelope = pulse
+        self.rangeErrors = rangeErrors
+        self.missingRanges = missingRanges
         loadSnapshot(for: "today")
     }
     #endif

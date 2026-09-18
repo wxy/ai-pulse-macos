@@ -1,6 +1,14 @@
 import Foundation
 
 public enum WatchDashboardData {
+    public static let summaryFreshnessInterval: TimeInterval = 15 * 60
+
+    public static func isSummaryFresh(_ snapshot: DashboardSnapshot?, now: Date = Date()) -> Bool {
+        guard let snapshot else { return false }
+        let age = now.timeIntervalSince(snapshot.updatedAt)
+        return age.isFinite && age >= -60 && age <= summaryFreshnessInterval
+    }
+
     /// Estimate from observed active days only: absent days are not confirmed zeros.
     public static func baseline(_ snapshot: DashboardSnapshot?, tokens: Bool, now: Date = Date()) -> Double? {
         guard let snapshot, PhoneDashboardData.accepts(snapshot, range: "30d"),

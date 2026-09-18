@@ -12,7 +12,9 @@
 
 ## 演示与验证
 
-只有 Debug 显式运行参数 `--watch-preview` 才装载合成数据，首页标记“演示”，不连接云端、不写缓存。默认演示展示 2.4× 词元和 3.0× 行数。可追加 `--watch-no-baseline` 检查历史不足，或 `--watch-expired` 检查过期；Release 不接受演示模式。
+只有 Debug 显式运行参数 `--watch-preview` 才装载合成数据，首页标记“演示”，不连接云端、不写缓存。默认演示展示 2.4× 词元和 3.0× 行数。可追加 `--watch-no-baseline` 检查历史不足、`--watch-expired` 检查强度过期、`--watch-stale` 检查陈旧缓存、`--watch-empty` 检查无数据、`--watch-error` 检查同步失败，或 `--watch-accessibility-layout` 强制检查大字号布局；同时追加 `--watch-accessibility-details` 可直接定位到大字号事实列表。Release 不接受演示模式。
+
+今日摘要超过 15 分钟未更新时，首页将外圈、中圈及对应事实降为次要层级，并显示缓存时间。首次读取、无记录、同步失败和部分同步分别显示独立的短状态。较大动态字号和辅助功能字号仍以三圈为首屏，四角事实改放到独立的第二屏；每项标签和值保持同一行，通过数码表冠按页滚动查看。
 
 5 项数据投影测试通过，覆盖中位数、缺失样本、查询失败、新增加删除、整数/多圈和强度过期。40mm 与 46mm 模拟器均运行检查，Watch Debug / Release 构建通过；iPhone 与嵌入 Watch 的联合 Debug 构建通过。普通 Watch 模拟器启动显示无观测且没有崩溃；真实 Watch 的 Apple 账户、CloudKit 往返和佩戴状态尚需验收。
 

@@ -9,6 +9,13 @@ struct AIPulse_WatchApp: App {
         WindowGroup {
             NavigationStack {
                 WatchDashboardView().environmentObject(cloudData)
+                    .transformEnvironment(\.dynamicTypeSize) { size in
+                        #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--watch-accessibility-layout") {
+                            size = .accessibility3
+                        }
+                        #endif
+                    }
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) { Spacer().frame(width: 0) }
                         ToolbarItem(placement: .topBarTrailing) { Spacer().frame(width: 0) }
@@ -63,8 +70,15 @@ private struct WatchActivityRing: View {
 struct WatchDashboardView: View {
     @EnvironmentObject private var cloud: CloudDataService
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .caption2) private var cornerLabelSize: CGFloat = 9
+    @ScaledMetric(relativeTo: .headline) private var cornerValueSize: CGFloat = 14
+    @ScaledMetric(relativeTo: .caption2) private var centerLabelSize: CGFloat = 10
+    @ScaledMetric(relativeTo: .headline) private var centerValueSize: CGFloat = 15
+    @ScaledMetric(relativeTo: .caption2) private var statusFontSize: CGFloat = 8
     @State private var showingInfo = false
     @State private var refreshing = false
+    @State private var hasAttemptedRefresh = false
     @State private var refreshMessage: String?
     private let tokenColor = Color.deepRed
     private let tokenTrackColor = Color.deepRed2.opacity(0.22)
@@ -96,6 +110,42 @@ struct WatchDashboardView: View {
         guard let value else { return "N/A" }
         return String(format: "%.1f×", locale: Locale(identifier: "en_US_POSIX"), value)
     }
+    private func summaryIsStale(_ snapshot: DashboardSnapshot?, asOf now: Date) -> Bool {
+        snapshot != nil && !WatchDashboardData.isSummaryFresh(snapshot, now: now)
+    }
+    private func summaryUsesCache(_ snapshot: DashboardSnapshot?, asOf now: Date) -> Bool {
+        snapshot != nil && (summaryIsStale(snapshot, asOf: now)
+            || cloud.rangeErrors["today"] != nil || cloud.missingRanges.contains("today"))
+    }
+    private func dashboardStatus(_ snapshot: DashboardSnapshot?, asOf now: Date) -> (text: String, color: Color)? {
+        let arguments = ProcessInfo.processInfo.arguments
+        let previewsDataState = arguments.contains("--watch-stale")
+            || arguments.contains("--watch-empty") || arguments.contains("--watch-error")
+        if cloud.isPreview && !previewsDataState { return (t("演示", "Demo"), .secondary) }
+        if refreshing || (!hasAttemptedRefresh && snapshot == nil) {
+            return (t("同步中…", "Syncing…"), .secondary)
+        }
+        if cloud.rangeErrors["today"] != nil {
+            guard let snapshot else { return (t("同步失败", "Sync failed"), tokenColor) }
+            return (t("缓存 ", "Cached ") + snapshot.updatedAt.formatted(date: .omitted, time: .shortened), activityColor)
+        }
+        if cloud.missingRanges.contains("today") {
+            guard let snapshot else { return (t("暂无数据", "No data"), .secondary) }
+            return (t("缓存 ", "Cached ") + snapshot.updatedAt.formatted(date: .omitted, time: .shortened), activityColor)
+        }
+        guard let snapshot else { return (t("暂无数据", "No data"), .secondary) }
+        if summaryIsStale(snapshot, asOf: now) {
+            return (t("缓存 ", "Cached ") + snapshot.updatedAt.formatted(date: .omitted, time: .shortened), activityColor)
+        }
+        if cloud.rangeErrors["30d"] != nil || cloud.missingRanges.contains("30d") || cloud.pulseError != nil {
+            return (t("同步未完成", "Sync incomplete"), activityColor)
+        }
+        return nil
+    }
+    private var usesAccessibleLayout: Bool {
+        dynamicTypeSize.isAccessibilitySize || dynamicTypeSize == .xxLarge || dynamicTypeSize == .xxxLarge
+            || (cloud.isPreview && ProcessInfo.processInfo.arguments.contains("--watch-accessibility-layout"))
+    }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 15)) { context in
@@ -106,42 +156,41 @@ struct WatchDashboardView: View {
                 let tokenRatio = WatchDashboardData.ratio(value: tokens(snapshot), baseline: WatchDashboardData.baseline(history, tokens: true, now: now))
                 let lineRatio = WatchDashboardData.ratio(value: lines(snapshot), baseline: WatchDashboardData.baseline(history, tokens: false, now: now))
                 let pulse = cloud.pulseEnvelope?.currentPulse(asOf: now)
+                let status = dashboardStatus(snapshot, asOf: now)
                 // Size against the full display width, as in the original corner-overlay layout.
                 let side = geometry.size.width * 0.90
                 let thickness = side * 13 / 184
                 let cornerInset: CGFloat = geometry.size.width < 180 ? 10 : 16
-                ZStack {
-                    Color.black
+                if usesAccessibleLayout {
+                    accessibleDashboard(snapshot: snapshot, tokenRatio: tokenRatio, lineRatio: lineRatio,
+                                        pulse: pulse, status: status, now: now, side: side, thickness: thickness,
+                                        viewportHeight: geometry.size.height)
+                } else {
                     ZStack {
-                        WatchActivityRing(ratio: tokenRatio, color: tokenColor, trackColor: tokenTrackColor, width: thickness)
-                        WatchActivityRing(ratio: lineRatio, color: lineColor, trackColor: lineTrackColor, width: thickness).padding(side * 16 / 184)
-                        WatchActivityRing(ratio: WatchDashboardData.intensity(pulse, now: now), color: activityColor, trackColor: activityTrackColor, width: thickness, allowsLaps: false).padding(side * 32 / 184)
-                        Button { showingInfo = true } label: {
-                            VStack(spacing: 5) {
-                                Text(t("当前强度", "Current activity")).font(.system(size: 10)).foregroundStyle(.secondary)
-                                Text(pulse.map { I18n.pulseTier($0.tier) } ?? (cloud.pulseEnvelope?.pulse == nil ? t("暂无观测", "No observation") : t("观测已过期", "Expired")))
-                                    .font(.system(size: 15, weight: .semibold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.8)
-                                if let date = cloud.pulseEnvelope?.pulse?.asOf {
-                                    Text(t("观测于 ", "Observed ") + date.formatted(date: .omitted, time: .shortened))
-                                        .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-                                } else { Text("—").font(.system(size: 10)).foregroundStyle(.secondary) }
-                            }.frame(width: side * 0.49)
-                        }.buttonStyle(.plain).accessibilityHint(t("查看数据说明与同步状态", "View data explanation and sync status"))
-                    }.frame(width: side, height: side).position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 8)
-                    VStack {
-                        HStack(alignment: .top) {
-                            corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: tokenColor, alignment: .leading, numberFirst: false)
+                        Color.black
+                        ringCluster(side: side, thickness: thickness, tokenRatio: tokenRatio, lineRatio: lineRatio,
+                                    pulse: pulse, now: now, dimsSummary: summaryUsesCache(snapshot, asOf: now))
+                            .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 8)
+                        VStack {
+                            HStack(alignment: .top) {
+                                corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: tokenColor, alignment: .leading, numberFirst: false)
+                                Spacer()
+                                corner(t("今日行数", "Today lines"), count(lines(snapshot)), color: lineColor, alignment: .trailing, numberFirst: false)
+                            }
                             Spacer()
-                            corner(t("今日行数", "Today lines"), count(lines(snapshot)), color: lineColor, alignment: .trailing, numberFirst: false)
+                            HStack(alignment: .bottom) {
+                                corner(t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: tokenColor, alignment: .leading, numberFirst: true)
+                                Spacer()
+                                corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: lineColor, alignment: .trailing, numberFirst: true)
+                            }
+                        }.padding(.horizontal, cornerInset).padding(.top, 18).padding(.bottom, 6)
+                            .opacity(summaryUsesCache(snapshot, asOf: now) ? 0.55 : 1)
+                        if let status {
+                            Text(status.text).font(.system(size: statusFontSize)).foregroundStyle(status.color)
+                                .lineLimit(1).minimumScaleFactor(0.75)
+                                .position(x: geometry.size.width / 2, y: geometry.size.height - 8)
                         }
-                        Spacer()
-                        HStack(alignment: .bottom) {
-                            corner(t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: tokenColor, alignment: .leading, numberFirst: true)
-                            Spacer()
-                            corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: lineColor, alignment: .trailing, numberFirst: true)
-                        }
-                    }.padding(.horizontal, cornerInset).padding(.top, 18).padding(.bottom, 6)
-                    if cloud.isPreview { Text(t("演示", "Demo")).font(.system(size: 8)).foregroundStyle(.secondary).position(x: geometry.size.width / 2, y: geometry.size.height - 8) }
+                    }
                 }
             }
         }.ignoresSafeArea().persistentSystemOverlays(.hidden)
@@ -162,9 +211,77 @@ struct WatchDashboardView: View {
     }
     private func corner(_ label: String, _ value: String, color: Color, alignment: HorizontalAlignment, numberFirst: Bool) -> some View {
         VStack(alignment: alignment, spacing: 1) {
-            if numberFirst { Text(value).font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(color).lineLimit(1) }
-            Text(label).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
-            if !numberFirst { Text(value).font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(color).lineLimit(1) }
+            if numberFirst { Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded)).foregroundStyle(color).lineLimit(1) }
+            Text(label).font(.system(size: cornerLabelSize)).foregroundStyle(.secondary).lineLimit(1)
+            if !numberFirst { Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded)).foregroundStyle(color).lineLimit(1) }
+        }.accessibilityElement(children: .combine)
+    }
+    private func ringCluster(side: CGFloat, thickness: CGFloat, tokenRatio: Double?, lineRatio: Double?,
+                             pulse: PulseSnapshot?, now: Date, dimsSummary: Bool,
+                             compactCenter: Bool = false) -> some View {
+        let labelSize = compactCenter ? CGFloat(10) : centerLabelSize
+        let valueSize = compactCenter ? CGFloat(15) : centerValueSize
+        return ZStack {
+            WatchActivityRing(ratio: tokenRatio, color: tokenColor, trackColor: tokenTrackColor, width: thickness)
+                .opacity(dimsSummary ? 0.55 : 1)
+            WatchActivityRing(ratio: lineRatio, color: lineColor, trackColor: lineTrackColor, width: thickness)
+                .padding(side * 16 / 184).opacity(dimsSummary ? 0.55 : 1)
+            WatchActivityRing(ratio: WatchDashboardData.intensity(pulse, now: now), color: activityColor,
+                              trackColor: activityTrackColor, width: thickness, allowsLaps: false)
+                .padding(side * 32 / 184)
+            Button { showingInfo = true } label: {
+                VStack(spacing: 5) {
+                    Text(t("当前强度", "Current activity")).font(.system(size: labelSize)).foregroundStyle(.secondary)
+                    Text(pulse.map { I18n.pulseTier($0.tier) } ?? (cloud.pulseEnvelope?.pulse == nil ? t("暂无观测", "No observation") : t("观测已过期", "Expired")))
+                        .font(.system(size: valueSize, weight: .semibold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.8)
+                    if let date = cloud.pulseEnvelope?.pulse?.asOf {
+                        Text(t("观测于 ", "Observed ") + date.formatted(date: .omitted, time: .shortened))
+                            .font(.system(size: labelSize)).foregroundStyle(.secondary).lineLimit(1)
+                    } else { Text("—").font(.system(size: labelSize)).foregroundStyle(.secondary) }
+                }.frame(width: side * 0.49)
+            }.buttonStyle(.plain).accessibilityHint(t("查看数据说明与同步状态", "View data explanation and sync status"))
+        }.frame(width: side, height: side)
+    }
+    private func accessibleDashboard(snapshot: DashboardSnapshot?, tokenRatio: Double?, lineRatio: Double?,
+                                     pulse: PulseSnapshot?, status: (text: String, color: Color)?,
+                                     now: Date, side: CGFloat, thickness: CGFloat, viewportHeight: CGFloat) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 12) {
+                    VStack(spacing: 4) {
+                        ringCluster(side: side, thickness: thickness, tokenRatio: tokenRatio, lineRatio: lineRatio,
+                                    pulse: pulse, now: now, dimsSummary: summaryUsesCache(snapshot, asOf: now),
+                                    compactCenter: true)
+                        if let status { Text(status.text).font(.caption2).foregroundStyle(status.color) }
+                    }
+                    .frame(height: viewportHeight)
+                    VStack(spacing: 6) {
+                        accessibleMetric(t("词元", "Tokens"), count(tokens(snapshot)), color: tokenColor)
+                        accessibleMetric(t("相对平常", "vs usual"), multiple(tokenRatio), color: tokenColor)
+                        accessibleMetric(t("行数", "Lines"), count(lines(snapshot)), color: lineColor)
+                        accessibleMetric(t("相对平常", "vs usual"), multiple(lineRatio), color: lineColor)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: viewportHeight, alignment: .center)
+                    .id("watch-facts")
+                }
+                .scrollTargetLayout()
+                .padding(.horizontal, 8)
+            }.background(Color.black)
+                .scrollTargetBehavior(.viewAligned)
+                .onAppear {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--watch-accessibility-details") {
+                        proxy.scrollTo("watch-facts", anchor: .top)
+                    }
+                    #endif
+                }
+            }
+    }
+    private func accessibleMetric(_ label: String, _ value: String, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 4)
+            Text(value).font(.headline).foregroundStyle(color).lineLimit(1)
         }.accessibilityElement(children: .combine)
     }
     private var info: some View {
@@ -188,7 +305,7 @@ struct WatchDashboardView: View {
     private func refresh(force: Bool = false) async {
         guard !refreshing, !cloud.isPreview else { return }
         refreshing = true
-        defer { refreshing = false }
+        defer { refreshing = false; hasAttemptedRefresh = true }
         for range in ["today", "30d"] { await cloud.fetchAndStore(range: range, force: force) }
         cloud.loadSnapshot(for: "today")
         await cloud.fetchCurrentPulse(force: force)
@@ -199,8 +316,21 @@ struct WatchDashboardView: View {
     #if DEBUG
     private func installPreview() {
         let now = Date()
+        let arguments = ProcessInfo.processInfo.arguments
+        let emptyPulse = CurrentPulseEnvelope.forCloudSync(pulse: nil, writerAppVersion: "watch preview", generatedAt: now)
+        if arguments.contains("--watch-empty") {
+            cloud.installPreview(snapshots: [:], pulse: emptyPulse, missingRanges: ["today"])
+            hasAttemptedRefresh = true
+            return
+        }
+        if arguments.contains("--watch-error") {
+            cloud.installPreview(snapshots: [:], pulse: emptyPulse, rangeErrors: ["today": "Preview sync failure"])
+            hasAttemptedRefresh = true
+            return
+        }
+        let updatedAt = arguments.contains("--watch-stale") ? now.addingTimeInterval(-3_600) : now
         var today = DashboardSnapshot(todayTokens: 2_400_000,
-            topRepos: [RepoItem(repoPath: "/preview", name: "Preview", added: 700, deleted: 200, commits: 0)], payloadVersion: CKSchema.payloadVersion, updatedAt: now)
+            topRepos: [RepoItem(repoPath: "/preview", name: "Preview", added: 700, deleted: 200, commits: 0)], payloadVersion: CKSchema.payloadVersion, updatedAt: updatedAt)
         today.period = DashboardPeriod(kind: .today, now: now)
         var history = DashboardSnapshot(payloadVersion: CKSchema.payloadVersion, updatedAt: now)
         history.period = DashboardPeriod(kind: .days30, now: now)
@@ -212,6 +342,7 @@ struct WatchDashboardView: View {
         let signal = PulseSignal(kind: .activity, rawValue: 100, unit: "tokens", baseline: 50, normalized: 2.4, freshness: .fresh, completeness: .complete, observedAt: date, reason: "activity")
         let pulse = PulseSnapshot(tier: .elevated, primarySignal: .activity, reason: "activity", signals: [signal], asOf: date)
         cloud.installPreview(snapshots: ["today": today, "30d": history], pulse: CurrentPulseEnvelope.forCloudSync(pulse: pulse, writerAppVersion: "watch preview", generatedAt: date))
+        hasAttemptedRefresh = true
     }
     #endif
 }
