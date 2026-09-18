@@ -7,7 +7,14 @@ struct AIPulse_WatchApp: App {
     @StateObject private var cloudData = CloudDataService.shared
     var body: some Scene {
         WindowGroup {
-            NavigationStack { WatchDashboardView().environmentObject(cloudData).toolbar(.hidden, for: .navigationBar) }
+            NavigationStack {
+                WatchDashboardView().environmentObject(cloudData)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) { Spacer().frame(width: 0) }
+                        ToolbarItem(placement: .topBarTrailing) { Spacer().frame(width: 0) }
+                    }
+                    .toolbarBackground(.hidden, for: .navigationBar)
+            }
                 .persistentSystemOverlays(.hidden)
         }
     }
@@ -24,6 +31,7 @@ private struct WatchActivityRing: View {
     let ratio: Double?
     let color: Color
     let width: CGFloat
+    var allowsLaps = true
     var body: some View {
         GeometryReader { geometry in
             let diameter = min(geometry.size.width, geometry.size.height)
@@ -33,7 +41,7 @@ private struct WatchActivityRing: View {
             ZStack {
                 Circle().stroke(value == nil ? Color.gray.opacity(0.24) : color.opacity(0.15), lineWidth: width)
                 if let value {
-                    if value >= 1 { Circle().stroke(color.opacity(0.48), lineWidth: width) }
+                    if value >= 1 { Circle().stroke(color.opacity(allowsLaps ? 0.48 : 1), lineWidth: width) }
                     if arc > 0 {
                         Circle().trim(from: 0, to: arc)
                             .stroke(color, style: StrokeStyle(lineWidth: width, lineCap: .round))
@@ -54,7 +62,6 @@ private struct WatchActivityRing: View {
 struct WatchDashboardView: View {
     @EnvironmentObject private var cloud: CloudDataService
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
     @State private var showingInfo = false
     @State private var refreshing = false
     @State private var refreshMessage: String?
@@ -95,19 +102,15 @@ struct WatchDashboardView: View {
                 let tokenRatio = WatchDashboardData.ratio(value: tokens(snapshot), baseline: WatchDashboardData.baseline(history, tokens: true, now: now))
                 let lineRatio = WatchDashboardData.ratio(value: lines(snapshot), baseline: WatchDashboardData.baseline(history, tokens: false, now: now))
                 let pulse = cloud.pulseEnvelope?.currentPulse(asOf: now)
-                let compact = geometry.size.width < 190
-                let side = min(geometry.size.width - 8, geometry.size.height - (compact ? 76 : 64))
+                // Size against the full display width, as in the original corner-overlay layout.
+                let side = geometry.size.width * 0.93
                 let thickness = side * 13 / 184
                 ZStack {
                     Color.black
-                    if !compact && scenePhase == .active && !isLuminanceReduced {
-                        Text(now, format: .dateTime.hour().minute()).font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary).position(x: geometry.size.width / 2, y: 13)
-                    }
                     ZStack {
                         WatchActivityRing(ratio: tokenRatio, color: red, width: thickness)
                         WatchActivityRing(ratio: lineRatio, color: green, width: thickness).padding(side * 16 / 184)
-                        WatchActivityRing(ratio: WatchDashboardData.intensity(pulse, now: now), color: yellow, width: thickness).padding(side * 32 / 184)
+                        WatchActivityRing(ratio: WatchDashboardData.intensity(pulse, now: now), color: yellow, width: thickness, allowsLaps: false).padding(side * 32 / 184)
                         Button { showingInfo = true } label: {
                             VStack(spacing: 5) {
                                 Text(t("当前强度", "Current activity")).font(.system(size: 10)).foregroundStyle(.secondary)
@@ -119,7 +122,7 @@ struct WatchDashboardView: View {
                                 } else { Text("—").font(.system(size: 10)).foregroundStyle(.secondary) }
                             }.frame(width: side * 0.49)
                         }.buttonStyle(.plain).accessibilityHint(t("查看数据说明与同步状态", "View data explanation and sync status"))
-                    }.frame(width: side, height: side).position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
+                    }.frame(width: side, height: side).position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 6)
                     VStack {
                         HStack(alignment: .top) {
                             corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: red, alignment: .leading, numberFirst: false)
@@ -132,7 +135,7 @@ struct WatchDashboardView: View {
                             Spacer()
                             corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: green, alignment: .trailing, numberFirst: true)
                         }
-                    }.padding(.horizontal, 14).padding(.top, compact ? 28 : (scenePhase == .active && !isLuminanceReduced ? 25 : 40)).padding(.bottom, 6)
+                    }.padding(.horizontal, 10).padding(.top, 14).padding(.bottom, 6)
                     if cloud.isPreview { Text(t("演示", "Demo")).font(.system(size: 8)).foregroundStyle(.secondary).position(x: geometry.size.width / 2, y: geometry.size.height - 8) }
                 }
             }
