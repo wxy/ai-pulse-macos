@@ -35,7 +35,7 @@ struct GeneralTab: View {
                     }
                 }
 
-                settingsGroup(I18n.t("general.group_startup")) {
+                settingsGroup(SetupCopy.text("启动与引导", "Startup & onboarding")) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(I18n.t("general.launch_at_login")).font(.body)
@@ -60,6 +60,7 @@ struct GeneralTab: View {
 
                     Divider()
 
+                    if ProcessInfo.processInfo.arguments.contains("--show-demo-controls") {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(demoActive ? I18n.t("demo.exit") : I18n.t("demo.enter"))
@@ -83,7 +84,9 @@ struct GeneralTab: View {
 
                     Divider()
 
-                    Text(I18n.t("general.rerun_welcome_desc"))
+                    }
+
+                    Text(SetupCopy.text("重新检查目录授权和工具状态，沿用已有配置与历史记录。", "Review folder access and tool status while retaining existing configuration and history."))
                         .font(.caption).foregroundColor(.secondary)
                     Button(I18n.t("general.rerun_welcome")) {
                         UserDefaults.standard.removeObject(forKey: "onboarding_completed")

@@ -26,10 +26,12 @@ public enum CKSchema {
     }
     #endif
 
+    // Record IDs are unique by database/zone, not by record type.
+    // Keep v1 records untouched when writing the v2 contract.
     public enum RecordName {
-        public static let today = "snapshot-today"
-        public static let week = "snapshot-week"
-        public static let month = "snapshot-30d"
+        public static let today = "snapshot-v2-today"
+        public static let week = "snapshot-v2-week"
+        public static let month = "snapshot-v2-30d"
     }
 
     public enum CurrentPulse {

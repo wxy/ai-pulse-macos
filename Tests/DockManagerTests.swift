@@ -23,6 +23,30 @@ final class DockManagerTests: XCTestCase {
         }
     }
 
+    func testHighActivityUsesYellowInsteadOfWarningRed() throws {
+        let color = try XCTUnwrap(PulseAppearance(tier: .intense).color.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(color.greenComponent, 0.5)
+        XCTAssertGreaterThan(color.redComponent, color.greenComponent)
+        XCTAssertLessThan(color.blueComponent, color.greenComponent)
+    }
+
+    @MainActor
+    func testDockMenuGroupsActionsAndLeavesQuitToTheSystem() {
+        let menu = StatusItemController.shared.makeDockMenu()
+        XCTAssertFalse(menu.items.contains { ($0.representedObject as? String) == "quit" })
+        XCTAssertFalse(menu.items.last?.isSeparatorItem == true)
+        XCTAssertEqual(menu.items.filter(\.isSeparatorItem).count, 1)
+        XCTAssertTrue(menu.items.allSatisfy { $0.isSeparatorItem || $0.action != nil }, "The context menu contains actions only")
+        let labels = menu.items.map(\.title)
+        let dashboard = labels.firstIndex(of: I18n.t("menu.dashboard_label") + "…")
+        let settings = labels.firstIndex(of: I18n.t("menu.preferences"))
+        XCTAssertNotNil(dashboard)
+        XCTAssertEqual(settings, dashboard.map { $0 + 1 })
+        for item in menu.items where item.action != nil {
+            XCTAssertTrue(item.target === StatusItemController.shared)
+        }
+    }
+
     func testUnavailableAndRestingKeepRobotAndUseDistinctText() {
         let unknown = PulseAppearance(tier: nil)
         let resting = PulseAppearance(tier: .resting)

@@ -26,6 +26,10 @@ extension FileManager {
 /// across launches, as required by the App Sandbox.
 enum BookmarkManager {
 
+    static let didChange = Notification.Name("bookmarkAccessDidChange")
+    private static let accessLock = NSLock()
+    private nonisolated(unsafe) static var activeResources: [String: URL] = [:]
+
     private static let bookmarksKey = "security_scoped_bookmarks"
 
     // MARK: - Environment
@@ -199,6 +203,8 @@ enum BookmarkManager {
         var bookmarks = savedBookmarks()
         bookmarks[url.path] = bookmark
         save(bookmarks)
+        _ = activate(url)
+        NotificationCenter.default.post(name: didChange, object: nil)
     }
 
     /// Resolve all persisted bookmarks and begin accessing their resources.
@@ -214,18 +220,33 @@ enum BookmarkManager {
                 bookmarkDataIsStale: &isStale
             ) else { continue }
 
-            if url.startAccessingSecurityScopedResource() {
+            if activate(url) {
                 resolved.append(url)
             }
         }
         return resolved
     }
 
+    static func isAccessAvailable(for path: String) -> Bool {
+        guard isSandboxed else { return true }
+        accessLock.lock(); defer { accessLock.unlock() }
+        let target = URL(fileURLWithPath: path).standardizedFileURL.path
+        return activeResources.keys.contains { target == $0 || target.hasPrefix($0 + "/") }
+    }
+
+    private static func activate(_ url: URL) -> Bool {
+        accessLock.lock(); defer { accessLock.unlock() }
+        if activeResources[url.path] != nil { return true }
+        guard url.startAccessingSecurityScopedResource() else { return false }
+        activeResources[url.path] = url
+        return true
+    }
+
     /// Stop accessing all resolved bookmarks. Call at app termination.
     static func stopAll(_ urls: [URL]) {
-        for url in urls {
-            url.stopAccessingSecurityScopedResource()
-        }
+        accessLock.lock(); defer { accessLock.unlock() }
+        for url in activeResources.values { url.stopAccessingSecurityScopedResource() }
+        activeResources.removeAll()
     }
 
     /// Check if any bookmarks have been granted.

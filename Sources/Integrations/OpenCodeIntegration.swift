@@ -6,7 +6,15 @@ import Foundation
 struct OpenCodeIntegration: Detectable {
     let id = "opencode"
     let displayName = "OpenCode"
-    var costSources: [CostSource] { [] }
+    var costSources: [CostSource] {
+        let config = IntegrationRegistry.config(for: id)
+        guard let tier = SubscriptionRegistry.tool(forName: displayName)?.tiers.first(where: { $0.label == config.subscriptionTier }) else { return [] }
+        return [CostSource(id: "sub:opencode:" + tier.label.lowercased(),
+                           label: "OpenCode " + tier.label,
+                           kind: .subscription(toolId: id, tierLabel: tier.label, monthlyFee: tier.fee),
+                           coveredModels: ModelCatalogManager.shared.modelsForTool(id),
+                           confidence: .declared, limitations: [])]
+    }
 
     func detect() -> DetectionResult {
         let home = FileManager.default.realHomeDirectory

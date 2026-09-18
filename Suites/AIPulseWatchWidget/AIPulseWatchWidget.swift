@@ -2,7 +2,7 @@
 //
 // 自包含实现：不链接 AIPulseShared，本地定义最小解码结构；载荷常量与
 // Packages/AIPulseShared 的 CKSchema 保持一致（改动时两处同步）。
-// 数据源：iCloud 私有库 DashboardCache_v2 / snapshot-today（Mac 每 5 分钟写）。
+// 数据源：iCloud 私有库 DashboardCache_v2 / snapshot-v2-today（Mac 每 5 分钟写）。
 
 import WidgetKit
 import SwiftUI
@@ -13,7 +13,7 @@ import CloudKit
 private enum Schema {
     static let recordType = "DashboardCache_v2"
     static let payloadVersion = "2.0.0"
-    static let todayRecordName = "snapshot-today"
+    static let todayRecordName = "snapshot-v2-today"
     static let jsonField = "json"
 }
 
