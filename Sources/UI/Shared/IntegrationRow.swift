@@ -172,8 +172,8 @@ struct IntegrationRow: View {
         }
         if let cb = ApiPoller.shared.cachedBalance(for: integration.id) {
             if let err = cb.error {
-                balanceText = I18n.t("apikeys.error") + ": \(err)"
                 keyStatus = Self.isCredentialRejection(err) ? .invalid : .connectionFailed
+                balanceText = (keyStatus == .invalid ? SetupCopy.text("凭据被拒绝", "Credentials rejected") : SetupCopy.text("连接失败", "Connection failed")) + ": " + err
             } else if let b = cb.balances.first {
                 // Preserve the provider's denomination; no unlabelled static FX estimate.
                 balanceText = "\(b.currency.uppercased()) \(String(format: "%.1f", b.totalBalance))" + " · " + Date(timeIntervalSince1970: Double(cb.lastFetchTimestamp) / 1000).formatted(date: .omitted, time: .shortened)

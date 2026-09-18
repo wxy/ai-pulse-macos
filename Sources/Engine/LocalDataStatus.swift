@@ -10,15 +10,15 @@ struct LocalDataStatus: Equatable {
     let repositories: Repositories
 
     static func resolve(homeAccess: Access, hasReadableLogs: Bool, scan: LogScanObservation.Status,
-                        hasActivity: Bool, rootsConfigured: Bool, rootsAccessible: Bool, rootsExist: Bool) -> Self {
+                        hasActivity: Bool?, rootsConfigured: Bool, rootsAccessible: Bool, rootsExist: Bool, priorReadUsable: Bool = false) -> Self {
         let activity: Activity
         if !hasReadableLogs && homeAccess == .missing { activity = .needsAccess }
         else if !hasReadableLogs && homeAccess == .expired { activity = .accessExpired }
         else if scan == .failed { activity = .failed }
         else if !hasReadableLogs { activity = .noSources }
-        else if scan == .scanning || scan == .inactive { activity = .scanning }
+        else if scan == .inactive || (scan == .scanning && !priorReadUsable) { activity = .scanning }
         else if scan == .stale { activity = .stale }
-        else { activity = hasActivity ? .ready : .noActivity }
+        else { activity = hasActivity == false ? .noActivity : .ready }
         let repositories: Repositories = !rootsConfigured ? .notConfigured
             : !rootsAccessible ? .needsAccess : !rootsExist ? .missing : .ready
         return Self(homeAccess: homeAccess, activity: activity, repositories: repositories)
@@ -31,10 +31,10 @@ struct LocalDataStatus: Equatable {
             .map { FileManager.default.realHomeDirectory.appendingPathComponent($0).path }
     }
 
-    static func current(hasActivity: Bool = false) -> Self {
+    static func current(hasActivity: Bool? = nil) -> Self {
         let fm = FileManager.default
         let home: Access = !BookmarkManager.isSandboxed ? .notRequired
-            : BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) ? .granted
+            : BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) && fm.isReadableFile(atPath: BookmarkManager.homeDirPath) ? .granted
             : BookmarkManager.hasHomeAccess ? .expired : .missing
         let readable = logPaths.contains { BookmarkManager.isAccessAvailable(for: $0) && fm.isReadableFile(atPath: $0) }
             || RepositoryScope.configuredRoots().contains { root in
@@ -48,7 +48,11 @@ struct LocalDataStatus: Equatable {
                        scan: LogScanObservation.shared.status(hasReadFailure: failed), hasActivity: hasActivity,
                        rootsConfigured: !roots.isEmpty,
                        rootsAccessible: roots.allSatisfy { BookmarkManager.isAccessAvailable(for: $0) },
-                       rootsExist: roots.allSatisfy { fm.isReadableFile(atPath: $0) })
+                       rootsExist: roots.allSatisfy { fm.isReadableFile(atPath: $0) },
+                       priorReadUsable: LogScanObservation.shared.lastCompletedAt.map {
+                           let age = Date().timeIntervalSince($0)
+                           return age >= 0 && age <= 120
+                       } ?? false)
     }
 }
 

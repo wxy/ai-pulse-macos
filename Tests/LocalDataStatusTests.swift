@@ -38,4 +38,23 @@ final class LocalDataStatusTests: XCTestCase {
         XCTAssertEqual(subset.activity, .noActivity)
         XCTAssertTrue(subset.canReportCurrentActivity)
     }
+    func testUnqueriedActivityIsNotReportedAsZeroAndPeriodicScanKeepsRecentResult() {
+        let unknown = LocalDataStatus.resolve(homeAccess: .granted, hasReadableLogs: true, scan: .available,
+            hasActivity: nil, rootsConfigured: false, rootsAccessible: true, rootsExist: true)
+        XCTAssertEqual(unknown.activity, .ready)
+        let periodic = LocalDataStatus.resolve(homeAccess: .granted, hasReadableLogs: true, scan: .scanning,
+            hasActivity: true, rootsConfigured: true, rootsAccessible: true, rootsExist: true, priorReadUsable: true)
+        XCTAssertEqual(periodic.activity, .ready)
+        let first = LocalDataStatus.resolve(homeAccess: .granted, hasReadableLogs: true, scan: .scanning,
+            hasActivity: nil, rootsConfigured: true, rootsAccessible: true, rootsExist: true)
+        XCTAssertEqual(first.activity, .scanning)
+    }
+    func testStaleHistoryAndMissingRepositoryDoNotPretendToBeCurrent() {
+        let state = LocalDataStatus.resolve(homeAccess: .granted, hasReadableLogs: true, scan: .stale,
+            hasActivity: true, rootsConfigured: true, rootsAccessible: true, rootsExist: false)
+        XCTAssertEqual(state.activity, .stale)
+        XCTAssertEqual(state.repositories, .missing)
+        XCTAssertFalse(state.canReportCurrentActivity)
+    }
+
 }

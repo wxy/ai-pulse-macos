@@ -37,11 +37,10 @@ struct SettingsView: View {
             List(selection: $selectedTab) {
                 Label(labelFor("General"), systemImage: "gear")
                     .tag("General")
-                Label(labelFor("Notifications"), systemImage: "bell.badge")
-                    .tag("Notifications")
                 Label(labelFor("Repos"), systemImage: "folder").tag("Repos")
                 Label(labelFor("integrations.dev"), systemImage: "hammer").tag("integrations.dev")
                 Label(SetupCopy.text("账户与固定费用", "Accounts & fixed costs"), systemImage: "creditcard").tag("integrations.api")
+                Label(labelFor("Notifications"), systemImage: "bell.badge").tag("Notifications")
                 Label(SetupCopy.text("数据与同步", "Data & sync"), systemImage: "externaldrive").tag("Data")
                 Label(labelFor("About"), systemImage: "info.circle")
                     .tag("About")
@@ -246,7 +245,6 @@ struct IntegrationGroupedTab: View {
 }
 
 struct AccountAndCostsTab: View {
-    @State private var revision = 0
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -401,6 +399,11 @@ struct ReposTab: View {
 
     private func save() {
         UserDefaults.standard.set(dirEntries.map(\.path), forKey: repoDirsKey)
+        Task {
+            _ = await Task.detached(priority: .utility) { RepoDiscovery.scan() }.value
+            await DashboardCache.invalidateAll()
+            DataRefreshCoordinator.shared.notifyDataChange()
+        }
     }
 }
 
