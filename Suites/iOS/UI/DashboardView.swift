@@ -80,7 +80,7 @@ struct DashboardView: View {
     private var cacheColor: Color { scheme == .dark ? Color(red: 0.30, green: 0.43, blue: 0.36) : .marsGreenLight }
     private let palette: [Color] = [.deepRed, .marsGreen, .deepRed2, .marsGreen2]
     private func t(_ zh: String, _ en: String) -> String { PhoneText.t(zh, en) }
-    private func count(_ value: Int64) -> String { value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1))) }
+    private func count(_ value: Int64) -> String { ChartMath.compactCount(value) }
 
     var body: some View {
         GeometryReader { geometry in
