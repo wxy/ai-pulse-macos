@@ -9,6 +9,13 @@ final class CloudKitSchemaTests: XCTestCase {
         XCTAssertEqual(CKSchema.SpendAlert.recordType, "SpendAlert_v1")
     }
 
+    func testV2RecordIdsCannotCollideWithExistingV1Records() {
+        let names = [CKSchema.RecordName.today, CKSchema.RecordName.week, CKSchema.RecordName.month]
+        XCTAssertEqual(Set(names).count, 3)
+        XCTAssertTrue(Set(names).isDisjoint(with: ["snapshot-today", "snapshot-week", "snapshot-30d"]))
+        XCTAssertEqual(CKSchema.RecordName.today, "snapshot-v2-today")
+    }
+
     func testDashboardSnapshotEmitsTheTwoPointZeroEnvelope() throws {
         var snapshot = DashboardSnapshot()
         snapshot.payloadVersion = CKSchema.payloadVersion

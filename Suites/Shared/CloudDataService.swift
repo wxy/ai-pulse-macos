@@ -115,7 +115,7 @@ final class CloudDataService: ObservableObject {
         case "today": return CKSchema.RecordName.today
         case "week":  return CKSchema.RecordName.week
         case "30d":   return CKSchema.RecordName.month
-        default:      return "snapshot-\(range)"
+        default:      return "snapshot-v2-\(range)"
         }
     }
 

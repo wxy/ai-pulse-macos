@@ -34,12 +34,12 @@ enum I18n {
         _cacheLang = nil
         langLock.unlock()
         UserDefaults.standard.set(lang, forKey: langKey)
-        // Always set AppleLanguages to the resolved language code — never leave
-        // it unset. Otherwise CFBundle tries to load strings for the raw system
-        // locale (e.g. "zh-Hans-CN") and logs a scary-but-harmless error when no
-        // exact .lproj match exists.
-        let code = lang == "auto" ? resolvedLang() : lang
-        UserDefaults.standard.set([code], forKey: "AppleLanguages")
+        // Auto must not inherit our previous app-specific AppleLanguages override.
+        if lang == "auto" {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.set([lang], forKey: "AppleLanguages")
+        }
         NotificationCenter.default.post(name: didChangeLanguage, object: nil)
     }
 
@@ -62,16 +62,24 @@ enum I18n {
     static func resolvedLang() -> String {
         let stored = getLang()
         if stored != "auto" { return stored }
-        let preferred = Locale.preferredLanguages.first ?? ""
-        if preferred.hasPrefix("zh-Hant-HK") { return "zh-Hant-HK" }
-        if preferred.hasPrefix("zh-Hant")    { return "zh-Hant-TW" }
-        if preferred.hasPrefix("zh")         { return "zh-Hans" }
-        if preferred.hasPrefix("ja")         { return "ja" }
-        if preferred.hasPrefix("ko")         { return "ko" }
-        if preferred.hasPrefix("de")         { return "de" }
-        if preferred.hasPrefix("fr")         { return "fr" }
-        if preferred.hasPrefix("es")         { return "es" }
-        if preferred.hasPrefix("pt")         { return "pt-BR" }
+        // Locale.preferredLanguages includes the application's own override.
+        let system = UserDefaults.standard.persistentDomain(forName: "NSGlobalDomain")?["AppleLanguages"] as? [String]
+        return resolveSystemLanguage(system ?? Locale.preferredLanguages)
+    }
+
+    static func resolveSystemLanguage(_ languages: [String]) -> String {
+        for preferred in languages {
+            if preferred.hasPrefix("en") { return "en" }
+            if preferred.hasPrefix("zh-Hant-HK") || preferred.hasPrefix("zh-HK") { return "zh-Hant-HK" }
+            if preferred.hasPrefix("zh-Hant") || preferred.hasPrefix("zh-TW")    { return "zh-Hant-TW" }
+            if preferred.hasPrefix("zh")         { return "zh-Hans" }
+            if preferred.hasPrefix("ja")         { return "ja" }
+            if preferred.hasPrefix("ko")         { return "ko" }
+            if preferred.hasPrefix("de")         { return "de" }
+            if preferred.hasPrefix("fr")         { return "fr" }
+            if preferred.hasPrefix("es")         { return "es" }
+            if preferred.hasPrefix("pt")         { return "pt-BR" }
+        }
         return "en"
     }
 

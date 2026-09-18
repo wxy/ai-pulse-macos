@@ -33,7 +33,7 @@ Xcode 会自动：创建 `Suites/AIPulseWatchWidget/` 文件夹 + 模板代码 +
 选新 target → Signing & Capabilities → `+ Capability`：
 
 1. **iCloud**：勾选 CloudKit；Containers 勾 `iCloud.com.wxy.aipulse`
-   （小组件自读私有库的 `snapshot-today` 记录，必须与 app 同容器）
+   （小组件自读私有库的 `snapshot-v2-today` 记录，必须与 app 同容器）
 2. （可选）Push Notifications —— 若以后想用远程推送即时刷新再加
 
 > 最省事的替代：把 `Suites/AIPulse_watchOS.entitlements` 的内容复制到
@@ -44,7 +44,7 @@ Xcode 会自动：创建 `Suites/AIPulseWatchWidget/` 文件夹 + 模板代码 +
 1. Scheme 切到 `AIPulseWatchWidget`（或 watch app scheme）→ Build
 2. 模拟器/真机表盘 → 长按表盘 → 编辑 → 添加复杂功能槽位 → 选
    **AI Pulse 燃烧率** → 选 Circular / Rectangular / Inline 样式
-3. 数据来自 iCloud 私有库 `snapshot-today`（Mac 端 Phase 4 每 5 分钟
+3. 数据来自 iCloud 私有库 `snapshot-v2-today`（Mac 端 Phase 4 每 5 分钟
    刷新快照；表盘按系统预算约 15 分钟后再取）
 
 ## 常见坑

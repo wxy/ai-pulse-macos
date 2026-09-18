@@ -62,4 +62,11 @@ struct IntegrationConfig: Codable {
     var enabled: Bool = false
     var apiKey: String = ""
     var subscriptionTier: String = ""
+
+    func declaringSubscription(_ tier: String) -> Self {
+        var copy = self
+        copy.subscriptionTier = tier
+        if !tier.isEmpty { copy.enabled = true }
+        return copy
+    }
 }

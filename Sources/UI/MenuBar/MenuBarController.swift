@@ -46,6 +46,7 @@ final class DashboardWindowManager: NSObject {
         if window == nil {
             let panel = RobotDashboardPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
                                             styleMask: [.borderless], backing: .buffered, defer: false)
+            panel.title = I18n.t("menu.dashboard_label")
             panel.hidesOnDeactivate = false
             panel.isOpaque = false
             panel.backgroundColor = .clear

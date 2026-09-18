@@ -12,7 +12,7 @@ struct PulseAppearance {
         let rgb: (CGFloat, CGFloat, CGFloat)
         switch tier {
         case .active: rgb = (0.26, 0.52, 0.40)
-        case .elevated, .intense: rgb = (0.72, 0.32, 0.27)
+        case .elevated, .intense: rgb = (0.72, 0.56, 0.18)
         case .resting, .none: return .secondaryLabelColor
         }
         return NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
