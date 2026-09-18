@@ -592,8 +592,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     // MARK: - aider
 
     private func discoverAndWatchRepos() {
-        let dirs = UserDefaults.standard.stringArray(forKey: "repo_search_dirs")
-            ?? ["~/dev", "~/projects", "~/code"]
+        let dirs = RepositoryScope.configuredRoots()
         for dir in dirs {
             let expanded = NSString(string: dir).expandingTildeInPath
             guard FileManager.default.fileExists(atPath: expanded) else { continue }

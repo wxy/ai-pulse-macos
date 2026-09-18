@@ -334,19 +334,7 @@ struct ReposTab: View {
 
     private func loadAndScan() {
         let dirs = UserDefaults.standard.stringArray(forKey: repoDirsKey) ?? []
-        if dirs.isEmpty {
-            // Under sandbox, unauthorized guessed defaults can't be read; show an
-            // empty state + Add button instead of persisting/scanning unreadable dirs.
-            if BookmarkManager.isSandboxed {
-                dirEntries = []
-            } else {
-                let defaults = ["~/dev", "~/projects", "~/code"]
-                UserDefaults.standard.set(defaults, forKey: repoDirsKey)
-                dirEntries = defaults.map { DirEntry(path: $0) }
-            }
-        } else {
-            dirEntries = dirs.map { DirEntry(path: $0) }
-        }
+        dirEntries = dirs.map { DirEntry(path: $0) }
         // Background-scan any dir without a fresh cache entry. Refreshing the
         // visible counts directly after each scan completes (not only via the
         // didChange notification) guarantees the row stops spinning.
