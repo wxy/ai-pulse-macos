@@ -6,7 +6,7 @@
 
 打开 `Suites/AIPulse_Suites.xcodeproj`，选择 `AIPulse_iOS`。
 
-- 普通启动：读取三个独立的 `snapshot-v2-*`，以及 `CurrentPulse_v2/current-pulse`。签名真机需具备原容器 `iCloud.com.wxy.aipulse` 权限，两端使用同一 Apple 账户。Mac Debug 不写入 iCloud。
+- 普通启动：读取三个独立的 `snapshot-v2-*`，以及 `DashboardCache_v2/current-pulse`。签名真机需具备原容器 `iCloud.com.wxy.aipulse` 权限，两端使用同一 Apple 账户。Mac Debug 不写入 iCloud。
 - 模拟器支持 CloudKit。正常 Xcode / XcodeBuildMCP 签名构建会生成 CloudKit 权限；明确传入 `CODE_SIGNING_ALLOWED=NO` 的未签名预览包不构造容器。需在模拟器设置内登录与 Mac 相同的 Apple 账户，并确认 Development / Production 环境一致。无需限定从 Xcode 界面启动。
 - 明确的 Debug 界面预览：在 Scheme → Run → Arguments 加入 `--iphone-preview`。顶部显示“预览数据”，不访问 CloudKit、不注册通知、不写摘要缓存；Release 不启用该参数。
 
@@ -25,3 +25,9 @@
 本地 Swift 测试 404 项、4 项跳过、0 失败；iOS Debug / Release 模拟器构建通过。机器人视觉已按 macOS 的 440×440 头部、57 高额头、统一四色圈图、梯形鼻梁、相向节奏图和 128 高分层底座等比适配。通过 XcodeBuildMCP 检查范围切换、头部详情返回、静音与设置入口，以及普通启动的不可用状态。亮色与暗色截图已检查。
 
 尚未完成真实 Mac → CloudKit → iPhone 的签名设备往返、推送与通知声音验证。新界面目前提供简体 / 繁体中文与英文兜底；其他语言的新文案需要后续本地化补齐。旧已有错误 / 版本提示继续使用原有多语言字典。
+
+## 统一云端类型
+
+四条记录统一写入 `DashboardCache_v2`，字段为 `json`（String）和 `updatedAt`（Date/Time）。Mac 的“检查并重试同步”负责写入三个统计范围与 `current-pulse`；iPhone 读取相同的类型和记录 ID。当前强度的 JSON 与历史摘要不同，独立校验有效期。
+
+Mac Debug 仍不连接或写入 CloudKit，使用带 iCloud 权限的签名 Release 包建立真实记录。在 Development 中首次成功保存可建立类型与字段；Production 需先部署 schema。两端需使用同一 Apple 账户和云端环境。不要手动填入空 JSON 作为摘要，也不删除 v1 数据。若曾成功建立旧 `CurrentPulse_v2/current-pulse`，记录 ID 不允许换类型；需单独处理该未发布的旧记录，不能直接以新类型覆盖。

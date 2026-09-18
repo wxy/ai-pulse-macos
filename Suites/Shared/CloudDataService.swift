@@ -282,8 +282,8 @@ final class CloudDataService: ObservableObject {
         guard !isPreview, Self.cloudAvailable else { return }
         do {
             _ = try await CloudKitGate.shared.runDeduped("currentPulse", dedupeKey: "current-pulse") {
-                let record = try await self.database.record(for: CKRecord.ID(recordName: "current-pulse"))
-                guard record.recordType == "CurrentPulse_v2",
+                let record = try await self.database.record(for: CKRecord.ID(recordName: CKSchema.CurrentPulse.recordName))
+                guard record.recordType == CKSchema.CurrentPulse.recordType,
                       let json = record[CKSchema.Field.json] as? String, let data = json.data(using: .utf8) else { throw CloudError.noData }
                 let envelope = try JSONDecoder().decode(CurrentPulseEnvelope.self, from: data)
                 guard envelope.payloadVersion == CKSchema.payloadVersion else { throw CloudError.noData }

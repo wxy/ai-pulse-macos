@@ -122,7 +122,7 @@ final class CloudSyncService {
                 let (_, results) = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
                 let ok = results.compactMap({ _, r in if case .failure = r { return true }; return nil }).isEmpty
                 if ok {
-                    Logger.info("CloudSync: synced \(r.key) len=\(json.count)")
+                    Logger.info("CloudSync: synced \(CKSchema.recordType)/\(r.recordName) len=\(json.count)")
                     lastSyncedFingerprint[r.key] = fingerprint
                 } else { didFail = true }
             } catch {
@@ -153,6 +153,7 @@ final class CloudSyncService {
             for (_, result) in results {
                 if case .failure(let error) = result { success = false; Logger.error("CloudSync current pulse record failed: \(error)") }
             }
+            if success { Logger.info("CloudSync: synced \(CKSchema.CurrentPulse.recordType)/\(CKSchema.CurrentPulse.recordName)") }
             return success
         } catch {
             Logger.error("CloudSync current pulse failed: \(error)")
