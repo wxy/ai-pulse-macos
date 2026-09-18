@@ -49,10 +49,10 @@ struct PulseAppearance {
                 shell.append(NSBezierPath(roundedRect: NSRect(x: 6, y: 4.5, width: 6, height: 1.5), xRadius: 0.75, yRadius: 0.75))
             case .active:
                 let smile = NSBezierPath()
-                smile.move(to: NSPoint(x: 5.5, y: 6))
-                smile.curve(to: NSPoint(x: 12.5, y: 6), controlPoint1: NSPoint(x: 7.5, y: 4.6), controlPoint2: NSPoint(x: 10.5, y: 4.6))
-                smile.line(to: NSPoint(x: 12.1, y: 7.2))
-                smile.curve(to: NSPoint(x: 5.9, y: 7.2), controlPoint1: NSPoint(x: 10.3, y: 6), controlPoint2: NSPoint(x: 7.7, y: 6))
+                smile.move(to: NSPoint(x: 5.5, y: 5.3))
+                smile.curve(to: NSPoint(x: 12.5, y: 5.3), controlPoint1: NSPoint(x: 7.5, y: 3.9), controlPoint2: NSPoint(x: 10.5, y: 3.9))
+                smile.line(to: NSPoint(x: 12.1, y: 6.5))
+                smile.curve(to: NSPoint(x: 5.9, y: 6.5), controlPoint1: NSPoint(x: 10.3, y: 5.3), controlPoint2: NSPoint(x: 7.7, y: 5.3))
                 smile.close()
                 shell.append(smile)
             case .elevated, .intense:
