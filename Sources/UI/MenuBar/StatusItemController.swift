@@ -26,6 +26,7 @@ final class StatusItemController: NSObject {
     }
 
     func start() {
+        contextMenu = buildMenu()
         guard isEnabled, statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
@@ -259,14 +260,28 @@ final class StatusItemController: NSObject {
         menu.addItem(closing)
 
         menu.addItem(.separator())
-        menu.addItem(Self.menuItem(I18n.t("menu.dashboard") + "…", action: #selector(openDashboard)))
-        menu.addItem(Self.menuItem(I18n.t("menu.preferences") + "…", action: #selector(openPreferences)))
+        menu.addItem(Self.menuItem(I18n.t("menu.dashboard_label") + "…", action: #selector(openDashboard)))
+        menu.addItem(Self.menuItem(I18n.t("menu.preferences"), action: #selector(openPreferences)))
+        menu.addItem(.separator())
         let mute = Self.menuItem(I18n.t("perception.mute_all"), action: #selector(toggleMute))
         mute.representedObject = "sound-mute"
         mute.state = AppSoundControl.isMuted() ? .on : .off
         menu.addItem(mute)
         menu.addItem(.separator())
-        menu.addItem(Self.menuItem(I18n.t("menu.quit"), action: #selector(quit)))
+        let quitItem = Self.menuItem(I18n.t("menu.quit"), action: #selector(quit))
+        quitItem.representedObject = "quit"
+        menu.addItem(quitItem)
+        return menu
+    }
+
+    func makeDockMenu() -> NSMenu {
+        let menu = (contextMenu?.copy() as? NSMenu) ?? buildMenu()
+        if let quitItem = menu.items.first(where: { ($0.representedObject as? String) == "quit" }) {
+            menu.removeItem(quitItem)
+        }
+        if menu.items.last?.isSeparatorItem == true, let last = menu.items.last {
+            menu.removeItem(last)
+        }
         return menu
     }
 

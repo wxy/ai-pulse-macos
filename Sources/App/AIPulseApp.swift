@@ -2,13 +2,10 @@ import AppKit
 import SwiftUI
 import UserNotifications
 
-/// Dock app. Shows Dashboard as the primary window. No menu bar icon.
+/// Dock and menu-bar app with a shared robot dashboard.
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, @unchecked Sendable {
     private var securityScopedURLs: [URL] = []
-    var menuBarController: MenuBarController?
-    private var pulseSubmenu: NSMenu?
-    @MainActor private var pulseMenuRefreshGeneration: RefreshGeneration?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Present foreground notifications with sound; without a delegate macOS
@@ -57,10 +54,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Logger.error("DB setup failed: \(error)")
             AppHealthMonitor.shared.reportDBError("Database setup: \(error.localizedDescription)")
         }
-
-        // Build shared menu (stats refreshed every 30s, used by Dock right-click)
-        menuBarController = MenuBarController()
-        menuBarController?.start()
 
         // Auto-enable integrations that are detected on first launch
         if !RuntimeQA.isEnabled { migrateIntegrationDefaults() }
@@ -119,10 +112,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             name: I18n.didChangeLanguage, object: nil
         )
         NotificationCenter.default.addObserver(
-            self, selector: #selector(refreshPulseMenuStats),
-            name: .dataDidChange, object: nil
-        )
-        NotificationCenter.default.addObserver(
             self, selector: #selector(onDemoModeChange),
             name: .demoModeDidChange, object: nil
         )
@@ -134,7 +123,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @MainActor @objc private func onSoundMuteChange() {
         if AppSoundControl.isMuted() { CoinSound.stopPlayback() }
-        refreshPulseMenuStats()
     }
 
     /// Re-open handler: Dock click or Cmd+Tab → show Dashboard
@@ -152,29 +140,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // MARK: - Dock menu
 
-    /// Dock right-click shares the full stats menu (minus Quit, which Dock provides).
+    /// Both right-click entry points share actions; the Dock supplies its own Quit.
+    @MainActor
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        guard let src = menuBarController?.menu else { return nil }
-        let dock = NSMenu()
-        for item in src.items {
-            if item.keyEquivalent == "q" { continue }
-            if item.isSeparatorItem { dock.addItem(.separator()); continue }
-            let copy = NSMenuItem(title: item.title, action: item.action, keyEquivalent: item.keyEquivalent)
-            copy.target = item.target
-            copy.representedObject = item.representedObject
-            if let sub = item.submenu {
-                let subCopy = NSMenu()
-                for si in sub.items {
-                    if si.isSeparatorItem { subCopy.addItem(.separator()); continue }
-                    let siCopy = NSMenuItem(title: si.title, action: si.action, keyEquivalent: si.keyEquivalent)
-                    siCopy.target = si.target
-                    subCopy.addItem(siCopy)
-                }
-                copy.submenu = subCopy
-            }
-            dock.addItem(copy)
-        }
-        return dock
+        StatusItemController.shared.makeDockMenu()
     }
 
     // MARK: - Windows
@@ -256,7 +225,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let demoToggleItem = NSMenuItem(title: demoModeMenuItemTitle, action: #selector(toggleDemoMode), keyEquivalent: "")
         demoToggleItem.target = self
         demoToggleItem.tag = 999  // marker to find and update later
-        fileSubmenu.addItem(demoToggleItem)
+        if ProcessInfo.processInfo.arguments.contains("--show-demo-controls") {
+            fileSubmenu.addItem(demoToggleItem)
+        }
 
         fileSubmenu.addItem(.separator())
 
@@ -266,19 +237,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         fileMenuItem.submenu = fileSubmenu
         mainMenu.addItem(fileMenuItem)
 
-        // --- Pulse Menu ---
-        // Consumption facts belong to a product menu, not macOS's Window menu.
-        let pulseMenuItem = NSMenuItem()
-        let pulseSubmenu = NSMenu(title: "AI Pulse")
-        pulseMenuItem.submenu = pulseSubmenu
-        mainMenu.addItem(pulseMenuItem)
-        self.pulseSubmenu = pulseSubmenu
-
         // --- Window Menu ---
         // Keep this menu conventional and limited to window management.
         let windowMenuItem = NSMenuItem()
         let windowSubmenu = NSMenu(title: I18n.t("menu.window"))
-        let dashboardItem = NSMenuItem(title: I18n.t("menu.dashboard"), action: #selector(openDashboardFromMenu), keyEquivalent: "1")
+        let dashboardItem = NSMenuItem(title: I18n.t("menu.dashboard_label"), action: #selector(openDashboardFromMenu), keyEquivalent: "1")
         dashboardItem.target = self
         windowSubmenu.addItem(dashboardItem)
         windowSubmenu.addItem(.separator())
@@ -289,29 +252,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         NSApp.mainMenu = mainMenu
 
-        refreshPulseMenuStats()
-    }
-
-    /// Rebuild the Pulse menu from the shared factual stats source. Called on
-    /// launch, language change, and every `.dataDidChange`.
-    @MainActor @objc
-    private func refreshPulseMenuStats() {
-        guard let sub = pulseSubmenu else { return }
-        let generation = pulseMenuRefreshGeneration ?? RefreshGeneration()
-        pulseMenuRefreshGeneration = generation
-        let request = generation.begin()
-        Task {
-            let items = await menuBarController?.statsMenuItems() ?? []
-            await MainActor.run {
-                guard generation.isCurrent(request), pulseSubmenu === sub else { return }
-                sub.removeAllItems()
-                let dashboard = NSMenuItem(title: I18n.t("menu.dashboard") + "…", action: #selector(openDashboardFromMenu), keyEquivalent: "")
-                dashboard.target = self
-                sub.addItem(dashboard)
-                sub.addItem(.separator())
-                for item in items { sub.addItem(item) }
-            }
-        }
     }
 
     @MainActor @objc private func openDashboardFromMenu() {
@@ -351,6 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @MainActor @objc private func onLanguageChange() {
+        DashboardWindowManager.shared.window?.title = I18n.t("menu.dashboard_label")
         buildMainMenu()
     }
 
