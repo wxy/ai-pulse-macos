@@ -332,10 +332,12 @@
 				C0D7702A30090F0600BC1E54 /* Sources */,
 				C0D7702B30090F0600BC1E54 /* Frameworks */,
 				C0D7702C30090F0600BC1E54 /* Resources */,
+				C0CB1FF23055005C00440E51 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C0CB1FF03055005C00440E51 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C05A70163009E26B00B99D6F /* Shared */,
@@ -575,7 +577,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Debug;
 		};
@@ -609,7 +611,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Release;
 		};

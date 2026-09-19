@@ -86,6 +86,7 @@ struct WatchDashboardView: View {
     private let lineTrackColor = Color.marsGreenLight.opacity(0.22)
     private let activityColor = Color(red: 212 / 255, green: 163 / 255, blue: 38 / 255)
     private let activityTrackColor = Color(red: 226 / 255, green: 204 / 255, blue: 126 / 255).opacity(0.20)
+    private let supportTextColor = Color.white.opacity(0.82)
     private func t(_ zh: String, _ en: String) -> String { WatchCopy.t(zh, en) }
 
     private func today(asOf now: Date) -> DashboardSnapshot? {
@@ -173,18 +174,25 @@ struct WatchDashboardView: View {
                             .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 8)
                         VStack {
                             HStack(alignment: .top) {
-                                corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: tokenColor, alignment: .leading, numberFirst: false)
+                                corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: tokenColor,
+                                       alignment: .leading, numberFirst: false,
+                                       dimsValue: summaryUsesCache(snapshot, asOf: now))
                                 Spacer()
-                                corner(t("今日行数", "Today lines"), count(lines(snapshot)), color: lineColor, alignment: .trailing, numberFirst: false)
+                                corner(t("今日行数", "Today lines"), count(lines(snapshot)), color: lineColor,
+                                       alignment: .trailing, numberFirst: false,
+                                       dimsValue: summaryUsesCache(snapshot, asOf: now))
                             }
                             Spacer()
                             HStack(alignment: .bottom) {
-                                corner(t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: tokenColor, alignment: .leading, numberFirst: true)
+                                corner(t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: tokenColor,
+                                       alignment: .leading, numberFirst: true,
+                                       dimsValue: summaryUsesCache(snapshot, asOf: now))
                                 Spacer()
-                                corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: lineColor, alignment: .trailing, numberFirst: true)
+                                corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: lineColor,
+                                       alignment: .trailing, numberFirst: true,
+                                       dimsValue: summaryUsesCache(snapshot, asOf: now))
                             }
                         }.padding(.horizontal, cornerInset).padding(.top, 18).padding(.bottom, 6)
-                            .opacity(summaryUsesCache(snapshot, asOf: now) ? 0.55 : 1)
                         if let status {
                             Text(status.text).font(.system(size: statusFontSize)).foregroundStyle(status.color)
                                 .lineLimit(1).minimumScaleFactor(0.75)
@@ -209,11 +217,13 @@ struct WatchDashboardView: View {
                 }
             }
     }
-    private func corner(_ label: String, _ value: String, color: Color, alignment: HorizontalAlignment, numberFirst: Bool) -> some View {
+    private func corner(_ label: String, _ value: String, color: Color,
+                        alignment: HorizontalAlignment, numberFirst: Bool,
+                        dimsValue: Bool) -> some View {
         VStack(alignment: alignment, spacing: 1) {
-            if numberFirst { Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded)).foregroundStyle(color).lineLimit(1) }
-            Text(label).font(.system(size: cornerLabelSize)).foregroundStyle(.secondary).lineLimit(1)
-            if !numberFirst { Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded)).foregroundStyle(color).lineLimit(1) }
+            if numberFirst { Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded)).foregroundStyle(color).opacity(dimsValue ? 0.65 : 1).lineLimit(1) }
+            Text(label).font(.system(size: cornerLabelSize)).foregroundStyle(supportTextColor).lineLimit(1)
+            if !numberFirst { Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded)).foregroundStyle(color).opacity(dimsValue ? 0.65 : 1).lineLimit(1) }
         }.accessibilityElement(children: .combine)
     }
     private func ringCluster(side: CGFloat, thickness: CGFloat, tokenRatio: Double?, lineRatio: Double?,
@@ -231,13 +241,13 @@ struct WatchDashboardView: View {
                 .padding(side * 32 / 184)
             Button { showingInfo = true } label: {
                 VStack(spacing: 5) {
-                    Text(t("当前强度", "Current activity")).font(.system(size: labelSize)).foregroundStyle(.secondary)
+                    Text(t("当前强度", "Current activity")).font(.system(size: labelSize)).foregroundStyle(supportTextColor)
                     Text(pulse.map { I18n.pulseTier($0.tier) } ?? (cloud.pulseEnvelope?.pulse == nil ? t("暂无观测", "No observation") : t("观测已过期", "Expired")))
                         .font(.system(size: valueSize, weight: .semibold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.8)
                     if let date = cloud.pulseEnvelope?.pulse?.asOf {
                         Text(t("观测于 ", "Observed ") + date.formatted(date: .omitted, time: .shortened))
-                            .font(.system(size: labelSize)).foregroundStyle(.secondary).lineLimit(1)
-                    } else { Text("—").font(.system(size: labelSize)).foregroundStyle(.secondary) }
+                            .font(.system(size: labelSize)).foregroundStyle(supportTextColor).lineLimit(1)
+                    } else { Text("—").font(.system(size: labelSize)).foregroundStyle(supportTextColor) }
                 }.frame(width: side * 0.49)
             }.buttonStyle(.plain).accessibilityHint(t("查看数据说明与同步状态", "View data explanation and sync status"))
         }.frame(width: side, height: side)
@@ -279,7 +289,7 @@ struct WatchDashboardView: View {
     }
     private func accessibleMetric(_ label: String, _ value: String, color: Color) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(label).font(.caption).foregroundStyle(supportTextColor).lineLimit(1)
             Spacer(minLength: 4)
             Text(value).font(.headline).foregroundStyle(color).lineLimit(1)
         }.accessibilityElement(children: .combine)

@@ -16,8 +16,13 @@
 
 今日摘要超过 15 分钟未更新时，首页将外圈、中圈及对应事实降为次要层级，并显示缓存时间。首次读取、无记录、同步失败和部分同步分别显示独立的短状态。较大动态字号和辅助功能字号仍以三圈为首屏，四角事实改放到独立的第二屏；每项标签和值保持同一行，通过数码表冠按页滚动查看。
 
+主仪表盘继续使用 OLED 黑底。四角标签、中央强度说明和观测时间使用约 82% 白，彩色数值
+继续使用词元红、行数绿和活动金色。摘要陈旧时只降低环和对应数值的强调度，不再把四角
+标签整体压暗；缓存时间仍作为明确状态显示。该调整只涉及 Watch App 主仪表盘，不改变表盘
+Corner complication 的实现。
+
 5 项数据投影测试通过，覆盖中位数、缺失样本、查询失败、新增加删除、整数/多圈和强度过期。40mm 与 46mm 模拟器均运行检查，Watch Debug / Release 构建通过；iPhone 与嵌入 Watch 的联合 Debug 构建通过。普通 Watch 模拟器启动显示无观测且没有崩溃；真实 Watch 的 Apple 账户、CloudKit 往返和佩戴状态尚需验收。
 
 圈图使用完整屏幕宽度的 90%，不再按扣除文字区后的高度缩小。沿用旧版忽略安全区、四角覆盖的布局，四角文字水平内收 16pt、顶部留 18pt，以避让屏幕圆角；中央内容随圈图圆心定位。系统时间位置由 watchOS 管理，通过圈图尺寸及位置保持间距。恢复旧版空工具栏布局后，40mm 与 46mm 模拟器均显示顶部居中的系统时间，移除自绘时间以避免重复；最低版本维持 watchOS 10。真机佩戴与待机状态仍需验收。
 
-旧 iPhone 与 Watch Widget 源码和 target 保留，暂不嵌入安装包。macOS、iPhone、Watch 的小组件会在后续统一重新设计，本次不改造其功能。
+iPhone 与 Watch Widget 均已采用同一套三环语义。Watch Widget 已嵌入 Watch App，并直接读取 iCloud 中的 today、30d 与 current-pulse v2 记录。表盘图库提供四个按内容命名的条目：`AI Pulse · 三环总览`、`AI Pulse · 活动强度`、`AI Pulse · 今日词元` 和 `AI Pulse · 今日行数`。三环总览支持 Circular 与 Rectangular，活动强度支持 Circular、Rectangular、Corner 与 Inline，词元和行数分别支持 Corner 与 Inline，共形成十种呈现。Circular 三环不再叠加机器人；两个 Rectangular 都以左右等宽栏位铺满可用区域；Corner 主内容通过系统曲线布局跟随所在角落旋转；活动强度 Inline 仅显示机器人，词元和行数使用不本地化的单行 `Tokens <值>` 与 `Lines <值>`。Corner 与 Inline 机器人使用扩展内置模板矢量资产，避免 accessory 槽位丢弃运行时生成的图片。

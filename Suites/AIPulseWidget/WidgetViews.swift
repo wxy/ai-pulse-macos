@@ -58,14 +58,37 @@ private struct WidgetActivityRing: View {
 }
 
 struct AIPulseWidgetEntryView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.showsWidgetContainerBackground) private var showsContainerBackground
+    @Environment(\.widgetRenderingMode) private var renderingMode
     let entry: WidgetEntry
 
     private let tokenColor = Color.deepRed
-    private let tokenTrackColor = Color.deepRed2.opacity(0.22)
     private let lineColor = Color.marsGreen
-    private let lineTrackColor = Color.marsGreenLight.opacity(0.22)
     private let activityColor = Color(red: 212 / 255, green: 163 / 255, blue: 38 / 255)
-    private let activityTrackColor = Color(red: 226 / 255, green: 204 / 255, blue: 126 / 255).opacity(0.20)
+
+    private var isFullColor: Bool { renderingMode == .fullColor }
+    private var tokenTrackColor: Color {
+        isFullColor
+            ? Color.deepRed2.opacity(colorScheme == .dark ? 0.28 : 0.24)
+            : Color.primary.opacity(0.16)
+    }
+    private var lineTrackColor: Color {
+        isFullColor
+            ? Color.marsGreenLight.opacity(colorScheme == .dark ? 0.30 : 0.26)
+            : Color.primary.opacity(0.16)
+    }
+    private var activityTrackColor: Color {
+        isFullColor
+            ? Color(red: 226 / 255, green: 204 / 255, blue: 126 / 255)
+                .opacity(colorScheme == .dark ? 0.26 : 0.24)
+            : Color.primary.opacity(0.16)
+    }
+    private var widgetBackground: Color {
+        colorScheme == .dark
+            ? Color(red: 0.045, green: 0.065, blue: 0.055)
+            : Color(red: 0.91, green: 0.93, blue: 0.90)
+    }
 
     private func text(_ simplifiedChinese: String, _ english: String) -> String {
         WidgetCopy.text(simplifiedChinese, english)
@@ -120,7 +143,6 @@ struct AIPulseWidgetEntryView: View {
             let side = edge * 0.82
             let thickness = side * 13 / 184
             ZStack {
-                Color.black
                 ringCluster(side: side, thickness: thickness)
                     .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
                 cornerFacts
@@ -134,7 +156,7 @@ struct AIPulseWidgetEntryView: View {
                 }
             }
         }
-        .containerBackground(Color.black, for: .widget)
+        .containerBackground(widgetBackground, for: .widget)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
     }
@@ -144,16 +166,19 @@ struct AIPulseWidgetEntryView: View {
             WidgetActivityRing(ratio: tokenRatio, color: tokenColor,
                                trackColor: tokenTrackColor, width: thickness)
                 .opacity(summaryIsStale ? 0.55 : 1)
+                .widgetAccentable()
             WidgetActivityRing(ratio: lineRatio, color: lineColor,
                                trackColor: lineTrackColor, width: thickness)
                 .padding(side * 16 / 184)
                 .opacity(summaryIsStale ? 0.55 : 1)
+                .widgetAccentable()
             WidgetActivityRing(
                 ratio: WatchDashboardData.intensity(currentPulse, now: entry.date),
                 color: activityColor, trackColor: activityTrackColor,
                 width: thickness, allowsLaps: false
             )
             .padding(side * 32 / 184)
+            .widgetAccentable()
             centerFact
         }
         .frame(width: side, height: side)
@@ -166,7 +191,7 @@ struct AIPulseWidgetEntryView: View {
                 .foregroundStyle(secondaryTextColor)
             Text(pulseText)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.white)
+                .foregroundStyle(primaryTextColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             if let date = entry.pulseEnvelope?.pulse?.asOf {
@@ -209,7 +234,6 @@ struct AIPulseWidgetEntryView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
-        .opacity(summaryIsStale ? 0.55 : 1)
     }
 
     private func corner(_ label: String, _ value: String, color: Color,
@@ -219,6 +243,7 @@ struct AIPulseWidgetEntryView: View {
                 Text(value)
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(color)
+                    .opacity(summaryIsStale ? 0.65 : 1)
                     .lineLimit(1)
             }
             Text(label)
@@ -229,6 +254,7 @@ struct AIPulseWidgetEntryView: View {
                 Text(value)
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(color)
+                    .opacity(summaryIsStale ? 0.65 : 1)
                     .lineLimit(1)
             }
         }
@@ -245,7 +271,19 @@ struct AIPulseWidgetEntryView: View {
         return String(format: "%.1f×", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
-    private var secondaryTextColor: Color { Color.white.opacity(0.62) }
+    private var primaryTextColor: Color {
+        guard isFullColor, showsContainerBackground else { return .primary }
+        return colorScheme == .dark
+            ? .white
+            : Color(red: 0.07, green: 0.11, blue: 0.09)
+    }
+
+    private var secondaryTextColor: Color {
+        guard isFullColor, showsContainerBackground else { return .secondary }
+        return colorScheme == .dark
+            ? Color.white.opacity(0.82)
+            : Color(red: 0.19, green: 0.25, blue: 0.21)
+    }
 
     private var accessibilitySummary: String {
         [
