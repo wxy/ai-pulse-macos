@@ -227,18 +227,18 @@ struct AIPulseWidgetEntryView: View {
         VStack {
             HStack(alignment: .top) {
                 corner(text("今日词元", "Today tokens"), count(todayTokens),
-                       color: tokenColor, alignment: .leading, numberFirst: false)
+                       color: tokenColor, alignment: .leading)
                 Spacer()
                 corner(text("今日行数", "Today lines"), count(todayLines),
-                       color: lineColor, alignment: .trailing, numberFirst: false)
+                       color: lineColor, alignment: .trailing)
             }
             Spacer()
             HStack(alignment: .bottom) {
                 corner(text("词元 / 平常", "Tokens / usual"), multiple(tokenRatio),
-                       color: tokenColor, alignment: .leading, numberFirst: true)
+                       color: tokenColor, alignment: .leading)
                 Spacer()
                 corner(text("行数 / 平常", "Lines / usual"), multiple(lineRatio),
-                       color: lineColor, alignment: .trailing, numberFirst: true)
+                       color: lineColor, alignment: .trailing)
             }
         }
         .padding(.horizontal, 10)
@@ -246,26 +246,18 @@ struct AIPulseWidgetEntryView: View {
     }
 
     private func corner(_ label: String, _ value: String, color: Color,
-                        alignment: HorizontalAlignment, numberFirst: Bool) -> some View {
+                        alignment: HorizontalAlignment) -> some View {
         VStack(alignment: alignment, spacing: 0) {
-            if numberFirst {
-                Text(value)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(color)
-                    .opacity(summaryIsStale ? 0.65 : 1)
-                    .lineLimit(1)
-            }
+            Text(value)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(color)
+                .opacity(summaryIsStale ? 0.65 : 1)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
             Text(label)
                 .font(.system(size: 7))
                 .foregroundStyle(secondaryTextColor)
                 .lineLimit(1)
-            if !numberFirst {
-                Text(value)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(color)
-                    .opacity(summaryIsStale ? 0.65 : 1)
-                    .lineLimit(1)
-            }
         }
     }
 
