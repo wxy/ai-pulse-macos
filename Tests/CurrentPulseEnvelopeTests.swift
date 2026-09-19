@@ -5,10 +5,14 @@ final class CurrentPulseEnvelopeTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1000)
 
     func testCloudObservationSurvivesNextPublishCycleAndStillExpires() {
+        XCTAssertEqual(CurrentPulseEnvelope.cloudValidityInterval, 22 * 60)
         let pulse = PulseSnapshot(tier: .active, primarySignal: .activity, reason: "activity", signals: [], asOf: now)
         let envelope = CurrentPulseEnvelope.forCloudSync(pulse: pulse, writerAppVersion: "2.0.0", generatedAt: now)
-        XCTAssertEqual(envelope.currentPulse(asOf: now.addingTimeInterval(360))?.tier, .active)
-        XCTAssertNil(envelope.currentPulse(asOf: now.addingTimeInterval(420)))
+        XCTAssertEqual(
+            envelope.currentPulse(asOf: now.addingTimeInterval(CurrentPulseEnvelope.cloudValidityInterval - 1))?.tier,
+            .active
+        )
+        XCTAssertNil(envelope.currentPulse(asOf: now.addingTimeInterval(CurrentPulseEnvelope.cloudValidityInterval)))
         XCTAssertFalse(pulse.isCurrent(asOf: now.addingTimeInterval(60)))
     }
 

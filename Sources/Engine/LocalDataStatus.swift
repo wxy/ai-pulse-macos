@@ -57,7 +57,7 @@ struct LocalDataStatus: Equatable {
 }
 
 enum SetupCopy {
-    static func text(_ zh: String, _ en: String) -> String { I18n.resolvedLang() == "zh-Hans" ? zh : en }
+    static func text(_ zh: String, _ en: String) -> String { I18n.prototype(zh, en) }
     static func activity(_ state: LocalDataStatus.Activity) -> String {
         switch state {
         case .needsAccess: return text("授权主目录以读取活动", "Authorize home to read activity")

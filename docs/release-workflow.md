@@ -20,8 +20,8 @@ This document defines the release flow for `wxy/ai-pulse-macos`.
 Push a `vX.Y.Z` tag to `main`:
 
 ```bash
-git tag -a v1.2.6 -m "v1.2.6"
-git push origin v1.2.6
+git tag -a v2.0.0 -m "v2.0.0"
+git push origin v2.0.0
 ```
 
 The `.github/workflows/release.yml` workflow will create a **draft** GitHub
@@ -43,13 +43,13 @@ submit the macOS and iOS builds to App Store Connect.
 Only after App Store review has passed:
 
 ```bash
-make publish-release VERSION=1.2.6
+make publish-release VERSION=2.0.0
 ```
 
 This runs:
 
 ```bash
-gh release edit v1.2.6 --draft=false
+gh release edit v2.0.0 --draft=false
 ```
 
 The GitHub Release becomes publicly visible at that point.

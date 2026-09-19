@@ -45,7 +45,10 @@ let package = Package(
             ],
             path: "Sources",
             exclude: ["Clibgit2"],
-            resources: [.process("Localizable.xcstrings")],
+            resources: [
+                .process("Localizable.xcstrings"),
+                .copy("PrivacyInfo.xcprivacy"),
+            ],
             swiftSettings: zstdSwiftSettings,
             linkerSettings: nativeLibrarySettings
         ),

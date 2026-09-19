@@ -97,7 +97,9 @@ struct OnboardingView: View {
                     HStack {
                         Text(root).lineLimit(1).truncationMode(.middle)
                         Spacer()
-                        Text(counts[root].map { SetupCopy.text("\($0) 个仓库", "\($0) repositories") } ?? SetupCopy.text("扫描中", "Scanning"))
+                        Text(counts[root].map {
+                            String(format: SetupCopy.text("%lld 个仓库", "%lld repositories"), Int64($0))
+                        } ?? SetupCopy.text("扫描中", "Scanning"))
                     }.font(.caption).foregroundStyle(.secondary)
                 }
             }

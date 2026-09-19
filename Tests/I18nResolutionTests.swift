@@ -11,6 +11,13 @@ final class I18nResolutionTests: XCTestCase {
         XCTAssertEqual(I18n.resolveSystemLanguage([]), "en")
     }
 
+    func testSupportedLanguageSetIncludesTenLocalesPlusAutomaticSelection() {
+        XCTAssertEqual(
+            I18n.supportedLanguages.map(\.code),
+            ["auto", "en", "zh-Hans", "zh-Hant-TW", "zh-Hant-HK", "ja", "ko", "de", "fr", "es", "pt-BR"]
+        )
+    }
+
     func testAutoClearsTheApplicationOverrideAndUsesGlobalLanguage() {
         let defaults = UserDefaults.standard
         let oldPreference = defaults.object(forKey: "app_language")
@@ -29,6 +36,34 @@ final class I18nResolutionTests: XCTestCase {
         if let system = defaults.persistentDomain(forName: "NSGlobalDomain")?["AppleLanguages"] as? [String] {
             XCTAssertEqual(I18n.resolvedLang(), I18n.resolveSystemLanguage(system))
         }
+    }
+
+    func testPercentFormattingUsesTheResolvedLocale() {
+        let defaults = UserDefaults.standard
+        let oldPreference = defaults.object(forKey: "app_language")
+        let oldOverride = defaults.object(forKey: "AppleLanguages")
+        let oldLanguage = I18n.getLang()
+        defer {
+            I18n.setLang(oldLanguage)
+            defaults.set(oldPreference, forKey: "app_language")
+            defaults.set(oldOverride, forKey: "AppleLanguages")
+        }
+
+        I18n.setLang("en")
+        XCTAssertEqual(
+            I18n.percent(0.42),
+            0.42.formatted(
+                .percent.precision(.fractionLength(0)).locale(Locale(identifier: "en_US"))
+            )
+        )
+
+        I18n.setLang("fr")
+        XCTAssertEqual(
+            I18n.percent(0.42),
+            0.42.formatted(
+                .percent.precision(.fractionLength(0)).locale(Locale(identifier: "fr_FR"))
+            )
+        )
     }
 
 }

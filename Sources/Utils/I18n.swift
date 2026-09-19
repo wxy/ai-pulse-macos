@@ -63,8 +63,9 @@ enum I18n {
         let stored = getLang()
         if stored != "auto" { return stored }
         // Locale.preferredLanguages includes the application's own override.
-        let system = UserDefaults.standard.persistentDomain(forName: "NSGlobalDomain")?["AppleLanguages"] as? [String]
-        return resolveSystemLanguage(system ?? Locale.preferredLanguages)
+        // Avoid reading the system-wide UserDefaults domain: our privacy
+        // manifest reason covers only app-owned preferences.
+        return resolveSystemLanguage(Locale.preferredLanguages)
     }
 
     static func resolveSystemLanguage(_ languages: [String]) -> String {
@@ -97,6 +98,17 @@ enum I18n {
         case "pt-BR":      return Locale(identifier: "pt_BR")
         default:           return Locale(identifier: "en_US")
         }
+    }
+
+    /// Formats a unit-interval ratio as a locale-aware percentage. Callers
+    /// must normalize 0...100 API values before passing them here.
+    static func percent(_ ratio: Double, fractionDigits: Int = 0) -> String {
+        let safeRatio = ratio.isFinite ? ratio : 0
+        return safeRatio.formatted(
+            .percent
+                .precision(.fractionLength(fractionDigits))
+                .locale(resolvedLocale)
+        )
     }
 
     private static var stringsBundle: Bundle {
@@ -138,5 +150,14 @@ enum I18n {
            let v = enDict[key] { return v }
 
         return key
+    }
+
+    /// Transitional bridge for prototype-era bilingual call sites. The English
+    /// copy is the String Catalog key; Simplified Chinese remains a safe fallback
+    /// while all supported locales resolve through the shared catalog.
+    static func prototype(_ simplifiedChinese: String, _ english: String) -> String {
+        let localized = t(english)
+        if localized != english || resolvedLang() == "en" { return localized }
+        return resolvedLang() == "zh-Hans" ? simplifiedChinese : english
     }
 }

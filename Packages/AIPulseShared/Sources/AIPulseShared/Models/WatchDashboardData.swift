@@ -40,7 +40,14 @@ public enum WatchDashboardData {
     }
 
     public static func intensity(_ pulse: PulseSnapshot?, now: Date = Date()) -> Double? {
-        guard let pulse, pulse.isCurrent(asOf: now), let signal = pulse.activity,
+        guard let pulse, pulse.isCurrent(asOf: now) else { return nil }
+        return observedIntensity(pulse)
+    }
+
+    /// The most recently published intensity, even after its current-state
+    /// validity window ends. Widgets pair this value with its observation time.
+    public static func observedIntensity(_ pulse: PulseSnapshot?) -> Double? {
+        guard let signal = pulse?.activity,
               signal.freshness != .stale, signal.freshness != .unavailable,
               signal.normalized.isFinite, signal.normalized >= 0 else { return nil }
         // PulseEngine's intense tier starts at score 3; this is not a usage quota.

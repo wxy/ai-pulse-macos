@@ -20,8 +20,11 @@ jobs:
 
       - name: Parse Swift sources
         run: |
-          find Sources Tests Packages/AIPulseShared/Sources -type f -name '*.swift' -print0 |
-            xargs -0 swiftc -parse
+          find Sources Tests Packages/AIPulseShared/Sources Suites AIPulse/AIPulseMacWidget -type f -name '*.swift' -print0 |
+            xargs -0 -n1 swiftc -parse
+
+      - name: Validate localizations
+        run: python3 scripts/check-localizations.py
 
       - name: Check shell syntax
         run: |
@@ -29,7 +32,7 @@ jobs:
             xargs -0 -n1 bash -n
 
       - name: Check Python syntax
-        run: python3 -m py_compile scripts/generate-icons.py
+        run: python3 -m py_compile scripts/generate-icons.py scripts/check-localizations.py
 
       - name: Validate workflow YAML
         run: |

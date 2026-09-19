@@ -215,7 +215,7 @@ struct NotificationsTab: View {
                                 soundVolume = Int(value.rounded())
                                 UserDefaults.standard.set(soundVolume, forKey: "sound_volume")
                             }), in: 0...100)
-                    Text("\(soundVolume)%")
+                    Text(verbatim: I18n.percent(Double(soundVolume) / 100))
                         .font(.caption).foregroundColor(.secondary)
                         .frame(width: 40, alignment: .trailing)
                 }

@@ -5,8 +5,7 @@ import AIPulseShared
 
 enum PhoneText {
     static func t(_ zh: String, _ en: String) -> String {
-        if I18n.lang.hasPrefix("zh-Hant") { return zh.applyingTransform(StringTransform("Hans-Hant"), reverse: false) ?? zh }
-        return I18n.lang == "zh-Hans" ? zh : en
+        I18n.prototype(zh, en)
     }
 }
 

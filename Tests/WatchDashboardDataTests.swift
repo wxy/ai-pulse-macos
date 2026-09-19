@@ -59,6 +59,17 @@ final class WatchDashboardDataTests: XCTestCase {
         XCTAssertFalse(WatchDashboardData.isSummaryFresh(nil, now: now))
     }
 
+    func testExpiredPulseRetainsItsLastObservedIntensityForWidgetPresentation() {
+        let signal = PulseSignal(kind: .activity, rawValue: 100, unit: "tokens", baseline: 50,
+                                 normalized: 1.5, freshness: .fresh, completeness: .complete,
+                                 observedAt: now, reason: "activity")
+        let pulse = PulseSnapshot(tier: .active, primarySignal: .activity, reason: "activity",
+                                  signals: [signal], asOf: now,
+                                  validUntil: now.addingTimeInterval(-1))
+        XCTAssertNil(WatchDashboardData.intensity(pulse, now: now))
+        XCTAssertEqual(WatchDashboardData.observedIntensity(pulse), 0.5)
+    }
+
     func testTimelineTransitionsAtPulseExpiryAndSummaryStaleness() {
         var snapshot = history(7)
         snapshot.updatedAt = now.addingTimeInterval(-600)

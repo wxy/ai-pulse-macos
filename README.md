@@ -5,21 +5,21 @@
   <a href="https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12"><img src="assets/readme/download-button-appstore-mac.svg" width="300" height="69" alt="Mac App Store listing"></a>
 </p>
 
-<p align="center"><code>MACOS 14+ · SWIFTUI · SWIFT 6 · 2.0 IN DEVELOPMENT</code></p>
+<p align="center"><code>MACOS 14+ · IOS 16+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · 2.0 RELEASE CANDIDATE</code></p>
 
 <p align="center">
   <a href="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml"><img src="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg" alt="CI"></a>&nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License"></a>&nbsp;
-  <img src="https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey" alt="macOS platform">
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20iOS%2016%2B%20%7C%20watchOS%2010%2B-lightgrey" alt="Apple platforms">
 </p>
 
 AI Pulse makes ongoing AI activity tangible and shows the local Git output alongside it. A consumption pulse, not a precise meter, invoice, or verdict on whether your work was worth the money.
 
 > AI Pulse 让持续的 AI 活动被感受到，并展示伴随的本地 Git 成果。它是消费脉搏，不是精确计量器、账单，也不判断产出是否值得。
 
-This README describes the macOS 2.0 development direction. Implementation and automated checks are progressing; runtime, visual, sound, and cloud acceptance are not complete. The App Store listing above does not imply these changes are released. iOS, watchOS, and Widget development is paused until macOS is ready.
+This README describes the AI Pulse 2.0 release candidate across macOS, iPhone, Apple Watch, and their widgets. Implementation is complete, while final automated release checks and device acceptance are still in progress. The App Store listing above does not imply that 2.0 has been released.
 
-> 本文描述 macOS 2.0 开发方向。代码与自动检查持续推进，但实际运行、视觉、声音和云端验收尚未完成。上方商店入口不代表这些改动已经发版；macOS 达标前暂停 iOS、watchOS 和 Widget 开发。
+> 本文描述 AI Pulse 2.0 在 macOS、iPhone、Apple Watch 及各端小组件上的候选发布版本。功能实现已经完成，最终自动化发布检查和真机验收仍在进行；上方商店入口不代表 2.0 已经发布。
 
 <p align="center"><img src="assets/readme/section-features.svg" width="100%" alt="Features · 功能"></p>
 
@@ -68,9 +68,9 @@ These retained screenshots show an older interface, not the current 2.0 dashboar
 
 <p align="center"><img src="assets/readme/section-download.svg" width="100%" alt="Download · 下载"></p>
 
-The Mac App Store button links to the existing listing. This working tree is not a release announcement. See the [macOS acceptance plan](docs/macos-v2-closure-plan.md) before treating 2.0 as ready; new cloud contracts are not yet validated for paused companion clients.
+The Mac App Store button links to the existing listing. This working tree is not a release announcement. The macOS widget has passed device acceptance; iPhone, iPhone widget, Watch app, and Watch widget acceptance remains a release gate after automated verification.
 
-> Mac App Store 按钮指向现有商店页面，本工作树不是发版公告。2.0 是否达标以 [macOS 验收计划](docs/macos-v2-closure-plan.md) 为准；新的云端契约尚未为暂停的伴侣客户端完成验证。
+> Mac App Store 按钮指向现有商店页面，本工作树不是发版公告。macOS 小组件已通过真机验收；完成自动化验证后，仍需依次验收 iPhone、iPhone 小组件、Watch 应用和 Watch 小组件。
 
 <p align="center"><img src="assets/readme/section-getting-started.svg" width="100%" alt="Getting Started · 快速上手"></p>
 
@@ -106,9 +106,9 @@ API keys stay in local credential storage and are not part of dashboard snapshot
 
 <p align="center"><img src="assets/readme/section-requirements.svg" width="100%" alt="Requirements · 环境要求"></p>
 
-macOS 14+, Swift 6/Xcode development environment, and access to the supported local logs/repositories. CloudKit requires appropriate account, entitlement, and deployment configuration; build success alone does not verify it.
+macOS 14+, iOS 16+, watchOS 10+, a Swift 6/Xcode development environment, and access to the supported local logs/repositories. CloudKit requires appropriate account, entitlement, and deployment configuration; build success alone does not verify it.
 
-> macOS 14+、Swift 6／Xcode 开发环境，以及相应日志和仓库授权。CloudKit 需要账户、权限与部署配置，构建成功不证明云端可用。
+> macOS 14+、iOS 16+、watchOS 10+、Swift 6／Xcode 开发环境，以及相应日志和仓库授权。CloudKit 需要账户、权限与部署配置，构建成功不证明云端可用。
 
 <p align="center"><img src="assets/readme/section-related.svg" width="100%" alt="Related Projects · 相关项目"></p>
 

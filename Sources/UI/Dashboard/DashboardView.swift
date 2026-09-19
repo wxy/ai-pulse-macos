@@ -99,6 +99,8 @@ struct DashboardView: View {
     @State private var rangeChangeStartedAt: Date? = nil
     @State private var rangeSnapshots: [TimeRange: DashboardSnapshot] = [:]
     @State private var currentPulse: PulseSnapshot?
+    @State private var cloudSyncResult = CloudSyncService.Result.idle
+    @State private var cloudLastSuccess: Date?
     @State private var pulseRefreshGeneration = 0
     @State private var demoRanges: Set<TimeRange> = []
     @State private var toolsExpanded = false
@@ -229,7 +231,9 @@ struct DashboardView: View {
         }
         let average = Int64((Double(total) / divisor).rounded())
         let value = ChartMath.compactCount(average)
-        return pulseText("全周期均速 \(value) 词元/\(zhUnit)", "Full-period pace \(value) tokens/\(enUnit)")
+        let unit = pulseText(zhUnit, enUnit)
+        let format = pulseText("全周期均速 %@ 词元/%@", "Full-period pace %@ tokens/%@")
+        return String(format: format, locale: I18n.resolvedLocale, value, unit)
     }
 
     private var hasPulseActivity: Bool {
@@ -264,7 +268,7 @@ struct DashboardView: View {
     }
 
     private func pulseText(_ zh: String, _ en: String) -> String {
-        I18n.resolvedLang() == "zh-Hans" ? zh : en
+        I18n.prototype(zh, en)
     }
 
     private func pulseColor(_ tier: PulseTier?) -> Color {
@@ -487,6 +491,7 @@ struct DashboardView: View {
             let health = AppHealthMonitor.shared.current
             healthSeverity = health.severity
             healthMessages = health.messages
+            refreshCloudSyncStatus()
             await refreshCurrentPulse()
             await hydrateRangeSnapshotCache()
             let selectedRange = timeRange
@@ -546,6 +551,9 @@ struct DashboardView: View {
         .onReceive(NotificationCenter.default.publisher(for: .pulseDidChange)) { _ in
             refreshLocalScanStatus()
             Task { await refreshCurrentPulse() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: CloudSyncService.didChange)) { _ in
+            refreshCloudSyncStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: IngestionBackfillState.changeNotification)) { _ in
             isImportingHistory = LogWatcher.backfill.isActive
@@ -613,11 +621,7 @@ struct DashboardView: View {
         case 75..<90: .marsGreen2
         default:      .deepRed
         }
-        let pctText: Text = if clamped > 100 {
-            Text(I18n.t("dashboard.over_limit"))
-        } else {
-            Text(verbatim: Int(clamped).formatted(.percent))
-        }
+        let pctText = Text(verbatim: I18n.percent(clamped / 100))
         return HStack(spacing: 2) {
             pctText
                 .font(.system(size: 8)).monospacedDigit().foregroundColor(barColor)
@@ -756,14 +760,6 @@ struct DashboardView: View {
 
     // MARK: - Head overview (forehead activity · eyes distributions · nose output)
 
-    private var tokenCoverageNote: String? {
-        guard !isDemoMode else { return nil }
-        guard let isPartial = activeSnapshot?.activityCoverage.isPartial else {
-            return I18n.t("dashboard.token_coverage_unavailable")
-        }
-        return isPartial ? I18n.t("dashboard.token_coverage_partial") : nil
-    }
-
     private func noteIcon(_ text: String) -> some View {
         DashboardNoteButton(text: text, enabled: selectedToolForOverlay == nil)
     }
@@ -783,7 +779,6 @@ struct DashboardView: View {
                         .foregroundStyle(Color.marsGreen)
                         .scaleEffect(loadedTimeRange == timeRange ? (0.8 + 0.2 * barProgress) : 0.8)
                         .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
-                    if let note = tokenCoverageNote { noteIcon(note) }
                 }
                 HStack(spacing: 4) {
                     Text("\(timeRange.label) · \(activeSnapshot?.readFailures.contains("toolUsage") == true ? "—" : String(periodSessionCount)) \(pulseText("个会话", "sessions")) · \(activeSnapshot?.readFailures.contains("dashboardUsageStats") == true ? "—" : String(periodActiveDays)) \(pulseText("个活跃日", "active days")) · \(pulseText("词元", "tokens"))")
@@ -992,7 +987,7 @@ struct DashboardView: View {
             }
         }
         .robotHelp(String(format: I18n.t("dashboard.quota_help"),
-                     (data.utilization / 100).formatted(.percent.precision(.fractionLength(0))),
+                     I18n.percent(data.utilization / 100),
                      data.limitStatus))
     }
 
@@ -1574,14 +1569,14 @@ struct DashboardView: View {
                 .background(Color(nsColor: .quaternarySystemFill))
                 .cornerRadius(4)
         } else if pct > 0 {
-            let badge = "↑" + ChartMath.safeInt(round(pct)).formatted(.percent)
+            let badge = "↑" + I18n.percent(pct / 100)
             Text(verbatim: badge)
                 .font(.caption2).foregroundColor(.deepRed)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.deepRed.opacity(0.1))
                 .cornerRadius(4)
         } else {
-            let badge = "↓" + ChartMath.safeInt(round(-pct)).formatted(.percent)
+            let badge = "↓" + I18n.percent(-pct / 100)
             Text(verbatim: badge)
                 .font(.caption2).foregroundColor(.marsGreen)
                 .padding(.horizontal, 5).padding(.vertical, 1)
@@ -1618,39 +1613,6 @@ struct DashboardView: View {
         }
     }
 
-    @ViewBuilder
-    private var lastUpdatedFooter: some View {
-        HStack(spacing: 6) {
-            Text("AI Pulse v\(Self.appVersion)/CloudKit \(CKSchema.payloadVersion)")
-                .font(.caption2).foregroundColor(.secondary)
-            if let updated = lastUpdated {
-                if isRefreshing {
-                    ProgressView().scaleEffect(0.6).frame(width: 12, height: 12)
-                    Text(I18n.t("general.refreshing"))
-                        .font(.caption2).foregroundColor(.secondary)
-                } else {
-                    Text("\(I18n.t("dashboard.updated")) \(updated, format: .dateTime.minute().hour().day().month(.abbreviated))")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-            }
-            Button {
-                guard !isRefreshing else { return }
-                isRefreshing = true
-                Task {
-                    await forceRefresh()
-                    isRefreshing = false
-                }
-            } label: {
-                Label(I18n.t("dashboard.refresh"), systemImage: "arrow.clockwise")
-                    .font(.caption2)
-            }
-            .buttonStyle(.plain)
-            .disabled(isRefreshing)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16).padding(.horizontal, 20)
-    }
-
     @MainActor
     private func animateBarIfNeeded() {
         startEntryAnimation()
@@ -1672,6 +1634,11 @@ struct DashboardView: View {
         let snapshot = await PulseEngine.shared.snapshot()
         guard generation == pulseRefreshGeneration, !Task.isCancelled else { return }
         currentPulse = snapshot?.isCurrent() == true ? snapshot : nil
+    }
+
+    private func refreshCloudSyncStatus() {
+        cloudSyncResult = CloudSyncService.shared.result
+        cloudLastSuccess = CloudSyncService.shared.lastSuccess
     }
 
     @MainActor
@@ -2108,7 +2075,7 @@ private extension DashboardView {
                             .overlay {
                                 if index == 1 {
                                     let input = values[0] + values[1]
-                                    Text(input > 0 ? String(format: "%.0f%%", values[1] / input * 100) : "—")
+                                    Text(verbatim: input > 0 ? I18n.percent(values[1] / input) : "—")
                                         .font(.system(size: 8, weight: .semibold)).foregroundStyle(Color(nsColor: .labelColor))
                                         .lineLimit(1).minimumScaleFactor(0.5)
                                 }
@@ -2121,7 +2088,9 @@ private extension DashboardView {
         }
         .frame(width: 60)
         .accessibilityLabel(pulseText("词元构成，已知输入缓存率", "Token composition, cache rate of known input"))
-        .accessibilityValue(values[0] + values[1] > 0 ? String(format: "%.1f%%", values[1] / (values[0] + values[1]) * 100) : "—")
+        .accessibilityValue(values[0] + values[1] > 0
+                            ? I18n.percent(values[1] / (values[0] + values[1]), fractionDigits: 1)
+                            : "—")
     }
 
     var robotMouth: some View {
@@ -2189,7 +2158,16 @@ private extension DashboardView {
             Divider()
             VStack(spacing: 5) {
                 HStack {
-                    Text(robotDataStatus).foregroundStyle(healthSeverity >= .impaired ? Color.deepRed : Color.secondary)
+                    HStack(spacing: 4) {
+                        if cloudSyncResult == .failed {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Color.deepRed)
+                                .robotHelp(CloudSyncService.shared.resultText)
+                                .accessibilityLabel(CloudSyncService.shared.resultText)
+                        }
+                        Text(robotSyncStatus)
+                    }
+                    .foregroundStyle(.secondary)
                     Spacer()
                     robotLink(pulseText("数据说明", "Data details"), detail: "metadata")
                 }
@@ -2213,8 +2191,14 @@ private extension DashboardView {
         if !localDataStatus.canReportCurrentActivity { return SetupCopy.activity(localDataStatus.activity) + (lastUpdated.map { " · " + $0.formatted(date: .omitted, time: .shortened) } ?? "") }
         if healthSeverity != .nominal { return healthBannerText }
         if !(activeSnapshot?.readFailures ?? []).isEmpty { return pulseText("部分读取失败", "Some queries failed") }
-        if tokenCoverageNote != nil { return pulseText("部分采集 · ", "Partial coverage · ") + (lastUpdated?.formatted(date: .omitted, time: .shortened) ?? "—") }
         return pulseText("本地数据 · ", "Local data · ") + (lastUpdated?.formatted(date: .omitted, time: .shortened) ?? "—")
+    }
+
+    var robotSyncStatus: String {
+        if isDemoMode { return pulseText("演示数据", "Demo data") }
+        guard let cloudLastSuccess else { return I18n.t("Waiting to sync") }
+        return I18n.t("Last successful sync: ")
+            + cloudLastSuccess.formatted(date: .omitted, time: .shortened)
     }
 
     func robotDetailTitle(_ detail: String) -> String {
@@ -2258,7 +2242,6 @@ private extension DashboardView {
                     robotCompositionRow(pulseText("输出", "Output"), value: parts.output, color: .deepRed)
                     Text(pulseText("前两段共同构成输入；缓存命中不重复累加，缓存写入不标为缓存命中。鼻梁为可读性给每段保留最小宽度，剩余宽度按真实比例分配；准确数值在明细中显示。", "The first two segments form input. Cache reads are not counted twice; cache creation is not a cache hit. Segment widths include a visibility floor; details show exact amounts."))
                         .font(.caption).foregroundStyle(.secondary)
-                    if parts.isPartial { Text(pulseText("部分字段缺失，仅包含已知词元。", "Some components are missing; totals contain known tokens only.")).foregroundStyle(.secondary) }
                 }
             } else { Text(pulseText("词元构成暂不可用，刷新后重试。", "Token composition unavailable; refresh and retry.")) }
         case "rhythm": activityRhythmSection
@@ -2286,8 +2269,7 @@ private extension DashboardView {
             }
         default:
             VStack(alignment: .leading, spacing: 12) {
-                Text(robotDataStatus)
-                if let note = tokenCoverageNote { Text(note) }
+                Text(robotSyncStatus)
                 ForEach(activeSnapshot?.readFailures ?? [], id: \.self) { Text($0) }
                 ForEach(healthMessages, id: \.self) { Text($0) }
                 Text(pulseText("本地活动与账户观测分别更新；费用与代码产出分别呈现。", "Local activity and account observations update separately; money and Git output remain independent."))

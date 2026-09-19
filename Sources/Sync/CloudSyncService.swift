@@ -142,8 +142,19 @@ final class CloudSyncService {
         let now = Date()
         let pulse = await PulseEngine.shared.snapshot()
         let availability = LocalDataStatus.current(hasActivity: (pulse?.activityFacts?.todayTokens ?? 0) > 0)
-        let envelope = CurrentPulseEnvelope.forCloudSync(pulse: availability.canReportCurrentActivity ? pulse : nil,
-                                            writerAppVersion: CKSchema.writerAppVersion, generatedAt: now)
+        guard availability.canReportCurrentActivity,
+              let pulse,
+              pulse.isCurrent(asOf: now) else {
+            // Do not erase the last truthful observation with an unavailable
+            // one. Readers can keep showing it with its original timestamp.
+            Logger.info("CloudSync: current pulse unavailable; preserving last observation")
+            return true
+        }
+        let envelope = CurrentPulseEnvelope.forCloudSync(
+            pulse: pulse,
+            writerAppVersion: CKSchema.writerAppVersion,
+            generatedAt: now
+        )
         guard let data = try? JSONEncoder().encode(envelope),
               let json = String(data: data, encoding: .utf8) else { return false }
         let record = CKRecord(recordType: CKSchema.CurrentPulse.recordType,
