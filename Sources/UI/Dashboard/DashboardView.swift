@@ -2161,7 +2161,6 @@ private extension DashboardView {
                     Text(robotCollectionStatus)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.7)
                     Spacer()
                     HStack(spacing: 4) {
                         if cloudSyncResult == .failed {
@@ -2172,7 +2171,6 @@ private extension DashboardView {
                         }
                         robotLink(robotSyncStatus, detail: "metadata")
                             .lineLimit(1)
-                            .minimumScaleFactor(0.7)
                     }
                 }
                 HStack {

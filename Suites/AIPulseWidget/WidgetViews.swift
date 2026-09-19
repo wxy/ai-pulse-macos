@@ -253,6 +253,7 @@ struct AIPulseWidgetEntryView: View {
                 .foregroundStyle(color)
                 .opacity(summaryIsStale ? 0.65 : 1)
                 .lineLimit(1)
+                .minimumScaleFactor(0.65)
             Text(label)
                 .font(.system(size: 7))
                 .foregroundStyle(secondaryTextColor)
