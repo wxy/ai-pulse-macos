@@ -11,6 +11,13 @@ final class I18nResolutionTests: XCTestCase {
         XCTAssertEqual(I18n.resolveSystemLanguage([]), "en")
     }
 
+    func testSupportedLanguageSetIncludesTenLocalesPlusAutomaticSelection() {
+        XCTAssertEqual(
+            I18n.supportedLanguages.map(\.code),
+            ["auto", "en", "zh-Hans", "zh-Hant-TW", "zh-Hant-HK", "ja", "ko", "de", "fr", "es", "pt-BR"]
+        )
+    }
+
     func testAutoClearsTheApplicationOverrideAndUsesGlobalLanguage() {
         let defaults = UserDefaults.standard
         let oldPreference = defaults.object(forKey: "app_language")

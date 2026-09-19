@@ -5,6 +5,8 @@ import WidgetKit
 private enum MacWidgetCopy {
     static func text(_ simplifiedChinese: String, _ english: String) -> String {
         let language = Locale.preferredLanguages.first ?? "en"
+        let localized = Bundle.main.localizedString(forKey: english, value: english, table: nil)
+        if localized != english || language.hasPrefix("en") { return localized }
         if language.hasPrefix("zh-Hant") {
             return simplifiedChinese.applyingTransform(StringTransform("Hans-Hant"), reverse: false)
                 ?? simplifiedChinese

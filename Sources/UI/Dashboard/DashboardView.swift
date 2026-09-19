@@ -229,7 +229,9 @@ struct DashboardView: View {
         }
         let average = Int64((Double(total) / divisor).rounded())
         let value = ChartMath.compactCount(average)
-        return pulseText("全周期均速 \(value) 词元/\(zhUnit)", "Full-period pace \(value) tokens/\(enUnit)")
+        let unit = pulseText(zhUnit, enUnit)
+        let format = pulseText("全周期均速 %@ 词元/%@", "Full-period pace %@ tokens/%@")
+        return String(format: format, locale: I18n.resolvedLocale, value, unit)
     }
 
     private var hasPulseActivity: Bool {
@@ -264,7 +266,7 @@ struct DashboardView: View {
     }
 
     private func pulseText(_ zh: String, _ en: String) -> String {
-        I18n.resolvedLang() == "zh-Hans" ? zh : en
+        I18n.prototype(zh, en)
     }
 
     private func pulseColor(_ tier: PulseTier?) -> Color {

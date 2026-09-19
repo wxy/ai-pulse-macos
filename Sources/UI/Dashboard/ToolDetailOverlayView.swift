@@ -410,7 +410,7 @@ struct ToolDetailOverlayView: View {
     }
 
     private func detailText(_ zh: String, _ en: String) -> String {
-        I18n.resolvedLang() == "zh-Hans" ? zh : en
+        I18n.prototype(zh, en)
     }
 
     private var retryButton: some View {
