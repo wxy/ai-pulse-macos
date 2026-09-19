@@ -9,6 +9,10 @@
 /* Begin PBXBuildFile section */
 		3CB70A568A364D7C9EADE9B4 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = 82B0FDA2394E4743BADFE6AB /* AIPulseShared */; };
 		542A515D2D6803121DB17A0E2A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 542A515D2D6803121DB17A0E /* Assets.xcassets */; };
+		B10000000000000000000001 /* AIPulseShared in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000080 /* AIPulseShared */; };
+		B10000000000000000000002 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* WidgetKit.framework */; };
+		B10000000000000000000003 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B10000000000000000000022 /* SwiftUI.framework */; };
+		B10000000000000000000004 /* AIPulseMacWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* AIPulseMacWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C0843E2E2FF5561900E3F6C4 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C0843E2D2FF5561900E3F6C4 /* GRDB */; };
 		C0843EA22FF5561900E3F6C4 /* libgit2.1.9.dylib in Embed Libraries */ = {isa = PBXBuildFile; fileRef = C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		C0843EB52FF5561900E3F6C4 /* AIPulse.png in Resources */ = {isa = PBXBuildFile; fileRef = C0843EB22FF5561900E3F6C4 /* AIPulse.png */; };
@@ -16,7 +20,28 @@
 		C0B3C4D62FF8126D00ED7B27 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = C0B3C4D52FF8126D00ED7B27 /* Sounds */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		B10000000000000000000010 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0843E152FF555ED00E3F6C4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B10000000000000000000050;
+			remoteInfo = AIPulseMacWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXCopyFilesBuildPhase section */
+		B10000000000000000000011 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B10000000000000000000004 /* AIPulseMacWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C0843EA32FF5561900E3F6C4 /* Embed Libraries */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -32,6 +57,10 @@
 
 /* Begin PBXFileReference section */
 		542A515D2D6803121DB17A0E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B10000000000000000000020 /* AIPulseMacWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AIPulseMacWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000021 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		B10000000000000000000022 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		B10000000000000000000023 /* AIPulseMacWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AIPulseMacWidgetExtension.entitlements; sourceTree = "<group>"; };
 		C0843E1D2FF555ED00E3F6C4 /* AI Pulse.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "AI Pulse.app"; path = AIPulseDebug.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libgit2.1.9.dylib; path = ../Libraries/libgit2/lib/libgit2.1.9.dylib; sourceTree = SOURCE_ROOT; };
 		C0843EB22FF5561900E3F6C4 /* AIPulse.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = AIPulse.png; path = ../Resources/AIPulse.png; sourceTree = SOURCE_ROOT; };
@@ -39,15 +68,43 @@
 		C0B3C4D52FF8126D00ED7B27 /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Sounds; path = ../Resources/Sounds; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B10000000000000000000030 /* Exceptions for "AIPulseMacWidget" folder in "AIPulseMacWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = B10000000000000000000050 /* AIPulseMacWidgetExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C0843E1F2FF555ED00E3F6C4 /* ../Sources */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ../Sources;
 			sourceTree = "<group>";
 		};
+		B10000000000000000000031 /* AIPulseMacWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B10000000000000000000030 /* Exceptions for "AIPulseMacWidget" folder in "AIPulseMacWidgetExtension" target */,
+			);
+			path = AIPulseMacWidget;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		B10000000000000000000040 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10000000000000000000001 /* AIPulseShared in Frameworks */,
+				B10000000000000000000002 /* WidgetKit.framework in Frameworks */,
+				B10000000000000000000003 /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C0843E1A2FF555ED00E3F6C4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -63,6 +120,9 @@
 		C03CA2B72FF694B600C44E70 /* References */ = {
 			isa = PBXGroup;
 			children = (
+				B10000000000000000000023 /* AIPulseMacWidgetExtension.entitlements */,
+				B10000000000000000000021 /* WidgetKit.framework */,
+				B10000000000000000000022 /* SwiftUI.framework */,
 				C0843EA12FF5561900E3F6C4 /* libgit2.1.9.dylib */,
 				C0B3C4D52FF8126D00ED7B27 /* Sounds */,
 				C0843EB22FF5561900E3F6C4 /* AIPulse.png */,
@@ -76,6 +136,7 @@
 			isa = PBXGroup;
 			children = (
 				C0843E1F2FF555ED00E3F6C4 /* ../Sources */,
+				B10000000000000000000031 /* AIPulseMacWidget */,
 				C0843E1E2FF555ED00E3F6C4 /* Products */,
 				C03CA2B72FF694B600C44E70 /* References */,
 			);
@@ -85,6 +146,7 @@
 			isa = PBXGroup;
 			children = (
 				C0843E1D2FF555ED00E3F6C4 /* AI Pulse.app */,
+				B10000000000000000000020 /* AIPulseMacWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -92,6 +154,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		B10000000000000000000050 /* AIPulseMacWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B10000000000000000000072 /* Build configuration list for PBXNativeTarget "AIPulseMacWidgetExtension" */;
+			buildPhases = (
+				B10000000000000000000060 /* Sources */,
+				B10000000000000000000040 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				B10000000000000000000031 /* AIPulseMacWidget */,
+			);
+			name = AIPulseMacWidgetExtension;
+			packageProductDependencies = (
+				B10000000000000000000080 /* AIPulseShared */,
+			);
+			productName = AIPulseMacWidgetExtension;
+			productReference = B10000000000000000000020 /* AIPulseMacWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		C0843E1C2FF555ED00E3F6C4 /* AI Pulse */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C0843E292FF555EE00E3F6C4 /* Build configuration list for PBXNativeTarget "AI Pulse" */;
@@ -99,11 +183,13 @@
 				C0843E192FF555ED00E3F6C4 /* Sources */,
 				C0843E1A2FF555ED00E3F6C4 /* Frameworks */,
 				C0843EA32FF5561900E3F6C4 /* Embed Libraries */,
+				B10000000000000000000011 /* Embed Foundation Extensions */,
 				C0843E1B2FF555ED00E3F6C4 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B10000000000000000000061 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C0843E1F2FF555ED00E3F6C4 /* ../Sources */,
@@ -127,6 +213,10 @@
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					B10000000000000000000050 = {
+						CreatedOnToolsVersion = 26.0;
+						ProvisioningStyle = Automatic;
+					};
 					C0843E1C2FF555ED00E3F6C4 = {
 						CreatedOnToolsVersion = 26.6;
 					};
@@ -151,6 +241,7 @@
 			projectRoot = "";
 			targets = (
 				C0843E1C2FF555ED00E3F6C4 /* AI Pulse */,
+				B10000000000000000000050 /* AIPulseMacWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -170,6 +261,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		B10000000000000000000060 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C0843E192FF555ED00E3F6C4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -179,7 +277,75 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		B10000000000000000000061 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B10000000000000000000050 /* AIPulseMacWidgetExtension */;
+			targetProxy = B10000000000000000000010 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		B10000000000000000000070 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = AIPulseMacWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 32;
+				DEVELOPMENT_TEAM = YUUWV9L8M8;
+				EXCLUDED_ARCHS = x86_64;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AIPulseMacWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse · Mac";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 2.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = xingyu.wang.aipulse.debug.widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		B10000000000000000000071 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = AIPulseMacWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 32;
+				DEVELOPMENT_TEAM = YUUWV9L8M8;
+				EXCLUDED_ARCHS = x86_64;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AIPulseMacWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse · Mac";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 2.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse.macoswidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 		C0843E272FF555EE00E3F6C4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -317,6 +483,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_HARDENED_RUNTIME = YES;
+				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../Libraries/libgit2/include",
@@ -406,6 +573,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		B10000000000000000000072 /* Build configuration list for PBXNativeTarget "AIPulseMacWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000000000000000000070 /* Debug */,
+				B10000000000000000000071 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		C0843E182FF555ED00E3F6C4 /* Build configuration list for PBXProject "AIPulse" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -446,6 +622,11 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		82B0FDA2394E4743BADFE6AB /* AIPulseShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1DAEB147AA645D7889AF744 /* XCLocalSwiftPackageReference "../Packages/AIPulseShared" */;
+			productName = AIPulseShared;
+		};
+		B10000000000000000000080 /* AIPulseShared */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A1DAEB147AA645D7889AF744 /* XCLocalSwiftPackageReference "../Packages/AIPulseShared" */;
 			productName = AIPulseShared;
