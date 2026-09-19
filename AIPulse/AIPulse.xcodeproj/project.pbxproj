@@ -297,6 +297,7 @@
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AIPulseMacWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse · Mac";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -326,6 +327,7 @@
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AIPulseMacWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AI Pulse · Mac";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

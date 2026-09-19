@@ -56,7 +56,8 @@ xcodebuild -allowProvisioningUpdates \
    工程，或没有把 `.appex` 嵌入实际 Mac App，都不会形成可发现的本机 Widget。
 2. 使用 `pluginkit -m -A -D -v -i <extension bundle id>` 检查系统插件数据库。
 3. 打开 macOS Widget 图库，确认 AI Pulse 来自本机 Mac App，并可添加正方形小组件；不要把
-   “使用 iPhone”下的 AI Pulse 当作原生扩展验收结果。
+  “使用 iPhone”下的 AI Pulse 当作原生扩展验收结果。原生条目显示为 `AI Pulse · Mac`，
+  iPhone 条目仍显示为 `AI Pulse`。
 4. 若新构建没有立即出现，先退出旧宿主、删除旧构建、重新运行签名宿主，再重开 Widget 图库。
    不要用缺少 CloudKit profile 的 ad-hoc 或未签名产物排查图库。
 
