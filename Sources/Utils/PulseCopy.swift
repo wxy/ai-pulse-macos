@@ -13,7 +13,8 @@ enum PulseCopy {
 
         if reason.hasPrefix("quota_"), reason.hasSuffix("_percent"),
            let percent = reason.dropFirst("quota_".count).dropLast("_percent".count).split(separator: "_").first {
-            return String(format: I18n.t("pulse.reason.quota_used"), String(percent))
+            let formatted = I18n.percent((Double(percent) ?? 0) / 100)
+            return String(format: I18n.t("pulse.reason.quota_used"), formatted)
         }
 
         if let factor = multiplier(in: reason, prefix: "token_rate_") {

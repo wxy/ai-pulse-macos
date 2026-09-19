@@ -513,7 +513,7 @@ struct ToolDetailOverlayView: View {
     }()
 
     private func occupancyText(_ occ: Double) -> String {
-        let pct = occ.formatted(.percent.precision(.fractionLength(0)))
+        let pct = I18n.percent(occ)
         return String(format: I18n.t("panel.occupancy"), pct)
     }
 

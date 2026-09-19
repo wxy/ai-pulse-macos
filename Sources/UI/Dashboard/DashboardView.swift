@@ -615,11 +615,7 @@ struct DashboardView: View {
         case 75..<90: .marsGreen2
         default:      .deepRed
         }
-        let pctText: Text = if clamped > 100 {
-            Text(I18n.t("dashboard.over_limit"))
-        } else {
-            Text(verbatim: Int(clamped).formatted(.percent))
-        }
+        let pctText = Text(verbatim: I18n.percent(clamped / 100))
         return HStack(spacing: 2) {
             pctText
                 .font(.system(size: 8)).monospacedDigit().foregroundColor(barColor)
@@ -994,7 +990,7 @@ struct DashboardView: View {
             }
         }
         .robotHelp(String(format: I18n.t("dashboard.quota_help"),
-                     (data.utilization / 100).formatted(.percent.precision(.fractionLength(0))),
+                     I18n.percent(data.utilization / 100),
                      data.limitStatus))
     }
 
@@ -1576,14 +1572,14 @@ struct DashboardView: View {
                 .background(Color(nsColor: .quaternarySystemFill))
                 .cornerRadius(4)
         } else if pct > 0 {
-            let badge = "↑" + ChartMath.safeInt(round(pct)).formatted(.percent)
+            let badge = "↑" + I18n.percent(pct / 100)
             Text(verbatim: badge)
                 .font(.caption2).foregroundColor(.deepRed)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.deepRed.opacity(0.1))
                 .cornerRadius(4)
         } else {
-            let badge = "↓" + ChartMath.safeInt(round(-pct)).formatted(.percent)
+            let badge = "↓" + I18n.percent(-pct / 100)
             Text(verbatim: badge)
                 .font(.caption2).foregroundColor(.marsGreen)
                 .padding(.horizontal, 5).padding(.vertical, 1)
@@ -2110,7 +2106,7 @@ private extension DashboardView {
                             .overlay {
                                 if index == 1 {
                                     let input = values[0] + values[1]
-                                    Text(input > 0 ? String(format: "%.0f%%", values[1] / input * 100) : "—")
+                                    Text(verbatim: input > 0 ? I18n.percent(values[1] / input) : "—")
                                         .font(.system(size: 8, weight: .semibold)).foregroundStyle(Color(nsColor: .labelColor))
                                         .lineLimit(1).minimumScaleFactor(0.5)
                                 }
@@ -2123,7 +2119,9 @@ private extension DashboardView {
         }
         .frame(width: 60)
         .accessibilityLabel(pulseText("词元构成，已知输入缓存率", "Token composition, cache rate of known input"))
-        .accessibilityValue(values[0] + values[1] > 0 ? String(format: "%.1f%%", values[1] / (values[0] + values[1]) * 100) : "—")
+        .accessibilityValue(values[0] + values[1] > 0
+                            ? I18n.percent(values[1] / (values[0] + values[1]), fractionDigits: 1)
+                            : "—")
     }
 
     var robotMouth: some View {

@@ -20,6 +20,31 @@ enum I18n {
         return "en"
     }
 
+    private static var locale: Locale {
+        switch lang {
+        case "zh-Hans": return Locale(identifier: "zh_CN")
+        case "zh-Hant-TW": return Locale(identifier: "zh_TW")
+        case "zh-Hant-HK": return Locale(identifier: "zh_HK")
+        case "ja": return Locale(identifier: "ja_JP")
+        case "ko": return Locale(identifier: "ko_KR")
+        case "de": return Locale(identifier: "de_DE")
+        case "fr": return Locale(identifier: "fr_FR")
+        case "es": return Locale(identifier: "es_ES")
+        case "pt-BR": return Locale(identifier: "pt_BR")
+        default: return Locale(identifier: "en_US")
+        }
+    }
+
+    /// Formats a unit-interval ratio according to the active app language.
+    static func percent(_ ratio: Double, fractionDigits: Int = 0) -> String {
+        let safeRatio = ratio.isFinite ? ratio : 0
+        return safeRatio.formatted(
+            .percent
+                .precision(.fractionLength(fractionDigits))
+                .locale(locale)
+        )
+    }
+
     static func prototype(_ simplifiedChinese: String, _ english: String) -> String {
         let localized = Bundle.main.localizedString(forKey: english, value: english, table: nil)
         if localized != english || lang == "en" { return localized }
@@ -50,8 +75,8 @@ enum I18n {
         }
         if reason.hasPrefix("quota_"), reason.hasSuffix("_percent") {
             let value = reason.dropFirst(6).dropLast(8).split(separator: "_").first ?? "0"
-            let format = prototype("额度已使用 %@%%", "Quota is %@%% used")
-            return String(format: format, String(value))
+            let formatted = percent((Double(value) ?? 0) / 100)
+            return String(format: t("pulse.reason.quota_used"), formatted)
         }
         switch pulse.primarySignal {
         case .activity: return prototype("AI 活动高于平时节奏", "AI activity is above your usual pace")

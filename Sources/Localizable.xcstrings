@@ -225,9 +225,6 @@
         }
       }
     },
-    "%lld%%": {
-      "shouldTranslate": false
-    },
     "+%@ / -%@": {
       "localizations": {
         "en": {
@@ -10501,65 +10498,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Notificações silenciosas ativadas"
-          }
-        }
-      }
-    },
-    "Quota is %@%% used": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "クォータを%@%%使用中"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "할당량 %@%% 사용됨"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "额度已使用 %@%%"
-          }
-        },
-        "zh-Hant-HK": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "額度已使用 %@%%"
-          }
-        },
-        "zh-Hant-TW": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "額度已使用 %@%%"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kontingent zu %@%% genutzt"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quota utilisé à %@%%"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Se ha usado el %@%% de la cuota"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A cota está %@%% usada"
           }
         }
       }
@@ -42426,61 +42364,61 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kontingent zu %@%% genutzt"
+            "value": "Kontingent zu %@ genutzt"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quota is %@%% used"
+            "value": "Quota is %@ used"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cuota utilizada al %@%%"
+            "value": "Cuota utilizada al %@"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quota utilisé à %@%%"
+            "value": "Quota utilisé à %@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "クォータを %@%% 使用中"
+            "value": "クォータを %@ 使用中"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "할당량 %@%% 사용됨"
+            "value": "할당량 %@ 사용됨"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cota usada em %@%%"
+            "value": "Cota usada em %@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "额度已使用 %@%%"
+            "value": "额度已使用 %@"
           }
         },
         "zh-Hant-HK": {
           "stringUnit": {
             "state": "translated",
-            "value": "配額已使用 %@%%"
+            "value": "配額已使用 %@"
           }
         },
         "zh-Hant-TW": {
           "stringUnit": {
             "state": "translated",
-            "value": "額度已使用 %@%%"
+            "value": "額度已使用 %@"
           }
         }
       }

@@ -335,7 +335,16 @@ struct DashboardView: View {
                     ForEach(0..<3) { i in
                         Rectangle().fill(i == 0 ? Color.marsGreen : i == 1 ? cacheColor : .deepRed)
                             .opacity(values[i] > 0 ? 1 : 0.25).frame(width: geo.size.width * widths[i])
-                            .overlay { if i == 1 { Text(c == nil || totalInput == 0 ? "—" : "\(Int(Double(values[1]) / totalInput * 100))%").font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.5) } }
+                            .overlay {
+                                if i == 1 {
+                                    Text(verbatim: c == nil || totalInput == 0
+                                         ? "—"
+                                         : I18n.percent(Double(values[1]) / totalInput))
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.5)
+                                }
+                            }
                     }
                 }.clipShape(CodeChangeTrapezoid())
             }.frame(width: 44, height: 55).opacity(c == nil ? 0.25 : 1)

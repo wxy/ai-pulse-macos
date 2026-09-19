@@ -100,6 +100,17 @@ enum I18n {
         }
     }
 
+    /// Formats a unit-interval ratio as a locale-aware percentage. Callers
+    /// must normalize 0...100 API values before passing them here.
+    static func percent(_ ratio: Double, fractionDigits: Int = 0) -> String {
+        let safeRatio = ratio.isFinite ? ratio : 0
+        return safeRatio.formatted(
+            .percent
+                .precision(.fractionLength(fractionDigits))
+                .locale(resolvedLocale)
+        )
+    }
+
     private static var stringsBundle: Bundle {
         #if SWIFT_PACKAGE
         return .module

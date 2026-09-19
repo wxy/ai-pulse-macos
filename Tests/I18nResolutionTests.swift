@@ -38,4 +38,32 @@ final class I18nResolutionTests: XCTestCase {
         }
     }
 
+    func testPercentFormattingUsesTheResolvedLocale() {
+        let defaults = UserDefaults.standard
+        let oldPreference = defaults.object(forKey: "app_language")
+        let oldOverride = defaults.object(forKey: "AppleLanguages")
+        let oldLanguage = I18n.getLang()
+        defer {
+            I18n.setLang(oldLanguage)
+            defaults.set(oldPreference, forKey: "app_language")
+            defaults.set(oldOverride, forKey: "AppleLanguages")
+        }
+
+        I18n.setLang("en")
+        XCTAssertEqual(
+            I18n.percent(0.42),
+            0.42.formatted(
+                .percent.precision(.fractionLength(0)).locale(Locale(identifier: "en_US"))
+            )
+        )
+
+        I18n.setLang("fr")
+        XCTAssertEqual(
+            I18n.percent(0.42),
+            0.42.formatted(
+                .percent.precision(.fractionLength(0)).locale(Locale(identifier: "fr_FR"))
+            )
+        )
+    }
+
 }
