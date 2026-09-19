@@ -1,142 +1,148 @@
-import WidgetKit
-import SwiftUI
 import Foundation
+import SwiftUI
+import WidgetKit
 import AIPulseShared
 
-// MARK: - Timeline Provider
-
 struct Provider: TimelineProvider {
+    private static let appGroupIdentifier = "group.com.wxy.aipulse"
+    private static let dashboardCacheName = "dashboard_cache.json"
+    private static let pulseCacheName = "current_pulse_v2.json"
+
     func placeholder(in context: Context) -> WidgetEntry {
-        WidgetEntry(
-            todayCost: 3.50,
-            weekCost: 18.20,
-            monthCost: 72.80,
-            yesterdaySpend: 2.80,
-            dailyRate: 5.0,
-            weeklyAvg: 35.0,
-            monthProjected: 150.0,
-            monthSoFar: 72.80,
-            pulse: PulseSnapshot(tier: .active, primarySignal: .activity,
-                                 reason: "recent_token_activity", signals: [], asOf: Date()),
-            observedSpend: "USD 3.50",
-            updatedAt: Date()
-        )
+        Self.previewEntry(at: Date())
     }
 
     func getSnapshot(in context: Context, completion: @escaping (WidgetEntry) -> Void) {
-        completion(placeholder(in: context))
+        completion(context.isPreview ? placeholder(in: context) : loadLatestEntry(at: Date()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<WidgetEntry>) -> Void) {
-        let entry = loadLatestEntry()
-        let nextRefresh = Date().addingTimeInterval(3600)
-        let timeline = Timeline(entries: [entry], policy: .after(nextRefresh))
-        completion(timeline)
+        let now = Date()
+        let entry = loadLatestEntry(at: now)
+        let nextRefresh = now.addingTimeInterval(15 * 60)
+        var transitionDates: [Date] = []
+        if let validUntil = entry.pulseEnvelope?.pulse?.validUntil,
+           validUntil > now, validUntil < nextRefresh {
+            transitionDates.append(validUntil.addingTimeInterval(1))
+        }
+        if let snapshot = entry.todaySnapshot {
+            let staleAt = snapshot.updatedAt.addingTimeInterval(
+                WatchDashboardData.summaryFreshnessInterval + 1
+            )
+            if staleAt > now, staleAt < nextRefresh { transitionDates.append(staleAt) }
+            if snapshot.period.end > now, snapshot.period.end < nextRefresh {
+                transitionDates.append(snapshot.period.end)
+            }
+        }
+        let entries = [entry] + Set(transitionDates).sorted().map(entry.at)
+        completion(Timeline(entries: entries, policy: .after(nextRefresh)))
     }
 
-    private func loadLatestEntry() -> WidgetEntry {
+    private func loadLatestEntry(at date: Date) -> WidgetEntry {
         guard let groupURL = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: "group.com.wxy.aipulse"
+            forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
         ) else {
-            return fallbackEntry()
-        }
-        let cacheURL = groupURL.appendingPathComponent("dashboard_cache.json")
-
-        guard let data = try? Data(contentsOf: cacheURL),
-              let dict = try? JSONDecoder().decode([String: DashboardSnapshot].self, from: data),
-              let snap = dict["today"] ?? dict["week"] ?? dict["30d"]
-        else {
-            return fallbackEntry()
+            return WidgetEntry(date: date, todaySnapshot: nil, historySnapshot: nil, pulseEnvelope: nil)
         }
 
-        let safe = snap.sanitized()
-        let dailyRate = max(safe.prediction?.dailyRate ?? 20, 0.01)
+        var todaySnapshot: DashboardSnapshot?
+        var historySnapshot: DashboardSnapshot?
+        let dashboardURL = groupURL.appendingPathComponent(Self.dashboardCacheName)
+        if let data = try? Data(contentsOf: dashboardURL),
+           let snapshots = try? JSONDecoder().decode([String: DashboardSnapshot].self, from: data) {
+            if let today = snapshots["today"], PhoneDashboardData.accepts(today, range: "today"),
+               date >= today.period.start, date < today.period.end {
+                todaySnapshot = today.sanitized()
+            }
+            if let history = snapshots["30d"], PhoneDashboardData.accepts(history, range: "30d") {
+                historySnapshot = history.sanitized()
+            }
+        }
+
+        var pulseEnvelope: CurrentPulseEnvelope?
+        let pulseURL = groupURL.appendingPathComponent(Self.pulseCacheName)
+        if let data = try? Data(contentsOf: pulseURL),
+           let envelope = try? JSONDecoder().decode(CurrentPulseEnvelope.self, from: data),
+           envelope.payloadVersion == CKSchema.payloadVersion {
+            pulseEnvelope = envelope
+        }
+        return WidgetEntry(date: date, todaySnapshot: todaySnapshot,
+                           historySnapshot: historySnapshot, pulseEnvelope: pulseEnvelope)
+    }
+
+    static func previewEntry(at date: Date) -> WidgetEntry {
+        var today = DashboardSnapshot(
+            todayTokens: 2_400_000,
+            topRepos: [RepoItem(repoPath: "/preview", name: "Preview",
+                                added: 700, deleted: 200, commits: 0)],
+            payloadVersion: CKSchema.payloadVersion,
+            updatedAt: date
+        )
+        today.period = DashboardPeriod(kind: .today, now: date)
+
+        var history = DashboardSnapshot(payloadVersion: CKSchema.payloadVersion, updatedAt: date)
+        history.period = DashboardPeriod(kind: .days30, now: date)
+        let calendar = Calendar.current
+        history.dailyStats = (1...10).map { day in
+            TrendPoint(
+                ts: calendar.date(byAdding: .day, value: -day,
+                                  to: calendar.startOfDay(for: date))!.timeIntervalSince1970,
+                value: 0, calls: 1, tokens: 1_000_000, netLines: 0
+            )
+        }
+        history.codeChanges = history.dailyStats.map {
+            TrendPoint(ts: $0.ts, value: 0, calls: 0, tokens: 0,
+                       netLines: 300, added: 200, deleted: 100)
+        }
+
+        let signal = PulseSignal(kind: .activity, rawValue: 100, unit: "tokens",
+                                 baseline: 50, normalized: 2.4, freshness: .fresh,
+                                 completeness: .complete, observedAt: date, reason: "activity")
+        let pulse = PulseSnapshot(tier: .elevated, primarySignal: .activity,
+                                  reason: "activity", signals: [signal], asOf: date,
+                                  validUntil: date.addingTimeInterval(7 * 60))
         return WidgetEntry(
-            todayCost: safe.todayCost,
-            weekCost: safe.weekCost,
-            monthCost: safe.monthCost,
-            yesterdaySpend: safe.yesterdaySpend,
-            dailyRate: dailyRate,
-            weeklyAvg: dailyRate * 7,
-            monthProjected: safe.prediction?.monthProjected ?? 600,
-            monthSoFar: safe.prediction?.monthSoFar ?? 0,
-            pulse: safe.pulse,
-            observedSpend: Self.observedSpendText(safe.observedSpend),
-            updatedAt: safe.updatedAt
+            date: date,
+            todaySnapshot: today,
+            historySnapshot: history,
+            pulseEnvelope: CurrentPulseEnvelope(pulse: pulse, writerAppVersion: "Widget preview", generatedAt: date)
         )
-    }
-
-    private func fallbackEntry() -> WidgetEntry {
-        WidgetEntry(
-            todayCost: 0, weekCost: 0, monthCost: 0,
-            yesterdaySpend: 0,
-            dailyRate: 20, weeklyAvg: 140,
-            monthProjected: 600, monthSoFar: 0,
-            pulse: nil, observedSpend: nil,
-            updatedAt: Date()
-        )
-    }
-
-    private static func observedSpendText(_ items: [ObservedSpendItem]?) -> String? {
-        let values = (items ?? []).filter { $0.amount > 0 }.map {
-            "\($0.currency.uppercased()) \(String(format: "%.2f", $0.amount))"
-        }
-        return values.isEmpty ? nil : values.joined(separator: " + ")
     }
 }
-
-// MARK: - Entry
 
 struct WidgetEntry: TimelineEntry {
     let date: Date
-    let todayCost: Double
-    let weekCost: Double
-    let monthCost: Double
-    let yesterdaySpend: Double
-    let dailyRate: Double
-    let weeklyAvg: Double
-    let monthProjected: Double
-    let monthSoFar: Double
-    let pulse: PulseSnapshot?
-    let observedSpend: String?
-    let updatedAt: Date
+    let todaySnapshot: DashboardSnapshot?
+    let historySnapshot: DashboardSnapshot?
+    let pulseEnvelope: CurrentPulseEnvelope?
 
-    init(todayCost: Double, weekCost: Double, monthCost: Double,
-         yesterdaySpend: Double,
-         dailyRate: Double, weeklyAvg: Double, monthProjected: Double,
-         monthSoFar: Double, pulse: PulseSnapshot?, observedSpend: String?, updatedAt: Date) {
-        self.date = updatedAt
-        self.todayCost = todayCost
-        self.weekCost = weekCost
-        self.monthCost = monthCost
-        self.yesterdaySpend = yesterdaySpend
-        self.dailyRate = dailyRate
-        self.weeklyAvg = weeklyAvg
-        self.monthProjected = monthProjected
-        self.monthSoFar = monthSoFar
-        self.pulse = pulse
-        self.observedSpend = observedSpend
-        self.updatedAt = updatedAt
+    func at(_ date: Date) -> WidgetEntry {
+        let today = todaySnapshot.flatMap {
+            date >= $0.period.start && date < $0.period.end ? $0 : nil
+        }
+        return WidgetEntry(date: date, todaySnapshot: today,
+                           historySnapshot: historySnapshot, pulseEnvelope: pulseEnvelope)
     }
 }
 
-// MARK: - Widget
-
 struct AIPulseWidget: Widget {
-    let kind: String = "AIPulseWidget"
+    let kind = "AIPulseWidget"
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: Provider()) { entry in
             AIPulseWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("AI Pulse")
-        .description("Track your AI coding spend at a glance.")
-        .supportedFamilies([
-            .systemSmall,
-            .systemMedium,
-            .accessoryCircular,
-            .accessoryRectangular,
-        ])
+        .description("See today's AI coding activity in three rings.")
+        .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
     }
 }
+
+#if DEBUG
+#Preview(as: .systemSmall) {
+    AIPulseWidget()
+} timeline: {
+    Provider.previewEntry(at: .now)
+}
+#endif
