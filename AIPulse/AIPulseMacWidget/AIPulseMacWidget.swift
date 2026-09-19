@@ -8,8 +8,8 @@ struct AIPulseMacWidget: Widget {
         StaticConfiguration(kind: kind, provider: MacWidgetProvider()) { entry in
             AIPulseMacWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("AI Pulse")
-        .description("See today's AI coding activity in three rings.")
+        .configurationDisplayName("AI Pulse · Mac")
+        .description("Native Mac widget for today's AI coding activity.")
         .supportedFamilies([.systemSmall])
         .contentMarginsDisabled()
     }
