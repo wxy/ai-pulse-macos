@@ -221,7 +221,7 @@ struct WatchDashboardView: View {
                         dimsValue: Bool) -> some View {
         VStack(alignment: alignment, spacing: 1) {
             Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded))
-                .foregroundStyle(color).opacity(dimsValue ? 0.65 : 1).lineLimit(1).minimumScaleFactor(0.65)
+                .foregroundStyle(color).opacity(dimsValue ? 0.65 : 1).lineLimit(1)
             Text(label).font(.system(size: cornerLabelSize)).foregroundStyle(supportTextColor).lineLimit(1)
         }.accessibilityElement(children: .combine)
     }
