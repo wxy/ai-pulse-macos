@@ -2158,6 +2158,10 @@ private extension DashboardView {
             Divider()
             VStack(spacing: 5) {
                 HStack {
+                    Text(robotCollectionStatus)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer()
                     HStack(spacing: 4) {
                         if cloudSyncResult == .failed {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -2165,16 +2169,14 @@ private extension DashboardView {
                                 .robotHelp(CloudSyncService.shared.resultText)
                                 .accessibilityLabel(CloudSyncService.shared.resultText)
                         }
-                        Text(robotSyncStatus)
+                        robotLink(robotSyncStatus, detail: "metadata")
+                            .lineLimit(1)
                     }
-                    .foregroundStyle(.secondary)
-                    Spacer()
-                    robotLink(pulseText("数据说明", "Data details"), detail: "metadata")
                 }
                 HStack {
                     Text("AI Pulse " + Self.appVersion)
                     Spacer()
-                    Text(pulseText("数据版本 ", "Data format ") + (activeSnapshot?.payloadVersion ?? CKSchema.payloadVersion))
+                    Text("CloudKit " + (activeSnapshot?.payloadVersion ?? CKSchema.payloadVersion))
                 }.foregroundStyle(.secondary)
             }.font(.system(size: 9)).padding(.horizontal, 20).padding(.vertical, 10)
                 .background(Color.primary.opacity(0.035))
@@ -2197,8 +2199,14 @@ private extension DashboardView {
     var robotSyncStatus: String {
         if isDemoMode { return pulseText("演示数据", "Demo data") }
         guard let cloudLastSuccess else { return I18n.t("Waiting to sync") }
-        return I18n.t("Last successful sync: ")
+        return I18n.t("Last sync: ")
             + cloudLastSuccess.formatted(date: .omitted, time: .shortened)
+    }
+
+    var robotCollectionStatus: String {
+        if isDemoMode { return pulseText("演示数据", "Demo data") }
+        return I18n.t("Last collected: ")
+            + (LogScanObservation.shared.lastCompletedAt?.formatted(date: .omitted, time: .shortened) ?? "—")
     }
 
     func robotDetailTitle(_ detail: String) -> String {

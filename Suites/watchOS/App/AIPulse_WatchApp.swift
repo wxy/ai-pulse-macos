@@ -174,21 +174,21 @@ struct WatchDashboardView: View {
                         VStack {
                             HStack(alignment: .top) {
                                 corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: tokenColor,
-                                       alignment: .leading, numberFirst: false,
+                                       alignment: .leading,
                                        dimsValue: summaryUsesCache(snapshot, asOf: now))
                                 Spacer()
                                 corner(t("今日行数", "Today lines"), count(lines(snapshot)), color: lineColor,
-                                       alignment: .trailing, numberFirst: false,
+                                       alignment: .trailing,
                                        dimsValue: summaryUsesCache(snapshot, asOf: now))
                             }
                             Spacer()
                             HStack(alignment: .bottom) {
                                 corner(t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: tokenColor,
-                                       alignment: .leading, numberFirst: true,
+                                       alignment: .leading,
                                        dimsValue: summaryUsesCache(snapshot, asOf: now))
                                 Spacer()
                                 corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: lineColor,
-                                       alignment: .trailing, numberFirst: true,
+                                       alignment: .trailing,
                                        dimsValue: summaryUsesCache(snapshot, asOf: now))
                             }
                         }.padding(.horizontal, cornerInset).padding(.top, 18).padding(.bottom, 6)
@@ -217,12 +217,12 @@ struct WatchDashboardView: View {
             }
     }
     private func corner(_ label: String, _ value: String, color: Color,
-                        alignment: HorizontalAlignment, numberFirst: Bool,
+                        alignment: HorizontalAlignment,
                         dimsValue: Bool) -> some View {
         VStack(alignment: alignment, spacing: 1) {
-            if numberFirst { Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded)).foregroundStyle(color).opacity(dimsValue ? 0.65 : 1).lineLimit(1) }
+            Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded))
+                .foregroundStyle(color).opacity(dimsValue ? 0.65 : 1).lineLimit(1).minimumScaleFactor(0.65)
             Text(label).font(.system(size: cornerLabelSize)).foregroundStyle(supportTextColor).lineLimit(1)
-            if !numberFirst { Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded)).foregroundStyle(color).opacity(dimsValue ? 0.65 : 1).lineLimit(1) }
         }.accessibilityElement(children: .combine)
     }
     private func ringCluster(side: CGFloat, thickness: CGFloat, tokenRatio: Double?, lineRatio: Double?,

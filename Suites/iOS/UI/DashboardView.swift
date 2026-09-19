@@ -371,11 +371,25 @@ struct DashboardView: View {
             Divider()
             VStack(spacing: 5) {
                 HStack {
-                    Text(snap.map { t("Mac 上次更新 ", "Last Mac observation ") + $0.updatedAt.formatted(date: .omitted, time: .shortened) } ?? t("此范围尚无数据", "No snapshot for this range"))
+                    Text(I18n.t("Last collected: ") + (snap?.updatedAt.formatted(date: .omitted, time: .shortened) ?? "—"))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
                     Spacer()
-                    Button { detail = t("数据说明", "Data details") } label: { Label(t("数据说明", "Data details"), systemImage: "arrow.up.right") }
+                    Button { detail = t("数据说明", "Data details") } label: {
+                        HStack(spacing: 4) {
+                            if cloud.rangeErrors[range] != nil || cloud.pulseError != nil {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(Color.orange)
+                            }
+                            Text(I18n.t("Last sync: ")
+                                 + (cloud.lastSuccessfulFetch?.formatted(date: .omitted, time: .shortened) ?? "—"))
+                            Image(systemName: "arrow.up.right")
+                        }
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
                 }
-                HStack { Text("AI Pulse " + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")); Spacer(); Text(t("数据版本 ", "Data format ") + (snap?.payloadVersion ?? "2.0.0")) }
+                HStack { Text("AI Pulse " + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")); Spacer(); Text("CloudKit " + (snap?.payloadVersion ?? "2.0.0")) }
             }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.vertical, 10).background(.primary.opacity(0.035))
         }.background(inset, in: RoundedRectangle(cornerRadius: 16)).clipShape(RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(.primary.opacity(0.14))).buttonStyle(.plain)
     }
@@ -414,6 +428,10 @@ struct DashboardView: View {
                 Text(t("由 Mac 设置中的套餐与固定费用声明汇总，单位为 USD/月。它不表示已用额度，也不与 API 观测支出相加。请在 Mac 上修改。", "Declared plans and fixed fees from Mac settings, in USD/month. This is not consumed quota and is not added to API observations. Edit on your Mac."))
                 row(t("月费", "Monthly fees"), snap?.declaredMonthlyCostUSD.map { "USD \($0.formatted())" } ?? "—")
             } else {
+                if cloud.rangeErrors[range] != nil || cloud.pulseError != nil {
+                    Text(I18n.t("Cloud fetch failed; cached data is retained."))
+                        .foregroundStyle(Color.orange)
+                }
                 Text(t("这里只显示 Mac 同步的摘要。词元、代码变化和账户费用各有独立的数据来源。缺失数据不代表零。", "Mac-synced summaries only. Tokens, code changes and account observations have independent sources. Missing data is not zero."))
                 row(t("数据版本", "Data version"), snap?.payloadVersion ?? "—"); row(t("Mac 版本", "Mac version"), snap?.writerAppVersion ?? "—")
                 if let snap { row(t("已观测事件", "Observed events"), snap.activityCoverage.observedEvents.map(count) ?? "—"); ForEach(snap.readFailures, id: \.self) { Text($0).foregroundStyle(.secondary) } }

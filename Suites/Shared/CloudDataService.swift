@@ -32,6 +32,7 @@ final class CloudDataService: ObservableObject {
     /// The snapshot for the currently selected time range.
     @Published var snapshot: DashboardSnapshot?
     @Published var lastUpdated: Date?
+    @Published private(set) var lastSuccessfulFetch: Date?
     @Published private(set) var pulseEnvelope: CurrentPulseEnvelope?
     @Published private(set) var rangeErrors: [String: String] = [:]
     @Published private(set) var missingRanges: Set<String> = []
@@ -63,7 +64,14 @@ final class CloudDataService: ObservableObject {
     }()
     private let log = Logger(subsystem: "com.wxy.aipulse", category: "CloudData")
     private init() {
+        let seconds = UserDefaults.standard.double(forKey: "cloud_fetch_last_success")
+        if seconds > 0 { lastSuccessfulFetch = Date(timeIntervalSince1970: seconds) }
         if !isPreview { loadLocalCache() }
+    }
+
+    private func markSuccessfulFetch(at date: Date = Date()) {
+        lastSuccessfulFetch = date
+        UserDefaults.standard.set(date.timeIntervalSince1970, forKey: "cloud_fetch_last_success")
     }
 
     // MARK: - Local cache (survives offline / app restart)
@@ -199,6 +207,7 @@ final class CloudDataService: ObservableObject {
                 self.snapshots["today"] = snap.sanitized()
                 if self.snapshot == nil { self.loadSnapshot(for: "today") }
                 self.saveLocalCache()
+                self.markSuccessfulFetch()
                 // DashboardView.onAppear fires a fetchSnapshot("today") right
                 // after this returns — mark it fresh so that call is deduped
                 // instead of firing a second, near-simultaneous CK request.
@@ -280,6 +289,7 @@ final class CloudDataService: ObservableObject {
                 self.rangeErrors[range] = nil
                 self.missingRanges.remove(range)
                 self.saveLocalCache()
+                self.markSuccessfulFetch()
             }
         } catch CloudError.noData {
             rangeErrors[range] = nil
@@ -301,6 +311,7 @@ final class CloudDataService: ObservableObject {
                 guard envelope.payloadVersion == CKSchema.payloadVersion else { throw CloudError.noData }
                 self.pulseEnvelope = envelope
                 self.pulseError = nil
+                self.markSuccessfulFetch()
                 try? data.write(to: self.localCacheURL.deletingLastPathComponent().appendingPathComponent("current_pulse_v2.json"), options: .atomic)
                 if let groupURL = self.widgetCacheDirectory {
                     try? FileManager.default.createDirectory(at: groupURL, withIntermediateDirectories: true)
