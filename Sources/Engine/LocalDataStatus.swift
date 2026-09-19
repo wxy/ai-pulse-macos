@@ -27,7 +27,12 @@ struct LocalDataStatus: Equatable {
     var canReportCurrentActivity: Bool { activity == .ready || activity == .noActivity }
 
     static var logPaths: [String] {
-        [".claude/projects", ".codex/sessions", ".dsh/sessions", ".qwen/projects", ".local/share/opencode/storage/message"]
+        [".claude/projects", ".codex/sessions", ".dsh/sessions", ".qwen/projects",
+         ".local/share/opencode/storage/message",
+         "Library/Application Support/Code/User/workspaceStorage",
+         "Library/Application Support/Code/User/globalStorage/emptyWindowChatSessions",
+         "Library/Application Support/Code - Insiders/User/workspaceStorage",
+         "Library/Application Support/Code - Insiders/User/globalStorage/emptyWindowChatSessions"]
             .map { FileManager.default.realHomeDirectory.appendingPathComponent($0).path }
     }
 

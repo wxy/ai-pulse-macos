@@ -98,6 +98,18 @@ final class TokenAccountingTests: XCTestCase {
         XCTAssertEqual(TokenAccounting.observedTotal(event: event), 1_200)
     }
 
+    func testCopilotInputAlreadyIncludesCachedTokens() {
+        let event = UsageEvent(
+            ts: 1, source: "copilot", model: nil, inTokens: 1_000,
+            outTokens: 200, cacheTokens: 800, repoPath: nil,
+            sessionId: nil, dedupeKey: "copilot", cacheCreationTokens: 50,
+            reportedOutputTokens: 200, reasoningTokens: 25)
+
+        XCTAssertEqual(TokenAccounting.observedTotal(event: event), 1_200)
+        XCTAssertEqual(TokenAccounting.breakdown(
+            input: event.inTokens, output: event.outTokens, cachedInput: event.cacheTokens).total, 1_200)
+    }
+
     func testMissingClaudeCreationRemainsUnknownAndReplayEnrichesOnlyObservedMetadata() throws {
         let queue = try DatabaseQueue()
         var event = UsageEvent(ts: 1, source: "claude-code", model: nil, inTokens: 100,

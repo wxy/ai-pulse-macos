@@ -29,6 +29,10 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private var filePositions: [String: UInt64] = [:]
     /// Last seen model per aider file (survives incremental scans).
     private var aiderModels: [String: String] = [:]
+    /// VS Code chat journals are patches over prior request state. Retain the
+    /// reconstructed metadata while the app is running so appended patches can
+    /// be interpreted without replaying the whole session on every scan.
+    private var copilotStates: [String: CopilotChatParser.State] = [:]
 
     /// FSEvents can fire many times while one cold-history scan is running.
     /// Coalesce those notifications into a single follow-up scan; a serial
@@ -104,6 +108,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
         discoverAndWatchRepos()
         scanCodexSessions()
+        scanCopilotChatSessions()
         scanDeepSeekHarnessSessions()
         scanQwenSessions()
         scanOpenCodeSessions()
@@ -262,6 +267,156 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
         codexSource?.setCancelHandler { close(fd) }
         codexSource?.resume()
+    }
+
+    // MARK: - GitHub Copilot Chat / Agent in VS Code
+
+    private struct CopilotSessionFile {
+        let url: URL
+        let repoPath: String?
+        let modified: Date
+    }
+
+    /// Scan VS Code's native chat journals. These contain full conversations,
+    /// but CopilotChatParser decodes only IDs, timestamps, models and usage.
+    private func scanCopilotChatSessions() {
+        let home = FileManager.default.realHomeDirectory
+        let applicationSupport = home.appendingPathComponent("Library/Application Support")
+        let userRoots = ["Code", "Code - Insiders"].map {
+            applicationSupport.appendingPathComponent($0).appendingPathComponent("User")
+        }
+        var files: [CopilotSessionFile] = []
+
+        for userRoot in userRoots {
+            let workspaceStorage = userRoot.appendingPathComponent("workspaceStorage")
+            if let workspaces = try? FileManager.default.contentsOfDirectory(
+                at: workspaceStorage,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) {
+                for workspace in workspaces {
+                    let repoPath = Self.vsCodeWorkspacePath(
+                        from: workspace.appendingPathComponent("workspace.json"))
+                    appendCopilotSessionFiles(
+                        in: workspace.appendingPathComponent("chatSessions"),
+                        repoPath: repoPath,
+                        to: &files)
+                }
+            }
+            appendCopilotSessionFiles(
+                in: userRoot.appendingPathComponent("globalStorage/emptyWindowChatSessions"),
+                repoPath: nil,
+                to: &files)
+        }
+
+        for file in files.sorted(by: { $0.modified > $1.modified }) {
+            parseCopilotSessionFile(file.url, repoPath: file.repoPath)
+        }
+    }
+
+    private func appendCopilotSessionFiles(
+        in directory: URL,
+        repoPath: String?,
+        to files: inout [CopilotSessionFile]
+    ) {
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        // Legacy .json files are pretty-printed conversation snapshots and do
+        // not contain the server usage counters. Current usage journals are
+        // append-only .jsonl files.
+        for url in urls where url.pathExtension == "jsonl" {
+            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
+            guard values?.isRegularFile == true else { continue }
+            files.append(CopilotSessionFile(
+                url: url,
+                repoPath: repoPath,
+                modified: values?.contentModificationDate ?? .distantPast))
+        }
+    }
+
+    /// Resolve only the file URI from workspace metadata. No workspace content
+    /// is opened, and repository normalization still happens in insertEvents.
+    static func vsCodeWorkspacePath(from metadataFile: URL) -> String? {
+        guard let data = try? Data(contentsOf: metadataFile),
+              let metadata = try? JSONDecoder().decode(VSCodeWorkspaceMetadata.self, from: data),
+              let raw = metadata.folder,
+              let url = URL(string: raw), url.isFileURL
+        else { return nil }
+        return url.standardizedFileURL.path
+    }
+
+    private struct VSCodeWorkspaceMetadata: Decodable {
+        let folder: String?
+    }
+
+    private func parseCopilotSessionFile(_ file: URL, repoPath: String?) {
+        let path = file.path
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let fileSize = attrs[.size] as? UInt64
+        else { return }
+
+        let lastPosition = filePositions[path] ?? 0
+        let startPosition = lastPosition <= fileSize ? lastPosition : 0
+        guard startPosition < fileSize else { return }
+
+        var state = startPosition == 0
+            ? CopilotChatParser.State(repoPath: repoPath)
+            : copilotStates[path] ?? CopilotChatParser.State(repoPath: repoPath)
+
+        do {
+            // After relaunch, rebuild the small metadata state up to the durable
+            // checkpoint. Parsed text is discarded and no usage is persisted.
+            if startPosition > 0, copilotStates[path] == nil {
+                let rebuilt = try JSONLCheckpoint.read(
+                    at: file, from: 0, fileSize: startPosition,
+                    parse: { line -> Int? in
+                        _ = state.consume(line: line)
+                        return nil
+                    },
+                    persist: { (_: [Int]) in })
+                guard rebuilt == startPosition else { throw JSONLCheckpoint.Failure.shortRead }
+            }
+
+            var minTs = Int.max
+            var maxTs = 0
+            var parsedCount = 0
+            let checkpoint = try JSONLCheckpoint.read(
+                at: file, from: startPosition, fileSize: fileSize,
+                parse: { line -> [UsageEvent]? in
+                    let events = state.consume(line: line)
+                    guard !events.isEmpty else { return nil }
+                    for event in events {
+                        minTs = min(minTs, event.ts)
+                        maxTs = max(maxTs, event.ts)
+                    }
+                    parsedCount += events.count
+                    return events
+                },
+                persist: { batches in
+                    guard self.insertEvents(batches.flatMap { $0 }) else {
+                        throw JSONLCheckpoint.Failure.persistenceFailed
+                    }
+                })
+            copilotStates[path] = state
+            filePositions[path] = checkpoint
+            persistPositions([path: checkpoint])
+            Self.recordFileScanResult(path: path, error: nil)
+
+            if let sessionId = state.sessionId, maxTs > 0 {
+                upsertSessionInfo(SessionInfoRecord(
+                    source: "copilot", sessionId: sessionId, title: nil, repo: repoPath,
+                    firstTs: minTs, lastTs: maxTs, completed: nil, windowTokens: nil))
+            }
+            if parsedCount > 0 {
+                Logger.info("LogWatcher: parsed \(parsedCount) Copilot usage updates from \(path)")
+            }
+        } catch {
+            Logger.warning("LogWatcher: Copilot scan failed for \(path): \(error.localizedDescription)")
+            Self.recordFileScanResult(path: path, error: error)
+        }
     }
 
     // MARK: - DeepSeek Harness
@@ -750,11 +905,21 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                    repo_path, session_id, dedupe_key)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(dedupe_key) DO UPDATE SET
+                  ts = CASE WHEN excluded.source = 'copilot' THEN excluded.ts ELSE usage_event.ts END,
                   provider_id = excluded.provider_id, model = excluded.model,
+                  in_tokens = CASE WHEN excluded.source = 'copilot' THEN excluded.in_tokens ELSE usage_event.in_tokens END,
+                  out_tokens = CASE WHEN excluded.source = 'copilot' THEN excluded.out_tokens ELSE usage_event.out_tokens END,
+                  cache_tokens = CASE WHEN excluded.source = 'copilot' THEN excluded.cache_tokens ELSE usage_event.cache_tokens END,
                   repo_path = excluded.repo_path,
-                  cache_creation_tokens = COALESCE(excluded.cache_creation_tokens, usage_event.cache_creation_tokens),
-                  reported_output_tokens = COALESCE(excluded.reported_output_tokens, usage_event.reported_output_tokens),
-                  reasoning_tokens = COALESCE(excluded.reasoning_tokens, usage_event.reasoning_tokens)
+                  cache_creation_tokens = CASE WHEN excluded.source = 'copilot'
+                    THEN excluded.cache_creation_tokens
+                    ELSE COALESCE(excluded.cache_creation_tokens, usage_event.cache_creation_tokens) END,
+                  reported_output_tokens = CASE WHEN excluded.source = 'copilot'
+                    THEN excluded.reported_output_tokens
+                    ELSE COALESCE(excluded.reported_output_tokens, usage_event.reported_output_tokens) END,
+                  reasoning_tokens = CASE WHEN excluded.source = 'copilot'
+                    THEN excluded.reasoning_tokens
+                    ELSE COALESCE(excluded.reasoning_tokens, usage_event.reasoning_tokens) END
                 """, arguments: [event.ts, event.source, row.providerId, event.model,
                     event.inTokens, event.outTokens, event.cacheTokens, event.cacheCreationTokens,
                     event.reportedOutputTokens, event.reasoningTokens, event.repoPath,
