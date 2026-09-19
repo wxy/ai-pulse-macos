@@ -1,7 +1,7 @@
 import AppKit
 import AIPulseShared
 
-/// Shared state and palette, not a budget-progress gauge. Menu uses a monochrome robot;
+/// Shared state and palette, not a budget-progress gauge. Menu uses a tier-colored robot;
 /// Dock keeps the robot and lights a fixed status lamp only for meaningful activity.
 struct PulseAppearance {
     let tier: PulseTier?
@@ -9,13 +9,14 @@ struct PulseAppearance {
     var hasActivity: Bool { tier != nil && tier != .resting }
 
     var color: NSColor {
-        let rgb: (CGFloat, CGFloat, CGFloat)
-        switch tier {
-        case .active: rgb = (0.26, 0.52, 0.40)
-        case .elevated, .intense: rgb = (0.72, 0.56, 0.18)
-        case .resting, .none: return .secondaryLabelColor
+        guard tier != nil else { return .secondaryLabelColor }
+        return NSColor(name: nil) { appearance in
+            let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            guard let rgb = PulseRobotPalette.rgb(for: tier, dark: dark) else {
+                return .secondaryLabelColor
+            }
+            return NSColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
         }
-        return NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
     }
 
     var label: String {

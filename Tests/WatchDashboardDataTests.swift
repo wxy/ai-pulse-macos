@@ -58,4 +58,45 @@ final class WatchDashboardDataTests: XCTestCase {
         XCTAssertFalse(WatchDashboardData.isSummaryFresh(snapshot, now: now))
         XCTAssertFalse(WatchDashboardData.isSummaryFresh(nil, now: now))
     }
+
+    func testTimelineTransitionsAtPulseExpiryAndSummaryStaleness() {
+        var snapshot = history(7)
+        snapshot.updatedAt = now.addingTimeInterval(-600)
+        let signal = PulseSignal(kind: .activity, rawValue: 100, unit: "tokens", baseline: 50,
+                                 normalized: 1.5, freshness: .fresh, completeness: .complete,
+                                 observedAt: now, reason: "activity")
+        let pulse = PulseSnapshot(tier: .active, primarySignal: .activity, reason: "activity",
+                                  signals: [signal], asOf: now,
+                                  validUntil: now.addingTimeInterval(300))
+        let dates = WatchDashboardData.timelineTransitionDates(
+            todaySnapshot: snapshot,
+            pulse: pulse,
+            now: now,
+            nextRefresh: now.addingTimeInterval(900)
+        )
+        XCTAssertEqual(dates, [pulse.validUntil, snapshot.updatedAt.addingTimeInterval(901)])
+    }
+
+    func testTimelineTransitionsIncludeMidnightAndExcludeRefreshBoundary() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        let lateNight = calendar.date(from: DateComponents(
+            year: 2027, month: 1, day: 15, hour: 23, minute: 55
+        ))!
+        var snapshot = DashboardSnapshot(payloadVersion: CKSchema.payloadVersion, updatedAt: lateNight)
+        snapshot.period = DashboardPeriod(kind: .today, now: lateNight, calendar: calendar)
+        let dates = WatchDashboardData.timelineTransitionDates(
+            todaySnapshot: snapshot,
+            pulse: nil,
+            now: lateNight,
+            nextRefresh: lateNight.addingTimeInterval(15 * 60)
+        )
+        XCTAssertEqual(dates, [snapshot.period.end])
+        XCTAssertTrue(WatchDashboardData.timelineTransitionDates(
+            todaySnapshot: snapshot,
+            pulse: nil,
+            now: lateNight,
+            nextRefresh: lateNight
+        ).isEmpty)
+    }
 }

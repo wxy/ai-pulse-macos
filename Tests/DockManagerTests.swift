@@ -4,6 +4,33 @@ import XCTest
 import AIPulseShared
 
 final class DockManagerTests: XCTestCase {
+    private func components(
+        _ color: NSColor,
+        appearance name: NSAppearance.Name = .aqua
+    ) throws -> (CGFloat, CGFloat, CGFloat) {
+        let appearance = try XCTUnwrap(NSAppearance(named: name))
+        var converted: NSColor?
+        appearance.performAsCurrentDrawingAppearance {
+            converted = color.usingColorSpace(.sRGB)
+        }
+        let srgb = try XCTUnwrap(converted)
+        return (srgb.redComponent, srgb.greenComponent, srgb.blueComponent)
+    }
+
+    private func assertSameColor(
+        _ lhs: NSColor,
+        _ rhs: NSColor,
+        appearance: NSAppearance.Name = .aqua,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let left = try components(lhs, appearance: appearance)
+        let right = try components(rhs, appearance: appearance)
+        XCTAssertEqual(left.0, right.0, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(left.1, right.1, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(left.2, right.2, accuracy: 0.001, file: file, line: line)
+    }
+
     @MainActor
     func testStartAndStopDoesNotCrash() {
         DockManager.shared.start()
@@ -11,23 +38,37 @@ final class DockManagerTests: XCTestCase {
         DockManager.shared.stop()
     }
 
-    func testMenuRobotAndDockLampUseOnePaletteWithoutProgress() {
-        XCTAssertEqual(PulseAppearance(tier: .elevated).color, PulseAppearance(tier: .intense).color)
-        XCTAssertNotEqual(PulseAppearance(tier: .active).color, PulseAppearance(tier: .intense).color)
+    func testMenuRobotAndDockLampUseOnePaletteWithoutProgress() throws {
+        var lightColors: [(CGFloat, CGFloat, CGFloat)] = []
         for tier in PulseTier.allCases {
             let appearance = PulseAppearance(tier: tier)
-            XCTAssertEqual(StatusItemController.tintColor(for: tier), appearance.color)
+            try assertSameColor(StatusItemController.tintColor(for: tier), appearance.color)
+            try assertSameColor(
+                StatusItemController.tintColor(for: tier),
+                appearance.color,
+                appearance: .darkAqua
+            )
+            lightColors.append(try components(appearance.color))
             XCTAssertEqual(appearance.showsLamp(beat: false), tier != .resting)
-            XCTAssertEqual(appearance.feedbackColor(beat: false), appearance.color)
-            if tier != .resting { XCTAssertEqual(appearance.feedbackColor(beat: true), appearance.color) }
+            try assertSameColor(appearance.feedbackColor(beat: false), appearance.color)
+            if tier != .resting {
+                try assertSameColor(appearance.feedbackColor(beat: true), appearance.color)
+            }
         }
+        XCTAssertEqual(Set(lightColors.map { "\($0.0),\($0.1),\($0.2)" }).count, PulseTier.allCases.count)
     }
 
-    func testHighActivityUsesYellowInsteadOfWarningRed() throws {
-        let color = try XCTUnwrap(PulseAppearance(tier: .intense).color.usingColorSpace(.sRGB))
-        XCTAssertGreaterThan(color.greenComponent, 0.5)
-        XCTAssertGreaterThan(color.redComponent, color.greenComponent)
-        XCTAssertLessThan(color.blueComponent, color.greenComponent)
+    func testActivityColorsBecomeBrighterWithinEachHueFamily() throws {
+        let resting = try components(PulseAppearance(tier: .resting).color)
+        let active = try components(PulseAppearance(tier: .active).color)
+        let elevated = try components(PulseAppearance(tier: .elevated).color)
+        let intense = try components(PulseAppearance(tier: .intense).color)
+        XCTAssertGreaterThan(active.1, resting.1)
+        XCTAssertGreaterThan(intense.0, elevated.0)
+        XCTAssertGreaterThan(resting.1, resting.0)
+        XCTAssertGreaterThan(active.1, active.0)
+        XCTAssertGreaterThan(elevated.0, elevated.1)
+        XCTAssertGreaterThan(intense.0, intense.1)
     }
 
     @MainActor
@@ -47,15 +88,18 @@ final class DockManagerTests: XCTestCase {
         }
     }
 
-    func testUnavailableAndRestingKeepRobotAndUseDistinctText() {
+    func testUnavailableAndRestingKeepRobotAndUseDistinctText() throws {
         let unknown = PulseAppearance(tier: nil)
         let resting = PulseAppearance(tier: .resting)
-        XCTAssertEqual(unknown.color, resting.color)
+        let unknownColor = try components(unknown.color)
+        let restingColor = try components(resting.color)
+        XCTAssertNotEqual(unknownColor.0, restingColor.0)
+        XCTAssertNotEqual(unknownColor.1, restingColor.1)
         XCTAssertFalse(unknown.showsLamp(beat: false))
         XCTAssertFalse(resting.showsLamp(beat: false))
         XCTAssertNotEqual(unknown.label, resting.label)
         XCTAssertTrue(unknown.showsLamp(beat: true))
-        XCTAssertEqual(unknown.feedbackColor(beat: true), PulseAppearance(tier: .active).color)
+        try assertSameColor(unknown.feedbackColor(beat: true), PulseAppearance(tier: .active).color)
         XCTAssertNil(unknown.tier, "An observation flash must not manufacture token activity")
     }
 

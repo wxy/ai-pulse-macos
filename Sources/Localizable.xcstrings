@@ -4,16 +4,14 @@
     "" : {
       "shouldTranslate" : false
     },
-    "-%@" : {
-
-    },
-    "-%lld" : {
-
-    },
     "–" : {
 
     },
+    "—" : {
+
+    },
     "· %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -61,6 +59,7 @@
       "shouldTranslate" : false
     },
     "%@:" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -72,6 +71,7 @@
       "shouldTranslate" : false
     },
     "%@%@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -119,6 +119,7 @@
 
     },
     "%lld×" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -140,9 +141,6 @@
       },
       "shouldTranslate" : false
     },
-    "+%@" : {
-
-    },
     "+%@ / -%@" : {
       "localizations" : {
         "en" : {
@@ -152,9 +150,6 @@
           }
         }
       }
-    },
-    "+%lld" : {
-
     },
     "+%lld %@ / -%lld %@" : {
       "localizations" : {
@@ -168,6 +163,7 @@
       "shouldTranslate" : false
     },
     "+%lld/-%lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -191,6 +187,7 @@
       "shouldTranslate" : false
     },
     "$%@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1215,6 +1212,7 @@
       }
     },
     "Added" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1527,6 +1525,7 @@
       }
     },
     "API" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3574,12 +3573,6 @@
         }
       }
     },
-    "ChatGPT" : {
-
-    },
-    "Claude Code" : {
-
-    },
     "closing_bell_notif.body" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3618,6 +3611,7 @@
 
     },
     "Cost" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3629,6 +3623,7 @@
       "shouldTranslate" : false
     },
     "CPL %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11114,6 +11109,7 @@
       }
     },
     "Date" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -11125,6 +11121,7 @@
       "shouldTranslate" : false
     },
     "Deleted" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15926,6 +15923,9 @@
         }
       }
     },
+    "LINES" : {
+
+    },
     "menu.approx_zero" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
       "extractionState" : "manual",
@@ -17244,6 +17244,7 @@
       }
     },
     "Name" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -23521,7 +23522,11 @@
         }
       }
     },
+    "See today's AI coding activity in three rings." : {
+
+    },
     "Series" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -24777,6 +24782,7 @@
       }
     },
     "Spend" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -24822,6 +24828,7 @@
       }
     },
     "Sub" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -25493,6 +25500,7 @@
       }
     },
     "Token" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -25511,6 +25519,9 @@
           }
         }
       }
+    },
+    "TOKENS" : {
+
     },
     "tools.claude_code" : {
       "comment" : "Keep translation short — UI label, avoid layout overflow",
@@ -25923,6 +25934,7 @@
 
     },
     "Value" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

@@ -1,248 +1,1065 @@
-// AIPulseWatchWidget.swift — watchOS 表盘小组件（v2 §3.3 全端感知）
-//
-// 自包含实现：不链接 AIPulseShared，本地定义最小解码结构；载荷常量与
-// Packages/AIPulseShared 的 CKSchema 保持一致（改动时两处同步）。
-// 数据源：iCloud 私有库 DashboardCache_v2 / snapshot-v2-today（Mac 每 5 分钟写）。
-
-import WidgetKit
-import SwiftUI
+import AIPulseShared
 import CloudKit
+import SwiftUI
+import WidgetKit
 
-// MARK: - 载荷常量（与 AIPulseShared.CKSchema 一致）
-
-private enum Schema {
-    static let recordType = "DashboardCache_v2"
-    static let payloadVersion = "2.0.0"
-    static let todayRecordName = "snapshot-v2-today"
-    static let jsonField = "json"
-}
-
-// MARK: - 最小解码结构（JSONDecoder 忽略未知键，缺键给默认值）
-
-private struct Snapshot: Codable {
-    struct Pulse: Codable {
-        struct Signal: Codable {
-            var kind: String
-            var normalized: Double
+private enum WatchWidgetCopy {
+    static func text(_ simplifiedChinese: String, _ english: String) -> String {
+        let language = Locale.preferredLanguages.first ?? "en"
+        if language.hasPrefix("zh-Hant") {
+            return simplifiedChinese.applyingTransform(StringTransform("Hans-Hant"), reverse: false)
+                ?? simplifiedChinese
         }
-        var tier: String
-        var primarySignal: String?
-        var reason: String
-        var signals: [Signal]
+        return language.hasPrefix("zh") ? simplifiedChinese : english
     }
-    struct Spend: Codable {
-        var amount: Double
-        var currency: String
-    }
-    var pulse: Pulse?
-    var observedSpend: [Spend]?
-    var updatedAt: Date?
 }
 
-// MARK: - Timeline entry
+enum WatchWidgetLoadStatus: Equatable {
+    case available
+    case partial
+    case waitingForRefresh
+    case noAccount
+    case noData
+    case failed
+}
 
-struct BurnEntry: TimelineEntry {
+struct WatchWidgetEntry: TimelineEntry {
     let date: Date
-    let tier: String?
-    let reason: String
-    let normalized: Double
-    let observedSpend: String?
+    let todaySnapshot: DashboardSnapshot?
+    let historySnapshot: DashboardSnapshot?
+    let pulseEnvelope: CurrentPulseEnvelope?
+    let loadStatus: WatchWidgetLoadStatus
+
+    func at(_ date: Date) -> WatchWidgetEntry {
+        let today = todaySnapshot.flatMap {
+            date >= $0.period.start && date < $0.period.end ? $0 : nil
+        }
+        let status = todaySnapshot != nil && today == nil ? .waitingForRefresh : loadStatus
+        return WatchWidgetEntry(
+            date: date,
+            todaySnapshot: today,
+            historySnapshot: historySnapshot,
+            pulseEnvelope: pulseEnvelope,
+            loadStatus: status
+        )
+    }
 }
 
-// MARK: - CloudKit reader
+private enum RecordResult<Value> {
+    case value(Value)
+    case missing
+    case failed
 
-private enum BurnSnapshotReader {
-    static func loadToday() async -> BurnEntry {
-        let fallback = BurnEntry(date: Date(), tier: nil,
-                                 reason: pulseReasonText("no_recent_signal", primarySignal: nil),
-                                 normalized: 0, observedSpend: nil)
+    var value: Value? {
+        guard case .value(let value) = self else { return nil }
+        return value
+    }
+
+    var hasFailure: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+
+    var isMissing: Bool {
+        if case .missing = self { return true }
+        return false
+    }
+}
+
+private enum WatchWidgetCloudReader {
+    static func load(at date: Date) async -> WatchWidgetEntry {
         let container = CKContainer(identifier: "iCloud.com.wxy.aipulse")
-        guard let status = try? await container.accountStatus(),
-              status == .available else { return fallback }
+        let accountStatus: CKAccountStatus
         do {
-            let id = CKRecord.ID(recordName: Schema.todayRecordName)
-            let record = try await container.privateCloudDatabase.record(for: id)
-            guard let json = record[Schema.jsonField] as? String,
-                  let snap = try? JSONDecoder().decode(Snapshot.self, from: Data(json.utf8))
-            else { return fallback }
-            if let pulse = snap.pulse {
-                let score = pulse.primarySignal.flatMap { primary in
-                    pulse.signals.first { $0.kind == primary }?.normalized
-                } ?? 0
-                let money = snap.observedSpend?.filter { $0.amount > 0 }
-                    .map { "\($0.currency.uppercased()) \(String(format: "%.2f", $0.amount))" }
-                    .joined(separator: " + ")
-                return BurnEntry(date: snap.updatedAt ?? Date(), tier: pulse.tier,
-                                 reason: pulseReasonText(pulse.reason, primarySignal: pulse.primarySignal),
-                                 normalized: score, observedSpend: money?.isEmpty == false ? money : nil)
-            }
-            return fallback
+            accountStatus = try await container.accountStatus()
         } catch {
-            return fallback
+            return WatchWidgetEntry(
+                date: date,
+                todaySnapshot: nil,
+                historySnapshot: nil,
+                pulseEnvelope: nil,
+                loadStatus: .failed
+            )
+        }
+        guard accountStatus == .available else {
+            let status: WatchWidgetLoadStatus = accountStatus == .noAccount || accountStatus == .restricted
+                ? .noAccount
+                : .failed
+            return WatchWidgetEntry(
+                date: date,
+                todaySnapshot: nil,
+                historySnapshot: nil,
+                pulseEnvelope: nil,
+                loadStatus: status
+            )
+        }
+
+        let todayID = CKRecord.ID(recordName: CKSchema.RecordName.today)
+        let historyID = CKRecord.ID(recordName: CKSchema.RecordName.month)
+        let pulseID = CKRecord.ID(recordName: CKSchema.CurrentPulse.recordName)
+        let records: [CKRecord.ID: Result<CKRecord, any Error>]
+        do {
+            records = try await container.privateCloudDatabase.records(
+                for: [todayID, historyID, pulseID],
+                desiredKeys: [CKSchema.Field.json]
+            )
+        } catch {
+            return WatchWidgetEntry(
+                date: date,
+                todaySnapshot: nil,
+                historySnapshot: nil,
+                pulseEnvelope: nil,
+                loadStatus: .failed
+            )
+        }
+        let today = decodeSnapshot(records[todayID], range: "today")
+        let history = decodeSnapshot(records[historyID], range: "30d")
+        let pulse = decodePulse(records[pulseID])
+        let resultsHaveValue = today.value != nil || history.value != nil || pulse.value != nil
+        let resultsHaveFailure = today.hasFailure || history.hasFailure || pulse.hasFailure
+        let resultsHaveMissing = today.isMissing || history.isMissing || pulse.isMissing
+        var status: WatchWidgetLoadStatus
+        if !resultsHaveValue {
+            status = resultsHaveFailure ? .failed : .noData
+        } else if resultsHaveFailure || resultsHaveMissing {
+            status = .partial
+        } else {
+            status = .available
+        }
+
+        let todaySnapshot = today.value.flatMap {
+            date >= $0.period.start && date < $0.period.end ? $0 : nil
+        }
+        if today.value != nil && todaySnapshot == nil {
+            status = .waitingForRefresh
+        }
+        return WatchWidgetEntry(
+            date: date,
+            todaySnapshot: todaySnapshot,
+            historySnapshot: history.value,
+            pulseEnvelope: pulse.value,
+            loadStatus: status
+        )
+    }
+
+    private static func decodeSnapshot(
+        _ result: Result<CKRecord, any Error>?,
+        range: String
+    ) -> RecordResult<DashboardSnapshot> {
+        switch result {
+        case .success(let record):
+            guard let json = record[CKSchema.Field.json] as? String,
+                  let data = json.data(using: .utf8),
+                  let snapshot = try? JSONDecoder().decode(DashboardSnapshot.self, from: data),
+                  PhoneDashboardData.accepts(snapshot, range: range) else {
+                return .failed
+            }
+            return .value(snapshot.sanitized())
+        case .failure(let error):
+            if let cloudError = error as? CKError, cloudError.code == .unknownItem {
+                return .missing
+            }
+            return .failed
+        case nil:
+            return .failed
+        }
+    }
+
+    private static func decodePulse(
+        _ result: Result<CKRecord, any Error>?
+    ) -> RecordResult<CurrentPulseEnvelope> {
+        switch result {
+        case .success(let record):
+            guard let json = record[CKSchema.Field.json] as? String,
+                  let data = json.data(using: .utf8),
+                  let envelope = try? JSONDecoder().decode(CurrentPulseEnvelope.self, from: data),
+                  envelope.payloadVersion == CKSchema.payloadVersion else {
+                return .failed
+            }
+            return .value(envelope)
+        case .failure(let error):
+            if let cloudError = error as? CKError, cloudError.code == .unknownItem {
+                return .missing
+            }
+            return .failed
+        case nil:
+            return .failed
         }
     }
 }
 
-// MARK: - Provider
-
-struct BurnProvider: TimelineProvider {
-    func placeholder(in context: Context) -> BurnEntry {
-        BurnEntry(date: Date(), tier: "active",
-                  reason: pulseReasonText("recent_token_activity", primarySignal: "activity"),
-                  normalized: 1.1, observedSpend: "USD 3.20")
+struct WatchWidgetProvider: TimelineProvider {
+    func placeholder(in context: Context) -> WatchWidgetEntry {
+        Self.previewEntry(at: Date())
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (BurnEntry) -> Void) {
-        Task { completion(await BurnSnapshotReader.loadToday()) }
+    func getSnapshot(in context: Context, completion: @escaping (WatchWidgetEntry) -> Void) {
+        if context.isPreview {
+            completion(placeholder(in: context))
+            return
+        }
+        Task { completion(await WatchWidgetCloudReader.load(at: Date())) }
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<BurnEntry>) -> Void) {
+    func getTimeline(in context: Context, completion: @escaping (Timeline<WatchWidgetEntry>) -> Void) {
         Task {
-            let entry = await BurnSnapshotReader.loadToday()
-            // 系统预算本就稀疏（约 15–60 分钟）；再约定 15 分钟后重取
-            completion(Timeline(entries: [entry],
-                                policy: .after(Date().addingTimeInterval(15 * 60))))
+            let now = Date()
+            let entry = await WatchWidgetCloudReader.load(at: now)
+            let nextRefresh = now.addingTimeInterval(15 * 60)
+            let transitionDates = WatchDashboardData.timelineTransitionDates(
+                todaySnapshot: entry.todaySnapshot,
+                pulse: entry.pulseEnvelope?.pulse,
+                now: now,
+                nextRefresh: nextRefresh
+            )
+            let entries = [entry] + transitionDates.map(entry.at)
+            completion(Timeline(entries: entries, policy: .after(nextRefresh)))
         }
     }
-}
 
-// MARK: - 档位颜色
+    static func previewEntry(
+        at date: Date,
+        status: WatchWidgetLoadStatus = .available,
+        staleSummary: Bool = false,
+        expiredPulse: Bool = false,
+        tier: PulseTier = .elevated,
+        todayTokens: Int64 = 2_400_000,
+        todayLines: Int = 900
+    ) -> WatchWidgetEntry {
+        guard status == .available || status == .partial else {
+            return WatchWidgetEntry(
+                date: date,
+                todaySnapshot: nil,
+                historySnapshot: nil,
+                pulseEnvelope: nil,
+                loadStatus: status
+            )
+        }
 
-private func tierColor(_ tier: String?) -> Color {
-    switch tier {
-    case "intense", "blaze": return .red
-    case "elevated", "hot": return .orange
-    case "active", "normal": return .yellow
-    default: return .secondary
+        let updatedAt = staleSummary ? date.addingTimeInterval(-3_600) : date
+        var today = DashboardSnapshot(
+            todayTokens: todayTokens,
+            topRepos: [RepoItem(
+                repoPath: "/preview",
+                name: "Preview",
+                added: todayLines,
+                deleted: 0,
+                commits: 0
+            )],
+            payloadVersion: CKSchema.payloadVersion,
+            updatedAt: updatedAt
+        )
+        today.period = DashboardPeriod(kind: .today, now: date)
+
+        var history = DashboardSnapshot(payloadVersion: CKSchema.payloadVersion, updatedAt: date)
+        history.period = DashboardPeriod(kind: .days30, now: date)
+        let calendar = Calendar.current
+        history.dailyStats = (1...10).map { day in
+            TrendPoint(
+                ts: calendar.date(
+                    byAdding: .day,
+                    value: -day,
+                    to: calendar.startOfDay(for: date)
+                )!.timeIntervalSince1970,
+                value: 0,
+                calls: 1,
+                tokens: 1_000_000,
+                netLines: 0
+            )
+        }
+        history.codeChanges = history.dailyStats.map {
+            TrendPoint(
+                ts: $0.ts,
+                value: 0,
+                calls: 0,
+                tokens: 0,
+                netLines: 300,
+                added: 200,
+                deleted: 100
+            )
+        }
+
+        let pulseDate = expiredPulse ? date.addingTimeInterval(-10 * 60) : date
+        let signal = PulseSignal(
+            kind: .activity,
+            rawValue: 100,
+            unit: "tokens",
+            baseline: 50,
+            normalized: 2.4,
+            freshness: .fresh,
+            completeness: .complete,
+            observedAt: pulseDate,
+            reason: "activity"
+        )
+        let pulse = PulseSnapshot(
+            tier: tier,
+            primarySignal: .activity,
+            reason: "activity",
+            signals: [signal],
+            asOf: pulseDate,
+            validUntil: pulseDate.addingTimeInterval(7 * 60)
+        )
+        return WatchWidgetEntry(
+            date: date,
+            todaySnapshot: today,
+            historySnapshot: history,
+            pulseEnvelope: CurrentPulseEnvelope(
+                pulse: pulse,
+                writerAppVersion: "Widget preview",
+                generatedAt: pulseDate
+            ),
+            loadStatus: status
+        )
     }
 }
 
-private func shortUSD(_ value: Double) -> String {
-    value >= 100 ? String(format: "%.0f", value) : String(format: "%.2f", value)
-}
+private struct WatchWidgetProjection {
+    let entry: WatchWidgetEntry
 
-private var usesSimplifiedChinese: Bool {
-    (Locale.preferredLanguages.first ?? "en").hasPrefix("zh")
-        && !(Locale.preferredLanguages.first ?? "en").hasPrefix("zh-Hant")
-}
+    var todayTokens: Double? {
+        guard let snapshot = entry.todaySnapshot,
+              !snapshot.readFailures.contains("toolUsage"),
+              !snapshot.readFailures.contains("dashboardUsageStats") else { return nil }
+        return Double(snapshot.todayTokens)
+    }
 
-private func tierText(_ tier: String?) -> String {
-    guard let tier else { return usesSimplifiedChinese ? "平静" : "Resting" }
-    guard usesSimplifiedChinese else { return tier.capitalized }
-    return ["resting": "平静", "active": "活跃", "elevated": "升高", "intense": "强烈"][tier] ?? "平静"
-}
+    var todayLines: Double? {
+        guard let snapshot = entry.todaySnapshot,
+              !snapshot.readFailures.contains("repositoryCode") else { return nil }
+        return snapshot.topRepos.reduce(0) { $0 + Double($1.added) + Double($1.deleted) }
+    }
 
-private func pulseReasonText(_ reason: String, primarySignal: String?) -> String {
-    if reason.hasPrefix("token_rate_"), reason.hasSuffix("x") {
-        let raw = String(reason.dropFirst("token_rate_".count).dropLast())
-            .replacingOccurrences(of: "cold_start_", with: "")
-        let pieces = raw.split(separator: "_")
-        if pieces.count == 2, pieces.allSatisfy({ Int($0) != nil }) {
-            let factor = "\(pieces[0]).\(pieces[1])"
-            return usesSimplifiedChinese
-                ? "词元速率为平时的 \(factor) 倍"
-                : "Token rate is \(factor)× your usual pace"
+    var tokenRatio: Double? {
+        WatchDashboardData.ratio(
+            value: todayTokens,
+            baseline: WatchDashboardData.baseline(entry.historySnapshot, tokens: true, now: entry.date)
+        )
+    }
+
+    var lineRatio: Double? {
+        WatchDashboardData.ratio(
+            value: todayLines,
+            baseline: WatchDashboardData.baseline(entry.historySnapshot, tokens: false, now: entry.date)
+        )
+    }
+
+    var currentPulse: PulseSnapshot? {
+        entry.pulseEnvelope?.currentPulse(asOf: entry.date)
+    }
+
+    var intensity: Double? {
+        WatchDashboardData.intensity(currentPulse, now: entry.date)
+    }
+
+    var summaryIsStale: Bool {
+        entry.todaySnapshot != nil
+            && !WatchDashboardData.isSummaryFresh(entry.todaySnapshot, now: entry.date)
+    }
+
+    var tierText: String {
+        guard let tier = currentPulse?.tier else { return "N/A" }
+        switch tier {
+        case .resting: return WatchWidgetCopy.text("平静", "Resting")
+        case .active: return WatchWidgetCopy.text("活跃", "Active")
+        case .elevated: return WatchWidgetCopy.text("升高", "Elevated")
+        case .intense: return WatchWidgetCopy.text("强烈", "Intense")
         }
     }
-    if reason.hasPrefix("quota_"), reason.hasSuffix("_percent") {
-        let value = reason.dropFirst(6).dropLast(8).split(separator: "_").first ?? "0"
-        return usesSimplifiedChinese ? "额度已使用 \(value)%" : "Quota is \(value)% used"
+
+    var statusText: String? {
+        switch entry.loadStatus {
+        case .available:
+            return summaryIsStale ? WatchWidgetCopy.text("摘要已陈旧", "Summary stale") : nil
+        case .partial:
+            return WatchWidgetCopy.text("同步未完成", "Sync incomplete")
+        case .waitingForRefresh:
+            return WatchWidgetCopy.text("等待刷新", "Waiting to refresh")
+        case .noAccount:
+            return WatchWidgetCopy.text("需要 iCloud", "iCloud required")
+        case .noData:
+            return WatchWidgetCopy.text("暂无数据", "No data")
+        case .failed:
+            return WatchWidgetCopy.text("同步失败", "Sync failed")
+        }
     }
-    switch primarySignal {
-    case "activity": return usesSimplifiedChinese ? "近期词元活动仍在持续" : "Recent token activity continues"
-    case "observedSpend": return usesSimplifiedChinese ? "近期记录到真实消费" : "Recent observed spend"
-    case "quota": return usesSimplifiedChinese ? "服务商额度正在承受压力" : "A provider quota is under pressure"
-    case "attributedOutput": return usesSimplifiedChinese ? "近期产生了可归因代码变化" : "Recent attributed code changes"
-    default: return usesSimplifiedChinese ? "近期没有 AI 活动" : "No recent AI activity"
+
+    func count(_ value: Double?) -> String {
+        guard let value, value.isFinite, value >= 0, value < Double(Int64.max) else { return "N/A" }
+        return ChartMath.compactCount(Int64(value))
+    }
+
+    func inlineCount(_ value: Double?) -> String {
+        let compact = count(value)
+        guard compact.count > 7, let value else { return compact }
+        return String(format: "%.1E", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 }
 
-// MARK: - 视图
-
-struct BurnCircularView: View {
-    let entry: BurnEntry
+private struct WatchPulseRobot: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let projection: WatchWidgetProjection
 
     var body: some View {
-        let fraction = min(max(entry.normalized / 3, 0), 1)
-        Gauge(value: fraction) {
-            Image(systemName: "flame.fill")
-        } currentValueLabel: {
-            Text(entry.tier.map { String($0.prefix(1)).uppercased() } ?? "–")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .minimumScaleFactor(0.6)
-        }
-        .gaugeStyle(.accessoryCircular)
-        .tint(tierColor(entry.tier))
-        .containerBackground(.fill.tertiary, for: .widget)
+        PulseRobotMark(tier: projection.currentPulse?.tier)
+            .fill(watchRobotColor(for: projection.currentPulse?.tier, colorScheme: colorScheme),
+                  style: FillStyle(eoFill: true))
+            .widgetAccentable()
     }
 }
 
-struct BurnRectangularView: View {
-    let entry: BurnEntry
+private func watchRobotColor(for tier: PulseTier?, colorScheme: ColorScheme) -> Color {
+    guard let rgb = PulseRobotPalette.rgb(for: tier, dark: colorScheme == .dark) else {
+        return .secondary
+    }
+    return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+}
+
+private struct WatchWidgetRing: View {
+    let ratio: Double?
+    let color: Color
+    let trackColor: Color
+    let width: CGFloat
+    var allowsLaps = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 2) {
-                Image(systemName: "flame.fill")
-                    .foregroundStyle(tierColor(entry.tier))
-                Text("AI Pulse")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundColor(.secondary)
+        GeometryReader { geometry in
+            let diameter = min(geometry.size.width, geometry.size.height)
+            let radius = (diameter - width) / 2
+            let value = ratio.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+            let arc = WatchDashboardData.remainingArc(value ?? 0)
+            ZStack {
+                Circle().stroke(value == nil ? Color.gray.opacity(0.30) : trackColor, lineWidth: width)
+                if let value {
+                    if value >= 1 {
+                        Circle().stroke(color.opacity(allowsLaps ? 0.48 : 1), lineWidth: width)
+                    }
+                    if arc > 0 {
+                        Circle()
+                            .trim(from: 0, to: arc)
+                            .stroke(color, style: StrokeStyle(lineWidth: width, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                    }
+                    if value >= 1 {
+                        let angle = (arc * 360 - 90) * Double.pi / 180
+                        Circle()
+                            .fill(color)
+                            .frame(width: width, height: width)
+                            .position(
+                                x: radius + radius * cos(angle),
+                                y: radius + radius * sin(angle)
+                            )
+                    }
+                }
             }
-            Text(tierText(entry.tier))
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .minimumScaleFactor(0.7).lineLimit(1)
-            if let money = entry.observedSpend {
-                Text(money)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundColor(tierColor(entry.tier))
-            } else {
-                Text(entry.reason).font(.caption2).foregroundColor(.secondary)
-            }
+            .frame(width: diameter - width, height: diameter - width)
+            .position(x: diameter / 2, y: diameter / 2)
         }
-        .containerBackground(.fill.tertiary, for: .widget)
+        .accessibilityHidden(true)
     }
 }
 
-struct BurnInlineView: View {
-    let entry: BurnEntry
+private struct WatchWidgetRings: View {
+    let projection: WatchWidgetProjection
+
+    private let tokenColor = Color.deepRed
+    private let lineColor = Color.marsGreen
+    private let activityColor = Color(red: 212 / 255, green: 163 / 255, blue: 38 / 255)
 
     var body: some View {
-        Text("● \(tierText(entry.tier))")
+        GeometryReader { geometry in
+            let edge = min(geometry.size.width, geometry.size.height)
+            let width = max(2, edge * 0.09)
+            ZStack {
+                WatchWidgetRing(
+                    ratio: projection.tokenRatio,
+                    color: tokenColor,
+                    trackColor: Color.deepRed2.opacity(0.25),
+                    width: width
+                )
+                .opacity(projection.summaryIsStale ? 0.55 : 1)
+                WatchWidgetRing(
+                    ratio: projection.lineRatio,
+                    color: lineColor,
+                    trackColor: Color.marsGreenLight.opacity(0.25),
+                    width: width
+                )
+                .padding(edge * 0.16)
+                .opacity(projection.summaryIsStale ? 0.55 : 1)
+                WatchWidgetRing(
+                    ratio: projection.intensity,
+                    color: activityColor,
+                    trackColor: Color(red: 226 / 255, green: 204 / 255, blue: 126 / 255).opacity(0.24),
+                    width: width,
+                    allowsLaps: false
+                )
+                .padding(edge * 0.32)
+            }
+            .widgetAccentable()
+        }
+    }
+}
+
+private struct WatchRingsCircularView: View {
+    let entry: WatchWidgetEntry
+
+    var body: some View {
+        let projection = WatchWidgetProjection(entry: entry)
+        ZStack {
+            AccessoryWidgetBackground()
+            WatchWidgetRings(projection: projection)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel(projection))
+    }
+
+    private func accessibilityLabel(_ projection: WatchWidgetProjection) -> String {
+        [
+            "AI Pulse",
+            "\(WatchWidgetCopy.text("今日词元", "Today tokens")): \(projection.count(projection.todayTokens))",
+            "\(WatchWidgetCopy.text("今日行数", "Today lines")): \(projection.count(projection.todayLines))",
+            "\(WatchWidgetCopy.text("当前强度", "Current activity")): \(projection.tierText)",
+            projection.statusText
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
+    }
+}
+
+private struct WatchRingsRectangularView: View {
+    let entry: WatchWidgetEntry
+
+    var body: some View {
+        let projection = WatchWidgetProjection(entry: entry)
+        GeometryReader { geometry in
+            let columnWidth = geometry.size.width / 2
+            let side = min(geometry.size.height, columnWidth)
+            HStack(spacing: 0) {
+                WatchWidgetRings(projection: projection)
+                    .frame(width: side, height: side)
+                    .frame(width: columnWidth, height: geometry.size.height)
+                VStack(alignment: .center, spacing: 4) {
+                    fact(WatchWidgetCopy.text("词元", "Tokens"), projection.count(projection.todayTokens))
+                    fact(WatchWidgetCopy.text("行数", "Lines"), projection.count(projection.todayLines))
+                    if let status = projection.statusText {
+                        Text(status)
+                            .font(.system(size: 8))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+                }
+                .frame(width: columnWidth, height: geometry.size.height, alignment: .center)
+            }
+                .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func fact(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+    }
+}
+
+private struct WatchActivityCircularView: View {
+    let entry: WatchWidgetEntry
+
+    var body: some View {
+        let projection = WatchWidgetProjection(entry: entry)
+        GeometryReader { geometry in
+            let edge = min(geometry.size.width, geometry.size.height)
+            ZStack {
+                AccessoryWidgetBackground()
+                WatchPulseRobot(projection: projection)
+                    .frame(width: edge * 0.58, height: edge * 0.58)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(activityAccessibilityLabel(projection))
+    }
+}
+
+private struct WatchActivityRectangularView: View {
+    let entry: WatchWidgetEntry
+
+    var body: some View {
+        let projection = WatchWidgetProjection(entry: entry)
+        GeometryReader { geometry in
+            let columnWidth = geometry.size.width / 2
+            let side = min(geometry.size.height, columnWidth)
+            HStack(spacing: 0) {
+                WatchPulseRobot(projection: projection)
+                    .frame(width: side * 0.68, height: side * 0.68)
+                    .frame(width: columnWidth, height: geometry.size.height)
+                VStack(alignment: .center, spacing: 3) {
+                    Text(WatchWidgetCopy.text("活动强度", "Activity"))
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                    Text(projection.tierText)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    activityDetail(projection)
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+                    .multilineTextAlignment(.center)
+                    .frame(width: columnWidth, height: geometry.size.height, alignment: .center)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(activityAccessibilityLabel(projection))
+    }
+
+    @ViewBuilder
+    private func activityDetail(_ projection: WatchWidgetProjection) -> some View {
+        if let status = projection.statusText {
+            Text(status)
+        } else if let observedAt = projection.currentPulse?.asOf {
+            Text(WatchWidgetCopy.text("观测于 ", "Observed ")
+                 + observedAt.formatted(date: .omitted, time: .shortened))
+        }
+    }
+}
+
+private struct WatchActivityCornerView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let entry: WatchWidgetEntry
+
+    var body: some View {
+        let projection = WatchWidgetProjection(entry: entry)
+        WatchAccessoryRobotImage(projection: projection, size: 15, curvesContent: true)
+            .widgetLabel {
+                if let intensity = projection.intensity {
+                    Gauge(value: intensity) {
+                        Text("AI Pulse")
+                    }
+                    .tint(watchRobotColor(
+                        for: projection.currentPulse?.tier,
+                        colorScheme: colorScheme
+                    ))
+                } else {
+                    Text("AI Pulse")
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(activityAccessibilityLabel(projection))
+    }
+}
+
+private struct WatchActivityInlineView: View {
+    let entry: WatchWidgetEntry
+
+    var body: some View {
+        let projection = WatchWidgetProjection(entry: entry)
+        WatchAccessoryRobotImage(projection: projection, size: 14, curvesContent: false)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(activityAccessibilityLabel(projection))
+    }
+}
+
+private struct WatchAccessoryRobotImage: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let projection: WatchWidgetProjection
+    let size: CGFloat
+    let curvesContent: Bool
+
+    @ViewBuilder
+    var body: some View {
+        if curvesContent {
+            robotImage
+                .frame(width: size, height: size)
+                .widgetCurvesContent()
+        } else {
+            robotImage
+                .frame(width: size, height: size)
+        }
+    }
+
+    private var robotImage: some View {
+        Image(assetName)
+            .resizable()
+            .renderingMode(.template)
+            .foregroundStyle(watchRobotColor(
+                for: projection.currentPulse?.tier,
+                colorScheme: colorScheme
+            ))
+            .widgetAccentable()
+    }
+
+    private var assetName: String {
+        switch projection.currentPulse?.tier {
+        case .active:
+            return "PulseRobotActive"
+        case .elevated, .intense:
+            return "PulseRobotElevated"
+        case .resting, .none:
+            return "PulseRobotResting"
+        }
+    }
+}
+
+private func activityAccessibilityLabel(_ projection: WatchWidgetProjection) -> String {
+    [
+        WatchWidgetCopy.text("AI Pulse 活动强度", "AI Pulse activity"),
+        projection.tierText,
+        projection.statusText
+    ]
+    .compactMap { $0 }
+    .joined(separator: ", ")
+}
+
+private enum WatchMetric {
+    case tokens
+    case lines
+
+    var inlineLabel: String {
+        switch self {
+        case .tokens: return "Tokens"
+        case .lines: return "Lines"
+        }
+    }
+
+    var localizedLabel: String {
+        switch self {
+        case .tokens: return WatchWidgetCopy.text("今日词元", "Today's tokens")
+        case .lines: return WatchWidgetCopy.text("今日行数", "Today's lines")
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .tokens: return .deepRed
+        case .lines: return .marsGreen
+        }
+    }
+
+    func value(in projection: WatchWidgetProjection) -> Double? {
+        switch self {
+        case .tokens: return projection.todayTokens
+        case .lines: return projection.todayLines
+        }
+    }
+
+    func ratio(in projection: WatchWidgetProjection) -> Double? {
+        switch self {
+        case .tokens: return projection.tokenRatio
+        case .lines: return projection.lineRatio
+        }
+    }
+}
+
+private struct WatchMetricCornerView: View {
+    let entry: WatchWidgetEntry
+    let metric: WatchMetric
+
+    var body: some View {
+        let projection = WatchWidgetProjection(entry: entry)
+        let value = projection.count(metric.value(in: projection))
+        Text(value)
             .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .containerBackground(.fill.tertiary, for: .widget)
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+            .foregroundStyle(metric.color)
+            .widgetAccentable()
+            .widgetCurvesContent()
+            .widgetLabel {
+                if let ratio = metric.ratio(in: projection) {
+                    Gauge(value: min(1, ratio)) {
+                        Text(metric.localizedLabel)
+                    }
+                    .tint(metric.color)
+                } else {
+                    Text(metric.localizedLabel)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel([
+                metric.localizedLabel,
+                value,
+                projection.statusText
+            ].compactMap { $0 }.joined(separator: ", "))
     }
 }
 
-struct BurnWidgetEntryView: View {
+private struct WatchMetricInlineView: View {
+    let entry: WatchWidgetEntry
+    let metric: WatchMetric
+
+    var body: some View {
+        let projection = WatchWidgetProjection(entry: entry)
+        let value = projection.inlineCount(metric.value(in: projection))
+        Text("\(metric.inlineLabel) \(value)")
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .allowsTightening(true)
+            .accessibilityLabel([
+                metric.localizedLabel,
+                value,
+                projection.statusText
+            ].compactMap { $0 }.joined(separator: ", "))
+    }
+}
+
+private struct WatchRingsEntryView: View {
     @Environment(\.widgetFamily) private var family
-    let entry: BurnEntry
+    let entry: WatchWidgetEntry
 
     var body: some View {
         switch family {
-        case .accessoryCircular: BurnCircularView(entry: entry)
-        case .accessoryRectangular: BurnRectangularView(entry: entry)
-        default: BurnInlineView(entry: entry)
+        case .accessoryCircular:
+            WatchRingsCircularView(entry: entry)
+        case .accessoryRectangular:
+            WatchRingsRectangularView(entry: entry)
+        default:
+            WatchRingsCircularView(entry: entry)
         }
     }
 }
 
-// MARK: - Widget + Bundle
+private struct WatchActivityEntryView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: WatchWidgetEntry
 
-struct AIPulseWatchWidget: Widget {
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "AIPulseWatchBurn", provider: BurnProvider()) { entry in
-            BurnWidgetEntryView(entry: entry)
+    var body: some View {
+        switch family {
+        case .accessoryCircular:
+            WatchActivityCircularView(entry: entry)
+        case .accessoryRectangular:
+            WatchActivityRectangularView(entry: entry)
+        case .accessoryCorner:
+            WatchActivityCornerView(entry: entry)
+        case .accessoryInline:
+            WatchActivityInlineView(entry: entry)
+        default:
+            WatchActivityCircularView(entry: entry)
         }
-        .configurationDisplayName("AI Pulse 脉搏")
-        .description("当前 AI 消费压力与主要原因")
-        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
+    }
+}
+
+private struct WatchMetricEntryView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: WatchWidgetEntry
+    let metric: WatchMetric
+
+    var body: some View {
+        switch family {
+        case .accessoryCorner:
+            WatchMetricCornerView(entry: entry, metric: metric)
+        case .accessoryInline:
+            WatchMetricInlineView(entry: entry, metric: metric)
+        default:
+            WatchMetricInlineView(entry: entry, metric: metric)
+        }
+    }
+}
+
+struct AIPulseWatchRingsWidget: Widget {
+    let kind = "AIPulseWatchRings"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: WatchWidgetProvider()) { entry in
+            WatchRingsEntryView(entry: entry)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .containerBackground(.clear, for: .widget)
+        }
+        .configurationDisplayName(WatchWidgetCopy.text(
+            "AI Pulse · 三环总览",
+            "AI Pulse · Three Rings"
+        ))
+        .description(WatchWidgetCopy.text(
+            "通过三环查看今日词元、代码行数和当前活动强度。",
+            "See today's tokens, code lines, and current activity in three rings."
+        ))
+        .supportedFamilies([.accessoryCircular, .accessoryRectangular])
+        .contentMarginsDisabled()
+    }
+}
+
+struct AIPulseWatchActivityWidget: Widget {
+    let kind = "AIPulseWatchActivity"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: WatchWidgetProvider()) { entry in
+            WatchActivityEntryView(entry: entry)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .containerBackground(.clear, for: .widget)
+        }
+        .configurationDisplayName(WatchWidgetCopy.text(
+            "AI Pulse · 活动强度",
+            "AI Pulse · Activity"
+        ))
+        .description(WatchWidgetCopy.text(
+            "通过状态机器人查看当前 AI 编码活动强度。",
+            "See current AI coding activity through the status robot."
+        ))
+        .supportedFamilies([
+            .accessoryCircular,
+            .accessoryRectangular,
+            .accessoryCorner,
+            .accessoryInline
+        ])
+        .contentMarginsDisabled()
+    }
+}
+
+struct AIPulseWatchTokensWidget: Widget {
+    let kind = "AIPulseWatchTokens"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: WatchWidgetProvider()) { entry in
+            WatchMetricEntryView(entry: entry, metric: .tokens)
+                .containerBackground(.clear, for: .widget)
+        }
+        .configurationDisplayName(WatchWidgetCopy.text(
+            "AI Pulse · 今日词元",
+            "AI Pulse · Today's Tokens"
+        ))
+        .description(WatchWidgetCopy.text(
+            "查看今日已观测的 AI 词元数量。",
+            "See today's observed AI token count."
+        ))
+        .supportedFamilies([.accessoryCorner, .accessoryInline])
+        .contentMarginsDisabled()
+    }
+}
+
+struct AIPulseWatchLinesWidget: Widget {
+    let kind = "AIPulseWatchLines"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: WatchWidgetProvider()) { entry in
+            WatchMetricEntryView(entry: entry, metric: .lines)
+                .containerBackground(.clear, for: .widget)
+        }
+        .configurationDisplayName(WatchWidgetCopy.text(
+            "AI Pulse · 今日行数",
+            "AI Pulse · Today's Lines"
+        ))
+        .description(WatchWidgetCopy.text(
+            "查看今日新增与删除的代码行数。",
+            "See today's added and deleted code lines."
+        ))
+        .supportedFamilies([.accessoryCorner, .accessoryInline])
+        .contentMarginsDisabled()
     }
 }
 
 @main
 struct AIPulseWatchWidgetBundle: WidgetBundle {
     var body: some Widget {
-        AIPulseWatchWidget()
+        AIPulseWatchRingsWidget()
+        AIPulseWatchActivityWidget()
+        AIPulseWatchTokensWidget()
+        AIPulseWatchLinesWidget()
     }
 }
+
+#if DEBUG
+#Preview("Rings Circular", as: .accessoryCircular) {
+    AIPulseWatchRingsWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now)
+}
+
+#Preview("Rings Rectangular", as: .accessoryRectangular) {
+    AIPulseWatchRingsWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, staleSummary: true, tier: .active)
+}
+
+#Preview("Activity Circular", as: .accessoryCircular) {
+    AIPulseWatchActivityWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, tier: .elevated)
+}
+
+#Preview("Activity Rectangular", as: .accessoryRectangular) {
+    AIPulseWatchActivityWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, tier: .active)
+}
+
+#Preview("Activity Corner", as: .accessoryCorner) {
+    AIPulseWatchActivityWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, tier: .intense)
+}
+
+#Preview("Activity Inline", as: .accessoryInline) {
+    AIPulseWatchActivityWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, tier: .active)
+}
+
+#Preview("Tokens Corner", as: .accessoryCorner) {
+    AIPulseWatchTokensWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now)
+}
+
+#Preview("Tokens Inline", as: .accessoryInline) {
+    AIPulseWatchTokensWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now)
+}
+
+#Preview("Lines Corner", as: .accessoryCorner) {
+    AIPulseWatchLinesWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now)
+}
+
+#Preview("Lines Inline", as: .accessoryInline) {
+    AIPulseWatchLinesWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now)
+}
+
+#Preview("Tokens Inline Long", as: .accessoryInline) {
+    AIPulseWatchTokensWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, todayTokens: 999_900_000)
+}
+
+#Preview("Lines Inline Long", as: .accessoryInline) {
+    AIPulseWatchLinesWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, todayLines: 999_900)
+}
+
+#Preview("Tokens Inline N/A", as: .accessoryInline) {
+    AIPulseWatchTokensWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, status: .noData)
+}
+
+#Preview("Lines Inline N/A", as: .accessoryInline) {
+    AIPulseWatchLinesWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, status: .noData)
+}
+
+#Preview("Rings No Data", as: .accessoryCircular) {
+    AIPulseWatchRingsWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, status: .noData)
+}
+
+#Preview("Activity Expired", as: .accessoryCorner) {
+    AIPulseWatchActivityWidget()
+} timeline: {
+    WatchWidgetProvider.previewEntry(at: .now, expiredPulse: true)
+}
+#endif

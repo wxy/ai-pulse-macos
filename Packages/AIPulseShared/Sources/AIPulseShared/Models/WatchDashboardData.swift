@@ -47,6 +47,22 @@ public enum WatchDashboardData {
         return min(1, signal.normalized / 3)
     }
 
+    public static func timelineTransitionDates(
+        todaySnapshot: DashboardSnapshot?,
+        pulse: PulseSnapshot?,
+        now: Date,
+        nextRefresh: Date
+    ) -> [Date] {
+        guard nextRefresh > now else { return [] }
+        var dates: [Date] = []
+        if let pulse { dates.append(pulse.validUntil) }
+        if let snapshot = todaySnapshot {
+            dates.append(snapshot.updatedAt.addingTimeInterval(summaryFreshnessInterval + 1))
+            dates.append(snapshot.period.end)
+        }
+        return Set(dates).filter { $0 > now && $0 < nextRefresh }.sorted()
+    }
+
     public static func remainingArc(_ ratio: Double) -> Double {
         guard ratio.isFinite, ratio > 0 else { return 0 }
         return ratio >= 1 ? ratio.truncatingRemainder(dividingBy: 1) : ratio

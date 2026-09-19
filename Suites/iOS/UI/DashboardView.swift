@@ -44,6 +44,112 @@ private struct RobotPulseCurve: Shape {
     }
 }
 
+private struct DashboardFlowBackground: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var isPaused: Bool { reduceMotion || scenePhase != .active }
+    private var baseColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.045, green: 0.065, blue: 0.055)
+            : Color(red: 0.91, green: 0.93, blue: 0.90)
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 24, paused: isPaused)) { context in
+            Canvas(rendersAsynchronously: true) { graphics, size in
+                graphics.fill(Path(CGRect(origin: .zero, size: size)), with: .color(baseColor))
+                let time = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
+                for bundle in 0..<4 {
+                    bezierBundle(in: size, time: time, bundle: bundle, graphics: &graphics)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+    }
+
+    private func bezierBundle(
+        in size: CGSize,
+        time: TimeInterval,
+        bundle: Int,
+        graphics: inout GraphicsContext
+    ) {
+        let trailCount = 6
+        for trail in stride(from: trailCount - 1, through: 0, by: -1) {
+            let trailTime = time - Double(trail) * 0.12
+            let path = bezierPath(in: size, time: trailTime, bundle: bundle)
+            let hue = (trailTime / 18 + Double(bundle) * 0.23)
+                .truncatingRemainder(dividingBy: 1)
+            let trailProgress = 1 - Double(trail) / Double(trailCount)
+            let opacity = (colorScheme == .dark ? 0.24 : 0.15) * trailProgress
+            let color = Color(
+                hue: hue < 0 ? hue + 1 : hue,
+                saturation: colorScheme == .dark ? 0.78 : 0.58,
+                brightness: colorScheme == .dark ? 0.96 : 0.62
+            ).opacity(opacity)
+            graphics.stroke(
+                path,
+                with: .color(color),
+                style: StrokeStyle(
+                    lineWidth: trail == 0 ? 2.1 : 1.25,
+                    lineCap: .round,
+                    lineJoin: .round
+                )
+            )
+        }
+    }
+
+    private func bezierPath(in size: CGSize, time: TimeInterval, bundle: Int) -> Path {
+        let seed = Double(bundle) * 1.73
+        let anchors = [
+            movingPoint(in: size, time: time, xPeriod: 23 + seed, yPeriod: 31 + seed,
+                        xPhase: seed + 0.2, yPhase: seed + 1.1),
+            movingPoint(in: size, time: time, xPeriod: 29 + seed, yPeriod: 19 + seed,
+                        xPhase: seed + 2.4, yPhase: seed + 0.7),
+            movingPoint(in: size, time: time, xPeriod: 17 + seed, yPeriod: 37 + seed,
+                        xPhase: seed + 4.1, yPhase: seed + 2.8),
+            movingPoint(in: size, time: time, xPeriod: 41 + seed, yPeriod: 27 + seed,
+                        xPhase: seed + 5.3, yPhase: seed + 4.4),
+        ]
+        let tangentScale: CGFloat = 1 / 6
+        return Path { path in
+            path.move(to: anchors[0])
+            for index in anchors.indices {
+                let previous = anchors[(index + anchors.count - 1) % anchors.count]
+                let current = anchors[index]
+                let next = anchors[(index + 1) % anchors.count]
+                let following = anchors[(index + 2) % anchors.count]
+                let control1 = CGPoint(
+                    x: current.x + (next.x - previous.x) * tangentScale,
+                    y: current.y + (next.y - previous.y) * tangentScale
+                )
+                let control2 = CGPoint(
+                    x: next.x - (following.x - current.x) * tangentScale,
+                    y: next.y - (following.y - current.y) * tangentScale
+                )
+                path.addCurve(to: next, control1: control1, control2: control2)
+            }
+            path.closeSubpath()
+        }
+    }
+
+    private func movingPoint(
+        in size: CGSize,
+        time: TimeInterval,
+        xPeriod: Double,
+        yPeriod: Double,
+        xPhase: Double,
+        yPhase: Double
+    ) -> CGPoint {
+        let x = 0.5 + 0.54 * sin(time / xPeriod * 2 * Double.pi + xPhase)
+        let y = 0.5 + 0.54 * sin(time / yPeriod * 2 * Double.pi + yPhase)
+        return CGPoint(x: size.width * x, y: size.height * y)
+    }
+}
+
 private struct CodeChangeTrapezoid: Shape {
     func path(in rect: CGRect) -> Path {
         let inset = rect.width * 0.25
@@ -83,39 +189,41 @@ struct DashboardView: View {
     private func count(_ value: Int64) -> String { ChartMath.compactCount(value) }
 
     var body: some View {
-        GeometryReader { geometry in
-            let width = min(440.0, geometry.size.width - 56)
-            let scale = width / 440
-            ScrollView {
-                VStack(spacing: 12) {
-                    if cloud.isPreview { Text(t("预览数据 · 不连接 iCloud", "Preview · iCloud disconnected")).font(.caption).foregroundStyle(.secondary) }
-                    VStack(spacing: 0) {
+        ZStack {
+            DashboardFlowBackground()
+            GeometryReader { geometry in
+                let width = min(440.0, geometry.size.width - 56)
+                let scale = width / 440
+                ScrollView {
+                    VStack(spacing: 12) {
+                        if cloud.isPreview { Text(t("预览数据 · 不连接 iCloud", "Preview · iCloud disconnected")).font(.caption).foregroundStyle(.secondary) }
                         VStack(spacing: 0) {
-                            Circle().fill(earColor).frame(width: 13, height: 13).overlay(Circle().stroke(line, lineWidth: 1))
-                            Rectangle().fill(Color.marsGreenLight).frame(width: 2, height: 10)
-                        }.frame(height: 23)
-                        head.frame(width: 440, height: 440)
-                            .background(plate, in: RoundedRectangle(cornerRadius: 29))
-                            .overlay(RoundedRectangle(cornerRadius: 29).stroke(.primary.opacity(0.14)))
-                            .overlay(alignment: .leading) { ear(left: true).offset(x: -20) }
-                            .overlay(alignment: .trailing) { ear(left: false).offset(x: 20) }
-                        Rectangle().fill(plate).frame(width: 76, height: 8)
-                            .overlay(HStack { Rectangle().fill(.primary.opacity(0.14)).frame(width: 1); Spacer(); Rectangle().fill(.primary.opacity(0.14)).frame(width: 1) })
-                        expenses.frame(width: 440, height: 152)
+                            VStack(spacing: 0) {
+                                Circle().fill(earColor).frame(width: 13, height: 13).overlay(Circle().stroke(line, lineWidth: 1))
+                                Rectangle().fill(Color.marsGreenLight).frame(width: 2, height: 10)
+                            }.frame(height: 23)
+                            head.frame(width: 440, height: 440)
+                                .background(plate, in: RoundedRectangle(cornerRadius: 29))
+                                .overlay(RoundedRectangle(cornerRadius: 29).stroke(.primary.opacity(0.14)))
+                                .overlay(alignment: .leading) { ear(left: true).offset(x: -20) }
+                                .overlay(alignment: .trailing) { ear(left: false).offset(x: 20) }
+                            Rectangle().fill(plate).frame(width: 76, height: 8)
+                                .overlay(HStack { Rectangle().fill(.primary.opacity(0.14)).frame(width: 1); Spacer(); Rectangle().fill(.primary.opacity(0.14)).frame(width: 1) })
+                            expenses.frame(width: 440, height: 152)
+                        }
+                        .background(RobotSilhouette().fill(plate).shadow(color: .black.opacity(0.27), radius: 14, y: 5))
+                        .frame(width: 440, height: 623)
+                        .scaleEffect(scale, anchor: .topLeading)
+                        .frame(width: width, height: 623 * scale, alignment: .topLeading)
                     }
-                    .background(RobotSilhouette().fill(plate).shadow(color: .black.opacity(0.27), radius: 14, y: 5))
-                    .frame(width: 440, height: 623)
-                    .scaleEffect(scale, anchor: .topLeading)
-                    .frame(width: width, height: 623 * scale, alignment: .topLeading)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 28)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: geometry.size.height, alignment: .center)
                 }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 28)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: geometry.size.height, alignment: .center)
+                .refreshable { await cloud.fetchAndStore(range: range); cloud.loadSnapshot(for: range); await cloud.fetchCurrentPulse() }
             }
-            .refreshable { await cloud.fetchAndStore(range: range); cloud.loadSnapshot(for: range); await cloud.fetchCurrentPulse() }
         }
-        .background(Color(.systemBackground))
         .toolbar(.hidden, for: .navigationBar)
         .task(id: range) { try? await cloud.fetchSnapshot(for: range) }
         .task(id: scenePhase) {
