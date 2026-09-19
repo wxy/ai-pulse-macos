@@ -10,4 +10,4 @@
 
 旧“P0／P1／P2 已完成”只是历史工作项结论，不是当前达标依据。完整记录见 [历史计划](archive/v2-money-first-implementation-plan.md)，不用于当前验收，也不要求旧展示或传输兼容。
 
-当前收尾以 `Sources/Localizable.xcstrings` 为唯一国际化事实源，完成 10 种语言、隐私清单、资源成员关系、CI、构建矩阵和发布文档审计。macOS 小组件真机验收已通过；自动化门禁完成后，依次进行 iPhone、iPhone 小组件、Watch 应用和 Watch 小组件真机验收。PR 可以在本地门禁通过后创建；正式发布仍需单独授权。
+当前收尾以 `Sources/Localizable.xcstrings` 为唯一国际化事实源，完成 10 种语言、隐私清单、资源成员关系、CI、构建矩阵和发布文档审计。macOS、macOS 小组件、iPhone、iPhone 小组件、Watch 应用和 Watch 小组件均已完成真机验收。正式发布仍需完成最终构建、App Store 提交与审核，并在单独授权后公开 GitHub Release。

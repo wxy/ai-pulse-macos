@@ -17,9 +17,9 @@ AI Pulse makes ongoing AI activity tangible and shows the local Git output along
 
 > AI Pulse 让持续的 AI 活动被感受到，并展示伴随的本地 Git 成果。它是消费脉搏，不是精确计量器、账单，也不判断产出是否值得。
 
-This README describes the AI Pulse 2.0 release candidate across macOS, iPhone, Apple Watch, and their widgets. Implementation is complete, while final automated release checks and device acceptance are still in progress. The App Store listing above does not imply that 2.0 has been released.
+This README describes the AI Pulse 2.0 release candidate across macOS, iPhone, Apple Watch, and their widgets. Implementation and device acceptance are complete; the candidate is awaiting final release operations. The App Store listing above does not imply that 2.0 has been released.
 
-> 本文描述 AI Pulse 2.0 在 macOS、iPhone、Apple Watch 及各端小组件上的候选发布版本。功能实现已经完成，最终自动化发布检查和真机验收仍在进行；上方商店入口不代表 2.0 已经发布。
+> 本文描述 AI Pulse 2.0 在 macOS、iPhone、Apple Watch 及各端小组件上的候选发布版本。功能实现与真机验收已经完成，当前等待最终发布操作；上方商店入口不代表 2.0 已经发布。
 
 <p align="center"><img src="assets/readme/section-features.svg" width="100%" alt="Features · 功能"></p>
 
@@ -68,9 +68,9 @@ These retained screenshots show an older interface, not the current 2.0 dashboar
 
 <p align="center"><img src="assets/readme/section-download.svg" width="100%" alt="Download · 下载"></p>
 
-The Mac App Store button links to the existing listing. This working tree is not a release announcement. The macOS widget has passed device acceptance; iPhone, iPhone widget, Watch app, and Watch widget acceptance remains a release gate after automated verification.
+The Mac App Store button links to the existing listing. This working tree is not a release announcement. macOS, the macOS widget, iPhone, the iPhone widget, the Watch app, and Watch widgets have all passed device acceptance for the 2.0 candidate.
 
-> Mac App Store 按钮指向现有商店页面，本工作树不是发版公告。macOS 小组件已通过真机验收；完成自动化验证后，仍需依次验收 iPhone、iPhone 小组件、Watch 应用和 Watch 小组件。
+> Mac App Store 按钮指向现有商店页面，本工作树不是发版公告。macOS、macOS 小组件、iPhone、iPhone 小组件、Watch 应用和 Watch 小组件均已完成 2.0 候选版本的真机验收。
 
 <p align="center"><img src="assets/readme/section-getting-started.svg" width="100%" alt="Getting Started · 快速上手"></p>
 

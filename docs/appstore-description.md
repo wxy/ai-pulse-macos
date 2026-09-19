@@ -1,6 +1,6 @@
 # App Store description — macOS 2.0 draft
 
-> 2026-09-19 · 未发布草案，不能作为完整验收证明。全端实现已完成；须在自动化门禁和剩余真机验收通过后再定稿、上传。
+> 2026-09-19 · 未发布草案。全端实现、自动化门禁与真机验收均已完成；上传前仍需以最终归档和 App Store 元数据复核为准。
 
 ## English
 
@@ -42,4 +42,4 @@ AI Pulse 让 AI 使用像脉搏一样可感：知道自己持续在消费，活�
 
 ## 发布前门槛
 
-以 [收口计划](macos-v2-closure-plan.md)、[数据事实](data-facts-and-surfaces.md) 和 [运行证据](macos-runtime-qa-2026-09-17.md) 核对最终功能。macOS 小组件已通过真机验收；其余跨端描述必须在 iPhone、iPhone 小组件、Watch 应用和 Watch 小组件真机验收后才能成为发布承诺。旧稿见 [历史版本](archive/appstore-description-v1.md)。
+以 [收口计划](macos-v2-closure-plan.md)、[数据事实](data-facts-and-surfaces.md) 和 [运行证据](macos-runtime-qa-2026-09-17.md) 核对最终功能。macOS、macOS 小组件、iPhone、iPhone 小组件、Watch 应用和 Watch 小组件均已完成真机验收；本稿仍须与最终归档及实际商店截图逐项复核。旧稿见 [历史版本](archive/appstore-description-v1.md)。
