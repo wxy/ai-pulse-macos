@@ -1,6 +1,6 @@
 # App Store Description — AI Pulse for iPhone 2.0 draft
 
-> 2026-09-19 · 未发布草案。iPhone、iPhone 小组件、Watch 应用与 Watch 小组件仍需真机验收，验收前不得作为已发布功能承诺。
+> 2026-09-19 · 未发布草案。iPhone、iPhone 小组件、Watch 应用与 Watch 小组件已完成真机验收；本稿仍须与最终归档和商店元数据复核后上传。
 
 ## English
 

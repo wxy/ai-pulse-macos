@@ -192,7 +192,7 @@ struct MacWidgetProvider: TimelineProvider {
         Task {
             let now = Date()
             let entry = await MacWidgetCloudReader.load(at: now)
-            let nextRefresh = now.addingTimeInterval(15 * 60)
+            let nextRefresh = now.addingTimeInterval(CurrentPulseEnvelope.widgetRefreshInterval)
             let transitionDates = WatchDashboardData.timelineTransitionDates(
                 todaySnapshot: entry.todaySnapshot,
                 pulse: entry.pulseEnvelope?.pulse,
@@ -282,7 +282,7 @@ struct MacWidgetProvider: TimelineProvider {
             reason: "activity",
             signals: [signal],
             asOf: pulseDate,
-            validUntil: pulseDate.addingTimeInterval(7 * 60)
+            validUntil: pulseDate.addingTimeInterval(CurrentPulseEnvelope.cloudValidityInterval)
         )
         return MacWidgetEntry(
             date: date,

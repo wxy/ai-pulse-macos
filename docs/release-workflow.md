@@ -15,17 +15,24 @@ This document defines the release flow for `wxy/ai-pulse-macos`.
   - iOS build
   - watchOS build
 
+Only two App Store archives are uploaded: the macOS archive embeds
+`AIPulseMacWidgetExtension`, while the iOS archive embeds the iPhone widget and
+the Watch app; the Watch app embeds its Watch widget extension.
+
 ## 2. Create a draft GitHub Release
 
-Push a `vX.Y.Z` tag to `main`:
+Create the draft against `main` without publishing or pre-creating the tag:
 
 ```bash
-git tag -a v2.0.0 -m "v2.0.0"
-git push origin v2.0.0
+gh release create v2.0.0 --draft --target main \
+  --title "AI Pulse 2.0.0" --notes-file RELEASE_DRAFT.md
 ```
 
-The `.github/workflows/release.yml` workflow will create a **draft** GitHub
-Release, not a public release.
+For this repository, creating the draft stores the `v2.0.0` tag name and
+`main` target without creating the remote Git tag. The tag remains absent while
+the release is a draft, so final documentation can still merge into `main`.
+Draft notes remain editable, but the release must not be published before App
+Store approval; verify the target again immediately before publication.
 
 Edit the draft release notes using the global
 `github-release-announcement` standard. It produces release notes and a
