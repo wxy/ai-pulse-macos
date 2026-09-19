@@ -240,10 +240,6 @@ struct ToolDetailOverlayView: View {
                 .font(.caption2).foregroundColor(.secondary)
                 Text(detailText("完整会话截至本次读取；曲线仅含有效输入观察，输出合计另含仅输出记录。", "Full session up to this read; the plot contains input observations, while output totals also include output-only records."))
                     .font(.caption2).foregroundColor(.secondary)
-                if (trend.incompleteEvents ?? 0) > 0 {
-                    Text(detailText("部分字段缺失，词元合计仅包含已知部分。", "Some fields are missing; token totals include known components only."))
-                        .font(.caption2).foregroundColor(.orange)
-                }
             }
             .padding(10)
             .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))

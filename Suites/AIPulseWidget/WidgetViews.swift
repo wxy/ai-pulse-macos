@@ -127,6 +127,14 @@ struct AIPulseWidgetEntryView: View {
         entry.pulseEnvelope?.currentPulse(asOf: entry.date)
     }
 
+    private var latestPulse: PulseSnapshot? {
+        entry.pulseEnvelope?.pulse
+    }
+
+    private var pulseIsExpired: Bool {
+        latestPulse != nil && currentPulse == nil
+    }
+
     private var summaryIsStale: Bool {
         entry.todaySnapshot != nil
             && !WatchDashboardData.isSummaryFresh(entry.todaySnapshot, now: entry.date)
@@ -175,11 +183,12 @@ struct AIPulseWidgetEntryView: View {
                 .opacity(summaryIsStale ? 0.55 : 1)
                 .widgetAccentable()
             WidgetActivityRing(
-                ratio: WatchDashboardData.intensity(currentPulse, now: entry.date),
+                ratio: WatchDashboardData.observedIntensity(latestPulse),
                 color: activityColor, trackColor: activityTrackColor,
                 width: thickness, allowsLaps: false
             )
             .padding(side * 32 / 184)
+            .opacity(pulseIsExpired ? 0.55 : 1)
             .widgetAccentable()
             centerFact
         }
@@ -188,7 +197,7 @@ struct AIPulseWidgetEntryView: View {
 
     private var centerFact: some View {
         VStack(spacing: 3) {
-            Text(text("当前强度", "Current activity"))
+            Text(text("活动强度", "Activity"))
                 .font(.system(size: 8))
                 .foregroundStyle(secondaryTextColor)
             Text(pulseText)
@@ -210,10 +219,8 @@ struct AIPulseWidgetEntryView: View {
     }
 
     private var pulseText: String {
-        if let currentPulse { return I18n.pulseTier(currentPulse.tier) }
-        return entry.pulseEnvelope?.pulse == nil
-            ? text("暂无观测", "No observation")
-            : text("观测已过期", "Expired")
+        guard let latestPulse else { return text("暂无观测", "No observation") }
+        return I18n.pulseTier(latestPulse.tier)
     }
 
     private var cornerFacts: some View {
@@ -293,7 +300,11 @@ struct AIPulseWidgetEntryView: View {
             "\(text("词元相对平常", "Tokens versus usual")): \(multiple(tokenRatio))",
             "\(text("今日行数", "Today lines")): \(count(todayLines))",
             "\(text("行数相对平常", "Lines versus usual")): \(multiple(lineRatio))",
-            "\(text("当前强度", "Current activity")): \(pulseText)",
+            "\(text("活动强度", "Activity")): \(pulseText)",
+            latestPulse.map {
+                text("观测于 ", "Observed ")
+                    + $0.asOf.formatted(date: .omitted, time: .shortened)
+            },
             status
         ]
         .compactMap { $0 }

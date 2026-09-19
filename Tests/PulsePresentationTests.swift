@@ -78,6 +78,13 @@ final class PulsePresentationTests: XCTestCase {
         XCTAssertTrue(PulseCopy.localizedReason("token_rate_2_7x").contains("2.7"))
     }
 
+    func testIncompleteComponentsDoNotProduceAnUnactionableUserWarning() {
+        let complete = PulseActivityFacts(recentTokens: 350_000, todayTokens: 2_400_000, isPartial: false)
+        let partial = PulseActivityFacts(recentTokens: 350_000, todayTokens: 2_400_000, isPartial: true)
+        XCTAssertEqual(PulseCopy.recentFacts(partial), PulseCopy.recentFacts(complete))
+        XCTAssertEqual(PulseCopy.todayFacts(partial, commits: 8), PulseCopy.todayFacts(complete, commits: 8))
+    }
+
     func testQuotaContextKeepsMissingEmptyAndExpiredSeparate() {
         let now = Date()
         let item = QuotaStatusItem(toolId: "codex", windowId: "5h", utilization: 96,
@@ -97,7 +104,7 @@ final class PulsePresentationTests: XCTestCase {
         let strings = try XCTUnwrap(document["strings"] as? [String: [String: Any]])
         let keys = ["pulse.tier.unknown", "pulse.tier.resting", "pulse.tier.active", "pulse.tier.elevated", "pulse.tier.intense",
                     "pulse.activity.reference", "pulse.activity.personal", "pulse.activity.recent", "pulse.activity.today",
-                    "pulse.activity.partial", "pulse.activity.recent_signal", "pulse.activity.quota_context",
+                    "pulse.activity.recent_signal", "pulse.activity.quota_context",
                     "pulse.activity.quota_stale", "pulse.activity.quota_unavailable", "pulse.activity.legend",
                     "pulse.activity.cooling", "dashboard.tool_tokens", "dashboard.repo_code_changes",
                     "dashboard.repo_code_changes_help", "dashboard.code_composition_help",

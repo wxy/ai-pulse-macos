@@ -39,16 +39,14 @@ enum PulseCopy {
 
     static func recentFacts(_ facts: PulseActivityFacts?) -> String {
         guard let facts else { return I18n.t("pulse.reason.unavailable") }
-        let line = String(format: I18n.t("pulse.activity.recent"), facts.windowSeconds / 60,
-                          ChartMath.compactCount(facts.recentTokens))
-        return line + (facts.isPartial ? " · " + I18n.t("pulse.activity.partial") : "")
+        return String(format: I18n.t("pulse.activity.recent"), facts.windowSeconds / 60,
+                      ChartMath.compactCount(facts.recentTokens))
     }
 
     static func todayFacts(_ facts: PulseActivityFacts?, commits: Int?) -> String {
         String(format: I18n.t("pulse.activity.today"),
                facts.map { ChartMath.compactCount($0.todayTokens) } ?? "—",
                commits.map { ChartMath.compactCount(Int64($0)) } ?? "—")
-        + (facts?.isPartial == true ? " · " + I18n.t("pulse.activity.partial") : "")
     }
 
     private static func multiplier(in reason: String, prefix: String) -> String? {

@@ -207,7 +207,7 @@ struct WatchWidgetProvider: TimelineProvider {
         Task {
             let now = Date()
             let entry = await WatchWidgetCloudReader.load(at: now)
-            let nextRefresh = now.addingTimeInterval(15 * 60)
+            let nextRefresh = now.addingTimeInterval(CurrentPulseEnvelope.widgetRefreshInterval)
             let transitionDates = WatchDashboardData.timelineTransitionDates(
                 todaySnapshot: entry.todaySnapshot,
                 pulse: entry.pulseEnvelope?.pulse,
@@ -299,7 +299,7 @@ struct WatchWidgetProvider: TimelineProvider {
             reason: "activity",
             signals: [signal],
             asOf: pulseDate,
-            validUntil: pulseDate.addingTimeInterval(7 * 60)
+            validUntil: pulseDate.addingTimeInterval(CurrentPulseEnvelope.cloudValidityInterval)
         )
         return WatchWidgetEntry(
             date: date,
@@ -349,8 +349,16 @@ private struct WatchWidgetProjection {
         entry.pulseEnvelope?.currentPulse(asOf: entry.date)
     }
 
+    var latestPulse: PulseSnapshot? {
+        entry.pulseEnvelope?.pulse
+    }
+
+    var pulseIsExpired: Bool {
+        latestPulse != nil && currentPulse == nil
+    }
+
     var intensity: Double? {
-        WatchDashboardData.intensity(currentPulse, now: entry.date)
+        WatchDashboardData.observedIntensity(latestPulse)
     }
 
     var summaryIsStale: Bool {
@@ -359,7 +367,7 @@ private struct WatchWidgetProjection {
     }
 
     var tierText: String {
-        guard let tier = currentPulse?.tier else { return "N/A" }
+        guard let tier = latestPulse?.tier else { return "N/A" }
         switch tier {
         case .resting: return WatchWidgetCopy.text("平静", "Resting")
         case .active: return WatchWidgetCopy.text("活跃", "Active")
@@ -402,9 +410,10 @@ private struct WatchPulseRobot: View {
     let projection: WatchWidgetProjection
 
     var body: some View {
-        PulseRobotMark(tier: projection.currentPulse?.tier)
-            .fill(watchRobotColor(for: projection.currentPulse?.tier, colorScheme: colorScheme),
+        PulseRobotMark(tier: projection.latestPulse?.tier)
+            .fill(watchRobotColor(for: projection.latestPulse?.tier, colorScheme: colorScheme),
                   style: FillStyle(eoFill: true))
+            .opacity(projection.pulseIsExpired ? 0.55 : 1)
             .widgetAccentable()
     }
 }
@@ -626,12 +635,11 @@ private struct WatchActivityRectangularView: View {
 
     @ViewBuilder
     private func activityDetail(_ projection: WatchWidgetProjection) -> some View {
-        if let status = projection.statusText {
-            Text(status)
-        } else if let observedAt = projection.currentPulse?.asOf {
+        if let observedAt = projection.latestPulse?.asOf {
             Text(WatchWidgetCopy.text("观测于 ", "Observed ")
                  + observedAt.formatted(date: .omitted, time: .shortened))
         }
+        if let status = projection.statusText { Text(status) }
     }
 }
 
@@ -648,7 +656,7 @@ private struct WatchActivityCornerView: View {
                         Text("AI Pulse")
                     }
                     .tint(watchRobotColor(
-                        for: projection.currentPulse?.tier,
+                        for: projection.latestPulse?.tier,
                         colorScheme: colorScheme
                     ))
                 } else {
@@ -694,14 +702,14 @@ private struct WatchAccessoryRobotImage: View {
             .resizable()
             .renderingMode(.template)
             .foregroundStyle(watchRobotColor(
-                for: projection.currentPulse?.tier,
+                for: projection.latestPulse?.tier,
                 colorScheme: colorScheme
             ))
             .widgetAccentable()
     }
 
     private var assetName: String {
-        switch projection.currentPulse?.tier {
+        switch projection.latestPulse?.tier {
         case .active:
             return "PulseRobotActive"
         case .elevated, .intense:
@@ -716,6 +724,10 @@ private func activityAccessibilityLabel(_ projection: WatchWidgetProjection) -> 
     [
         WatchWidgetCopy.text("AI Pulse 活动强度", "AI Pulse activity"),
         projection.tierText,
+        projection.latestPulse.map {
+            WatchWidgetCopy.text("观测于 ", "Observed ")
+                + $0.asOf.formatted(date: .omitted, time: .shortened)
+        },
         projection.statusText
     ]
     .compactMap { $0 }

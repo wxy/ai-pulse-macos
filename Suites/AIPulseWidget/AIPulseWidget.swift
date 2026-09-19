@@ -19,7 +19,7 @@ struct Provider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<WidgetEntry>) -> Void) {
         let now = Date()
         let entry = loadLatestEntry(at: now)
-        let nextRefresh = now.addingTimeInterval(15 * 60)
+        let nextRefresh = now.addingTimeInterval(CurrentPulseEnvelope.widgetRefreshInterval)
         var transitionDates: [Date] = []
         if let validUntil = entry.pulseEnvelope?.pulse?.validUntil,
            validUntil > now, validUntil < nextRefresh {
@@ -100,7 +100,7 @@ struct Provider: TimelineProvider {
                                  completeness: .complete, observedAt: date, reason: "activity")
         let pulse = PulseSnapshot(tier: .elevated, primarySignal: .activity,
                                   reason: "activity", signals: [signal], asOf: date,
-                                  validUntil: date.addingTimeInterval(7 * 60))
+                                  validUntil: date.addingTimeInterval(CurrentPulseEnvelope.cloudValidityInterval))
         return WidgetEntry(
             date: date,
             todaySnapshot: today,
