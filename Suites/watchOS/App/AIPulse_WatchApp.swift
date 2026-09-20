@@ -160,7 +160,7 @@ struct WatchDashboardView: View {
                 // Size against the full display width, as in the original corner-overlay layout.
                 let side = geometry.size.width * 0.90
                 let thickness = side * 13 / 184
-                let cornerInset: CGFloat = geometry.size.width < 180 ? 10 : 16
+                let ringCenter = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2 + 8)
                 if usesAccessibleLayout {
                     accessibleDashboard(snapshot: snapshot, tokenRatio: tokenRatio, lineRatio: lineRatio,
                                         pulse: pulse, status: status, now: now, side: side, thickness: thickness,
@@ -170,28 +170,17 @@ struct WatchDashboardView: View {
                         Color.black
                         ringCluster(side: side, thickness: thickness, tokenRatio: tokenRatio, lineRatio: lineRatio,
                                     pulse: pulse, now: now, dimsSummary: summaryUsesCache(snapshot, asOf: now))
-                            .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 8)
-                        VStack {
-                            HStack(alignment: .top) {
-                                corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: tokenColor,
-                                       alignment: .leading,
-                                       dimsValue: summaryUsesCache(snapshot, asOf: now))
-                                Spacer()
-                                corner(t("今日行数", "Today lines"), count(lines(snapshot)), color: lineColor,
-                                       alignment: .trailing,
-                                       dimsValue: summaryUsesCache(snapshot, asOf: now))
-                            }
-                            Spacer()
-                            HStack(alignment: .bottom) {
-                                corner(t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: tokenColor,
-                                       alignment: .leading,
-                                       dimsValue: summaryUsesCache(snapshot, asOf: now))
-                                Spacer()
-                                corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: lineColor,
-                                       alignment: .trailing,
-                                       dimsValue: summaryUsesCache(snapshot, asOf: now))
-                            }
-                        }.padding(.horizontal, cornerInset).padding(.top, 18).padding(.bottom, 6)
+                            .position(ringCenter)
+                        cornerFacts(
+                            in: geometry.size,
+                            ringCenter: ringCenter,
+                            side: side,
+                            ringWidth: thickness,
+                            snapshot: snapshot,
+                            tokenRatio: tokenRatio,
+                            lineRatio: lineRatio,
+                            dimsValue: summaryUsesCache(snapshot, asOf: now)
+                        )
                         if let status {
                             Text(status.text).font(.system(size: statusFontSize)).foregroundStyle(status.color)
                                 .lineLimit(1).minimumScaleFactor(0.75)
@@ -216,14 +205,61 @@ struct WatchDashboardView: View {
                 }
             }
     }
+
+    private func cornerFacts(
+        in size: CGSize,
+        ringCenter: CGPoint,
+        side: CGFloat,
+        ringWidth: CGFloat,
+        snapshot: DashboardSnapshot?,
+        tokenRatio: Double?,
+        lineRatio: Double?,
+        dimsValue: Bool
+    ) -> some View {
+        let edge = min(size.width, size.height)
+        let radius = side / 2 + ringWidth
+        let topComponent = (radius + ringWidth * 0.20) / CGFloat(2).squareRoot()
+        let bottomComponent = (radius + ringWidth * 0.20) / CGFloat(2).squareRoot()
+        let width = edge * 0.24
+
+        return ZStack {
+            corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: tokenColor,
+                   labelFirst: true, dimsValue: dimsValue, width: width)
+                .rotationEffect(.degrees(-45))
+                .position(x: ringCenter.x - topComponent, y: ringCenter.y - topComponent)
+            corner(t("今日行数", "Today lines"), count(lines(snapshot)), color: lineColor,
+                   labelFirst: true, dimsValue: dimsValue, width: width)
+                .rotationEffect(.degrees(45))
+                .position(x: ringCenter.x + topComponent, y: ringCenter.y - topComponent)
+            corner(t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: tokenColor,
+                   labelFirst: false, dimsValue: dimsValue, width: width)
+                .rotationEffect(.degrees(45))
+                .position(x: ringCenter.x - bottomComponent, y: ringCenter.y + bottomComponent)
+            corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: lineColor,
+                   labelFirst: false, dimsValue: dimsValue, width: width)
+                .rotationEffect(.degrees(-45))
+                .position(x: ringCenter.x + bottomComponent, y: ringCenter.y + bottomComponent)
+        }
+        .frame(width: size.width, height: size.height)
+    }
+
     private func corner(_ label: String, _ value: String, color: Color,
-                        alignment: HorizontalAlignment,
-                        dimsValue: Bool) -> some View {
-        VStack(alignment: alignment, spacing: 1) {
-            Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded))
-                .foregroundStyle(color).opacity(dimsValue ? 0.65 : 1).lineLimit(1).minimumScaleFactor(0.65)
-            Text(label).font(.system(size: cornerLabelSize)).foregroundStyle(supportTextColor).lineLimit(1)
-        }.accessibilityElement(children: .combine)
+                        labelFirst: Bool,
+                        dimsValue: Bool,
+                        width: CGFloat) -> some View {
+        VStack(spacing: 1) {
+            if !labelFirst { cornerValue(value, color: color, dimsValue: dimsValue) }
+            Text(label).font(.system(size: cornerLabelSize)).foregroundStyle(supportTextColor)
+                .lineLimit(1).minimumScaleFactor(0.75)
+            if labelFirst { cornerValue(value, color: color, dimsValue: dimsValue) }
+        }
+        .frame(width: width)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func cornerValue(_ value: String, color: Color, dimsValue: Bool) -> some View {
+        Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded))
+            .foregroundStyle(color).opacity(dimsValue ? 0.65 : 1).lineLimit(1).minimumScaleFactor(0.65)
     }
     private func ringCluster(side: CGFloat, thickness: CGFloat, tokenRatio: Double?, lineRatio: Double?,
                              pulse: PulseSnapshot?, now: Date, dimsSummary: Bool,

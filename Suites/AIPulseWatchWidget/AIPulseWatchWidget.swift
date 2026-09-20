@@ -376,6 +376,12 @@ private struct WatchWidgetProjection {
         }
     }
 
+    var complicationTierText: String {
+        if currentPulse != nil { return tierText }
+        if pulseIsExpired { return WatchWidgetCopy.text("已过期", "Expired") }
+        return "N/A"
+    }
+
     var statusText: String? {
         switch entry.loadStatus {
         case .available:
@@ -649,9 +655,15 @@ private struct WatchActivityCornerView: View {
 
     var body: some View {
         let projection = WatchWidgetProjection(entry: entry)
-        WatchAccessoryRobotImage(projection: projection, size: 15, curvesContent: true)
+        Text(projection.complicationTierText)
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundStyle(activityTextColor(projection))
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+            .widgetAccentable()
+            .widgetCurvesContent()
             .widgetLabel {
-                if let intensity = projection.intensity {
+                if projection.currentPulse != nil, let intensity = projection.intensity {
                     Gauge(value: intensity) {
                         Text("AI Pulse")
                     }
@@ -666,6 +678,11 @@ private struct WatchActivityCornerView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(activityAccessibilityLabel(projection))
     }
+
+    private func activityTextColor(_ projection: WatchWidgetProjection) -> Color {
+        guard projection.currentPulse != nil else { return .secondary }
+        return watchRobotColor(for: projection.latestPulse?.tier, colorScheme: colorScheme)
+    }
 }
 
 private struct WatchActivityInlineView: View {
@@ -673,57 +690,19 @@ private struct WatchActivityInlineView: View {
 
     var body: some View {
         let projection = WatchWidgetProjection(entry: entry)
-        WatchAccessoryRobotImage(projection: projection, size: 14, curvesContent: false)
+        Text(verbatim: "AI Pulse · \(projection.complicationTierText)")
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .allowsTightening(true)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(activityAccessibilityLabel(projection))
-    }
-}
-
-private struct WatchAccessoryRobotImage: View {
-    @Environment(\.colorScheme) private var colorScheme
-    let projection: WatchWidgetProjection
-    let size: CGFloat
-    let curvesContent: Bool
-
-    @ViewBuilder
-    var body: some View {
-        if curvesContent {
-            robotImage
-                .frame(width: size, height: size)
-                .widgetCurvesContent()
-        } else {
-            robotImage
-                .frame(width: size, height: size)
-        }
-    }
-
-    private var robotImage: some View {
-        Image(assetName)
-            .resizable()
-            .renderingMode(.template)
-            .foregroundStyle(watchRobotColor(
-                for: projection.latestPulse?.tier,
-                colorScheme: colorScheme
-            ))
-            .widgetAccentable()
-    }
-
-    private var assetName: String {
-        switch projection.latestPulse?.tier {
-        case .active:
-            return "PulseRobotActive"
-        case .elevated, .intense:
-            return "PulseRobotElevated"
-        case .resting, .none:
-            return "PulseRobotResting"
-        }
     }
 }
 
 private func activityAccessibilityLabel(_ projection: WatchWidgetProjection) -> String {
     [
         WatchWidgetCopy.text("AI Pulse 活动强度", "AI Pulse activity"),
-        projection.tierText,
+        projection.complicationTierText,
         projection.latestPulse.map {
             WatchWidgetCopy.text("观测于 ", "Observed ")
                 + $0.asOf.formatted(date: .omitted, time: .shortened)

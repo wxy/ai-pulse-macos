@@ -26,6 +26,34 @@ final class MacWidgetLocalStoreTests: XCTestCase {
         XCTAssertNil(try MacWidgetLocalStore.load(from: url))
     }
 
+    func testRoundTripsThroughAppGroupDefaults() throws {
+        let suiteName = "MacWidgetLocalStoreTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let date = Date(timeIntervalSince1970: 3_000)
+
+        try MacWidgetLocalStore.write(payload(at: date), to: defaults)
+
+        let loaded = try XCTUnwrap(MacWidgetLocalStore.load(from: defaults))
+        XCTAssertEqual(loaded.writtenAt, date)
+        XCTAssertEqual(loaded.todaySnapshot?.todayTokens, 42)
+    }
+
+    func testDashboardDeepLinkRecognition() {
+        XCTAssertEqual(
+            AIPulseDeepLink.dashboardURL(for: "xingyu.wang.aipulse.debug.widget").absoluteString,
+            "aipulse-debug://dashboard"
+        )
+        XCTAssertEqual(
+            AIPulseDeepLink.dashboardURL(for: "com.wxy.aipulse.macoswidget").absoluteString,
+            "aipulse://dashboard"
+        )
+        XCTAssertTrue(AIPulseDeepLink.opensDashboard(URL(string: "aipulse-debug://dashboard")!))
+        XCTAssertTrue(AIPulseDeepLink.opensDashboard(URL(string: "AIPULSE://DASHBOARD")!))
+        XCTAssertFalse(AIPulseDeepLink.opensDashboard(URL(string: "aipulse://settings")!))
+        XCTAssertFalse(AIPulseDeepLink.opensDashboard(URL(string: "https://dashboard")!))
+    }
+
     func testProducerFreshnessUsesPublisherAndWidgetWindow() {
         let writtenAt = Date(timeIntervalSince1970: 10_000)
         let value = payload(at: writtenAt)

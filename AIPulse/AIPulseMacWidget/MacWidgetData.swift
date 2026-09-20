@@ -1,5 +1,6 @@
 import AIPulseShared
 import Foundation
+import OSLog
 import WidgetKit
 
 enum MacWidgetLoadStatus: Equatable {
@@ -33,14 +34,21 @@ struct MacWidgetEntry: TimelineEntry {
 }
 
 private enum MacWidgetLocalReader {
+    private static let logger = Logger(
+        subsystem: "xingyu.wang.aipulse.widget",
+        category: "local-snapshot"
+    )
+
     static func load(at date: Date) -> MacWidgetEntry {
         let payload: MacWidgetLocalPayload
         do {
             guard let stored = try MacWidgetLocalStore.load() else {
+                logger.notice("No App Group widget snapshot is available")
                 return emptyEntry(at: date, status: .noData)
             }
             payload = stored
         } catch {
+            logger.error("App Group widget snapshot load failed: \(String(reflecting: error), privacy: .public)")
             return emptyEntry(at: date, status: .failed)
         }
 

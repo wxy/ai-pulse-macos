@@ -155,7 +155,7 @@ struct AIPulseWidgetEntryView: View {
             ZStack {
                 ringCluster(side: side, thickness: thickness)
                     .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
-                cornerFacts
+                cornerFacts(in: geometry.size, ringWidth: thickness)
                 if let status {
                     Text(status)
                         .font(.system(size: 7))
@@ -223,42 +223,55 @@ struct AIPulseWidgetEntryView: View {
         return I18n.pulseTier(latestPulse.tier)
     }
 
-    private var cornerFacts: some View {
-        VStack {
-            HStack(alignment: .top) {
-                corner(text("今日词元", "Today tokens"), count(todayTokens),
-                       color: tokenColor, alignment: .leading)
-                Spacer()
-                corner(text("今日行数", "Today lines"), count(todayLines),
-                       color: lineColor, alignment: .trailing)
-            }
-            Spacer()
-            HStack(alignment: .bottom) {
-                corner(text("词元 / 平常", "Tokens / usual"), multiple(tokenRatio),
-                       color: tokenColor, alignment: .leading)
-                Spacer()
-                corner(text("行数 / 平常", "Lines / usual"), multiple(lineRatio),
-                       color: lineColor, alignment: .trailing)
-            }
+    private func cornerFacts(in size: CGSize, ringWidth: CGFloat) -> some View {
+        let edge = min(size.width, size.height)
+        let diagonalOffset = ringWidth / CGFloat(2).squareRoot()
+        let baseInset = max(edge * 0.17, edge * 0.21 - diagonalOffset)
+        let inset = max(edge * 0.15, baseInset - ringWidth * 0.20)
+        let bottomInset = max(edge * 0.15, inset - ringWidth * 0.15)
+
+        return ZStack {
+            corner(text("今日词元", "Today tokens"), count(todayTokens),
+                   color: tokenColor, labelFirst: true)
+                .rotationEffect(.degrees(-45))
+                .position(x: inset, y: inset)
+            corner(text("今日行数", "Today lines"), count(todayLines),
+                   color: lineColor, labelFirst: true)
+                .rotationEffect(.degrees(45))
+                .position(x: size.width - inset, y: inset)
+            corner(text("词元 / 平常", "Tokens / usual"), multiple(tokenRatio),
+                   color: tokenColor, labelFirst: false)
+                .rotationEffect(.degrees(45))
+                .position(x: bottomInset, y: size.height - bottomInset)
+            corner(text("行数 / 平常", "Lines / usual"), multiple(lineRatio),
+                   color: lineColor, labelFirst: false)
+                .rotationEffect(.degrees(-45))
+                .position(x: size.width - bottomInset, y: size.height - bottomInset)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
+        .frame(width: size.width, height: size.height)
     }
 
     private func corner(_ label: String, _ value: String, color: Color,
-                        alignment: HorizontalAlignment) -> some View {
-        VStack(alignment: alignment, spacing: 0) {
-            Text(value)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(color)
-                .opacity(summaryIsStale ? 0.65 : 1)
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                        labelFirst: Bool) -> some View {
+        VStack(spacing: 0) {
+            if !labelFirst { cornerValue(value, color: color) }
             Text(label)
                 .font(.system(size: 7))
                 .foregroundStyle(secondaryTextColor)
                 .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            if labelFirst { cornerValue(value, color: color) }
         }
+        .frame(width: 58)
+    }
+
+    private func cornerValue(_ value: String, color: Color) -> some View {
+        Text(value)
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundStyle(color)
+            .opacity(summaryIsStale ? 0.65 : 1)
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
     }
 
     private func count(_ value: Double?) -> String {

@@ -37,6 +37,7 @@ public struct MacWidgetLocalPayload: Codable, Sendable {
 public enum MacWidgetLocalStore {
     public static let appGroupIdentifier = "group.com.wxy.aipulse"
     public static let fileName = "mac_widget_snapshot_v1.json"
+    public static let defaultsKey = "mac_widget_snapshot_v1"
 
     public enum StoreError: Error {
         case appGroupUnavailable
@@ -49,15 +50,43 @@ public enum MacWidgetLocalStore {
         ) else {
             throw StoreError.appGroupUnavailable
         }
-        return try load(from: container.appendingPathComponent(fileName))
+        let fileURL = container.appendingPathComponent(fileName)
+        let defaults = UserDefaults(suiteName: appGroupIdentifier)
+
+        var candidates: [MacWidgetLocalPayload] = []
+        var lastError: (any Error)?
+        if let defaults {
+            do {
+                if let payload = try load(from: defaults) { candidates.append(payload) }
+            } catch {
+                lastError = error
+            }
+        }
+        do {
+            if let payload = try load(from: fileURL) { candidates.append(payload) }
+        } catch {
+            lastError = error
+        }
+
+        if let newest = candidates.max(by: { $0.writtenAt < $1.writtenAt }) {
+            return newest
+        }
+        if let lastError { throw lastError }
+        return nil
     }
 
     public static func load(from url: URL) throws -> MacWidgetLocalPayload? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        let payload = try JSONDecoder().decode(
-            MacWidgetLocalPayload.self,
-            from: Data(contentsOf: url)
-        )
+        return try decode(Data(contentsOf: url))
+    }
+
+    public static func load(from userDefaults: UserDefaults) throws -> MacWidgetLocalPayload? {
+        guard let data = userDefaults.data(forKey: defaultsKey) else { return nil }
+        return try decode(data)
+    }
+
+    private static func decode(_ data: Data) throws -> MacWidgetLocalPayload {
+        let payload = try JSONDecoder().decode(MacWidgetLocalPayload.self, from: data)
         guard payload.formatVersion == MacWidgetLocalPayload.currentFormatVersion else {
             throw StoreError.incompatibleFormat
         }
@@ -73,7 +102,16 @@ public enum MacWidgetLocalStore {
         ) else {
             throw StoreError.appGroupUnavailable
         }
-        try write(payload, to: container.appendingPathComponent(fileName), fileManager: fileManager)
+        let data = try JSONEncoder().encode(payload)
+        let defaults = UserDefaults(suiteName: appGroupIdentifier)
+        defaults?.set(data, forKey: defaultsKey)
+        let defaultsPersisted = defaults?.synchronize() == true
+
+        do {
+            try write(data, to: container.appendingPathComponent(fileName), fileManager: fileManager)
+        } catch {
+            guard defaultsPersisted else { throw error }
+        }
     }
 
     public static func write(
@@ -81,11 +119,25 @@ public enum MacWidgetLocalStore {
         to url: URL,
         fileManager: FileManager = .default
     ) throws {
+        try write(JSONEncoder().encode(payload), to: url, fileManager: fileManager)
+    }
+
+    public static func write(
+        _ payload: MacWidgetLocalPayload,
+        to userDefaults: UserDefaults
+    ) throws {
+        userDefaults.set(try JSONEncoder().encode(payload), forKey: defaultsKey)
+    }
+
+    private static func write(
+        _ data: Data,
+        to url: URL,
+        fileManager: FileManager
+    ) throws {
         try fileManager.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        let data = try JSONEncoder().encode(payload)
         try data.write(to: url, options: .atomic)
     }
 }

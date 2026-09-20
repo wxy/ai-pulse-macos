@@ -99,6 +99,22 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
+    /// Completes one incremental scan before returning. Used for explicit
+    /// user refreshes that must publish a snapshot of the newly collected data.
+    func scanAndWait() async {
+        await withCheckedContinuation { continuation in
+            scanQueue.async { [weak self] in
+                guard let self, !self.stopped else {
+                    continuation.resume()
+                    return
+                }
+                if !self.positionsLoaded { self.loadPositionsFromDB() }
+                self.runScan(includeClaudeProjects: true)
+                continuation.resume()
+            }
+        }
+    }
+
     private func runScan(includeClaudeProjects: Bool) {
         dispatchPrecondition(condition: .onQueue(scanQueue))
         LogScanObservation.shared.begin()

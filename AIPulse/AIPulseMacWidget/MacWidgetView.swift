@@ -1,30 +1,6 @@
 import AIPulseShared
-import AppIntents
 import SwiftUI
 import WidgetKit
-
-struct RefreshAIPulseMacWidgetIntent: AppIntent {
-    static let title: LocalizedStringResource = "Refresh data"
-    static let description = IntentDescription("Refresh data")
-    static let isDiscoverable = false
-
-    func perform() async throws -> some IntentResult {
-        // WidgetKit automatically requests a new timeline after an interactive
-        // widget intent returns, so the provider immediately re-reads the app group.
-        .result()
-    }
-}
-
-struct OpenAIPulseMacAppIntent: AppIntent {
-    static let title: LocalizedStringResource = "Open dashboard"
-    static let description = IntentDescription("Open dashboard")
-    static let isDiscoverable = false
-    static let openAppWhenRun = true
-
-    func perform() async throws -> some IntentResult {
-        .result()
-    }
-}
 
 private enum MacWidgetCopy {
     static func text(_ simplifiedChinese: String, _ english: String) -> String {
@@ -102,22 +78,12 @@ struct AIPulseMacWidgetEntryView: View {
     private var trackOpacity: Double { colorScheme == .dark ? 0.28 : 0.24 }
 
     var body: some View {
-        Group {
-            if projection.shouldOpenApp {
-                Button(intent: OpenAIPulseMacAppIntent()) { widgetContent }
-            } else {
-                Button(intent: RefreshAIPulseMacWidgetIntent()) { widgetContent }
-            }
-        }
-        .buttonStyle(.plain)
+        widgetContent
+        .widgetURL(AIPulseDeepLink.dashboardURL)
         .containerBackground(background, for: .widget)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
-        .accessibilityHint(
-            projection.shouldOpenApp
-                ? MacWidgetCopy.text("打开仪表盘", "Open dashboard")
-                : MacWidgetCopy.text("刷新数据", "Refresh data")
-        )
+        .accessibilityHint(MacWidgetCopy.text("打开仪表盘", "Open dashboard"))
     }
 
     private var widgetContent: some View {
@@ -128,7 +94,7 @@ struct AIPulseMacWidgetEntryView: View {
             ZStack {
                 rings(side: side, thickness: thickness)
                     .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
-                cornerFacts
+                cornerFacts(in: geometry.size, ringWidth: thickness)
                 if let statusText {
                     Text(statusText)
                         .font(.system(size: 7))
@@ -196,63 +162,76 @@ struct AIPulseMacWidgetEntryView: View {
         .frame(width: 70)
     }
 
-    private var cornerFacts: some View {
-        VStack {
-            HStack(alignment: .top) {
-                corner(
-                    MacWidgetCopy.text("今日词元", "Today tokens"),
-                    projection.count(projection.todayTokens),
-                    color: tokenColor,
-                    alignment: .leading,
-                    numberFirst: true
-                )
-                Spacer()
-                corner(
-                    MacWidgetCopy.text("今日行数", "Today lines"),
-                    projection.count(projection.todayLines),
-                    color: lineColor,
-                    alignment: .trailing,
-                    numberFirst: true
-                )
-            }
-            Spacer()
-            HStack(alignment: .bottom) {
-                corner(
-                    MacWidgetCopy.text("词元 / 平常", "Tokens / usual"),
-                    projection.multiple(projection.tokenRatio),
-                    color: tokenColor,
-                    alignment: .leading,
-                    numberFirst: true
-                )
-                Spacer()
-                corner(
-                    MacWidgetCopy.text("行数 / 平常", "Lines / usual"),
-                    projection.multiple(projection.lineRatio),
-                    color: lineColor,
-                    alignment: .trailing,
-                    numberFirst: true
-                )
-            }
+    private func cornerFacts(in size: CGSize, ringWidth: CGFloat) -> some View {
+        let edge = min(size.width, size.height)
+        // Moving a 45-degree label outward by one ring width means reducing
+        // each axis inset by ringWidth / sqrt(2).
+        let diagonalOffset = ringWidth / CGFloat(2).squareRoot()
+        let inset = max(edge * 0.17, edge * 0.21 - diagonalOffset)
+        // The larger numeric font shifts the perceived center of the reversed
+        // bottom stacks inward. Nudge them outward to match the top spacing.
+        let bottomInset = max(edge * 0.16, inset - ringWidth * 0.15)
+
+        return ZStack {
+            corner(
+                MacWidgetCopy.text("今日词元", "Today tokens"),
+                projection.count(projection.todayTokens),
+                color: tokenColor,
+                labelFirst: true
+            )
+            .rotationEffect(.degrees(-45))
+            .position(x: inset, y: inset)
+
+            corner(
+                MacWidgetCopy.text("今日行数", "Today lines"),
+                projection.count(projection.todayLines),
+                color: lineColor,
+                labelFirst: true
+            )
+            .rotationEffect(.degrees(45))
+            .position(x: size.width - inset, y: inset)
+
+            corner(
+                MacWidgetCopy.text("词元 / 平常", "Tokens / usual"),
+                projection.multiple(projection.tokenRatio),
+                color: tokenColor,
+                labelFirst: false
+            )
+            .rotationEffect(.degrees(45))
+            .position(x: bottomInset, y: size.height - bottomInset)
+
+            corner(
+                MacWidgetCopy.text("行数 / 平常", "Lines / usual"),
+                projection.multiple(projection.lineRatio),
+                color: lineColor,
+                labelFirst: false
+            )
+            .rotationEffect(.degrees(-45))
+            .position(x: size.width - bottomInset, y: size.height - bottomInset)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
+        .frame(width: size.width, height: size.height)
     }
 
     private func corner(
         _ label: String,
         _ value: String,
         color: Color,
-        alignment: HorizontalAlignment,
-        numberFirst: Bool
+        labelFirst: Bool
     ) -> some View {
-        VStack(alignment: alignment, spacing: 0) {
-            if numberFirst { cornerValue(value, color: color) }
-            Text(label)
-                .font(.system(size: 7))
-                .foregroundStyle(secondaryText)
-                .lineLimit(1)
-            if !numberFirst { cornerValue(value, color: color) }
+        VStack(spacing: 0) {
+            if !labelFirst { cornerValue(value, color: color) }
+            cornerLabel(label)
+            if labelFirst { cornerValue(value, color: color) }
         }
+        .frame(width: 58)
+    }
+
+    private func cornerLabel(_ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 7))
+            .foregroundStyle(secondaryText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
     }
 
     private func cornerValue(_ value: String, color: Color) -> some View {
