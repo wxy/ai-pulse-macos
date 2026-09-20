@@ -16,6 +16,7 @@ extension Notification.Name {
     /// Posted to request the open Dashboard to switch to a specific TimeRange tab.
     /// userInfo contains "timeRange": TimeRange value.
     static let dashboardSwitchTab = Notification.Name("AIPulseDashboardSwitchTab")
+    static let dashboardDidOpen = Notification.Name("AIPulseDashboardDidOpen")
 
     /// Posted whenever ApiPoller writes a fresh balance or error into its cache.
     /// userInfo contains "providerId": String.

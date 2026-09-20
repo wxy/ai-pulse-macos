@@ -75,6 +75,7 @@ final class DashboardWindowManager: NSObject {
         }
         openedAt = ProcessInfo.processInfo.systemUptime
         window.makeKeyAndOrderFront(nil)
+        NotificationCenter.default.post(name: .dashboardDidOpen, object: Date())
     }
 
     private func startDismissalMonitoring() {

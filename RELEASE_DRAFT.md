@@ -15,6 +15,7 @@
 - Kept current activity separate from historical summaries and stopped presenting missing or stale observations as zero usage.
 - iPhone and Watch widgets retain the last observed activity and its timestamp after expiration, with reduced emphasis instead of replacing it with “no data.”
 - Dashboard footers now distinguish the last collection time from the last CloudKit synchronization time; synchronization failures use a warning indicator.
+- Reopening the macOS dashboard now revalidates its resident snapshot, so a previous-day or stale chart refreshes without switching ranges.
 - Removed the non-actionable partial-resource warning from the dashboard.
 - Localized percentage formatting now uses the platform number-formatting APIs rather than a literal percent placeholder.
 - Completed privacy manifests, target resource membership, extension embedding, localization validation, and the 2.0 code audit.
@@ -30,7 +31,7 @@
 ## Verification
 
 - Localization: 738 active keys across 10 locales; no missing translations, stale entries, placeholder mismatches, Russian entries, or raw percentage formats.
-- Tests: `make test` — 430 executed, 4 optional real-data tests skipped, 0 failures.
+- Tests: `make test` — 434 executed, 4 optional real-data tests skipped, 0 failures.
 - Builds: unsigned, isolated Release builds passed for macOS arm64, iOS Simulator, and watchOS Simulator.
 - Product inspection: all app surfaces package the expected localization bundles and privacy manifests; the two host archives embed their required extensions.
 - Device acceptance: macOS, macOS widget, iPhone, iPhone widget, Watch app, and Watch widgets passed user acceptance testing.
@@ -54,6 +55,7 @@
 - 当前活动与历史摘要保持独立，不再把缺失或过期观察显示为零使用量。
 - iPhone 与 Watch 小组件在观察过期后保留最后一次活动及其时间，以降低强调度代替“没有数据”。
 - 仪表盘页脚明确区分最后采集时间与最后 CloudKit 同步时间；同步失败以警告图标提示。
+- 重新打开 macOS 仪表盘时会复核驻留快照，跨日或陈旧图表无需切换周期即可刷新。
 - 移除用户无法处理的“部分资源组成缺失”仪表盘提示。
 - 百分比本地化改用系统数字格式化 API，不再使用字面百分号占位符。
 - 完成隐私清单、target 资源成员关系、扩展嵌入、国际化完整性检查和 2.0 代码审计。
@@ -69,7 +71,7 @@
 ## 验证
 
 - 国际化：738 个有效词条、10 种语言；无缺失翻译、陈旧条目、占位符不匹配、俄语条目或原始百分号格式。
-- 测试：`make test` 共执行 430 项，4 项可选真实数据测试跳过，0 失败。
+- 测试：`make test` 共执行 434 项，4 项可选真实数据测试跳过，0 失败。
 - 构建：macOS arm64、iOS Simulator 与 watchOS Simulator 的隔离未签名 Release 构建均通过。
 - 产品检查：各应用界面均打包预期的本地化资源与隐私清单；两个宿主归档均嵌入所需扩展。
 - 真机验收：macOS、macOS 小组件、iPhone、iPhone 小组件、Watch 应用和 Watch 小组件均已通过用户验收。
