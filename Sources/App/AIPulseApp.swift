@@ -1,4 +1,5 @@
 import AppKit
+import AIPulseShared
 import SwiftUI
 import UserNotifications
 
@@ -6,6 +7,18 @@ import UserNotifications
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, @unchecked Sendable {
     private var securityScopedURLs: [URL] = []
+    private var didFinishLaunching = false
+    private var shouldOpenDashboardAfterLaunch = false
+    private var widgetRefreshTask: Task<Void, Never>?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Present foreground notifications with sound; without a delegate macOS
@@ -119,6 +132,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             self, selector: #selector(onSoundMuteChange),
             name: .soundMuteDidChange, object: nil
         )
+        didFinishLaunching = true
+        if shouldOpenDashboardAfterLaunch {
+            shouldOpenDashboardAfterLaunch = false
+            openDashboardFromWidget()
+        }
+    }
+
+    @MainActor @objc private func handleGetURLEvent(
+        _ event: NSAppleEventDescriptor,
+        withReplyEvent replyEvent: NSAppleEventDescriptor
+    ) {
+        guard let value = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: value),
+              AIPulseDeepLink.opensDashboard(url) else { return }
+        if didFinishLaunching {
+            openDashboardFromWidget()
+        } else {
+            shouldOpenDashboardAfterLaunch = true
+        }
+    }
+
+    @MainActor
+    private func openDashboardFromWidget() {
+        openDashboard()
+        guard widgetRefreshTask == nil else { return }
+        widgetRefreshTask = Task { @MainActor [weak self] in
+            await DataRefreshCoordinator.shared.refreshFromMacWidget()
+            self?.widgetRefreshTask = nil
+        }
     }
 
     @MainActor @objc private func onSoundMuteChange() {

@@ -1,7 +1,6 @@
 import CloudKit
 import Foundation
 import AIPulseShared
-import WidgetKit
 
 /// Syncs the cached dashboard snapshots from GRDB to iCloud.
 /// iOS/watchOS read per-range snapshots to display correct data per tab.
@@ -69,7 +68,11 @@ final class CloudSyncService {
 
     private init() {}
 
-    func syncFromCache() async {
+    func syncFromCache(publishMacWidget: Bool = true) async {
+        if publishMacWidget {
+            _ = await MacWidgetLocalPublisher.publish()
+        }
+
         guard Self.allowsCloudWrites else {
             setResult(.disabled)
             Logger.info("CloudSync: dashboard writes disabled in this unsigned build")
@@ -133,9 +136,6 @@ final class CloudSyncService {
         if !(await syncCurrentPulse()) { didFail = true }
         if !didFail { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "cloud_sync_last_success") }
         setResult(didFail ? .failed : .succeeded)
-        if !didFail {
-            WidgetCenter.shared.reloadTimelines(ofKind: "AIPulseMacWidget")
-        }
     }
 
     private func syncCurrentPulse() async -> Bool {

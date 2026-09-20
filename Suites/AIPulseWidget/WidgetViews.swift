@@ -155,7 +155,7 @@ struct AIPulseWidgetEntryView: View {
             ZStack {
                 ringCluster(side: side, thickness: thickness)
                     .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
-                cornerFacts
+                cornerFacts(in: geometry.size, ringSide: side, ringWidth: thickness)
                 if let status {
                     Text(status)
                         .font(.system(size: 7))
@@ -223,42 +223,76 @@ struct AIPulseWidgetEntryView: View {
         return I18n.pulseTier(latestPulse.tier)
     }
 
-    private var cornerFacts: some View {
-        VStack {
-            HStack(alignment: .top) {
-                corner(text("今日词元", "Today tokens"), count(todayTokens),
-                       color: tokenColor, alignment: .leading)
-                Spacer()
-                corner(text("今日行数", "Today lines"), count(todayLines),
-                       color: lineColor, alignment: .trailing)
-            }
-            Spacer()
-            HStack(alignment: .bottom) {
-                corner(text("词元 / 平常", "Tokens / usual"), multiple(tokenRatio),
-                       color: tokenColor, alignment: .leading)
-                Spacer()
-                corner(text("行数 / 平常", "Lines / usual"), multiple(lineRatio),
-                       color: lineColor, alignment: .trailing)
-            }
+    private func cornerFacts(in size: CGSize, ringSide: CGFloat, ringWidth: CGFloat) -> some View {
+        let gapRadius = ringSide / 2 + ringWidth * 1.60
+        let lineSpacing: CGFloat = 1
+        let bottomOpticalOffset = ringWidth * 0.15
+        return ZStack {
+            curvedCorner(
+                text("今日词元", "Today tokens"), count(todayTokens),
+                color: tokenColor, centerAngle: .degrees(-135), direction: .clockwise,
+                gapRadius: gapRadius, lineSpacing: lineSpacing
+            )
+            curvedCorner(
+                text("今日行数", "Today lines"), count(todayLines),
+                color: lineColor, centerAngle: .degrees(-45), direction: .clockwise,
+                gapRadius: gapRadius, lineSpacing: lineSpacing
+            )
+            curvedCorner(
+                text("词元 / 平常", "Tokens / usual"), multiple(tokenRatio),
+                color: tokenColor, centerAngle: .degrees(135), direction: .counterClockwise,
+                gapRadius: gapRadius + bottomOpticalOffset, lineSpacing: lineSpacing
+            )
+            curvedCorner(
+                text("行数 / 平常", "Lines / usual"), multiple(lineRatio),
+                color: lineColor, centerAngle: .degrees(45), direction: .counterClockwise,
+                gapRadius: gapRadius + bottomOpticalOffset, lineSpacing: lineSpacing
+            )
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
+        .frame(width: size.width, height: size.height)
+        .offset(y: 2)
     }
 
-    private func corner(_ label: String, _ value: String, color: Color,
-                        alignment: HorizontalAlignment) -> some View {
-        VStack(alignment: alignment, spacing: 0) {
-            Text(value)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(color)
-                .opacity(summaryIsStale ? 0.65 : 1)
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
-            Text(label)
-                .font(.system(size: 7))
-                .foregroundStyle(secondaryTextColor)
-                .lineLimit(1)
+    private func curvedCorner(
+        _ label: String,
+        _ value: String,
+        color: Color,
+        centerAngle: Angle,
+        direction: ArcText.Direction,
+        gapRadius: CGFloat,
+        lineSpacing: CGFloat
+    ) -> some View {
+        ZStack {
+            ArcText(
+                label,
+                radius: gapRadius + lineSpacing / 2,
+                centerAngle: centerAngle,
+                direction: direction,
+                radialAlignment: .innerEdge,
+                maximumSweep: .degrees(42),
+                fontSize: 7,
+                color: secondaryTextColor,
+                characterSpacing: 0.1,
+                minimumScaleFactor: 0.75
+            )
+            ArcText(
+                value,
+                radius: gapRadius - lineSpacing / 2,
+                centerAngle: centerAngle,
+                direction: direction,
+                radialAlignment: .outerEdge,
+                maximumSweep: .degrees(30),
+                fontSize: 10,
+                fontWeight: .semibold,
+                fontDesign: .rounded,
+                color: color,
+                characterSpacing: 0.1,
+                minimumScaleFactor: 0.8
+            )
+            .opacity(summaryIsStale ? 0.65 : 1)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityHidden(true)
     }
 
     private func count(_ value: Double?) -> String {

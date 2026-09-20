@@ -189,6 +189,31 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         }
     }
 
+    /// Explicit refresh requested by the macOS widget. Collection finishes
+    /// before caches and the local widget payload are rebuilt, so neither the
+    /// widget nor CloudKit receives the pre-refresh snapshot.
+    @MainActor
+    func refreshFromMacWidget() async {
+        let startedAt = Date()
+        await LogWatcher.shared.scanAndWait()
+        _ = RepoDiscovery.scan()
+        await GitMonitor.shared.pollAndWait()
+        await DashboardCache.invalidateAll()
+
+        for period in [DashboardPeriodKind.today, .week, .days30] {
+            let snapshot = await StatsService.dashboardSnapshot(period: period)
+            await DashboardCache.write(timeRange: period.rawValue, json: snapshot.jsonString())
+        }
+
+        NotificationCenter.default.post(name: .dataDidChange, object: nil)
+        NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
+        await CloudSyncService.shared.syncFromCache()
+        Logger.info(
+            "MacWidget: explicit refresh completed in "
+                + String(format: "%.3f", Date().timeIntervalSince(startedAt)) + "s"
+        )
+    }
+
     func notifyDataChange() {
         DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify() } }
     }

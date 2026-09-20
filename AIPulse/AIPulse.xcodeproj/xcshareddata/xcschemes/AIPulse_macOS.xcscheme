@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "2660"
+   LastUpgradeVersion = "2700"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -17,6 +17,19 @@
                BlueprintIdentifier = "C0843E1C2FF555ED00E3F6C4"
                BuildableName = "AI Pulse.app"
                BlueprintName = "AI Pulse"
+               ReferencedContainer = "container:AIPulse.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B10000000000000000000050"
+               BuildableName = "AIPulseMacWidgetExtension.appex"
                ReferencedContainer = "container:AIPulse.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>

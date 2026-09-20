@@ -78,6 +78,15 @@ struct AIPulseMacWidgetEntryView: View {
     private var trackOpacity: Double { colorScheme == .dark ? 0.28 : 0.24 }
 
     var body: some View {
+        widgetContent
+        .widgetURL(AIPulseDeepLink.dashboardURL)
+        .containerBackground(background, for: .widget)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+        .accessibilityHint(MacWidgetCopy.text("打开仪表盘", "Open dashboard"))
+    }
+
+    private var widgetContent: some View {
         GeometryReader { geometry in
             let edge = min(geometry.size.width, geometry.size.height)
             let side = edge * 0.80
@@ -85,7 +94,7 @@ struct AIPulseMacWidgetEntryView: View {
             ZStack {
                 rings(side: side, thickness: thickness)
                     .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
-                cornerFacts
+                cornerFacts(in: geometry.size, ringSide: side, ringWidth: thickness)
                 if let statusText {
                     Text(statusText)
                         .font(.system(size: 7))
@@ -96,9 +105,7 @@ struct AIPulseMacWidgetEntryView: View {
                 }
             }
         }
-        .containerBackground(background, for: .widget)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilitySummary)
+        .invalidatableContent()
     }
 
     private func rings(side: CGFloat, thickness: CGFloat) -> some View {
@@ -155,71 +162,105 @@ struct AIPulseMacWidgetEntryView: View {
         .frame(width: 70)
     }
 
-    private var cornerFacts: some View {
-        VStack {
-            HStack(alignment: .top) {
-                corner(
-                    MacWidgetCopy.text("今日词元", "Today tokens"),
-                    projection.count(projection.todayTokens),
-                    color: tokenColor,
-                    alignment: .leading,
-                    numberFirst: false
-                )
-                Spacer()
-                corner(
-                    MacWidgetCopy.text("今日行数", "Today lines"),
-                    projection.count(projection.todayLines),
-                    color: lineColor,
-                    alignment: .trailing,
-                    numberFirst: false
-                )
-            }
-            Spacer()
-            HStack(alignment: .bottom) {
-                corner(
-                    MacWidgetCopy.text("词元 / 平常", "Tokens / usual"),
-                    projection.multiple(projection.tokenRatio),
-                    color: tokenColor,
-                    alignment: .leading,
-                    numberFirst: true
-                )
-                Spacer()
-                corner(
-                    MacWidgetCopy.text("行数 / 平常", "Lines / usual"),
-                    projection.multiple(projection.lineRatio),
-                    color: lineColor,
-                    alignment: .trailing,
-                    numberFirst: true
-                )
-            }
+    private func cornerFacts(in size: CGSize, ringSide: CGFloat, ringWidth: CGFloat) -> some View {
+        let gapRadius = ringSide / 2 + ringWidth * 1.70
+        let lineSpacing: CGFloat = 3
+        let bottomOpticalOffset = ringWidth * 0.15
+        let ringCenter = CGPoint(x: size.width / 2, y: size.height / 2 + 2)
+        let edgePadding: CGFloat = 7
+        let leftReach = max(1, ringCenter.x - edgePadding)
+        let rightReach = max(1, size.width - ringCenter.x - edgePadding)
+        let topReach = max(1, ringCenter.y - edgePadding)
+        let bottomReach = max(1, size.height - ringCenter.y - edgePadding)
+        let topLeftAngle = Angle.radians(Double(atan2(-topReach, -leftReach)))
+        let topRightAngle = Angle.radians(Double(atan2(-topReach, rightReach)))
+        let bottomLeftAngle = Angle.radians(Double(atan2(bottomReach, -leftReach)))
+        let bottomRightAngle = Angle.radians(Double(atan2(bottomReach, rightReach)))
+        return ZStack {
+            curvedCorner(
+                MacWidgetCopy.text("今日词元", "Today tokens"),
+                projection.count(projection.todayTokens),
+                color: tokenColor,
+                centerAngle: topLeftAngle,
+                direction: .clockwise,
+                gapRadius: gapRadius,
+                lineSpacing: lineSpacing
+            )
+
+            curvedCorner(
+                MacWidgetCopy.text("今日行数", "Today lines"),
+                projection.count(projection.todayLines),
+                color: lineColor,
+                centerAngle: topRightAngle,
+                direction: .clockwise,
+                gapRadius: gapRadius,
+                lineSpacing: lineSpacing
+            )
+
+            curvedCorner(
+                MacWidgetCopy.text("词元 / 平常", "Tokens / usual"),
+                projection.multiple(projection.tokenRatio),
+                color: tokenColor,
+                centerAngle: bottomLeftAngle,
+                direction: .counterClockwise,
+                gapRadius: gapRadius + bottomOpticalOffset,
+                lineSpacing: lineSpacing
+            )
+
+            curvedCorner(
+                MacWidgetCopy.text("行数 / 平常", "Lines / usual"),
+                projection.multiple(projection.lineRatio),
+                color: lineColor,
+                centerAngle: bottomRightAngle,
+                direction: .counterClockwise,
+                gapRadius: gapRadius + bottomOpticalOffset,
+                lineSpacing: lineSpacing
+            )
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
+        .frame(width: size.width, height: size.height)
+        .offset(y: 2)
     }
 
-    private func corner(
+    private func curvedCorner(
         _ label: String,
         _ value: String,
         color: Color,
-        alignment: HorizontalAlignment,
-        numberFirst: Bool
+        centerAngle: Angle,
+        direction: ArcText.Direction,
+        gapRadius: CGFloat,
+        lineSpacing: CGFloat
     ) -> some View {
-        VStack(alignment: alignment, spacing: 0) {
-            if numberFirst { cornerValue(value, color: color) }
-            Text(label)
-                .font(.system(size: 7))
-                .foregroundStyle(secondaryText)
-                .lineLimit(1)
-            if !numberFirst { cornerValue(value, color: color) }
-        }
-    }
-
-    private func cornerValue(_ value: String, color: Color) -> some View {
-        Text(value)
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
-            .foregroundStyle(isFullColor ? color : primaryText)
+        ZStack {
+            ArcText(
+                label,
+                radius: gapRadius + lineSpacing / 2,
+                centerAngle: centerAngle,
+                direction: direction,
+                radialAlignment: .innerEdge,
+                maximumSweep: .degrees(42),
+                fontSize: 7,
+                color: secondaryText,
+                characterSpacing: 0.1,
+                minimumScaleFactor: 0.75
+            )
+            ArcText(
+                value,
+                radius: gapRadius - lineSpacing / 2,
+                centerAngle: centerAngle,
+                direction: direction,
+                radialAlignment: .outerEdge,
+                maximumSweep: .degrees(30),
+                fontSize: 10,
+                fontWeight: .semibold,
+                fontDesign: .rounded,
+                color: isFullColor ? color : primaryText,
+                characterSpacing: 0.1,
+                minimumScaleFactor: 0.8
+            )
             .opacity(projection.summaryIsStale ? 0.65 : 1)
-            .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityHidden(true)
     }
 
     private var pulseText: String {
@@ -237,16 +278,19 @@ struct AIPulseMacWidgetEntryView: View {
     }
 
     private var statusText: String? {
+        if projection.shouldOpenApp {
+            let action = MacWidgetCopy.text("打开仪表盘", "Open dashboard")
+            guard let writtenAt = entry.snapshotWrittenAt else { return action }
+            return writtenAt.formatted(date: .omitted, time: .shortened) + " · " + action
+        }
         switch entry.loadStatus {
         case .available:
             guard projection.summaryIsStale, let snapshot = entry.todaySnapshot else { return nil }
             return MacWidgetCopy.text("缓存 ", "Cached ")
                 + snapshot.updatedAt.formatted(date: .omitted, time: .shortened)
-        case .partial: return MacWidgetCopy.text("同步未完成", "Sync incomplete")
         case .waitingForRefresh: return MacWidgetCopy.text("等待刷新", "Waiting to refresh")
-        case .noAccount: return MacWidgetCopy.text("需要 iCloud", "iCloud required")
         case .noData: return MacWidgetCopy.text("暂无数据", "No data")
-        case .failed: return MacWidgetCopy.text("同步失败", "Sync failed")
+        case .failed: return MacWidgetCopy.text("暂无数据", "No data")
         }
     }
 

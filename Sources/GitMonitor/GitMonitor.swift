@@ -134,6 +134,18 @@ nonisolated final class GitMonitor: @unchecked Sendable {
         }
     }
 
+    /// Completes one repository poll before returning so an explicit refresh
+    /// can rebuild dashboard snapshots from the latest committed changes.
+    func pollAndWait() async {
+        guard await stateLoadGate.ensureLoaded({ await self.loadFromDB() }) else { return }
+        await withCheckedContinuation { continuation in
+            gitOpQueue.async { [self] in
+                pollLoadedState()
+                continuation.resume()
+            }
+        }
+    }
+
     private func pollLoadedState() {
         lock.lock()
         let repos = watchedRepos
