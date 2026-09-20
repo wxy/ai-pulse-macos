@@ -47,6 +47,15 @@ enum TimeRange: Hashable, CaseIterable {
         case .days30: return "30d"
         }
     }
+
+    /// Matches the background snapshot cadence and DashboardCache read limits.
+    var cacheMaxAge: TimeInterval {
+        switch self {
+        case .today: return 300
+        case .thisWeek: return 3600
+        case .days30: return 43200
+        }
+    }
 }
 
 /// Kept outside observable state: an unchanged heartbeat can be ignored
@@ -521,6 +530,20 @@ struct DashboardView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
             // Manual refresh / forceRefresh — immediate, no throttle
+            scheduleLoad(for: timeRange)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dashboardDidOpen)) { notification in
+            let now = notification.object as? Date ?? Date()
+            guard Self.shouldRefreshOnOpen(
+                lastUpdated: activeSnapshot?.updatedAt,
+                loadedPeriod: activeSnapshot?.period,
+                range: timeRange,
+                now: now
+            ) else { return }
+            DiagnosticJournal.log("dashboard_open_refresh", [
+                "range": .string(timeRange.cacheKey),
+                "snapshot_present": .bool(activeSnapshot != nil),
+            ])
             scheduleLoad(for: timeRange)
         }
         .onReceive(NotificationCenter.default.publisher(for: .demoModeDidChange)) { _ in
@@ -1737,11 +1760,8 @@ struct DashboardView: View {
 
         // ── Cache check — skip on initial load to avoid stale-data flash ──
         // Max age matches Phase 4 refresh intervals: today=5min, week=1h, 30d=12h
-        let cacheMaxAge: TimeInterval = {
-            switch requestedRange { case .today: return 300; case .thisWeek: return 3600; default: return 43200 }
-        }()
         if !DemoData.isActive,
-           let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: cacheMaxAge),
+           let cached = await DashboardCache.read(timeRange: requestedRange.cacheKey, maxAge: requestedRange.cacheMaxAge),
            cached.tokenComposition != nil || cached.readFailures.contains("tokenComposition") {
             guard !Task.isCancelled,
                   myGen == loadGenerationByRange[requestedRange, default: 0] else { return }
@@ -1789,9 +1809,9 @@ struct DashboardView: View {
     private func hydrateRangeSnapshotCache() async {
         guard !DemoData.isActive else { return }
         let ranges: [(range: TimeRange, maxAge: TimeInterval)] = [
-            (.today, 300),
-            (.thisWeek, 3600),
-            (.days30, 43200),
+            (.today, TimeRange.today.cacheMaxAge),
+            (.thisWeek, TimeRange.thisWeek.cacheMaxAge),
+            (.days30, TimeRange.days30.cacheMaxAge),
         ]
 
         for item in ranges where rangeSnapshots[item.range] == nil {
@@ -1801,6 +1821,23 @@ struct DashboardView: View {
                 "range": .string(item.range.cacheKey),
             ])
         }
+    }
+
+    /// A hidden dashboard keeps its SwiftUI state alive. Reopening it must
+    /// revalidate the resident snapshot, especially across local midnight.
+    nonisolated static func shouldRefreshOnOpen(
+        lastUpdated: Date?,
+        loadedPeriod: DashboardPeriod?,
+        range: TimeRange,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let lastUpdated, let loadedPeriod else { return true }
+        guard loadedPeriod == DashboardPeriod(kind: range.periodKind, now: now, calendar: calendar) else {
+            return true
+        }
+        let age = now.timeIntervalSince(lastUpdated)
+        return !age.isFinite || age < 0 || age >= range.cacheMaxAge
     }
 
 }
