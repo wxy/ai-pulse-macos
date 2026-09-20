@@ -95,7 +95,11 @@ This prevents the week record's stale `todayCost` from overwriting the fresh tod
 2. **Storage**: GRDB (SQLite) stores `DailyStat`, `DailyCodeChange`, `ProviderCost`
 3. **Aggregation**: `StatsService.dashboardSnapshot(days:)` computes `DashboardSnapshot`
 4. **Local Cache**: `DashboardCache` table (GRDB) for instant dashboard open
-5. **iCloud Sync**: `CloudSyncService.syncFromCache()` writes 3 CKRecords, throttled per range
+5. **Local Mac Widget Publish**: `CloudSyncService.syncFromCache()` atomically writes today,
+   30-day baseline, and current pulse data to App Group `group.com.wxy.aipulse`, then requests a
+   WidgetKit reload
+6. **iCloud Sync**: the same cycle writes 3 CKRecords for iPhone/watchOS, throttled per range; the
+   macOS widget does not read those records
 
 ### iOS — Data Consumer
 

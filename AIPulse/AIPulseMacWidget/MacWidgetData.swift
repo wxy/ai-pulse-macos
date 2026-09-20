@@ -1,13 +1,10 @@
 import AIPulseShared
-import CloudKit
 import Foundation
 import WidgetKit
 
 enum MacWidgetLoadStatus: Equatable {
     case available
-    case partial
     case waitingForRefresh
-    case noAccount
     case noData
     case failed
 }
@@ -33,82 +30,35 @@ struct MacWidgetEntry: TimelineEntry {
     }
 }
 
-private enum MacWidgetRecordResult<Value> {
-    case value(Value)
-    case missing
-    case failed
-
-    var value: Value? {
-        guard case .value(let value) = self else { return nil }
-        return value
-    }
-
-    var hasFailure: Bool {
-        if case .failed = self { return true }
-        return false
-    }
-
-    var isMissing: Bool {
-        if case .missing = self { return true }
-        return false
-    }
-}
-
-private enum MacWidgetCloudReader {
-    static func load(at date: Date) async -> MacWidgetEntry {
-        let container = CKContainer(identifier: "iCloud.com.wxy.aipulse")
-        let accountStatus: CKAccountStatus
+private enum MacWidgetLocalReader {
+    static func load(at date: Date) -> MacWidgetEntry {
+        let payload: MacWidgetLocalPayload
         do {
-            accountStatus = try await container.accountStatus()
-        } catch {
-            return emptyEntry(at: date, status: .failed)
-        }
-        guard accountStatus == .available else {
-            let status: MacWidgetLoadStatus = accountStatus == .noAccount || accountStatus == .restricted
-                ? .noAccount
-                : .failed
-            return emptyEntry(at: date, status: status)
-        }
-
-        let todayID = CKRecord.ID(recordName: CKSchema.RecordName.today)
-        let historyID = CKRecord.ID(recordName: CKSchema.RecordName.month)
-        let pulseID = CKRecord.ID(recordName: CKSchema.CurrentPulse.recordName)
-        let records: [CKRecord.ID: Result<CKRecord, any Error>]
-        do {
-            records = try await container.privateCloudDatabase.records(
-                for: [todayID, historyID, pulseID],
-                desiredKeys: [CKSchema.Field.json]
-            )
+            guard let stored = try MacWidgetLocalStore.load() else {
+                return emptyEntry(at: date, status: .noData)
+            }
+            payload = stored
         } catch {
             return emptyEntry(at: date, status: .failed)
         }
 
-        let today = decodeSnapshot(records[todayID], range: "today")
-        let history = decodeSnapshot(records[historyID], range: "30d")
-        let pulse = decodePulse(records[pulseID])
-        let hasValue = today.value != nil || history.value != nil || pulse.value != nil
-        let hasFailure = today.hasFailure || history.hasFailure || pulse.hasFailure
-        let hasMissing = today.isMissing || history.isMissing || pulse.isMissing
-        var status: MacWidgetLoadStatus
-        if !hasValue {
-            status = hasFailure ? .failed : .noData
-        } else if hasFailure || hasMissing {
-            status = .partial
-        } else {
-            status = .available
-        }
-
-        let todaySnapshot = today.value.flatMap {
+        let todaySnapshot = payload.todaySnapshot.flatMap {
             date >= $0.period.start && date < $0.period.end ? $0 : nil
         }
-        if today.value != nil && todaySnapshot == nil {
+        let hasAnySummary = todaySnapshot != nil || payload.historySnapshot != nil
+        var status: MacWidgetLoadStatus = hasAnySummary ? .available : .noData
+        if payload.todaySnapshot != nil && todaySnapshot == nil {
+            // A snapshot from an earlier day is intentionally not rendered as
+            // today's activity. The historical baseline can still be shown.
             status = .waitingForRefresh
+        } else if !hasAnySummary {
+            status = .noData
         }
         return MacWidgetEntry(
             date: date,
             todaySnapshot: todaySnapshot,
-            historySnapshot: history.value,
-            pulseEnvelope: pulse.value,
+            historySnapshot: payload.historySnapshot,
+            pulseEnvelope: payload.pulseEnvelope,
             loadStatus: status
         )
     }
@@ -123,50 +73,6 @@ private enum MacWidgetCloudReader {
         )
     }
 
-    private static func decodeSnapshot(
-        _ result: Result<CKRecord, any Error>?,
-        range: String
-    ) -> MacWidgetRecordResult<DashboardSnapshot> {
-        switch result {
-        case .success(let record):
-            guard let json = record[CKSchema.Field.json] as? String,
-                  let data = json.data(using: .utf8),
-                  let snapshot = try? JSONDecoder().decode(DashboardSnapshot.self, from: data),
-                  PhoneDashboardData.accepts(snapshot, range: range) else {
-                return .failed
-            }
-            return .value(snapshot.sanitized())
-        case .failure(let error):
-            if let cloudError = error as? CKError, cloudError.code == .unknownItem {
-                return .missing
-            }
-            return .failed
-        case nil:
-            return .failed
-        }
-    }
-
-    private static func decodePulse(
-        _ result: Result<CKRecord, any Error>?
-    ) -> MacWidgetRecordResult<CurrentPulseEnvelope> {
-        switch result {
-        case .success(let record):
-            guard let json = record[CKSchema.Field.json] as? String,
-                  let data = json.data(using: .utf8),
-                  let envelope = try? JSONDecoder().decode(CurrentPulseEnvelope.self, from: data),
-                  envelope.payloadVersion == CKSchema.payloadVersion else {
-                return .failed
-            }
-            return .value(envelope)
-        case .failure(let error):
-            if let cloudError = error as? CKError, cloudError.code == .unknownItem {
-                return .missing
-            }
-            return .failed
-        case nil:
-            return .failed
-        }
-    }
 }
 
 private struct MacWidgetCompletion<Value>: @unchecked Sendable {
@@ -183,15 +89,14 @@ struct MacWidgetProvider: TimelineProvider {
             completion(placeholder(in: context))
             return
         }
-        let callback = MacWidgetCompletion(call: completion)
-        Task { callback.call(await MacWidgetCloudReader.load(at: Date())) }
+        completion(MacWidgetLocalReader.load(at: Date()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<MacWidgetEntry>) -> Void) {
         let callback = MacWidgetCompletion(call: completion)
         Task {
             let now = Date()
-            let entry = await MacWidgetCloudReader.load(at: now)
+            let entry = MacWidgetLocalReader.load(at: now)
             let nextRefresh = now.addingTimeInterval(CurrentPulseEnvelope.widgetRefreshInterval)
             let transitionDates = WatchDashboardData.timelineTransitionDates(
                 todaySnapshot: entry.todaySnapshot,
@@ -212,7 +117,7 @@ struct MacWidgetProvider: TimelineProvider {
         staleSummary: Bool = false,
         expiredPulse: Bool = false
     ) -> MacWidgetEntry {
-        guard status == .available || status == .partial else {
+        guard status == .available else {
             return MacWidgetEntry(
                 date: date,
                 todaySnapshot: nil,

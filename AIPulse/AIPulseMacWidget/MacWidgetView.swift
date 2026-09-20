@@ -5,12 +5,12 @@ import WidgetKit
 
 struct RefreshAIPulseMacWidgetIntent: AppIntent {
     static let title: LocalizedStringResource = "Refresh data"
-    static let description = IntentDescription("Reload the latest AI Pulse summary from iCloud.")
+    static let description = IntentDescription("Refresh data")
     static let isDiscoverable = false
 
     func perform() async throws -> some IntentResult {
         // WidgetKit automatically requests a new timeline after an interactive
-        // widget intent returns, so the provider immediately re-reads CloudKit.
+        // widget intent returns, so the provider immediately re-reads the app group.
         .result()
     }
 }
@@ -260,11 +260,9 @@ struct AIPulseMacWidgetEntryView: View {
             guard projection.summaryIsStale, let snapshot = entry.todaySnapshot else { return nil }
             return MacWidgetCopy.text("缓存 ", "Cached ")
                 + snapshot.updatedAt.formatted(date: .omitted, time: .shortened)
-        case .partial: return MacWidgetCopy.text("同步未完成", "Sync incomplete")
         case .waitingForRefresh: return MacWidgetCopy.text("等待刷新", "Waiting to refresh")
-        case .noAccount: return MacWidgetCopy.text("需要 iCloud", "iCloud required")
         case .noData: return MacWidgetCopy.text("暂无数据", "No data")
-        case .failed: return MacWidgetCopy.text("同步失败", "Sync failed")
+        case .failed: return MacWidgetCopy.text("暂无数据", "No data")
         }
     }
 

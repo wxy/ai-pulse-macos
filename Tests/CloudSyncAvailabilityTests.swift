@@ -15,7 +15,7 @@ final class CloudSyncAvailabilityTests: XCTestCase {
         #if DEBUG
         await CloudSyncService.shared.refreshAccount()
         XCTAssertEqual(CloudSyncService.shared.result, .disabled)
-        await CloudSyncService.shared.syncFromCache()
+        await CloudSyncService.shared.syncFromCache(publishMacWidget: false)
         XCTAssertEqual(CloudSyncService.shared.result, .disabled)
         #endif
     }
