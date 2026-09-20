@@ -2,6 +2,8 @@ import Foundation
 
 public struct MacWidgetLocalPayload: Codable, Sendable {
     public static let currentFormatVersion = 1
+    public static let producerFreshnessInterval =
+        CurrentPulseEnvelope.publisherInterval + CurrentPulseEnvelope.widgetRefreshInterval
 
     public let formatVersion: Int
     public let writtenAt: Date
@@ -20,6 +22,15 @@ public struct MacWidgetLocalPayload: Codable, Sendable {
         self.todaySnapshot = todaySnapshot?.sanitized()
         self.historySnapshot = historySnapshot?.sanitized()
         self.pulseEnvelope = pulseEnvelope
+    }
+
+    public func isProducerFresh(asOf now: Date = Date()) -> Bool {
+        Self.isProducerFresh(writtenAt: writtenAt, asOf: now)
+    }
+
+    public static func isProducerFresh(writtenAt: Date, asOf now: Date = Date()) -> Bool {
+        let age = now.timeIntervalSince(writtenAt)
+        return age.isFinite && age >= -60 && age <= Self.producerFreshnessInterval
     }
 }
 

@@ -11,6 +11,7 @@ enum MacWidgetLoadStatus: Equatable {
 
 struct MacWidgetEntry: TimelineEntry {
     let date: Date
+    let snapshotWrittenAt: Date?
     let todaySnapshot: DashboardSnapshot?
     let historySnapshot: DashboardSnapshot?
     let pulseEnvelope: CurrentPulseEnvelope?
@@ -22,6 +23,7 @@ struct MacWidgetEntry: TimelineEntry {
         }
         return MacWidgetEntry(
             date: date,
+            snapshotWrittenAt: snapshotWrittenAt,
             todaySnapshot: today,
             historySnapshot: historySnapshot,
             pulseEnvelope: pulseEnvelope,
@@ -56,6 +58,7 @@ private enum MacWidgetLocalReader {
         }
         return MacWidgetEntry(
             date: date,
+            snapshotWrittenAt: payload.writtenAt,
             todaySnapshot: todaySnapshot,
             historySnapshot: payload.historySnapshot,
             pulseEnvelope: payload.pulseEnvelope,
@@ -66,6 +69,7 @@ private enum MacWidgetLocalReader {
     private static func emptyEntry(at date: Date, status: MacWidgetLoadStatus) -> MacWidgetEntry {
         MacWidgetEntry(
             date: date,
+            snapshotWrittenAt: nil,
             todaySnapshot: nil,
             historySnapshot: nil,
             pulseEnvelope: nil,
@@ -104,8 +108,14 @@ struct MacWidgetProvider: TimelineProvider {
                 now: now,
                 nextRefresh: nextRefresh
             )
+            let producerTransition = entry.snapshotWrittenAt.map {
+                $0.addingTimeInterval(MacWidgetLocalPayload.producerFreshnessInterval + 1)
+            }
+            let allTransitionDates = Set(transitionDates + [producerTransition].compactMap { $0 })
+                .filter { $0 > now && $0 < nextRefresh }
+                .sorted()
             callback.call(Timeline(
-                entries: [entry] + transitionDates.map(entry.at),
+                entries: [entry] + allTransitionDates.map(entry.at),
                 policy: .after(nextRefresh)
             ))
         }
@@ -120,6 +130,7 @@ struct MacWidgetProvider: TimelineProvider {
         guard status == .available else {
             return MacWidgetEntry(
                 date: date,
+                snapshotWrittenAt: nil,
                 todaySnapshot: nil,
                 historySnapshot: nil,
                 pulseEnvelope: nil,
@@ -191,6 +202,7 @@ struct MacWidgetProvider: TimelineProvider {
         )
         return MacWidgetEntry(
             date: date,
+            snapshotWrittenAt: staleSummary ? date.addingTimeInterval(-3_600) : date,
             todaySnapshot: today,
             historySnapshot: history,
             pulseEnvelope: CurrentPulseEnvelope(
@@ -244,6 +256,12 @@ struct MacWidgetProjection {
     var summaryIsStale: Bool {
         entry.todaySnapshot != nil
             && !WatchDashboardData.isSummaryFresh(entry.todaySnapshot, now: entry.date)
+    }
+
+    var shouldOpenApp: Bool {
+        guard entry.loadStatus == .available,
+              let writtenAt = entry.snapshotWrittenAt else { return true }
+        return !MacWidgetLocalPayload.isProducerFresh(writtenAt: writtenAt, asOf: entry.date)
     }
 
     func count(_ value: Double?) -> String {

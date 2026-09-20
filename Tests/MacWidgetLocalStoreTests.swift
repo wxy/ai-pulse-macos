@@ -26,6 +26,15 @@ final class MacWidgetLocalStoreTests: XCTestCase {
         XCTAssertNil(try MacWidgetLocalStore.load(from: url))
     }
 
+    func testProducerFreshnessUsesPublisherAndWidgetWindow() {
+        let writtenAt = Date(timeIntervalSince1970: 10_000)
+        let value = payload(at: writtenAt)
+
+        XCTAssertTrue(value.isProducerFresh(asOf: writtenAt.addingTimeInterval(20 * 60)))
+        XCTAssertFalse(value.isProducerFresh(asOf: writtenAt.addingTimeInterval(20 * 60 + 1)))
+        XCTAssertFalse(value.isProducerFresh(asOf: writtenAt.addingTimeInterval(-61)))
+    }
+
     private func payload(at date: Date) -> MacWidgetLocalPayload {
         var today = DashboardSnapshot(todayTokens: 42, updatedAt: date)
         today.period = DashboardPeriod(kind: .today, now: date)

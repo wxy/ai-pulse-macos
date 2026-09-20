@@ -15,6 +15,17 @@ struct RefreshAIPulseMacWidgetIntent: AppIntent {
     }
 }
 
+struct OpenAIPulseMacAppIntent: AppIntent {
+    static let title: LocalizedStringResource = "Open dashboard"
+    static let description = IntentDescription("Open dashboard")
+    static let isDiscoverable = false
+    static let openAppWhenRun = true
+
+    func perform() async throws -> some IntentResult {
+        .result()
+    }
+}
+
 private enum MacWidgetCopy {
     static func text(_ simplifiedChinese: String, _ english: String) -> String {
         let language = Locale.preferredLanguages.first ?? "en"
@@ -91,32 +102,44 @@ struct AIPulseMacWidgetEntryView: View {
     private var trackOpacity: Double { colorScheme == .dark ? 0.28 : 0.24 }
 
     var body: some View {
-        Button(intent: RefreshAIPulseMacWidgetIntent()) {
-            GeometryReader { geometry in
-                let edge = min(geometry.size.width, geometry.size.height)
-                let side = edge * 0.80
-                let thickness = side * 13 / 184
-                ZStack {
-                    rings(side: side, thickness: thickness)
-                        .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
-                    cornerFacts
-                    if let statusText {
-                        Text(statusText)
-                            .font(.system(size: 7))
-                            .foregroundStyle(activityColor)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .position(x: geometry.size.width / 2, y: geometry.size.height - 6)
-                    }
-                }
+        Group {
+            if projection.shouldOpenApp {
+                Button(intent: OpenAIPulseMacAppIntent()) { widgetContent }
+            } else {
+                Button(intent: RefreshAIPulseMacWidgetIntent()) { widgetContent }
             }
-            .invalidatableContent()
         }
         .buttonStyle(.plain)
         .containerBackground(background, for: .widget)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
-        .accessibilityHint(MacWidgetCopy.text("刷新数据", "Refresh data"))
+        .accessibilityHint(
+            projection.shouldOpenApp
+                ? MacWidgetCopy.text("打开仪表盘", "Open dashboard")
+                : MacWidgetCopy.text("刷新数据", "Refresh data")
+        )
+    }
+
+    private var widgetContent: some View {
+        GeometryReader { geometry in
+            let edge = min(geometry.size.width, geometry.size.height)
+            let side = edge * 0.80
+            let thickness = side * 13 / 184
+            ZStack {
+                rings(side: side, thickness: thickness)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
+                cornerFacts
+                if let statusText {
+                    Text(statusText)
+                        .font(.system(size: 7))
+                        .foregroundStyle(activityColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height - 6)
+                }
+            }
+        }
+        .invalidatableContent()
     }
 
     private func rings(side: CGFloat, thickness: CGFloat) -> some View {
@@ -255,6 +278,11 @@ struct AIPulseMacWidgetEntryView: View {
     }
 
     private var statusText: String? {
+        if projection.shouldOpenApp {
+            let action = MacWidgetCopy.text("打开仪表盘", "Open dashboard")
+            guard let writtenAt = entry.snapshotWrittenAt else { return action }
+            return writtenAt.formatted(date: .omitted, time: .shortened) + " · " + action
+        }
         switch entry.loadStatus {
         case .available:
             guard projection.summaryIsStale, let snapshot = entry.todaySnapshot else { return nil }
