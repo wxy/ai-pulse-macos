@@ -94,7 +94,7 @@ struct AIPulseMacWidgetEntryView: View {
             ZStack {
                 rings(side: side, thickness: thickness)
                     .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
-                cornerFacts(in: geometry.size, ringWidth: thickness)
+                cornerFacts(in: geometry.size, ringSide: side, ringWidth: thickness)
                 if let statusText {
                     Text(statusText)
                         .font(.system(size: 7))
@@ -162,84 +162,105 @@ struct AIPulseMacWidgetEntryView: View {
         .frame(width: 70)
     }
 
-    private func cornerFacts(in size: CGSize, ringWidth: CGFloat) -> some View {
-        let edge = min(size.width, size.height)
-        // Moving a 45-degree label outward by one ring width means reducing
-        // each axis inset by ringWidth / sqrt(2).
-        let diagonalOffset = ringWidth / CGFloat(2).squareRoot()
-        let inset = max(edge * 0.17, edge * 0.21 - diagonalOffset)
-        // The larger numeric font shifts the perceived center of the reversed
-        // bottom stacks inward. Nudge them outward to match the top spacing.
-        let bottomInset = max(edge * 0.16, inset - ringWidth * 0.15)
-
+    private func cornerFacts(in size: CGSize, ringSide: CGFloat, ringWidth: CGFloat) -> some View {
+        let gapRadius = ringSide / 2 + ringWidth * 1.70
+        let lineSpacing: CGFloat = 3
+        let bottomOpticalOffset = ringWidth * 0.15
+        let ringCenter = CGPoint(x: size.width / 2, y: size.height / 2 + 2)
+        let edgePadding: CGFloat = 7
+        let leftReach = max(1, ringCenter.x - edgePadding)
+        let rightReach = max(1, size.width - ringCenter.x - edgePadding)
+        let topReach = max(1, ringCenter.y - edgePadding)
+        let bottomReach = max(1, size.height - ringCenter.y - edgePadding)
+        let topLeftAngle = Angle.radians(Double(atan2(-topReach, -leftReach)))
+        let topRightAngle = Angle.radians(Double(atan2(-topReach, rightReach)))
+        let bottomLeftAngle = Angle.radians(Double(atan2(bottomReach, -leftReach)))
+        let bottomRightAngle = Angle.radians(Double(atan2(bottomReach, rightReach)))
         return ZStack {
-            corner(
+            curvedCorner(
                 MacWidgetCopy.text("今日词元", "Today tokens"),
                 projection.count(projection.todayTokens),
                 color: tokenColor,
-                labelFirst: true
+                centerAngle: topLeftAngle,
+                direction: .clockwise,
+                gapRadius: gapRadius,
+                lineSpacing: lineSpacing
             )
-            .rotationEffect(.degrees(-45))
-            .position(x: inset, y: inset)
 
-            corner(
+            curvedCorner(
                 MacWidgetCopy.text("今日行数", "Today lines"),
                 projection.count(projection.todayLines),
                 color: lineColor,
-                labelFirst: true
+                centerAngle: topRightAngle,
+                direction: .clockwise,
+                gapRadius: gapRadius,
+                lineSpacing: lineSpacing
             )
-            .rotationEffect(.degrees(45))
-            .position(x: size.width - inset, y: inset)
 
-            corner(
+            curvedCorner(
                 MacWidgetCopy.text("词元 / 平常", "Tokens / usual"),
                 projection.multiple(projection.tokenRatio),
                 color: tokenColor,
-                labelFirst: false
+                centerAngle: bottomLeftAngle,
+                direction: .counterClockwise,
+                gapRadius: gapRadius + bottomOpticalOffset,
+                lineSpacing: lineSpacing
             )
-            .rotationEffect(.degrees(45))
-            .position(x: bottomInset, y: size.height - bottomInset)
 
-            corner(
+            curvedCorner(
                 MacWidgetCopy.text("行数 / 平常", "Lines / usual"),
                 projection.multiple(projection.lineRatio),
                 color: lineColor,
-                labelFirst: false
+                centerAngle: bottomRightAngle,
+                direction: .counterClockwise,
+                gapRadius: gapRadius + bottomOpticalOffset,
+                lineSpacing: lineSpacing
             )
-            .rotationEffect(.degrees(-45))
-            .position(x: size.width - bottomInset, y: size.height - bottomInset)
         }
         .frame(width: size.width, height: size.height)
+        .offset(y: 2)
     }
 
-    private func corner(
+    private func curvedCorner(
         _ label: String,
         _ value: String,
         color: Color,
-        labelFirst: Bool
+        centerAngle: Angle,
+        direction: ArcText.Direction,
+        gapRadius: CGFloat,
+        lineSpacing: CGFloat
     ) -> some View {
-        VStack(spacing: 0) {
-            if !labelFirst { cornerValue(value, color: color) }
-            cornerLabel(label)
-            if labelFirst { cornerValue(value, color: color) }
-        }
-        .frame(width: 58)
-    }
-
-    private func cornerLabel(_ label: String) -> some View {
-        Text(label)
-            .font(.system(size: 7))
-            .foregroundStyle(secondaryText)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-    }
-
-    private func cornerValue(_ value: String, color: Color) -> some View {
-        Text(value)
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
-            .foregroundStyle(isFullColor ? color : primaryText)
+        ZStack {
+            ArcText(
+                label,
+                radius: gapRadius + lineSpacing / 2,
+                centerAngle: centerAngle,
+                direction: direction,
+                radialAlignment: .innerEdge,
+                maximumSweep: .degrees(42),
+                fontSize: 7,
+                color: secondaryText,
+                characterSpacing: 0.1,
+                minimumScaleFactor: 0.75
+            )
+            ArcText(
+                value,
+                radius: gapRadius - lineSpacing / 2,
+                centerAngle: centerAngle,
+                direction: direction,
+                radialAlignment: .outerEdge,
+                maximumSweep: .degrees(30),
+                fontSize: 10,
+                fontWeight: .semibold,
+                fontDesign: .rounded,
+                color: isFullColor ? color : primaryText,
+                characterSpacing: 0.1,
+                minimumScaleFactor: 0.8
+            )
             .opacity(projection.summaryIsStale ? 0.65 : 1)
-            .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityHidden(true)
     }
 
     private var pulseText: String {

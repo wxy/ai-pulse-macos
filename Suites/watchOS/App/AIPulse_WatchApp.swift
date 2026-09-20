@@ -216,50 +216,90 @@ struct WatchDashboardView: View {
         lineRatio: Double?,
         dimsValue: Bool
     ) -> some View {
-        let edge = min(size.width, size.height)
-        let radius = side / 2 + ringWidth
-        let topComponent = (radius + ringWidth * 0.20) / CGFloat(2).squareRoot()
-        let bottomComponent = (radius + ringWidth * 0.20) / CGFloat(2).squareRoot()
-        let width = edge * 0.24
+        let topGapRadius = side / 2 + ringWidth * 1.65
+        let bottomGapRadius = side / 2 + ringWidth * 1.50
+        let lineSpacing: CGFloat = 3
+        let labelEdgePadding = cornerLabelSize
+        let leftReach = max(1, ringCenter.x - labelEdgePadding)
+        let rightReach = max(1, size.width - ringCenter.x - labelEdgePadding)
+        let topReach = max(1, ringCenter.y - labelEdgePadding)
+        let bottomReach = max(
+            1,
+            size.height - ringCenter.y - max(labelEdgePadding, statusFontSize + 6)
+        )
+        let topLeftAngle = Angle.radians(Double(atan2(-topReach, -leftReach)))
+        let topRightAngle = Angle.radians(Double(atan2(-topReach, rightReach)))
+        let bottomLeftAngle = Angle.radians(Double(atan2(bottomReach, -leftReach)))
+        let bottomRightAngle = Angle.radians(Double(atan2(bottomReach, rightReach)))
 
         return ZStack {
-            corner(t("今日词元", "Today tokens"), count(tokens(snapshot)), color: tokenColor,
-                   labelFirst: true, dimsValue: dimsValue, width: width)
-                .rotationEffect(.degrees(-45))
-                .position(x: ringCenter.x - topComponent, y: ringCenter.y - topComponent)
-            corner(t("今日行数", "Today lines"), count(lines(snapshot)), color: lineColor,
-                   labelFirst: true, dimsValue: dimsValue, width: width)
-                .rotationEffect(.degrees(45))
-                .position(x: ringCenter.x + topComponent, y: ringCenter.y - topComponent)
-            corner(t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: tokenColor,
-                   labelFirst: false, dimsValue: dimsValue, width: width)
-                .rotationEffect(.degrees(45))
-                .position(x: ringCenter.x - bottomComponent, y: ringCenter.y + bottomComponent)
-            corner(t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: lineColor,
-                   labelFirst: false, dimsValue: dimsValue, width: width)
-                .rotationEffect(.degrees(-45))
-                .position(x: ringCenter.x + bottomComponent, y: ringCenter.y + bottomComponent)
+            curvedCorner(
+                t("今日词元", "Today tokens"), count(tokens(snapshot)), color: tokenColor,
+                centerAngle: topLeftAngle, direction: .clockwise,
+                gapRadius: topGapRadius, lineSpacing: lineSpacing, dimsValue: dimsValue
+            )
+            curvedCorner(
+                t("今日行数", "Today lines"), count(lines(snapshot)), color: lineColor,
+                centerAngle: topRightAngle, direction: .clockwise,
+                gapRadius: topGapRadius, lineSpacing: lineSpacing, dimsValue: dimsValue
+            )
+            curvedCorner(
+                t("词元 / 平常", "Tokens / usual"), multiple(tokenRatio), color: tokenColor,
+                centerAngle: bottomLeftAngle, direction: .counterClockwise,
+                gapRadius: bottomGapRadius, lineSpacing: lineSpacing, dimsValue: dimsValue
+            )
+            curvedCorner(
+                t("行数 / 平常", "Lines / usual"), multiple(lineRatio), color: lineColor,
+                centerAngle: bottomRightAngle, direction: .counterClockwise,
+                gapRadius: bottomGapRadius, lineSpacing: lineSpacing, dimsValue: dimsValue
+            )
         }
         .frame(width: size.width, height: size.height)
+        .offset(x: ringCenter.x - size.width / 2, y: ringCenter.y - size.height / 2)
     }
 
-    private func corner(_ label: String, _ value: String, color: Color,
-                        labelFirst: Bool,
-                        dimsValue: Bool,
-                        width: CGFloat) -> some View {
-        VStack(spacing: 1) {
-            if !labelFirst { cornerValue(value, color: color, dimsValue: dimsValue) }
-            Text(label).font(.system(size: cornerLabelSize)).foregroundStyle(supportTextColor)
-                .lineLimit(1).minimumScaleFactor(0.75)
-            if labelFirst { cornerValue(value, color: color, dimsValue: dimsValue) }
+    private func curvedCorner(
+        _ label: String,
+        _ value: String,
+        color: Color,
+        centerAngle: Angle,
+        direction: ArcText.Direction,
+        gapRadius: CGFloat,
+        lineSpacing: CGFloat,
+        dimsValue: Bool
+    ) -> some View {
+        ZStack {
+            ArcText(
+                label,
+                radius: gapRadius + lineSpacing / 2,
+                centerAngle: centerAngle,
+                direction: direction,
+                radialAlignment: .innerEdge,
+                maximumSweep: .degrees(42),
+                fontSize: cornerLabelSize,
+                color: supportTextColor,
+                characterSpacing: 0.1,
+                minimumScaleFactor: 0.75
+            )
+            ArcText(
+                value,
+                radius: gapRadius - lineSpacing / 2,
+                centerAngle: centerAngle,
+                direction: direction,
+                radialAlignment: .outerEdge,
+                maximumSweep: .degrees(30),
+                fontSize: cornerValueSize,
+                fontWeight: .semibold,
+                fontDesign: .rounded,
+                color: color,
+                characterSpacing: 0.1,
+                minimumScaleFactor: 0.8
+            )
+            .opacity(dimsValue ? 0.65 : 1)
         }
-        .frame(width: width)
-        .accessibilityElement(children: .combine)
-    }
-
-    private func cornerValue(_ value: String, color: Color, dimsValue: Bool) -> some View {
-        Text(value).font(.system(size: cornerValueSize, weight: .semibold, design: .rounded))
-            .foregroundStyle(color).opacity(dimsValue ? 0.65 : 1).lineLimit(1).minimumScaleFactor(0.65)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(label + ", " + value))
     }
     private func ringCluster(side: CGFloat, thickness: CGFloat, tokenRatio: Double?, lineRatio: Double?,
                              pulse: PulseSnapshot?, now: Date, dimsSummary: Bool,
