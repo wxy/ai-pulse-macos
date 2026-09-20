@@ -1,6 +1,19 @@
 import AIPulseShared
+import AppIntents
 import SwiftUI
 import WidgetKit
+
+struct RefreshAIPulseMacWidgetIntent: AppIntent {
+    static let title: LocalizedStringResource = "Refresh data"
+    static let description = IntentDescription("Reload the latest AI Pulse summary from iCloud.")
+    static let isDiscoverable = false
+
+    func perform() async throws -> some IntentResult {
+        // WidgetKit automatically requests a new timeline after an interactive
+        // widget intent returns, so the provider immediately re-reads CloudKit.
+        .result()
+    }
+}
 
 private enum MacWidgetCopy {
     static func text(_ simplifiedChinese: String, _ english: String) -> String {
@@ -78,27 +91,32 @@ struct AIPulseMacWidgetEntryView: View {
     private var trackOpacity: Double { colorScheme == .dark ? 0.28 : 0.24 }
 
     var body: some View {
-        GeometryReader { geometry in
-            let edge = min(geometry.size.width, geometry.size.height)
-            let side = edge * 0.80
-            let thickness = side * 13 / 184
-            ZStack {
-                rings(side: side, thickness: thickness)
-                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
-                cornerFacts
-                if let statusText {
-                    Text(statusText)
-                        .font(.system(size: 7))
-                        .foregroundStyle(activityColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .position(x: geometry.size.width / 2, y: geometry.size.height - 6)
+        Button(intent: RefreshAIPulseMacWidgetIntent()) {
+            GeometryReader { geometry in
+                let edge = min(geometry.size.width, geometry.size.height)
+                let side = edge * 0.80
+                let thickness = side * 13 / 184
+                ZStack {
+                    rings(side: side, thickness: thickness)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height / 2 + 2)
+                    cornerFacts
+                    if let statusText {
+                        Text(statusText)
+                            .font(.system(size: 7))
+                            .foregroundStyle(activityColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .position(x: geometry.size.width / 2, y: geometry.size.height - 6)
+                    }
                 }
             }
+            .invalidatableContent()
         }
+        .buttonStyle(.plain)
         .containerBackground(background, for: .widget)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
+        .accessibilityHint(MacWidgetCopy.text("刷新数据", "Refresh data"))
     }
 
     private func rings(side: CGFloat, thickness: CGFloat) -> some View {
@@ -163,7 +181,7 @@ struct AIPulseMacWidgetEntryView: View {
                     projection.count(projection.todayTokens),
                     color: tokenColor,
                     alignment: .leading,
-                    numberFirst: false
+                    numberFirst: true
                 )
                 Spacer()
                 corner(
@@ -171,7 +189,7 @@ struct AIPulseMacWidgetEntryView: View {
                     projection.count(projection.todayLines),
                     color: lineColor,
                     alignment: .trailing,
-                    numberFirst: false
+                    numberFirst: true
                 )
             }
             Spacer()
