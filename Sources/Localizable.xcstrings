@@ -31982,61 +31982,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Am aktivsten"
+            "value" : "Aktiv"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Most active"
+            "value" : "Top"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mayor actividad"
+            "value" : "Activas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plus actif"
+            "value" : "Actives"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最もアクティブ"
+            "value" : "活発"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "가장 활발함"
+            "value" : "활발"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mais ativo"
+            "value" : "Ativas"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "词元最多"
+            "value" : "最多"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "詞元最多"
+            "value" : "最多"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "詞元最多"
+            "value" : "最多"
           }
         }
       }
