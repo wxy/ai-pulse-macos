@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Pulse Store Screenshots"
+  short_description: "Capture and audit localized Apple store screenshots"
+  default_prompt: "Use $ai-pulse-store-screenshots to capture or audit the current AI Pulse App Store screenshot set."
