@@ -20,7 +20,7 @@ struct IntegrationRow: View {
     /// from an earlier cycle can't clobber a newer one's result.
     @State private var checkGeneration: Int = 0
 
-    enum KeyStatus { case none, checking, valid, invalid, connectionFailed, unsupported }
+    enum KeyStatus: Equatable { case none, checking, valid, invalid, connectionFailed, unsupported }
 
     init(integration: any Detectable, detected: DetectionResult, showPlan: Bool = true, onGrant: (() -> Void)? = nil) {
         self.integration = integration
@@ -172,16 +172,22 @@ struct IntegrationRow: View {
             return
         }
         if let cb = ApiPoller.shared.cachedBalance(for: integration.id) {
+            guard let resolvedStatus = Self.cachedKeyStatus(cb) else { return }
+            keyStatus = resolvedStatus
             if let err = cb.error {
-                keyStatus = Self.isCredentialRejection(err) ? .invalid : .connectionFailed
                 balanceText = (keyStatus == .invalid ? SetupCopy.text("凭据被拒绝", "Credentials rejected") : SetupCopy.text("连接失败", "Connection failed")) + ": " + err
             } else if let b = cb.balances.first {
                 // Preserve the provider's denomination; no unlabelled static FX estimate.
                 balanceText = "\(b.currency.uppercased()) \(String(format: "%.1f", b.totalBalance))" + " · " + Date(timeIntervalSince1970: Double(cb.lastFetchTimestamp) / 1000).formatted(date: .omitted, time: .shortened)
-                keyStatus = .unsupported
-                balanceText = SetupCopy.text("已保存 · 不支持账户观测", "Saved · account API unsupported")
             }
         }
+    }
+
+    static func cachedKeyStatus(_ cachedBalance: CachedBalance) -> KeyStatus? {
+        if let error = cachedBalance.error {
+            return isCredentialRejection(error) ? .invalid : .connectionFailed
+        }
+        return cachedBalance.balances.first == nil ? nil : .valid
     }
 
     /// Safety net for a "checking" cycle that never resolves (e.g. the network
