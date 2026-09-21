@@ -23854,19 +23854,19 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lines / üblich"
+            "value" : "Zeilenfaktor"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lines / habitual"
+            "value" : "Ratio líneas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lines / habituel"
+            "value" : "Ratio lignes"
           }
         },
         "ja" : {
@@ -23884,7 +23884,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lines / habitual"
+            "value" : "Fator linhas"
           }
         },
         "zh-Hans" : {
@@ -31982,61 +31982,61 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Am aktivsten"
+            "value" : "Aktiv"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Most active"
+            "value" : "Top"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mayor actividad"
+            "value" : "Activas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plus actif"
+            "value" : "Actives"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最もアクティブ"
+            "value" : "活発"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "가장 활발함"
+            "value" : "활발"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mais ativo"
+            "value" : "Ativas"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "词元最多"
+            "value" : "最多"
           }
         },
         "zh-Hant-HK" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "詞元最多"
+            "value" : "最多"
           }
         },
         "zh-Hant-TW" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "詞元最多"
+            "value" : "最多"
           }
         }
       }
@@ -37878,19 +37878,19 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Repository-Änderungen"
+            "value" : "Codeänderungen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cambios en repositorios"
+            "value" : "Cambios de código"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Modifications des dépôts"
+            "value" : "Évolution du code"
           }
         },
         "ja" : {
@@ -37908,7 +37908,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alterações nos repositórios"
+            "value" : "Mudanças no código"
           }
         },
         "zh-Hans" : {
@@ -44232,19 +44232,19 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tokens / üblich"
+            "value" : "Token-Faktor"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tokens / habitual"
+            "value" : "Ratio tokens"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tokens / habituel"
+            "value" : "Ratio jetons"
           }
         },
         "ja" : {
@@ -44262,7 +44262,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tokens / habitual"
+            "value" : "Fator tokens"
           }
         },
         "zh-Hans" : {

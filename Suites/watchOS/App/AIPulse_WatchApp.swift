@@ -305,7 +305,9 @@ struct WatchDashboardView: View {
                              pulse: PulseSnapshot?, now: Date, dimsSummary: Bool,
                              compactCenter: Bool = false) -> some View {
         let labelSize = compactCenter ? CGFloat(10) : centerLabelSize
+        let supportingLabelSize = max(8, labelSize - 1)
         let valueSize = compactCenter ? CGFloat(15) : centerValueSize
+        let centerTextWidth = side * 0.58
         return ZStack {
             WatchActivityRing(ratio: tokenRatio, color: tokenColor, trackColor: tokenTrackColor, width: thickness)
                 .opacity(dimsSummary ? 0.55 : 1)
@@ -316,14 +318,15 @@ struct WatchDashboardView: View {
                 .padding(side * 32 / 184)
             Button { showingInfo = true } label: {
                 VStack(spacing: 5) {
-                    Text(t("当前强度", "Current activity")).font(.system(size: labelSize)).foregroundStyle(supportTextColor)
+                    Text(t("当前强度", "Current activity")).font(.system(size: supportingLabelSize)).foregroundStyle(supportTextColor)
                     Text(pulse.map { I18n.pulseTier($0.tier) } ?? (cloud.pulseEnvelope?.pulse == nil ? t("暂无观测", "No observation") : t("观测已过期", "Expired")))
                         .font(.system(size: valueSize, weight: .semibold, design: .rounded)).lineLimit(1).minimumScaleFactor(0.8)
                     if let date = cloud.pulseEnvelope?.pulse?.asOf {
                         Text(t("观测于 ", "Observed ") + date.formatted(date: .omitted, time: .shortened))
-                            .font(.system(size: labelSize)).foregroundStyle(supportTextColor).lineLimit(1)
-                    } else { Text("—").font(.system(size: labelSize)).foregroundStyle(supportTextColor) }
-                }.frame(width: side * 0.49)
+                            .font(.system(size: supportingLabelSize)).foregroundStyle(supportTextColor)
+                            .lineLimit(1).minimumScaleFactor(0.8).allowsTightening(true)
+                    } else { Text("—").font(.system(size: supportingLabelSize)).foregroundStyle(supportTextColor) }
+                }.frame(width: centerTextWidth)
             }.buttonStyle(.plain).accessibilityHint(t("查看数据说明与同步状态", "View data explanation and sync status"))
         }.frame(width: side, height: side)
     }
