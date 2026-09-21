@@ -47,6 +47,10 @@ This README describes the AI Pulse 2.0 release candidate across macOS, iPhone, A
 
     > **菜单栏、Dock 与收盘回顾** — 当前脉搏与历史汇总分开，一般刷新不制造消费反馈；收盘保存结构化事实并按当前语言显示。
 
+- **Adaptive companion surfaces** — native Mac and iPhone widgets and the Apple Watch app share measured curved metrics that adapt to each display. The Mac widget uses a local App Group snapshot and opens the dashboard when a real refresh is needed; regular-width iPads use a larger dashboard canvas.
+
+    > **自适应伴侣界面** — Mac 与 iPhone 原生小组件及 Apple Watch 应用共享按字形测量的曲线指标，并适配不同屏幕。Mac 小组件使用 App Group 本机快照，需要真实刷新时打开仪表盘；常规宽度 iPad 使用更大的仪表盘画布。
+
 - **Sound controls** — consumption sounds, closing chime, and optional startup chime have separate controls. One-tap mute, quiet hours, volume, and consumption caps are grouped coherently; sound packs offer previews. No automatic system Focus/full-screen synchronization is promised.
 
     > **声音控制** — 消费提示、收盘钟和可选启动钟分别控制。一键静音、静音时段、音量与消费上限分组组织，声音包可试听；不承诺自动同步系统专注或全屏状态。
