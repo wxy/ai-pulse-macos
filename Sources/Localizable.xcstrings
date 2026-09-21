@@ -23854,19 +23854,19 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lines / üblich"
+            "value" : "Zeilenfaktor"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lines / habitual"
+            "value" : "Ratio líneas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lines / habituel"
+            "value" : "Ratio lignes"
           }
         },
         "ja" : {
@@ -23884,7 +23884,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lines / habitual"
+            "value" : "Fator linhas"
           }
         },
         "zh-Hans" : {
@@ -37878,19 +37878,19 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Repository-Änderungen"
+            "value" : "Codeänderungen"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cambios en repositorios"
+            "value" : "Cambios de código"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Modifications des dépôts"
+            "value" : "Évolution du code"
           }
         },
         "ja" : {
@@ -37908,7 +37908,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alterações nos repositórios"
+            "value" : "Mudanças no código"
           }
         },
         "zh-Hans" : {
@@ -44232,19 +44232,19 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tokens / üblich"
+            "value" : "Token-Faktor"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tokens / habitual"
+            "value" : "Ratio tokens"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tokens / habituel"
+            "value" : "Ratio jetons"
           }
         },
         "ja" : {
@@ -44262,7 +44262,7 @@
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tokens / habitual"
+            "value" : "Fator tokens"
           }
         },
         "zh-Hans" : {

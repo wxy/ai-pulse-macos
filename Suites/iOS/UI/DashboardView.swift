@@ -175,6 +175,7 @@ struct DashboardView: View {
     @EnvironmentObject private var cloud: CloudDataService
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("phone_sound_muted") private var muted = false
     @State private var range = "today"
     @State private var detail: String?
@@ -192,7 +193,14 @@ struct DashboardView: View {
         ZStack {
             DashboardFlowBackground()
             GeometryReader { geometry in
-                let width = min(440.0, geometry.size.width - 56)
+                let phoneWidth = min(440.0, max(1, geometry.size.width - 56))
+                let tabletHorizontalWidth = max(1, geometry.size.width - 96)
+                let tabletHeightFittingWidth = max(1, (geometry.size.height - 96) * 440 / 623)
+                let tabletWidth = min(
+                    600.0,
+                    min(tabletHorizontalWidth, max(phoneWidth, tabletHeightFittingWidth))
+                )
+                let width = horizontalSizeClass == .regular ? tabletWidth : phoneWidth
                 let scale = width / 440
                 ScrollView {
                     VStack(spacing: 12) {
