@@ -5,6 +5,33 @@ import Foundation
 /// resolves to a real Git root inside one of the user-selected development
 /// directories.
 enum RepositoryScope {
+    /// Reuse Git-root verification only while building one result. A new read
+    /// creates a new lookup, so changed authorization, paths, and worktrees
+    /// are checked again rather than being trusted from an earlier snapshot.
+    struct AuthorizedRootLookup {
+        let roots: [String]
+        private var resolved: [String: String] = [:]
+        private var unavailable: Set<String> = []
+
+        mutating func root(
+            for path: String,
+            resolvingWith resolve: ((String, [String]) -> String?)? = nil
+        ) -> String? {
+            guard !path.isEmpty else { return nil }
+            if let root = resolved[path] { return root }
+            if unavailable.contains(path) { return nil }
+
+            let resolver = resolve ?? { RepositoryScope.authorizedGitRoot(for: $0, roots: $1) }
+            let root = resolver(path, roots)
+            if let root {
+                resolved[path] = root
+            } else {
+                unavailable.insert(path)
+            }
+            return root
+        }
+    }
+
     static func configuredRoots(defaults: UserDefaults = .standard) -> [String] {
         (defaults.stringArray(forKey: "repo_search_dirs") ?? [])
             .map(canonicalPath)

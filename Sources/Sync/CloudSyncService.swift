@@ -69,18 +69,35 @@ final class CloudSyncService {
     private init() {}
 
     func syncFromCache(publishMacWidget: Bool = true) async {
-        if publishMacWidget {
-            _ = await MacWidgetLocalPublisher.publish()
+        let cloudEnabled = Self.allowsCloudWrites
+        guard publishMacWidget || cloudEnabled else {
+            setResult(.disabled)
+            return
+        }
+        if cloudEnabled {
+            guard result != .syncing else { return }
+            setResult(.syncing)
         }
 
-        guard Self.allowsCloudWrites else {
+        // The dashboard can request sync before startup log replay completes.
+        // Wait for that queued scan without starting another one, so the
+        // snapshots published to the widget and CloudKit include its facts.
+        if !RuntimeQA.isEnabled { await LogWatcher.shared.waitForPendingScan() }
+
+        // Resolve each range once for this sync. The widget and CloudKit must
+        // not each rebuild 30 days after a usage event cleared the cache.
+        let today = await snapshot(for: .today, maxAge: 600)
+        let history = await snapshot(for: .days30, maxAge: 43200)
+        if publishMacWidget {
+            _ = await MacWidgetLocalPublisher.publish(todaySnapshot: today, historySnapshot: history)
+        }
+
+        guard cloudEnabled else {
             setResult(.disabled)
             Logger.info("CloudSync: dashboard writes disabled in this unsigned build")
             return
         }
 
-        guard result != .syncing else { return }
-        setResult(.syncing)
         var didFail = false
         Logger.info("CloudSync: starting sync")
         let ranges: [(key: String, recordName: String, maxAge: TimeInterval)] = [
@@ -90,12 +107,10 @@ final class CloudSyncService {
         ]
         for r in ranges {
             let snap: DashboardSnapshot
-            // Try cache first; if missing/stale, compute directly
-            if let cached = await DashboardCache.read(timeRange: r.key, maxAge: r.maxAge) {
-                snap = cached
-            } else {
-                guard let period = DashboardPeriodKind(rawValue: r.key) else { didFail = true; continue }
-                snap = await StatsService.dashboardSnapshot(period: period)
+            switch r.key {
+            case DashboardPeriodKind.today.rawValue: snap = today
+            case DashboardPeriodKind.days30.rawValue: snap = history
+            default: snap = await snapshot(for: .week, maxAge: r.maxAge)
             }
             guard let data = try? JSONEncoder().encode(snap),
                   let json = String(data: data, encoding: .utf8) else { didFail = true; continue }
@@ -136,6 +151,13 @@ final class CloudSyncService {
         if !(await syncCurrentPulse()) { didFail = true }
         if !didFail { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "cloud_sync_last_success") }
         setResult(didFail ? .failed : .succeeded)
+    }
+
+    private func snapshot(for period: DashboardPeriodKind, maxAge: TimeInterval) async -> DashboardSnapshot {
+        if let cached = await DashboardCache.read(timeRange: period.rawValue, maxAge: maxAge) {
+            return cached
+        }
+        return await StatsService.dashboardSnapshot(period: period)
     }
 
     private func syncCurrentPulse() async -> Bool {

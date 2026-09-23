@@ -27,6 +27,19 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
     /// Last complete-line byte offset per file path, persisted in SQLite.
     private var filePositions: [String: UInt64] = [:]
+    /// Only offsets advanced by this process need another durable write.
+    private var pendingPositions: [String: UInt64] = [:]
+    private var codexMetadata: [String: CodexResumeMetadata] = [:]
+    private var openCodeFingerprints: [String: OpenCodeFingerprint] = [:]
+    private var scanChanged = false
+    private var scanFreshTokens: Int64 = 0
+    private var scanSource: String?
+
+    private struct OpenCodeFingerprint: Equatable {
+        let size: UInt64
+        let modifiedAt: Date
+        let fileNumber: UInt64?
+    }
     /// Last seen model per aider file (survives incremental scans).
     private var aiderModels: [String: String] = [:]
     /// VS Code chat journals are patches over prior request state. Retain the
@@ -115,8 +128,21 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
+    /// Wait for scans already queued at the call site, including scan()'s
+    /// second queue hop and the initial startup import. Does not rescan.
+    func waitForPendingScan() async {
+        await withCheckedContinuation { continuation in
+            scanQueue.async {
+                self.scanQueue.async { continuation.resume() }
+            }
+        }
+    }
+
     private func runScan(includeClaudeProjects: Bool) {
         dispatchPrecondition(condition: .onQueue(scanQueue))
+        scanChanged = false
+        scanFreshTokens = 0
+        scanSource = nil
         LogScanObservation.shared.begin()
         defer { LogScanObservation.shared.finish() }
         if includeClaudeProjects {
@@ -128,7 +154,14 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         scanDeepSeekHarnessSessions()
         scanQwenSessions()
         scanOpenCodeSessions()
-        persistPositions(filePositions) // also retry previously failed cursor saves
+        persistPendingPositions()
+        if scanChanged {
+            let event: ConsumptionEvent? = scanFreshTokens > 0 && !suppressConsumptionEvents
+                ? ConsumptionEvent(spendUSD: nil, tokens: Int(clamping: scanFreshTokens),
+                                   source: scanSource ?? "log")
+                : nil
+            DataRefreshCoordinator.shared.notifyPhaseIngest(event)
+        }
     }
 
     func stop() {
@@ -140,7 +173,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             self.claudeSource = nil
             self.codexSource?.cancel()
             self.codexSource = nil
-            self.persistPositions(self.filePositions)
+            self.persistPendingPositions()
         }
     }
 
@@ -418,7 +451,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                 })
             copilotStates[path] = state
             filePositions[path] = checkpoint
-            persistPositions([path: checkpoint])
+            pendingPositions[path] = checkpoint
             Self.recordFileScanResult(path: path, error: nil)
 
             if let sessionId = state.sessionId, maxTs > 0 {
@@ -495,7 +528,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             Logger.info("LogWatcher: parsed \(result.parsedCount) DeepSeek Harness events from \(path), decompressedBytes=\(result.byteCount)")
         }
         filePositions[path] = fileSize
-        persistPositions([path: fileSize])
+        pendingPositions[path] = fileSize
     }
 
     struct DeepSeekHarnessScanResult {
@@ -603,7 +636,11 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         var maxTs = 0
         var parsedCount = 0
         let filePath = file.path
-        let resume = hasNewBytes(at: file) ? codexResumeMetadata(at: file) : nil
+        let lastPos = filePositions[filePath] ?? 0
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: filePath))?[.size] as? UInt64 ?? 0
+        let resume = lastPos != fileSize && lastPos <= fileSize
+            ? codexMetadata[filePath] ?? codexResumeMetadata(at: file)
+            : nil
         currentCwd = resume?.cwd
         currentModel = resume?.model
         currentSessionId = resume?.sessionId
@@ -630,6 +667,10 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                 return event
             }
             return nil
+        }
+        if filePositions[filePath] != lastPos {
+            codexMetadata[filePath] = CodexResumeMetadata(
+                cwd: currentCwd, sessionId: currentSessionId, model: currentModel)
         }
         guard let sid = currentSessionId, maxTs > 0 else { return }
         // Prefer the ChatGPT app's own thread title over the first log message.
@@ -686,13 +727,6 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         // `lastPos` is a byte boundary observed after a complete line in the
         // normal case. Do not consume a trailing partial line as metadata.
         return CodexResumeMetadata(cwd: cwd, sessionId: sessionId, model: model)
-    }
-
-    private func hasNewBytes(at file: URL) -> Bool {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
-              let fileSize = attrs[.size] as? UInt64
-        else { return false }
-        return filePositions[file.path] != fileSize
     }
 
     // MARK: - Qwen Code
@@ -753,8 +787,17 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     }
 
     private func insertOpenCodeFile(_ file: URL) {
+        let fingerprint: OpenCodeFingerprint? = {
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
+                  let size = attributes[.size] as? UInt64,
+                  let modifiedAt = attributes[.modificationDate] as? Date else { return nil }
+            let fileNumber = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
+            return OpenCodeFingerprint(size: size, modifiedAt: modifiedAt, fileNumber: fileNumber)
+        }()
+        if let fingerprint, openCodeFingerprints[file.path] == fingerprint { return }
         guard let event = OpenCodeParser.parseFile(file, cwd: nil) else { return }
         let saved = insertEvents([event])
+        if saved, let fingerprint { openCodeFingerprints[file.path] = fingerprint }
         Self.recordFileScanResult(path: file.path,
                                   error: saved ? nil : JSONLCheckpoint.Failure.persistenceFailed)
         Logger.debug("LogWatcher: parsed opencode event from \(file.path)")
@@ -825,7 +868,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                     guard insertEvents(events) else { throw JSONLCheckpoint.Failure.persistenceFailed }
                 })
             filePositions[path] = checkpoint
-            persistPositions(filePositions)
+            pendingPositions[path] = checkpoint
             Self.recordFileScanResult(path: path, error: nil)
         } catch {
             Logger.error("LogWatcher: file scan did not advance checkpoint: \(error)")
@@ -833,15 +876,18 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
-    private func persistPositions(_ positions: [String: UInt64]) {
+    private func persistPendingPositions() {
         dispatchPrecondition(condition: .onQueue(scanQueue))
-            do {
-                try AppDatabase.shared.writeSynchronously { try LogCheckpointStore.save(positions, in: $0) }
-                AppHealthMonitor.shared.clearIngestError(source: "log.offsets")
-            } catch {
-                Logger.error("LogWatcher: persist positions failed: \(error)")
-                AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "log.offsets")
-            }
+        guard !pendingPositions.isEmpty else { return }
+        do {
+            let positions = pendingPositions
+            try AppDatabase.shared.writeSynchronously { try LogCheckpointStore.save(positions, in: $0) }
+            pendingPositions.removeAll(keepingCapacity: true)
+            AppHealthMonitor.shared.clearIngestError(source: "log.offsets")
+        } catch {
+            Logger.error("LogWatcher: persist positions failed: \(error)")
+            AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "log.offsets")
+        }
     }
 
     private func enumerateGitRepos(in dir: URL, handler: (URL) -> Void) {
@@ -897,7 +943,11 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                     ? ConsumptionEvent(spendUSD: nil, tokens: Int(clamping: batchTokens),
                                        source: rows.first?.event.source ?? "log")
                     : nil
-                DataRefreshCoordinator.shared.notifyPhaseIngest(event)
+                scanChanged = true
+                if let event, let tokens = event.tokens {
+                    scanFreshTokens += min(Int64(tokens), Int64.max - scanFreshTokens)
+                    if scanSource == nil { scanSource = event.source }
+                }
                 return true
             } catch {
                 Logger.error("Failed to insert usage_event: \(error)")

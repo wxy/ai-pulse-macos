@@ -338,8 +338,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Update the demo menu item title when demo mode changes.
     @MainActor @objc private func onDemoModeChange() {
         buildMainMenu()
-        // Refresh Dashboard if it's open
-        NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
     }
 
     @MainActor @objc private func onLanguageChange() {

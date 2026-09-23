@@ -18,9 +18,10 @@ enum BalanceObservation {
             WHERE ts >= ? AND ts <= ?
             UNION ALL
             SELECT b.id, b.provider_id, b.ts, b.balance, b.currency
-            FROM balance_snapshot b WHERE b.id = (
+            FROM (SELECT DISTINCT provider_id FROM balance_snapshot) providers
+            JOIN balance_snapshot b ON b.id = (
               SELECT p.id FROM balance_snapshot p
-              WHERE p.provider_id = b.provider_id AND p.ts < ?
+              WHERE p.provider_id = providers.provider_id AND p.ts < ?
               ORDER BY p.ts DESC, p.id DESC LIMIT 1
             )
             ORDER BY provider_id, ts, id

@@ -104,6 +104,7 @@ struct DashboardView: View {
     @State private var balanceErrors: Set<String> = []     // provider IDs whose API fetch failed
     @State private var loadGenerationByRange: [TimeRange: Int] = [:]
     @State private var rangeLoadTasks: [TimeRange: Task<Void, Never>] = [:]
+    @State private var dirtyRanges: Set<TimeRange> = []
     @State private var entryAnimationToken = 0   // cancels a stale zero→one entry run
     @State private var rangeChangeStartedAt: Date? = nil
     @State private var rangeSnapshots: [TimeRange: DashboardSnapshot] = [:]
@@ -505,11 +506,9 @@ struct DashboardView: View {
             await hydrateRangeSnapshotCache()
             let selectedRange = timeRange
             await load(range: selectedRange)
-            for range in TimeRange.allCases where range != selectedRange {
-                scheduleLoad(for: range)
-            }
             ApiPoller.shared.pollAll()
-            triggerCloudSync()
+            // Phase 4 publishes shortly after launch. Opening the dashboard
+            // must not start a second sync while startup logs are importing.
         }
         .onChange(of: timeRange) { _, newValue in
             rangeChangeStartedAt = Date()
@@ -523,18 +522,16 @@ struct DashboardView: View {
             startEntryAnimation()
             costHoverDate = nil
             codeHoverDate = nil
+            if dirtyRanges.contains(newValue) { rangeSnapshots.removeValue(forKey: newValue) }
             scheduleLoad(for: newValue)
         }
         .onReceive(NotificationCenter.default.publisher(for: .soundMuteDidChange)) { _ in
             soundMuted = AppSoundControl.isMuted()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .dashboardRefresh)) { _ in
-            // Manual refresh / forceRefresh — immediate, no throttle
-            scheduleLoad(for: timeRange)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardDidOpen)) { notification in
             let now = notification.object as? Date ?? Date()
-            guard Self.shouldRefreshOnOpen(
+            Task { await refreshCurrentPulse() }
+            guard dirtyRanges.contains(timeRange) || Self.shouldRefreshOnOpen(
                 lastUpdated: activeSnapshot?.updatedAt,
                 loadedPeriod: activeSnapshot?.period,
                 range: timeRange,
@@ -546,6 +543,9 @@ struct DashboardView: View {
             ])
             scheduleLoad(for: timeRange)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .dashboardDidClose)) { _ in
+            cancelRangeLoads()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .demoModeDidChange)) { _ in
             // A mode change invalidates all three channels, not only the visible
             // one. Never flash fictional activity while real data is loading.
@@ -556,14 +556,19 @@ struct DashboardView: View {
             rangeSnapshots.removeAll()
             demoRanges.removeAll()
             selectedToolForOverlay = nil
-            for range in TimeRange.allCases { scheduleLoad(for: range) }
+            dirtyRanges.formUnion(TimeRange.allCases)
+            if dashboardIsVisible { scheduleLoad(for: timeRange) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .dataDidChange)) { _ in
-            Task { await refreshCurrentPulse() }
-            // The coordinator already debounces writes. Refresh all resident
-            // channels so non-selected periods cannot retain pre-ingest facts.
-            // Each range cancels only its own older request.
-            for range in TimeRange.allCases { scheduleLoad(for: range) }
+            // A hidden panel retains its SwiftUI tree. Mark all resident ranges
+            // stale, but build only the visible range when the panel is open.
+            cancelRangeLoads()
+            dirtyRanges.formUnion(TimeRange.allCases)
+            rangeSnapshots.removeAll()
+            if dashboardIsVisible {
+                Task { await refreshCurrentPulse() }
+                scheduleLoad(for: timeRange)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .appHealthDidChange)) { _ in
             refreshLocalScanStatus()
@@ -573,7 +578,7 @@ struct DashboardView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .pulseDidChange)) { _ in
             refreshLocalScanStatus()
-            Task { await refreshCurrentPulse() }
+            if dashboardIsVisible { Task { await refreshCurrentPulse() } }
         }
         .onReceive(NotificationCenter.default.publisher(for: CloudSyncService.didChange)) { _ in
             refreshCloudSyncStatus()
@@ -602,8 +607,7 @@ struct DashboardView: View {
             i18nToken += 1
         }
         .onDisappear {
-            for task in rangeLoadTasks.values { task.cancel() }
-            rangeLoadTasks.removeAll()
+            cancelRangeLoads()
         }
         .id(i18nToken)
     }
@@ -1651,6 +1655,20 @@ struct DashboardView: View {
     }
 
     @MainActor
+    private var dashboardIsVisible: Bool {
+        DashboardWindowManager.shared.window?.isVisible == true
+    }
+
+    @MainActor
+    private func cancelRangeLoads() {
+        for range in TimeRange.allCases {
+            rangeLoadTasks[range]?.cancel()
+            loadGenerationByRange[range, default: 0] += 1
+        }
+        rangeLoadTasks.removeAll()
+    }
+
+    @MainActor
     private func refreshCurrentPulse() async {
         pulseRefreshGeneration &+= 1
         let generation = pulseRefreshGeneration
@@ -1716,13 +1734,13 @@ struct DashboardView: View {
             await storeSnapshot(snap, for: range)
         }
         triggerCloudSync()
-        NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
     }
 
     @MainActor
     private func storeSnapshot(_ rawSnap: DashboardSnapshot, for range: TimeRange, persist: Bool = true) async {
         let snap = rawSnap.sanitized()
         rangeSnapshots[range] = snap
+        dirtyRanges.remove(range)
         demoRanges.remove(range)
 
         let trendValues = (snap.dailyStats + snap.balanceDaily).map(\.value)

@@ -64,9 +64,9 @@ enum StatsService {
                  row["commit_hash"] as String? ?? "")
             }
         }
-        let roots = RepositoryScope.configuredRoots()
+        var authorizedRoots = RepositoryScope.AuthorizedRootLookup(roots: RepositoryScope.configuredRoots())
         return rows.compactMap { ts, path, added, deleted, commitHash in
-            guard let root = RepositoryScope.authorizedGitRoot(for: path, roots: roots) else { return nil }
+            guard let root = authorizedRoots.root(for: path) else { return nil }
             return AuthorizedCodeChange(ts: ts,
                                         added: max(added, 0),
                                         deleted: max(deleted, 0),
@@ -93,10 +93,10 @@ enum StatsService {
                  hash: row["commit_hash"] as String? ?? "")
             }
         }
-        let roots = RepositoryScope.configuredRoots()
+        var authorizedRoots = RepositoryScope.AuthorizedRootLookup(roots: RepositoryScope.configuredRoots())
         return rows.compactMap { row in
             guard !row.hash.isEmpty,
-                  let root = RepositoryScope.authorizedGitRoot(for: row.path, roots: roots) else { return nil }
+                  let root = authorizedRoots.root(for: row.path) else { return nil }
             return AuthorizedCommit(ts: row.ts, repoPath: root, commitHash: row.hash)
         }
     }
