@@ -151,7 +151,6 @@ struct OnboardingView: View {
 // MARK: - Window Manager
 
 extension Notification.Name {
-    static let dashboardRefresh = Notification.Name("dashboardRefresh")
     static let showIntegrationsTab = Notification.Name("showIntegrationsTab")
     static let demoModeDidChange = Notification.Name("demoModeDidChange")
 }

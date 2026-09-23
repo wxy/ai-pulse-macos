@@ -12,7 +12,12 @@ struct IngestActions: Sendable {
 
     static let live = IngestActions(
         scanLogs: { LogWatcher.shared.scan() },
-        scanRepos: { RepoDiscovery.scan() },
+        // LogWatcher already discovers repositories while scanning aider logs.
+        // Keep scope pruning here without walking the same tree twice per tick.
+        scanRepos: {
+            GitMonitor.shared.pruneWatchedRepos(outside: RepositoryScope.configuredRoots())
+            return 0
+        },
         refreshClaudeStatus: { UsageMonitor.shared.refreshClaudeStatus() }
     )
 
@@ -196,7 +201,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     func refreshFromMacWidget() async {
         let startedAt = Date()
         await LogWatcher.shared.scanAndWait()
-        _ = RepoDiscovery.scan()
+        GitMonitor.shared.pruneWatchedRepos(outside: RepositoryScope.configuredRoots())
         await GitMonitor.shared.pollAndWait()
         await DashboardCache.invalidateAll()
 
@@ -206,7 +211,6 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         }
 
         NotificationCenter.default.post(name: .dataDidChange, object: nil)
-        NotificationCenter.default.post(name: .dashboardRefresh, object: nil)
         await CloudSyncService.shared.syncFromCache()
         Logger.info(
             "MacWidget: explicit refresh completed in "
@@ -309,6 +313,8 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         // the next five-minute tick runs after history import has settled.
         guard !LogWatcher.backfill.isActive else { return }
         Task.detached(priority: .background) {
+            await LogWatcher.shared.waitForPendingScan()
+            guard !LogWatcher.backfill.isActive else { return }
             let now = Date().timeIntervalSince1970
             // Per-range throttles: today=5min, week=1h, 30d=12h
             let intervals: [(String, Int, TimeInterval)] = [
@@ -345,11 +351,12 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         DiagnosticJournal.log("cache_invalidate", [
             "reason": .string("usage_event"),
         ])
-        Task { await DashboardCache.invalidateAll() }
-        DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated {
-                self?.appendEvent(event)
-                self?.scheduleUINotify()
+        Task { [weak self] in
+            guard let self else { return }
+            await invalidateDashboardCache()
+            await MainActor.run {
+                self.appendEvent(event)
+                self.scheduleUINotify()
             }
         }
     }
@@ -377,11 +384,12 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         DiagnosticJournal.log("cache_invalidate", [
             "reason": .string("balance_snapshot"),
         ])
-        Task { await DashboardCache.invalidateAll() }
-        DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated {
-                self?.appendEvent(event)
-                self?.scheduleUINotify()
+        Task { [weak self] in
+            guard let self else { return }
+            await invalidateDashboardCache()
+            await MainActor.run {
+                self.appendEvent(event)
+                self.scheduleUINotify()
             }
         }
     }

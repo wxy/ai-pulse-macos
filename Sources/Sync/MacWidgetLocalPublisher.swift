@@ -3,9 +3,8 @@ import Foundation
 import WidgetKit
 
 enum MacWidgetLocalPublisher {
-    static func publish(at now: Date = Date()) async -> Bool {
-        async let today = snapshot(for: .today, cacheMaxAge: 10 * 60)
-        async let history = snapshot(for: .days30, cacheMaxAge: 12 * 60 * 60)
+    static func publish(todaySnapshot: DashboardSnapshot, historySnapshot: DashboardSnapshot,
+                        at now: Date = Date()) async -> Bool {
         async let pulse = PulseEngine.shared.snapshot(now: now)
 
         let previous = try? MacWidgetLocalStore.load()
@@ -26,8 +25,8 @@ enum MacWidgetLocalPublisher {
 
         let payload = MacWidgetLocalPayload(
             writtenAt: now,
-            todaySnapshot: await today,
-            historySnapshot: await history,
+            todaySnapshot: todaySnapshot,
+            historySnapshot: historySnapshot,
             pulseEnvelope: pulseEnvelope
         )
         do {
@@ -39,18 +38,5 @@ enum MacWidgetLocalPublisher {
             Logger.error("MacWidget: local snapshot write failed: \(error.localizedDescription)")
             return false
         }
-    }
-
-    private static func snapshot(
-        for period: DashboardPeriodKind,
-        cacheMaxAge: TimeInterval
-    ) async -> DashboardSnapshot {
-        if let cached = await DashboardCache.read(
-            timeRange: period.rawValue,
-            maxAge: cacheMaxAge
-        ) {
-            return cached
-        }
-        return await StatsService.dashboardSnapshot(period: period)
     }
 }

@@ -32,7 +32,9 @@ final class DashboardWindowManager: NSObject {
     }
 
     func close() {
+        let wasVisible = window?.isVisible == true
         window?.orderOut(nil)
+        if wasVisible { NotificationCenter.default.post(name: .dashboardDidClose, object: nil) }
         if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
         if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
         if let deactivateObserver { NotificationCenter.default.removeObserver(deactivateObserver) }
@@ -157,7 +159,12 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func onPulseChanged() {
-        refreshStats()
+        // The 30-second pulse decay tick changes only the header. Rebuilding
+        // factual activity here would re-run the entire menu's database work.
+        guard menu.numberOfItems >= 2 else { refreshStats(); return }
+        let snapshot = PulseFeedbackController.shared.snapshot
+        menu.item(at: 0)?.title = StatusItemController.headline(snapshot: snapshot)
+        menu.item(at: 1)?.title = StatusItemController.detail(snapshot: snapshot)
     }
 
     @objc private func onSoundMuteChanged() {

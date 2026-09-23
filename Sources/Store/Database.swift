@@ -323,6 +323,8 @@ final class AppDatabase: @unchecked Sendable {
                 }
                 try? db.create(indexOn: "balance_snapshot", columns: ["ts"])
                 try? db.create(indexOn: "balance_snapshot", columns: ["provider_id"])
+                try db.create(index: "balance_snapshot_provider_ts_id", on: "balance_snapshot",
+                              columns: ["provider_id", "ts", "id"], ifNotExists: true)
             }),
             ("logwatcher_position", { db in
                 try db.create(table: "logwatcher_position", ifNotExists: true) { t in
