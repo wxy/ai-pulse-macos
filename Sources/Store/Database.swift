@@ -69,14 +69,17 @@ final class AppDatabase: @unchecked Sendable {
 
         // Additive column migrations for existing installs
         // (create-ifNotExists won't add columns to tables that already exist).
-        addColumnIfMissing("quota_status", "window_seconds", "REAL")
-        addColumnIfMissing("usage_event", "cache_creation_tokens", "INTEGER")
-        addColumnIfMissing("usage_event", "reported_output_tokens", "INTEGER")
-        addColumnIfMissing("usage_event", "reasoning_tokens", "INTEGER")
+        // Failures surface to the startup DB-error path: continuing with a
+        // partial schema makes every aggregate query that references the
+        // missing column throw for the whole session.
+        try addColumnIfMissing("quota_status", "window_seconds", "REAL")
+        try addColumnIfMissing("usage_event", "cache_creation_tokens", "INTEGER")
+        try addColumnIfMissing("usage_event", "reported_output_tokens", "INTEGER")
+        try addColumnIfMissing("usage_event", "reasoning_tokens", "INTEGER")
         // v2 WI-5: AI attribution on code changes — NULL means unattributed
         // (stays a对照-only row, never counted as consumption).
-        addColumnIfMissing("code_change", "attributed_tool", "TEXT")
-        addColumnIfMissing("code_change", "attribution", "TEXT")
+        try addColumnIfMissing("code_change", "attributed_tool", "TEXT")
+        try addColumnIfMissing("code_change", "attribution", "TEXT")
         try dbQueue?.write { db in
             try Self.migrateRepositoryCodeIdentity(db)
             try Self.backfillKnownProviderAttribution(db)
@@ -430,17 +433,15 @@ final class AppDatabase: @unchecked Sendable {
         ]
 
     /// Add a column to an existing table if it doesn't already have it.
-    private func addColumnIfMissing(_ table: String, _ column: String, _ type: String) {
-        do {
-            try dbQueue?.write { db in
-                let exists = (try? db.columns(in: table).contains { $0.name == column }) ?? false
-                if !exists {
-                    try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
-                    Logger.info("  + \(table).\(column) added")
-                }
+    /// Throws so a failed migration surfaces through the startup DB-error
+    /// path instead of leaving the app to run on a partial schema.
+    private func addColumnIfMissing(_ table: String, _ column: String, _ type: String) throws {
+        try dbQueue?.write { db in
+            let exists = (try? db.columns(in: table).contains { $0.name == column }) ?? false
+            if !exists {
+                try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
+                Logger.info("  + \(table).\(column) added")
             }
-        } catch {
-            Logger.error("  ✗ addColumn \(table).\(column): \(error)")
         }
     }
 
