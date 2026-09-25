@@ -1015,7 +1015,25 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Read the first line of a Claude Code JSONL file to discover and register
     /// the associated git repo — regardless of whether the file has new content.
     /// Failures are silent (the file may be mid-write); the next scan will retry.
+    /// Cache for `discoverAndWatchRepo`: path → (fingerprint, resolved repo).
+    /// Repo discovery re-reads the file head and walks git roots on every
+    /// scan for every Claude jsonl; the answer cannot change while the file
+    /// head is unchanged. Nil repoPath caches the "no repo" verdict too.
+    private let repoDiscoveryLock = NSLock()
+    private var repoDiscoveryCache: [String: (fingerprint: SessionInfoBackfill.PrefixFingerprint, repoPath: String?)] = [:]
+
     private func discoverAndWatchRepo(from file: URL) {
+        let fingerprint = SessionInfoBackfill.prefixFingerprint(of: file)
+        repoDiscoveryLock.lock()
+        if let fingerprint, let cached = repoDiscoveryCache[file.path], cached.fingerprint == fingerprint {
+            repoDiscoveryLock.unlock()
+            if let repoPath = cached.repoPath {
+                GitMonitor.shared.watch(repoPath: repoPath)
+            }
+            return
+        }
+        repoDiscoveryLock.unlock()
+
         guard let handle = try? FileHandle(forReadingFrom: file) else { return }
         defer { try? handle.close() }
         guard let data = try? handle.read(upToCount: 4096),
@@ -1024,9 +1042,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
               !firstLine.isEmpty,
               let jsonData = firstLine.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-              let cwd = json["cwd"] as? String,
-              let repoUrl = findGitRepo(containing: cwd)
+              let cwd = json["cwd"] as? String
         else { return }
+        let repoUrl = findGitRepo(containing: cwd)
+        if let fingerprint {
+            repoDiscoveryLock.lock()
+            if repoDiscoveryCache.count > 4096 { repoDiscoveryCache.removeAll() }
+            repoDiscoveryCache[file.path] = (fingerprint, repoUrl?.path)
+            repoDiscoveryLock.unlock()
+        }
+        guard let repoUrl else { return }
         GitMonitor.shared.watch(repoPath: repoUrl.path)
     }
 

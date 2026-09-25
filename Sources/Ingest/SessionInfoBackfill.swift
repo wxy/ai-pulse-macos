@@ -100,14 +100,63 @@ enum SessionInfoBackfill {
         }
     }
 
+    /// Content fingerprint of a file head: the first bytes cannot change
+    /// while size, mtime and inode are unchanged, so prefix readers can skip
+    /// the read entirely for steady-state files.
+    struct PrefixFingerprint: Equatable {
+        let size: UInt64
+        let mtime: Date
+        let inode: UInt64
+    }
+
+    static func prefixFingerprint(of url: URL) -> PrefixFingerprint? {
+        guard let values = try? url.resourceValues(
+                  forKeys: [.fileSizeKey, .contentModificationDateKey, .fileIdentifierKey]),
+              let size = values.fileSize,
+              let mtime = values.contentModificationDate,
+              let inode = values.fileIdentifier
+        else { return nil }
+        return PrefixFingerprint(size: UInt64(size), mtime: mtime, inode: UInt64(inode))
+    }
+
+    private static let prefixCacheLock = NSLock()
+    private static nonisolated(unsafe) var prefixMetadataCache:
+        [String: (fingerprint: PrefixFingerprint, value: (sessionId: String?, title: String?, repo: String?)?)] = [:]
+
     /// Claude session metadata read from the file head (first user message +
     /// session id + cwd), so titles are correct even when a session is scanned
     /// while still being written.
+    ///
+    /// Cached by (size, mtime, inode): the scan loop calls this for every
+    /// jsonl on every 30-second pass, and an unchanged head would otherwise
+    /// cost a 4KB read plus per-line JSON re-parsing each tick.
     static func claudePrefixMetadata(from file: URL) -> (sessionId: String?, title: String?, repo: String?)? {
-        guard let data = try? readPrefix(of: file, bytes: 4096),
-              let record = metadataFromSnippet(data, source: "claude-code", sessionId: nil, repo: nil)
-        else { return nil }
-        return (record.sessionId, record.title, record.repo)
+        let fingerprint = prefixFingerprint(of: file)
+        prefixCacheLock.lock()
+        if let fingerprint, let cached = prefixMetadataCache[file.path], cached.fingerprint == fingerprint {
+            prefixCacheLock.unlock()
+            return cached.value
+        }
+        prefixCacheLock.unlock()
+
+        let value: (sessionId: String?, title: String?, repo: String?)?
+        if let data = try? readPrefix(of: file, bytes: 4096),
+           let record = metadataFromSnippet(data, source: "claude-code", sessionId: nil, repo: nil) {
+            value = (record.sessionId, record.title, record.repo)
+        } else {
+            value = nil
+        }
+
+        if let fingerprint {
+            prefixCacheLock.lock()
+            // Sessions accumulate across project directories; drop the whole
+            // table rather than tracking LRU — the next pass repopulates it
+            // with one 4KB read per file.
+            if prefixMetadataCache.count > 4096 { prefixMetadataCache.removeAll() }
+            prefixMetadataCache[file.path] = (fingerprint, value)
+            prefixCacheLock.unlock()
+        }
+        return value
     }
 
     private static func readPrefix(of url: URL, bytes: Int) throws -> Data {
