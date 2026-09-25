@@ -28,8 +28,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      didReceiveRemoteNotification userInfo: [AnyHashable: Any],
                      fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
         Task { @MainActor in
-            NotificationService.shared.didReceiveRemoteNotification()
-            completionHandler(.newData)
+            // Await the fetch before completing: returning early lets the
+            // system suspend the app and cancel the in-flight refresh.
+            let fetched = await NotificationService.shared.didReceiveRemoteNotification()
+            completionHandler(fetched ? .newData : .noData)
         }
     }
 }
