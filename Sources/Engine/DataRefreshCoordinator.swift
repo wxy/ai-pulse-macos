@@ -9,6 +9,7 @@ struct IngestActions: Sendable {
     var scanLogs: @Sendable () -> Void
     var scanRepos: @Sendable () -> Int
     var refreshClaudeStatus: @Sendable () -> Void
+    var runSessionBackfill: @Sendable () -> Void
 
     static let live = IngestActions(
         scanLogs: { LogWatcher.shared.scan() },
@@ -18,13 +19,15 @@ struct IngestActions: Sendable {
             GitMonitor.shared.pruneWatchedRepos(outside: RepositoryScope.configuredRoots())
             return 0
         },
-        refreshClaudeStatus: { UsageMonitor.shared.refreshClaudeStatus() }
+        refreshClaudeStatus: { UsageMonitor.shared.refreshClaudeStatus() },
+        runSessionBackfill: { SessionInfoBackfill.runIfNeeded() }
     )
 
     static let noop = IngestActions(
         scanLogs: {},
         scanRepos: { 0 },
-        refreshClaudeStatus: {}
+        refreshClaudeStatus: {},
+        runSessionBackfill: {}
     )
 }
 
@@ -96,8 +99,14 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         stopped = false
         timersSuspended = false
         // One-time session metadata backfill for logs that predate the
-        // session_info table (runs once, guarded internally).
-        SessionInfoBackfill.runIfNeeded()
+        // session_info table (runs once, guarded internally). Off the main
+        // thread: the first pass walks every existing Codex/Claude session
+        // file and would beachball launch for seconds on large histories.
+        let runSessionBackfill = actions.runSessionBackfill
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            runSessionBackfill()
+            self?.notifyDataChange()
+        }
         recreateTimers()
 
         Logger.info("DataRefreshCoordinator: started (P1=30s, P2=5min, P3=1h)")
