@@ -55,11 +55,11 @@ nonisolated final class ApiPoller: @unchecked Sendable {
 
         switch api {
         case .simple(let url, _):
-            fetchSimple(provider: provider, url: url, apiKey: apiKey, parser: simpleParser(for: provider.id))
+            fetchSimple(provider: provider, url: url, apiKey: apiKey, parser: Self.simpleParser(for: provider.id))
         case .openAI(let baseURL):
             fetchOpenAIUsage(provider: provider, baseURL: baseURL, apiKey: apiKey)
         case .zhipu(let url):
-            fetchSimple(provider: provider, url: url, apiKey: apiKey, parser: zhipuParser)
+            fetchSimple(provider: provider, url: url, apiKey: apiKey, parser: Self.zhipuParser)
         }
     }
 
@@ -145,7 +145,7 @@ nonisolated final class ApiPoller: @unchecked Sendable {
         // emit an unparseable string (all days silently skipped) and a local
         // time zone grabs the wrong day around UTC midnight.
         let fmt = Self.openAIUsageDateFormatter()
-        let utcDays = Calendar(identifier: .gregorian)
+        var utcDays = Calendar(identifier: .gregorian)
         utcDays.timeZone = TimeZone(identifier: "UTC")!
 
         Task {
@@ -173,14 +173,14 @@ nonisolated final class ApiPoller: @unchecked Sendable {
     // MARK: - Zhipu parser
 
     /// Parses account balance from query-customer-account-report.
-    /// Uses availableBalance (CNY) as the usable total.
-    private nonisolated func zhipuParser(_ json: [String: Any]) -> [BalanceEntry] {
+    /// Uses availableBalance (CNY) as the usable total. Static + pure for tests.
+    static nonisolated func zhipuParser(_ json: [String: Any]) -> [BalanceEntry] {
         let balance = json["balance"] as? [String: Any] ?? json["data"] as? [String: Any] ?? [:]
         let available = Self.parseDouble(balance["availableBalance"]) ?? Self.parseDouble(balance["balance"]) ?? 0
         return [BalanceEntry(currency: "CNY", totalBalance: available, grantedBalance: 0, toppedUpBalance: 0)]
     }
 
-    private nonisolated func simpleParser(for providerId: String) -> @Sendable ([String: Any]) -> [BalanceEntry] {
+    static nonisolated func simpleParser(for providerId: String) -> @Sendable ([String: Any]) -> [BalanceEntry] {
         switch providerId {
         case "deepseek":
             return { json in
