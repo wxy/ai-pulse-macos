@@ -161,7 +161,7 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
                     MainActor.assumeIsolated {
                                         Logger.debug("UsageMonitor: Copilot API error: \(error.localizedDescription)")
                                         healthMonitor.reportAPIError(providerId: "copilot-usage",
-                                            message: "Copilot usage: \(error.localizedDescription)")
+                                            message: "copilot-usage: \(error.localizedDescription)")
                     }
                 }
                 return
@@ -175,7 +175,7 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
                     MainActor.assumeIsolated {
                                         Logger.debug("UsageMonitor: Copilot API unexpected response")
                                         healthMonitor.reportAPIError(providerId: "copilot-usage",
-                                            message: "Copilot usage: unexpected response")
+                                            message: "copilot-usage: unexpected response")
                     }
                 }
                 return
@@ -186,7 +186,7 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
                     MainActor.assumeIsolated {
                                         Logger.debug("UsageMonitor: Copilot API unexpected response")
                                         healthMonitor.reportAPIError(providerId: "copilot-usage",
-                                            message: "Copilot usage: unexpected response")
+                                            message: "copilot-usage: unexpected response")
                     }
                 }
                 return
