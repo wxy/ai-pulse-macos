@@ -4,16 +4,21 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: write
+
 jobs:
   release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      # Pinned to the v5.0.0 commit — tag refs are movable.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        # Pinned to the v2.2.2 commit — tag refs are movable.
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
           draft: true
           name: ${{ github.ref_name }}
