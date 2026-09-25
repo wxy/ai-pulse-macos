@@ -69,7 +69,7 @@ final class UsageMonitorTests: XCTestCase {
         XCTAssertNil(result, "missing utilization is unknown, not observed zero")
     }
 
-    func testParseClaudeStatusCacheMaxPicksHigher() {
+    func testParseClaudeStatusCacheReturnsBothWindows() {
         let json: [String: Any] = [
             "usageData": [
                 "utilization5h": 0.9,
@@ -79,11 +79,11 @@ final class UsageMonitorTests: XCTestCase {
         ]
         let result = UsageMonitor.parseClaudeStatusCache(json)
         XCTAssertNotNil(result)
-        // UsageMonitor uses max(5h, 7d), verify both values are available
+        // Both windows round-trip independently; consumers decide how to
+        // combine them (the status list no longer applies a max()).
         XCTAssertEqual(result?.utilization5h, 0.9)
         XCTAssertEqual(result?.utilization7d, 0.3)
-        XCTAssertEqual(result?.utilization5h, 0.9)
-        XCTAssertEqual(result?.utilization7d, 0.3)
+        XCTAssertEqual(result?.limitStatus, "allowed_warning")
     }
 
     // MARK: - Copilot API response parsing
