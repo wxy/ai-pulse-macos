@@ -1757,7 +1757,7 @@ struct DashboardView: View {
         ])
 
         if persist {
-            await DashboardCache.write(timeRange: range.cacheKey, json: snap.jsonString())
+            await DashboardCache.write(timeRange: range.cacheKey, snapshot: snap)
         }
     }
 

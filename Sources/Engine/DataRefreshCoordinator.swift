@@ -207,7 +207,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
 
         for period in [DashboardPeriodKind.today, .week, .days30] {
             let snapshot = await StatsService.dashboardSnapshot(period: period)
-            await DashboardCache.write(timeRange: period.rawValue, json: snapshot.jsonString())
+            await DashboardCache.write(timeRange: period.rawValue, snapshot: snapshot)
         }
 
         NotificationCenter.default.post(name: .dataDidChange, object: nil)
@@ -327,7 +327,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
                 UserDefaults.standard.set(now, forKey: lastKey)
                 guard let period = DashboardPeriodKind(rawValue: key) else { continue }
                 let snap = await StatsService.dashboardSnapshot(period: period)
-                await DashboardCache.write(timeRange: key, json: snap.jsonString())
+                await DashboardCache.write(timeRange: key, snapshot: snap)
             }
 
             await CloudSyncService.shared.syncFromCache()

@@ -10,7 +10,24 @@ struct DashboardCache {
     var json: String
     var updatedAt: Date
 
-    static func write(timeRange: String, json: String) async {
+    /// A snapshot whose reads partially failed is not a fresh fact: caching
+    /// or serving it would present the degraded view for the whole TTL and
+    /// sync it to iOS/watchOS even after the source recovers. Keep the last
+    /// healthy snapshot instead; the live UI shows its own failure banner.
+    static func isCacheable(_ snapshot: DashboardSnapshot) -> Bool {
+        snapshot.readFailures.isEmpty
+    }
+
+    static func write(timeRange: String, snapshot: DashboardSnapshot) async {
+        guard isCacheable(snapshot) else {
+            DiagnosticJournal.log("cache_write", [
+                "range": .string(timeRange),
+                "outcome": .string("skipped_degraded"),
+                "read_failures": .array(snapshot.readFailures.map { .string($0) }),
+            ])
+            return
+        }
+        let json = snapshot.jsonString()
         do {
             try await AppDatabase.shared.write { db in
                 try db.execute(sql: """
@@ -96,6 +113,16 @@ struct DashboardCache {
             else {
                 DiagnosticJournal.log("cache_read", [
                     "range": .string(timeRange), "outcome": .string("decode_failed"),
+                    "age_seconds": .double(age.isFinite ? age : 0),
+                ])
+                return nil
+            }
+
+            // Never serve a snapshot written by a partially failing read pass
+            // (defensive: current writers already refuse to cache these).
+            guard isCacheable(snap) else {
+                DiagnosticJournal.log("cache_read", [
+                    "range": .string(timeRange), "outcome": .string("degraded"),
                     "age_seconds": .double(age.isFinite ? age : 0),
                 ])
                 return nil

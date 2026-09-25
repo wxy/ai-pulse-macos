@@ -88,8 +88,13 @@ final class CloudSyncService {
         // not each rebuild 30 days after a usage event cleared the cache.
         let today = await snapshot(for: .today, maxAge: 600)
         let history = await snapshot(for: .days30, maxAge: 43200)
+        // Degraded snapshots never reach the widget either: it would keep
+        // showing them offline long after the source recovered. The
+        // publisher keeps the previous healthy payload for nil ranges.
         if publishMacWidget {
-            _ = await MacWidgetLocalPublisher.publish(todaySnapshot: today, historySnapshot: history)
+            _ = await MacWidgetLocalPublisher.publish(
+                todaySnapshot: today.readFailures.isEmpty ? today : nil,
+                historySnapshot: history.readFailures.isEmpty ? history : nil)
         }
 
         guard cloudEnabled else {
@@ -114,6 +119,15 @@ final class CloudSyncService {
             }
             guard let data = try? JSONEncoder().encode(snap),
                   let json = String(data: data, encoding: .utf8) else { didFail = true; continue }
+
+            // A snapshot with failed reads is not a fresh fact. Pushing it
+            // would overwrite the remote with a degraded (possibly empty)
+            // view even after the source recovers; leave the last healthy
+            // record in place instead. Not counted as a sync failure.
+            guard snap.readFailures.isEmpty else {
+                Logger.warning("CloudSync: \(r.key) snapshot has read failures; skipping push")
+                continue
+            }
 
             // This runs every ~5 min (throttled by DataRefreshCoordinator),
             // but the underlying numbers often haven't changed between

@@ -3,11 +3,21 @@ import Foundation
 import WidgetKit
 
 enum MacWidgetLocalPublisher {
-    static func publish(todaySnapshot: DashboardSnapshot, historySnapshot: DashboardSnapshot,
+    /// `nil` snapshots mean "this read pass was degraded" — the caller passes
+    /// nil instead of distributing partially failed data. Degraded ranges
+    /// keep the previous healthy payload, mirroring how the pulse preserves
+    /// its last truthful observation below.
+    static func publish(todaySnapshot: DashboardSnapshot?, historySnapshot: DashboardSnapshot?,
                         at now: Date = Date()) async -> Bool {
         async let pulse = PulseEngine.shared.snapshot(now: now)
 
         let previous = try? MacWidgetLocalStore.load()
+        let resolvedToday = todaySnapshot ?? previous?.todaySnapshot
+        let resolvedHistory = historySnapshot ?? previous?.historySnapshot
+        guard let resolvedToday, let resolvedHistory else {
+            Logger.info("MacWidget: no healthy snapshot pair available; keeping previous payload")
+            return false
+        }
         let resolvedPulse = await pulse
         let pulseEnvelope: CurrentPulseEnvelope?
         if let resolvedPulse {
@@ -25,8 +35,8 @@ enum MacWidgetLocalPublisher {
 
         let payload = MacWidgetLocalPayload(
             writtenAt: now,
-            todaySnapshot: todaySnapshot,
-            historySnapshot: historySnapshot,
+            todaySnapshot: resolvedToday,
+            historySnapshot: resolvedHistory,
             pulseEnvelope: pulseEnvelope
         )
         do {
