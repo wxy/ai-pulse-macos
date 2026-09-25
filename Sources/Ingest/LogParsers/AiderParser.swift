@@ -65,6 +65,23 @@ struct AiderParser {
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
+    // Aider writes `datetime.isoformat()` output: a naive local timestamp
+    // without any zone designator ("2026-06-26T10:00:00", optionally with
+    // microseconds). ISO8601DateFormatter requires a zone, so these POSIX
+    // formatters are the third fallback and interpret the string in the
+    // machine's local time zone — the same clock aider stamped it with.
+    private static nonisolated(unsafe) let naiveFrac: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+        return f
+    }()
+    private static nonisolated(unsafe) let naive: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return f
+    }()
 
     static func parseModelLine(_ line: String) -> String? {
         guard line.hasPrefix("Model: "),
@@ -117,7 +134,8 @@ struct AiderParser {
     }
 
     private static func parseISO8601(_ str: String) -> Int? {
-        if let date = iso8601Frac.date(from: str) ?? iso8601.date(from: str) {
+        if let date = iso8601Frac.date(from: str) ?? iso8601.date(from: str) ??
+            naiveFrac.date(from: str) ?? naive.date(from: str) {
             return Int(date.timeIntervalSince1970 * 1000)
         }
         return nil
