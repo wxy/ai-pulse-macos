@@ -8,6 +8,7 @@ DerivedData/
 
 # Distribution artifacts
 dist/
+artifacts/
 
 # Local credentials (do not commit)
 .env

@@ -105,13 +105,10 @@ public enum MacWidgetLocalStore {
         let data = try JSONEncoder().encode(payload)
         let defaults = UserDefaults(suiteName: appGroupIdentifier)
         defaults?.set(data, forKey: defaultsKey)
-        let defaultsPersisted = defaults?.synchronize() == true
-
-        do {
-            try write(data, to: container.appendingPathComponent(fileName), fileManager: fileManager)
-        } catch {
-            guard defaultsPersisted else { throw error }
-        }
+        // synchronize() is deprecated and a no-op promise; the load side
+        // already prefers whichever channel (defaults or file) wrote last.
+        // The file is the source of truth — a failed write throws.
+        try write(data, to: container.appendingPathComponent(fileName), fileManager: fileManager)
     }
 
     public static func write(
