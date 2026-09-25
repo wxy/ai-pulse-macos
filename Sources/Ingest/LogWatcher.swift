@@ -828,7 +828,15 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             return OpenCodeFingerprint(size: size, modifiedAt: modifiedAt, fileNumber: fileNumber)
         }()
         if let fingerprint, openCodeFingerprints[file.path] == fingerprint { return }
-        guard let event = OpenCodeParser.parseFile(file, cwd: nil) else { return }
+        guard let event = OpenCodeParser.parseFile(file, cwd: nil) else {
+            // Valid JSON that simply carries no usage (user-side messages,
+            // meta entries) is a stable verdict: remember the fingerprint so
+            // every future scan doesn't re-read and re-parse the file.
+            if let fingerprint {
+                openCodeFingerprints[file.path] = fingerprint
+            }
+            return
+        }
         let saved = insertEvents([event])
         if saved, let fingerprint { openCodeFingerprints[file.path] = fingerprint }
         Self.recordFileScanResult(path: file.path,
@@ -851,12 +859,14 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                     Logger.debug("LogWatcher: found aider chat history at \(chatMD.path)")
                     var parsedCount = 0
                     let filePath = chatMD.path
+                    // The fallback timestamp is the file's mtime — constant
+                    // for the whole pass, so stat once instead of per line.
+                    let fileTS = Int(((try? chatMD.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate?
+                        .timeIntervalSince1970 ?? 0) * 1000)
                     parseLinesIncremental(from: chatMD) { line in
                         // Track model across lines & scans
                         if let m = AiderParser.parseModelLine(line) { aiderModels[filePath] = m; return nil }
                         let model = aiderModels[filePath]
-                        let fileModDate = (try? chatMD.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-                        let fileTS = Int((fileModDate?.timeIntervalSince1970 ?? 0) * 1000)
                         if let event = AiderParser.parseMarkdown(line: line, cwd: repoURL.path, model: model, fallbackDate: fileTS) {
                             parsedCount += 1
                             return event
