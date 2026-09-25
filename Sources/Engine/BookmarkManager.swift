@@ -194,11 +194,23 @@ enum BookmarkManager {
 
     /// Create and persist a security-scoped bookmark for a URL.
     static func createAndSave(for url: URL) {
-        guard let bookmark = try? url.bookmarkData(
-            options: .withSecurityScope,
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        ) else { return }
+        let bookmark: Data
+        do {
+            bookmark = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+        } catch {
+            // Silent failure here used to read as success to callers: access
+            // was never persisted, and every collection pass stayed empty
+            // with no hint why.
+            Logger.error("BookmarkManager: bookmark creation failed: \(error.localizedDescription)")
+            AppHealthMonitor.shared.reportIngestError(
+                "bookmark creation failed: \(error.localizedDescription)",
+                source: "Bookmark.create")
+            return
+        }
 
         var bookmarks = savedBookmarks()
         bookmarks[url.path] = bookmark
@@ -210,20 +222,52 @@ enum BookmarkManager {
     /// Resolve all persisted bookmarks and begin accessing their resources.
     /// Call this at app startup, before any file I/O to sandboxed paths.
     static func resolveAll() -> [URL] {
+        // A stable, non-username-leaking label for diagnostics (the home
+        // bookmark's last path component is the user's name).
+        func label(for path: String) -> String {
+            path == homeDirPath ? "home" : URL(fileURLWithPath: path).lastPathComponent
+        }
+
         var resolved: [URL] = []
-        for (_, data) in savedBookmarks() {
+        var bookmarks = savedBookmarks()
+        var mutated = false
+        for (path, data) in bookmarks {
             var isStale = false
             guard let url = try? URL(
                 resolvingBookmarkData: data,
                 options: .withSecurityScope,
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
-            ) else { continue }
+            ) else {
+                AppHealthMonitor.shared.reportIngestError(
+                    "saved bookmark no longer resolves; re-grant access",
+                    source: "Bookmark.\(label(for: path))")
+                continue
+            }
+
+            // A stale bookmark still resolves this launch but will fail the
+            // next one. Refresh the stored data now so access self-heals
+            // across system updates and moved directories.
+            if isStale {
+                if let refreshed = try? url.bookmarkData(
+                    options: .withSecurityScope,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil) {
+                    bookmarks[path] = refreshed
+                    mutated = true
+                    Logger.info("BookmarkManager: refreshed stale bookmark for \(label(for: path))")
+                } else {
+                    AppHealthMonitor.shared.reportIngestError(
+                        "stale bookmark refresh failed; re-grant access",
+                        source: "Bookmark.\(label(for: path))")
+                }
+            }
 
             if activate(url) {
                 resolved.append(url)
             }
         }
+        if mutated { save(bookmarks) }
         return resolved
     }
 
