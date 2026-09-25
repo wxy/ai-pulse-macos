@@ -312,27 +312,56 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         // startup mark. Never let that partial view become a fresh cache entry;
         // the next five-minute tick runs after history import has settled.
         guard !LogWatcher.backfill.isActive else { return }
-        Task.detached(priority: .background) {
-            await LogWatcher.shared.waitForPendingScan()
-            guard !LogWatcher.backfill.isActive else { return }
-            let now = Date().timeIntervalSince1970
-            // Per-range throttles: today=5min, week=1h, 30d=12h
-            let intervals: [(String, Int, TimeInterval)] = [
-                ("today", 1, 300), ("week", 7, 3600), ("30d", 30, 43200)
-            ]
-            for (key, _, interval) in intervals {
-                let lastKey = "cache_refresh_\(key)"
-                let last = UserDefaults.standard.double(forKey: lastKey)
-                guard now - last >= interval else { continue }
-                UserDefaults.standard.set(now, forKey: lastKey)
-                guard let period = DashboardPeriodKind(rawValue: key) else { continue }
-                let snap = await StatsService.dashboardSnapshot(period: period)
-                await DashboardCache.write(timeRange: key, snapshot: snap)
-            }
-
-            await CloudSyncService.shared.syncFromCache()
-            Task { @MainActor in Logger.debug("Phase 4 refreshed") }
+        // A cold cache can make one refresh outlast the five-minute tick;
+        // overlapping runs duplicate full snapshot builds and DB contention.
+        phase4StateLock.lock()
+        let alreadyRunning = phase4RefreshInFlight
+        phase4RefreshInFlight = true
+        phase4StateLock.unlock()
+        if alreadyRunning {
+            Logger.debug("Phase 4: previous refresh still running; skipping tick")
+            return
         }
+        Task.detached(priority: .background) { [weak self] in
+            await self?.runPhase4Refresh()
+            self?.markPhase4Finished()
+        }
+    }
+
+    /// Lock-guarded (not convention-guarded): the detached refresh clears it
+    /// from a background thread.
+    private let phase4StateLock = NSLock()
+    private var phase4RefreshInFlight = false
+
+    private nonisolated func markPhase4Finished() {
+        phase4StateLock.lock()
+        phase4RefreshInFlight = false
+        phase4StateLock.unlock()
+    }
+
+    private func runPhase4Refresh() async {
+        await LogWatcher.shared.waitForPendingScan()
+        guard !LogWatcher.backfill.isActive else { return }
+        let now = Date().timeIntervalSince1970
+        // Per-range throttles: today=5min, week=1h, 30d=12h
+        let intervals: [(String, Int, TimeInterval)] = [
+            ("today", 1, 300), ("week", 7, 3600), ("30d", 30, 43200)
+        ]
+        for (key, _, interval) in intervals {
+            let lastKey = "cache_refresh_\(key)"
+            let last = UserDefaults.standard.double(forKey: lastKey)
+            guard now - last >= interval else { continue }
+            guard let period = DashboardPeriodKind(rawValue: key) else { continue }
+            let snap = await StatsService.dashboardSnapshot(period: period)
+            // Record the throttle timestamp only after a healthy rebuild:
+            // a degraded pass must not be skipped for a whole interval.
+            guard snap.readFailures.isEmpty else { continue }
+            await DashboardCache.write(timeRange: key, snapshot: snap)
+            UserDefaults.standard.set(now, forKey: lastKey)
+        }
+
+        await CloudSyncService.shared.syncFromCache()
+        Task { @MainActor in Logger.debug("Phase 4 refreshed") }
     }
 
     private func runPulseTick() {
