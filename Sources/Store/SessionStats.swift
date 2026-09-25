@@ -98,8 +98,10 @@ struct ContextTrend {
 
 /// Pure, testable session statistics.
 enum SessionStats {
-    /// Label used when a session has no repo; views localize it.
-    static let noRepoKey = "（无仓库）"
+    /// Marker key for sessions with no repo. Views localize it
+    /// (panel.no_repo_group); the value must stay a stable identifier,
+    /// never user-visible copy.
+    static let noRepoKey = "__no_repo__"
 
 
 
