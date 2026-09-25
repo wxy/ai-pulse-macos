@@ -140,13 +140,18 @@ nonisolated final class ApiPoller: @unchecked Sendable {
     // MARK: - OpenAI (multi-day usage)
 
     private func fetchOpenAIUsage(provider: ProviderDef, baseURL: String, apiKey: String) {
-        let cal = Calendar.current
-        let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"
+        // The usage API's `date` parameter is a UTC calendar date. Pin the
+        // formatter to POSIX + UTC: without it, a non-Gregorian locale can
+        // emit an unparseable string (all days silently skipped) and a local
+        // time zone grabs the wrong day around UTC midnight.
+        let fmt = Self.openAIUsageDateFormatter()
+        let utcDays = Calendar(identifier: .gregorian)
+        utcDays.timeZone = TimeZone(identifier: "UTC")!
 
         Task {
             var total = 0.0
             for dayOffset in 0..<3 {
-                guard let date = cal.date(byAdding: .day, value: -dayOffset, to: Date()) else { continue }
+                guard let date = utcDays.date(byAdding: .day, value: -dayOffset, to: Date()) else { continue }
                 let dateStr = fmt.string(from: date)
                 guard let url = URL(string: "\(baseURL)?date=\(dateStr)") else { continue }
                 var req = URLRequest(url: url)
@@ -210,6 +215,16 @@ nonisolated final class ApiPoller: @unchecked Sendable {
         else { parsed = nil }
         guard let parsed, parsed.isFinite else { return nil }
         return parsed
+    }
+
+    /// Formatter for the OpenAI usage API's `date` parameter (UTC calendar
+    /// dates). Shared so the format is pinned in exactly one place.
+    static nonisolated func openAIUsageDateFormatter() -> DateFormatter {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = TimeZone(identifier: "UTC")
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt
     }
 
     // MARK: - Caching
