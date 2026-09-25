@@ -82,7 +82,7 @@ final class AppDatabase: @unchecked Sendable {
         try addColumnIfMissing("code_change", "attribution", "TEXT")
         try dbQueue?.write { db in
             try Self.migrateRepositoryCodeIdentity(db)
-            try Self.backfillKnownProviderAttribution(db)
+            try Self.backfillKnownProviderAttributionIfNeeded(db, defaults: defaults)
             try Self.migrateLegacyQuotaStatus(db)
             try Self.normalizeCodeAttributionConfidence(db)
             _ = try LogCheckpointStore.prepareReliableReplay(in: db)
@@ -163,6 +163,20 @@ final class AppDatabase: @unchecked Sendable {
     /// Earlier Codex scans missed `session_meta.payload.model`, so valid GLM
     /// and DeepSeek rows could stay unattributed after the byte offset advanced.
     /// Provider attribution is factual; pricing/cost remains untouched.
+    ///
+    /// Guarded by a one-time defaults key: without it, any row whose model
+    /// never matches the catalog re-triggers the full scan + rewrite + cache
+    /// wipe on every launch.
+    static func backfillKnownProviderAttributionIfNeeded(
+        _ db: Database,
+        defaults: UserDefaults,
+        key: String = "known_provider_attribution_backfilled_v1"
+    ) throws {
+        guard !defaults.bool(forKey: key) else { return }
+        try backfillKnownProviderAttribution(db)
+        defaults.set(true, forKey: key)
+    }
+
     static func backfillKnownProviderAttribution(_ db: Database) throws {
         let rows = try Row.fetchAll(db, sql: """
             SELECT id, model FROM usage_event

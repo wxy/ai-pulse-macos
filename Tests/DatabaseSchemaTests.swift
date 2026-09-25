@@ -109,6 +109,36 @@ final class DatabaseSchemaTests: XCTestCase {
         }
     }
 
+    func testKnownProviderAttributionBackfillRunsOncePerKey() throws {
+        let dbQueue = try DatabaseQueue()
+        let suiteName = "backfill-once-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        try dbQueue.write { db in
+            try AppDatabase.createAllTables(db)
+            try db.execute(sql: """
+                INSERT INTO usage_event
+                  (ts, source, provider_id, model, in_tokens, out_tokens, cache_tokens,
+                   dedupe_key, cost_confidence)
+                VALUES (?, 'codex', 'unknown', 'glm-5.3-flash', 1, 2, 0, 'dedupe-1', 'incomplete')
+                """, arguments: [1])
+
+            try AppDatabase.backfillKnownProviderAttributionIfNeeded(db, defaults: defaults)
+            XCTAssertEqual(try String.fetchOne(
+                db, sql: "SELECT provider_id FROM usage_event WHERE dedupe_key = 'dedupe-1'"), "zhipu")
+
+            // Simulate a row that will never match the catalog, then confirm
+            // the once-key prevents the launch-time rescan/cache-wipe cycle.
+            try db.execute(sql: "UPDATE usage_event SET provider_id = 'unknown' WHERE dedupe_key = 'dedupe-1'")
+            try db.execute(sql: "INSERT INTO dashboard_cache (time_range, json, updated_at) VALUES ('today', '{}', CURRENT_TIMESTAMP)")
+            try AppDatabase.backfillKnownProviderAttributionIfNeeded(db, defaults: defaults)
+
+            XCTAssertEqual(try String.fetchOne(
+                db, sql: "SELECT provider_id FROM usage_event WHERE dedupe_key = 'dedupe-1'"), "unknown")
+            XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM dashboard_cache"), 1)
+        }
+    }
+
     func testDeepSeekHarnessPositionInvalidationReplaysOnlyDshJournals() throws {
         let home = "/tmp/aipulse-test-home"
         let dbQueue = try DatabaseQueue()
