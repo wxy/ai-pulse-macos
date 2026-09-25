@@ -129,7 +129,9 @@ nonisolated final class GitMonitor: @unchecked Sendable {
         // Wait asynchronously; never stall the UI/coordinator thread.
         Task { [self] in
             guard await stateLoadGate.ensureLoaded({ await self.loadFromDB() }) else { return }
-            persistWatchedRepos() // retry any previous watch-list write failure
+            // Re-persist only when a previous write failed, not every tick.
+            let needsRetry = lock.withLock { lastWatchPersistFailed }
+            if needsRetry { persistWatchedRepos() } // retry any previous watch-list write failure
             gitOpQueue.async { [self] in pollLoadedState() }
         }
     }
@@ -304,6 +306,9 @@ nonisolated final class GitMonitor: @unchecked Sendable {
 
     // MARK: - Persistence
 
+    /// Guarded by `lock`; set on the persistence queue, read from poll().
+    private var lastWatchPersistFailed = false
+
     private func persistWatchedRepos() {
         statePersistenceQueue.async { [self] in
             // Capture at execution time, not when an older watch/prune request
@@ -314,8 +319,10 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 try AppDatabase.shared.writeSynchronously { db in
                     try GitWatchStore.synchronize(in: db, repositories: current)
                 }
+                lock.withLock { lastWatchPersistFailed = false }
                 AppHealthMonitor.shared.clearIngestError(source: "Git.state.persist")
             } catch {
+                lock.withLock { lastWatchPersistFailed = true }
                 Logger.error("GitMonitor: persist watched repos failed: \(error)")
                 AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Git.state.persist")
             }

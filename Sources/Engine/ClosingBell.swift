@@ -101,7 +101,11 @@ enum ClosingBell {
         let req = UNNotificationRequest(
             identifier: "ai-pulse-closing-\(Int(now.timeIntervalSince1970))",
             content: content, trigger: nil)
-        try? await center.add(req)
+        do {
+            try await center.add(req)
+        } catch {
+            Logger.error("ClosingBell: notification add failed: \(error.localizedDescription)")
+        }
     }
 
 }

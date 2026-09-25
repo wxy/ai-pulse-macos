@@ -195,7 +195,9 @@ final class AppHealthMonitor: @unchecked Sendable {
             identifier: "ai-pulse-health-critical",
             content: content, trigger: nil
         )
-        UNUserNotificationCenter.current().add(req) { _ in }
+        UNUserNotificationCenter.current().add(req) { error in
+            if let error { Logger.error("AppHealthMonitor: notification add failed: \(error.localizedDescription)") }
+        }
     }
 
     private func recomputeSeverity() -> Severity {
