@@ -78,7 +78,7 @@ enum BookmarkManager {
     @MainActor
     static func requestAccess(
         message: String? = nil,
-        defaultDirectory: String = NSHomeDirectory()
+        defaultDirectory: String = FileManager.default.realHomeDirectory.path
     ) -> URL? {
         let panel = NSOpenPanel()
         panel.message = message ?? I18n.t("bookmark.repos_message")
@@ -286,11 +286,19 @@ enum BookmarkManager {
         return true
     }
 
-    /// Stop accessing all resolved bookmarks. Call at app termination.
+    /// Stop accessing the given resolved bookmarks (or all of them when the
+    /// list is empty). Call at app termination.
     static func stopAll(_ urls: [URL]) {
         accessLock.lock(); defer { accessLock.unlock() }
-        for url in activeResources.values { url.stopAccessingSecurityScopedResource() }
-        activeResources.removeAll()
+        if urls.isEmpty {
+            for url in activeResources.values { url.stopAccessingSecurityScopedResource() }
+            activeResources.removeAll()
+            return
+        }
+        for url in urls {
+            guard activeResources.removeValue(forKey: url.path) != nil else { continue }
+            url.stopAccessingSecurityScopedResource()
+        }
     }
 
     /// Check if any bookmarks have been granted.

@@ -151,7 +151,8 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
             return
         }
 
-        var req = URLRequest(url: URL(string: "https://api.github.com/copilot_internal/user")!)
+        guard let quotaURL = URL(string: "https://api.github.com/copilot_internal/user") else { return }
+        var req = URLRequest(url: quotaURL)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 10
 

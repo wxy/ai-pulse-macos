@@ -25,7 +25,11 @@ enum RepoDiscovery {
     private static func scanDirectory(_ dir: URL, known: Set<String>) -> Int {
         var count = 0
         GitRepoScanner.enumerate(in: dir) { url in
-            if !known.contains(url.path) {
+            // `known` holds canonical paths (GitMonitor.watch canonicalizes
+            // before inserting); comparing raw paths let already-watched
+            // repos re-register and inflate the discovery count.
+            let canonical = RepositoryScope.canonicalPath(url.path)
+            if !known.contains(canonical) {
                 GitMonitor.shared.watch(repoPath: url.path)
                 Logger.info("RepoDiscovery: new repo → \(url.path)")
                 count += 1
