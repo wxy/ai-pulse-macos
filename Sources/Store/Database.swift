@@ -61,7 +61,13 @@ final class AppDatabase: @unchecked Sendable {
     /// Run the production startup migration against an isolated database and
     /// preference domain without touching the user's active profile.
     func setup(at dbPath: String, defaults: UserDefaults) throws {
-        dbQueue = try DatabaseQueue(path: dbPath)
+        // WAL: this app commits constantly (logwatcher cursors, usage batches,
+        // dashboard cache rewrites). The default DELETE journal creates and
+        // removes a rollback journal per transaction with an extra fsync;
+        // WAL appends and checkpoints, and keeps crash recovery cheap.
+        var configuration = Configuration()
+        configuration.journalMode = .wal
+        dbQueue = try DatabaseQueue(path: dbPath, configuration: configuration)
         databaseURL = URL(fileURLWithPath: dbPath)
         Logger.info("DB opened at \(dbPath)")
 
