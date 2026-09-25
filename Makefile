@@ -1,4 +1,4 @@
-.PHONY: build test run restart hup clean release release-notarize publish-release
+.PHONY: build test run restart hup clean publish-release
 
 LIBGIT2_LIB := $(PWD)/Libraries/libgit2/lib
 
@@ -27,15 +27,6 @@ restart: build
 # Graceful restart via SIGHUP — keeps DB connections clean
 hup:
 	pkill -HUP -f "\.build/.*AIPulse"
-
-# Build signed DMG for distribution (requires Xcode).
-# Usage: make release VERSION=1.0.1 BUILD_NUM=2
-release:
-	bash scripts/release.sh
-
-# Build signed DMG + notarize (requires APPLE_ID / APPLE_APP_PASSWORD env vars).
-release-notarize:
-	NOTARIZE=1 bash scripts/release.sh
 
 # Promote a draft GitHub Release to public after App Store approval.
 # Usage: make publish-release VERSION=1.2.6
