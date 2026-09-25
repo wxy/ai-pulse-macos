@@ -744,8 +744,11 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         else { return }
 
         for case let url as URL in enumerator
-        where url.lastPathComponent.hasPrefix("chats")
-        || (url.pathExtension == "jsonl" && url.deletingLastPathComponent().lastPathComponent == "chats") {
+        // Only the jsonl files inside a `chats` directory. Matching the
+        // directory itself (hasPrefix) fed it through the parser, where the
+        // FileHandle read failed and logged an error on every single scan.
+        where url.pathExtension == "jsonl"
+            && url.deletingLastPathComponent().lastPathComponent.hasPrefix("chats") {
             // cwd is not in the Qwen log; use nil (token tracking only).
             parseQwenFile(url, cwd: nil)
         }
