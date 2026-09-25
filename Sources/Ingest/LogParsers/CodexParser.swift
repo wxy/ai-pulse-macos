@@ -14,9 +14,14 @@ import Foundation
 /// `cwd`, `model` and `session_id` are not on every line — the caller threads
 /// them through from `session_meta` / `turn_context` lines.
 struct CodexParser {
-    private static nonisolated(unsafe) let iso8601: ISO8601DateFormatter = {
+    private static nonisolated(unsafe) let iso8601Frac: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static nonisolated(unsafe) let iso8601: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
         return f
     }()
 
@@ -54,7 +59,8 @@ struct CodexParser {
         // not additional output. Preserve both counters without double-counting.
 
         let ts: Int
-        if let tsStr = json["timestamp"] as? String, let date = iso8601.date(from: tsStr) {
+        if let tsStr = json["timestamp"] as? String,
+           let date = iso8601Frac.date(from: tsStr) ?? iso8601.date(from: tsStr) {
             ts = Int(date.timeIntervalSince1970 * 1000)
         } else {
             ts = Int(Date().timeIntervalSince1970 * 1000)

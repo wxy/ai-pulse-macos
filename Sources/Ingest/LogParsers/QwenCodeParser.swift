@@ -7,9 +7,14 @@ import Foundation
 /// tokens: {input, output, cached, thoughts, tool, total}}`. Only model
 /// (gemini) messages carry token usage.
 struct QwenCodeParser {
-    private static nonisolated(unsafe) let iso8601: ISO8601DateFormatter = {
+    private static nonisolated(unsafe) let iso8601Frac: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static nonisolated(unsafe) let iso8601: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
         return f
     }()
 
@@ -39,7 +44,8 @@ struct QwenCodeParser {
         let out = max(total - input, thoughts + tool)
 
         let ts: Int
-        if let tsStr = json["timestamp"] as? String, let date = iso8601.date(from: tsStr) {
+        if let tsStr = json["timestamp"] as? String,
+           let date = iso8601Frac.date(from: tsStr) ?? iso8601.date(from: tsStr) {
             ts = Int(date.timeIntervalSince1970 * 1000)
         } else {
             ts = Int(Date().timeIntervalSince1970 * 1000)
