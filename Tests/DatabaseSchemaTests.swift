@@ -142,3 +142,42 @@ final class DatabaseSchemaTests: XCTestCase {
         }
     }
 }
+
+    func testGitLineStatsInvalidationClearsWindowAndResetsCursors() throws {
+        let dbQueue = try DatabaseQueue()
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        try dbQueue.write { db in
+            try AppDatabase.createAllTables(db)
+            let windowStartMs = Int(calendar.date(byAdding: .day, value: -29,
+                to: calendar.startOfDay(for: now))!.timeIntervalSince1970 * 1000)
+            // One derived row inside the coverage window, one older than it,
+            // and a scan cursor that must be released for a rebuild.
+            try db.execute(sql: """
+                INSERT INTO code_change (commit_hash, ts, repo_path, added, deleted, is_merge)
+                VALUES ('in-window', ?, '/a', 90, 0, 0)
+                """, arguments: [windowStartMs + 1_000])
+            try db.execute(sql: """
+                INSERT INTO code_change (commit_hash, ts, repo_path, added, deleted, is_merge)
+                VALUES ('out-of-window', ?, '/a', 5, 2, 0)
+                """, arguments: [windowStartMs - 86_400_000])
+            try db.execute(sql: """
+                INSERT INTO git_commit_scan (repo_path, head_hash, updated_at, coverage_since, status)
+                VALUES ('/a', 'abc', 0, 0, 'complete')
+                """)
+            try db.execute(sql: "INSERT INTO dashboard_cache (time_range, json, updated_at) VALUES ('today', '{}', NULL)")
+
+            try AppDatabase.invalidateGitLineStats(db, now: now, calendar: calendar)
+
+            XCTAssertNil(try String.fetchOne(db, sql: """
+                SELECT commit_hash FROM code_change WHERE commit_hash = 'in-window'
+                """))
+            XCTAssertEqual(try Int.fetchOne(db, sql: """
+                SELECT added FROM code_change WHERE commit_hash = 'out-of-window'
+                """), 5)
+            XCTAssertNil(try String.fetchOne(db, sql: "SELECT head_hash FROM git_commit_scan"))
+            XCTAssertEqual(try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM dashboard_cache
+                """), 0)
+        }
+    }

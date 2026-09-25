@@ -221,7 +221,9 @@ struct GitRepo {
 
             var fileAdded: Int = 0
             var fileDeleted: Int = 0
-            guard git_patch_line_stats(&fileAdded, &fileDeleted, nil, patch) == 0 else { return nil }
+            // Signature is (total_context, total_additions, total_deletions,
+            // patch): additions first, deletions second, context discarded.
+            guard git_patch_line_stats(nil, &fileAdded, &fileDeleted, patch) == 0 else { return nil }
             added += fileAdded
             deleted += fileDeleted
         }

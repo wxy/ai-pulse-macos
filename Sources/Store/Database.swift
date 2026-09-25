@@ -123,6 +123,19 @@ final class AppDatabase: @unchecked Sendable {
             defaults.set(true, forKey: codexOutputReplayKey)
         }
 
+        // Line counts recorded before the git_patch_line_stats argument-order
+        // fix carried context lines in `added` and additions in `deleted`.
+        // Drop the in-window derived rows and reset each scan cursor so the
+        // next poll rebuilds them with correct stats — persistBatch's
+        // INSERT OR IGNORE would otherwise keep the wrong rows forever.
+        let gitLineStatsReplayKey = "git_line_stats_replayed_v1"
+        if !defaults.bool(forKey: gitLineStatsReplayKey) {
+            try dbQueue?.write { db in
+                try Self.invalidateGitLineStats(db)
+            }
+            defaults.set(true, forKey: gitLineStatsReplayKey)
+        }
+
         // Startup used to cache a snapshot at the 20-second mark while cold
         // history import could still be running. Rebuild those derived rows
         // once; usage and balance facts are never touched.
@@ -233,6 +246,23 @@ final class AppDatabase: @unchecked Sendable {
             DELETE FROM logwatcher_position
             WHERE file_path LIKE ?
             """, arguments: ["\(homeDirectory)/.dsh/sessions/%/session.jsonl.zstd"])
+        try db.execute(sql: "DELETE FROM dashboard_cache")
+    }
+
+    /// Drop the code-change rows inside GitMonitor's coverage window and
+    /// reset every scan cursor, so watches rebuild the window with corrected
+    /// line statistics. Uses the same -29-day start-of-day boundary as
+    /// GitMonitor.scanRecentCommits; rows older than the window sit outside
+    /// every dashboard window and are left untouched.
+    static func invalidateGitLineStats(
+        _ db: Database,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) throws {
+        let coverageStart = calendar.date(byAdding: .day, value: -29, to: calendar.startOfDay(for: now))!
+        let coverageSinceMs = Int(coverageStart.timeIntervalSince1970 * 1000)
+        try db.execute(sql: "DELETE FROM code_change WHERE ts >= ?", arguments: [coverageSinceMs])
+        try db.execute(sql: "UPDATE git_commit_scan SET head_hash = NULL, status = 'partial'")
         try db.execute(sql: "DELETE FROM dashboard_cache")
     }
 
