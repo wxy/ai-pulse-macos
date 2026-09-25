@@ -35,8 +35,56 @@ struct LocalDataStatus: Equatable {
          "Library/Application Support/Code - Insiders/User/globalStorage/emptyWindowChatSessions"]
             .map { FileManager.default.realHomeDirectory.appendingPathComponent($0).path }
     }
+}
 
+enum LocalDataStatusCache {
+    private static let lock = NSLock()
+    private static nonisolated(unsafe) var cached: (hasActivity: Bool?, status: LocalDataStatus, at: Date)?
+    private static let ttl: TimeInterval = 10
+
+    /// Drop the memoized status so the next `current(hasActivity:)` re-probes
+    /// the filesystem immediately instead of waiting out the TTL.
+    static func invalidate() {
+        lock.lock(); cached = nil; lock.unlock()
+    }
+
+    /// Memoized accessor. The probe stats 9 log paths plus every cached repo
+    /// under configured roots — too costly to run on the main thread for
+    /// every notification burst (menu bar apply, dashboard ticks, settings
+    /// refresh). Fresh probe on TTL expiry or explicit invalidation from the
+    /// scan/bookmark notifications that change its inputs.
+    static func current(hasActivity: Bool?) -> LocalDataStatus {
+        _ = observers
+        lock.lock()
+        if let cached, cached.hasActivity == hasActivity,
+           Date().timeIntervalSince(cached.at) < ttl {
+            lock.unlock()
+            return cached.status
+        }
+        lock.unlock()
+        let status = LocalDataStatus.computeCurrent(hasActivity: hasActivity)
+        lock.lock()
+        Self.cached = (hasActivity, status, Date())
+        lock.unlock()
+        return status
+    }
+
+    /// Block observers are retained by this lazy initializer.
+    private static let observers: Void = {
+        let center = NotificationCenter.default
+        center.addObserver(forName: LogScanObservation.didChange, object: nil, queue: .main) { _ in invalidate() }
+        center.addObserver(forName: BookmarkManager.didChange, object: nil, queue: .main) { _ in invalidate() }
+        center.addObserver(forName: .appHealthDidChange, object: nil, queue: .main) { _ in invalidate() }
+        return ()
+    }()
+}
+
+extension LocalDataStatus {
     static func current(hasActivity: Bool? = nil) -> Self {
+        LocalDataStatusCache.current(hasActivity: hasActivity)
+    }
+
+    static func computeCurrent(hasActivity: Bool?) -> Self {
         let fm = FileManager.default
         let home: Access = !BookmarkManager.isSandboxed ? .notRequired
             : BookmarkManager.isAccessAvailable(for: BookmarkManager.homeDirPath) && fm.isReadableFile(atPath: BookmarkManager.homeDirPath) ? .granted

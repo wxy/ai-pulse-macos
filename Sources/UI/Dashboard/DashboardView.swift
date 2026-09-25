@@ -596,6 +596,9 @@ struct DashboardView: View {
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
             // Expiration must remain visible even when a stalled collector
             // produces no new notifications. This does not refresh source time.
+            // The window only orderOuts on close, so the timer keeps firing —
+            // skip the main-thread disk probe while nothing is visible.
+            guard dashboardIsVisible else { return }
             refreshLocalScanStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardSwitchTab)) { notification in

@@ -287,6 +287,11 @@ struct IntegrationGroupedTab: View {
 }
 
 struct AccountAndCostsTab: View {
+    // Detection runs on appearance and on the notifications that can change
+    // its outcome — never inside body, where a directory enumeration per
+    // parent re-render used to run on the main thread.
+    @State private var results: [(any Detectable, DetectionResult)] = []
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -296,18 +301,27 @@ struct AccountAndCostsTab: View {
                 Text(SetupCopy.text("账户观测", "Account observations")).font(.headline)
                 Text(SetupCopy.text("仅支持服务商提供的账户接口。密钥保存在本机偏好设置中，不使用钥匙串、不随 iCloud 摘要同步。", "Uses account APIs provided by each service. Keys are stored in local preferences, not Keychain, and are excluded from iCloud summaries."))
                     .font(.caption).foregroundStyle(.secondary)
-                ForEach(IntegrationRegistry.visible.filter { IntegrationCategory.category(for: $0) == .apiKeys }, id: \.id) { integration in
-                    IntegrationRow(integration: integration, detected: integration.detect())
+                ForEach(results.filter { IntegrationCategory.category(for: $0.0) == .apiKeys }, id: \.0.id) { integration, detected in
+                    IntegrationRow(integration: integration, detected: detected)
                 }
                 Text(SetupCopy.text("声明固定月费", "Declared fixed monthly costs")).font(.headline)
                 Text(SetupCopy.text("由你声明的套餐背景，不是实际付款、剩余额度或词元统计的依据。选择无固定订阅可以移除这项月费。", "Plans you declare are context, not payment receipts, remaining quota or the basis of token statistics. Choose no fixed subscription to remove a monthly cost."))
                     .font(.caption).foregroundStyle(.secondary)
-                ForEach(IntegrationRegistry.visible.filter { ["claude-code", "codex", "cursor", "copilot", "windsurf", "opencode"].contains($0.id) }, id: \.id) { integration in
-                    IntegrationRow(integration: integration, detected: integration.detect())
+                ForEach(results.filter { ["claude-code", "codex", "cursor", "copilot", "windsurf", "opencode"].contains($0.0.id) }, id: \.0.id) { integration, detected in
+                    IntegrationRow(integration: integration, detected: detected)
                 }
             }.padding(.trailing, 12)
         }
-        .onAppear { ApiPoller.shared.pollAll() }
+        .onAppear {
+            ApiPoller.shared.pollAll()
+            runDetection()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: BookmarkManager.didChange)) { _ in runDetection() }
+        .onReceive(NotificationCenter.default.publisher(for: RepoScanCache.didChange)) { _ in runDetection() }
+    }
+
+    private func runDetection() {
+        results = IntegrationRegistry.visible.map { ($0, $0.detect()) }
     }
 }
 
