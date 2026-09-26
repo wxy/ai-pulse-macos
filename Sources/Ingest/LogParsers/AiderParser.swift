@@ -70,13 +70,13 @@ struct AiderParser {
     // microseconds). ISO8601DateFormatter requires a zone, so these POSIX
     // formatters are the third fallback and interpret the string in the
     // machine's local time zone — the same clock aider stamped it with.
-    private static nonisolated(unsafe) let naiveFrac: DateFormatter = {
+    private static let naiveFrac: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
         return f
     }()
-    private static nonisolated(unsafe) let naive: DateFormatter = {
+    private static let naive: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"

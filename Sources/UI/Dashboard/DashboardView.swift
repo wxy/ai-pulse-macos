@@ -1543,13 +1543,7 @@ struct DashboardView: View {
             return Int64(start.timeIntervalSince1970 * 1000)
         }
     }
-
-
-    /// Comparison badge — just the arrow + percentage, no label.
-    @ViewBuilder
-
     // MARK: - Donut charts
-
 
     /// Sync the cached dashboard snapshot to iCloud, throttled to 5 min.
     private func triggerCloudSync() {

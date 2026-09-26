@@ -309,7 +309,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = AIPulseMacWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -321,7 +321,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = xingyu.wang.aipulse.debug.widget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -340,7 +340,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = AIPulseMacWidgetExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -352,7 +352,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wxy.aipulse.macoswidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -499,7 +499,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -520,7 +520,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.0.1;
 				OTHER_LDFLAGS = (
 					"-L$(SRCROOT)/../Libraries/libgit2/lib",
 					"-lgit2",
@@ -550,7 +550,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 32;
+				CURRENT_PROJECT_VERSION = 33;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = YUUWV9L8M8;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -571,7 +571,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.0.1;
 				OTHER_LDFLAGS = (
 					"-L$(SRCROOT)/../Libraries/libgit2/lib",
 					"-lgit2",
