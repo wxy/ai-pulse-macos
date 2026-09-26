@@ -25,3 +25,16 @@
 - QA 应用显示普通 [仪表盘截图](island-revert-dashboard-2026-09-26.png)；`⌘1` 后 AX 有今日、本周、30 天等原有控件，没有中央胶囊的展开按钮。
 - [偏好设置截图](island-revert-settings-2026-09-26.png)与 AX 证明通用页不再包含仪表盘入口选择。QA 应用已退出。
 - 截图是应用窗口，不包含系统菜单栏合成画面；本次没有独立捕获系统菜单栏机器人的视觉证据。主目录原有未提交文件不属于撤销范围。
+
+## 本机 Debug 应用的菜单栏图标恢复
+
+同日用户发现：源码撤销后，Xcode 重新构建的 Debug 应用仍没有机器人图标。只读检查发现 `Sources` 与 `b05b90d` 完全一致，当前运行进程来自 Xcode 的新 Debug 构建，`status_item_enabled` 未设置（源码默认开启）；但该应用的旧 `dashboard_entry_mode` 为 `island`，AppKit 自动保存的 `NSStatusItem VisibleCC Item-0` 为 `0`。灵动岛引入时的 `StatusItemController.setEntryMode` 确曾将状态项目的 `isVisible` 设为 `false`。Apple 文档说明状态项目的可见性会按 autosave name 持久保存。
+
+按用户要求保留完全回滚后的源码，不加入迁移补丁。退出当前 `xingyu.wang.aipulse.debug` 进程后，仅清理这两个旧偏好键：
+
+```sh
+defaults delete xingyu.wang.aipulse.debug 'NSStatusItem VisibleCC Item-0'
+defaults delete xingyu.wang.aipulse.debug dashboard_entry_mode
+```
+
+随后重新启动同一 Xcode Debug 应用。再次读取两个指定键，均已不存在；用户在当前屏幕上确认顶部菜单栏机器人头像重新出现。computer-use 无法独立截取系统菜单栏图标，因此视觉结论来自用户确认。本次未改变其他偏好、项目源码或主目录未提交文件。
