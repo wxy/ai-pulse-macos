@@ -93,6 +93,9 @@ final class AppDatabase: @unchecked Sendable {
             try Self.normalizeCodeAttributionConfidence(db)
             _ = try LogCheckpointStore.prepareReliableReplay(in: db)
         }
+        // Mark completion after the transaction commits. A later migration
+        // failure must roll back the backfill and leave it eligible to retry.
+        defaults.set(true, forKey: "known_provider_attribution_backfilled_v1")
 
         // The first DSH scan marked compressed journals complete before
         // multi-frame zstd decoding worked. Their usage lines are immutable,
@@ -170,9 +173,9 @@ final class AppDatabase: @unchecked Sendable {
     /// and DeepSeek rows could stay unattributed after the byte offset advanced.
     /// Provider attribution is factual; pricing/cost remains untouched.
     ///
-    /// Guarded by a one-time defaults key: without it, any row whose model
-    /// never matches the catalog re-triggers the full scan + rewrite + cache
-    /// wipe on every launch.
+    /// Guarded by a one-time defaults key: without it, an unmatched model
+    /// re-triggers the scan and cache wipe on every launch. The caller marks
+    /// completion only after the enclosing database transaction commits.
     static func backfillKnownProviderAttributionIfNeeded(
         _ db: Database,
         defaults: UserDefaults,
@@ -180,7 +183,6 @@ final class AppDatabase: @unchecked Sendable {
     ) throws {
         guard !defaults.bool(forKey: key) else { return }
         try backfillKnownProviderAttribution(db)
-        defaults.set(true, forKey: key)
     }
 
     static func backfillKnownProviderAttribution(_ db: Database) throws {

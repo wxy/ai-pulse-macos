@@ -2,6 +2,18 @@ import CloudKit
 import Foundation
 import AIPulseShared
 
+/// Preserve every bit of the stable hash across launches. UserDefaults stores
+/// numeric doubles with only 53 bits of integer precision.
+enum CloudSyncFingerprintStore {
+    static func read(rangeKey: String, defaults: UserDefaults = .standard) -> UInt64? {
+        defaults.string(forKey: "cloud_sync_fingerprint_\(rangeKey)").flatMap(UInt64.init)
+    }
+
+    static func write(_ fingerprint: UInt64, rangeKey: String, defaults: UserDefaults = .standard) {
+        defaults.set(String(fingerprint), forKey: "cloud_sync_fingerprint_\(rangeKey)")
+    }
+}
+
 /// Syncs the cached dashboard snapshots from GRDB to iCloud.
 /// iOS/watchOS read per-range snapshots to display correct data per tab.
 @MainActor
@@ -66,16 +78,6 @@ final class CloudSyncService {
     /// `syncFromCache()`. Persisted with a cross-process stable hash so a
     /// relaunch does not re-push unchanged content (each write fires a
     /// silent push that wakes every iOS/watchOS device).
-    private func storedFingerprint(for rangeKey: String) -> UInt64? {
-        let key = "cloud_sync_fingerprint_\(rangeKey)"
-        guard UserDefaults.standard.object(forKey: key) != nil else { return nil }
-        return UInt64(UserDefaults.standard.double(forKey: key))
-    }
-
-    private func storeFingerprint(_ value: UInt64, for rangeKey: String) {
-        UserDefaults.standard.set(Double(value), forKey: "cloud_sync_fingerprint_\(rangeKey)")
-    }
-
     private init() {}
 
     func syncFromCache(publishMacWidget: Bool = true) async {
@@ -153,7 +155,7 @@ final class CloudSyncService {
             let fingerprint = (try? JSONEncoder().encode(contentSnap))
                 .flatMap { String(data: $0, encoding: .utf8) }
                 .map(stableHash)
-            if let fingerprint, storedFingerprint(for: r.key) == fingerprint {
+            if let fingerprint, CloudSyncFingerprintStore.read(rangeKey: r.key) == fingerprint {
                 Logger.debug("CloudSync: \(r.key) unchanged, skipping push")
                 continue
             }
@@ -172,7 +174,7 @@ final class CloudSyncService {
                 }
                 if ok {
                     Logger.info("CloudSync: synced \(CKSchema.recordType)/\(r.recordName) len=\(json.count)")
-                    if let fingerprint { storeFingerprint(fingerprint, for: r.key) }
+                    if let fingerprint { CloudSyncFingerprintStore.write(fingerprint, rangeKey: r.key) }
                 } else { didFail = true }
             } catch {
                 didFail = true

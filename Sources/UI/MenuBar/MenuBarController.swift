@@ -118,4 +118,3 @@ final class DashboardWindowManager: NSObject {
         SettingsWindowManager.shared.window = window
     }
 }
-
