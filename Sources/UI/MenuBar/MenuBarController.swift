@@ -1,7 +1,19 @@
 import AppKit
 import SwiftUI
+import Combine
 import GRDB
 import AIPulseShared
+
+enum DashboardEntryMode: String {
+    case menuBar
+    case island
+
+    static let defaultsKey = "dashboard_entry_mode"
+
+    static var current: Self {
+        Self(rawValue: UserDefaults.standard.string(forKey: defaultsKey) ?? "") ?? .menuBar
+    }
+}
 
 final class SettingsWindowManager: @unchecked Sendable {
     static let shared = SettingsWindowManager()
@@ -11,10 +23,102 @@ final class SettingsWindowManager: @unchecked Sendable {
 private final class RobotDashboardPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func cancelOperation(_ sender: Any?) {
+        NotificationCenter.default.post(name: .dashboardEscapeRequested, object: nil)
+    }
 }
 
-private final class TransparentDashboardHostingView: NSHostingView<DashboardView> {
+private final class TransparentDashboardHostingView: NSHostingView<DashboardPanelContent> {
     override var isOpaque: Bool { false }
+}
+
+@MainActor
+private final class DashboardPanelState: ObservableObject {
+    @Published var mode: DashboardEntryMode = .menuBar
+    @Published var isExpanded = false
+    @Published var initialTimeRange: TimeRange = .today
+}
+
+private struct DashboardPanelContent: View {
+    @ObservedObject var state: DashboardPanelState
+    @State private var pulseRevision = 0
+
+    private var currentActivity: PulseSnapshot? {
+        let snapshot = PulseFeedbackController.shared.snapshot
+        let availability = LocalDataStatus.current(
+            hasActivity: (snapshot?.activityFacts?.todayTokens ?? 0) > 0
+        )
+        return snapshot?.isCurrent() == true && availability.canReportCurrentActivity
+            ? snapshot : nil
+    }
+
+    private var capsuleColor: Color {
+        guard let currentActivity else { return Color.gray }
+        return Color(nsColor: PulseAppearance(tier: currentActivity.tier,
+                                              cooling: currentActivity.activity?.freshness == .aging).color)
+    }
+
+    var body: some View {
+        Group {
+            if state.mode == .island {
+                VStack(spacing: 0) {
+                    Button(action: { DashboardWindowManager.shared.toggle() }) {
+                        HStack(spacing: 7) {
+                            Circle()
+                                .fill(capsuleColor)
+                                .frame(width: 7, height: 7)
+                                .id(pulseRevision)
+                            Text("AI Pulse")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white)
+                            Image(systemName: state.isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                        .frame(width: 152, height: 30)
+                        .background(Color.black, in: UnevenRoundedRectangle(
+                            topLeadingRadius: 0, bottomLeadingRadius: 15,
+                            bottomTrailingRadius: 15, topTrailingRadius: 0
+                        ))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(state.isExpanded
+                        ? SetupCopy.text("收起 AI Pulse 仪表盘", "Collapse AI Pulse dashboard")
+                        : SetupCopy.text("展开 AI Pulse 仪表盘", "Expand AI Pulse dashboard"))
+                    .help(currentActivity.map { StatusItemController.detail(snapshot: $0) }
+                        ?? SetupCopy.text("当前活动不可用", "Current activity unavailable"))
+                    .contextMenu {
+                        Button(I18n.t("menu.preferences")) {
+                            DashboardWindowManager.shared.openSettings()
+                        }
+                        Button(AppSoundControl.isMuted()
+                            ? SetupCopy.text("开启声音", "Unmute sounds")
+                            : I18n.t("perception.mute_all")) {
+                            AppSoundControl.toggle()
+                        }
+                        Divider()
+                        Button(I18n.t("menu.quit")) { NSApp.terminate(nil) }
+                    }
+
+                    if state.isExpanded {
+                        DashboardView(initialTimeRange: state.initialTimeRange)
+                    }
+                }
+                .frame(width: state.isExpanded ? 560 : 152,
+                       height: state.isExpanded ? 670 : 30, alignment: .top)
+            } else {
+                DashboardView(initialTimeRange: state.initialTimeRange)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pulseAppearanceDidChange)) { _ in
+            pulseRevision &+= 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .dataDidChange)) { _ in
+            pulseRevision &+= 1
+        }
+    }
 }
 
 @MainActor
@@ -26,14 +130,50 @@ final class DashboardWindowManager: NSObject {
     private var globalClickMonitor: Any?
     private var openedAt: TimeInterval = 0
     private var deactivateObserver: NSObjectProtocol?
+    private let panelState = DashboardPanelState()
+    private var screenObserver: NSObjectProtocol?
+
+    private var isIsland: Bool { panelState.mode == .island }
+
+    func start() {
+        setEntryMode(DashboardEntryMode.current)
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.reposition() }
+        }
+    }
+
+    func setEntryMode(_ mode: DashboardEntryMode) {
+        let changed = panelState.mode != mode
+        if changed { close() }
+        panelState.mode = mode
+        panelState.isExpanded = false
+        StatusItemController.shared.setEntryMode(mode)
+        if mode == .island {
+            ensureWindow()
+            reposition()
+            window?.orderFrontRegardless()
+        } else if changed {
+            window?.orderOut(nil)
+        }
+    }
 
     func toggle() {
-        if window?.isVisible == true { close() } else { openOrBringToFront() }
+        if isIsland {
+            if panelState.isExpanded { close() } else { openOrBringToFront() }
+        } else if window?.isVisible == true { close() } else { openOrBringToFront() }
     }
 
     func close() {
-        let wasVisible = window?.isVisible == true
-        window?.orderOut(nil)
+        let wasVisible = isIsland ? panelState.isExpanded : window?.isVisible == true
+        if isIsland {
+            panelState.isExpanded = false
+            resizeAndPosition(animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+            window?.orderFrontRegardless()
+        } else {
+            window?.orderOut(nil)
+        }
         if wasVisible { NotificationCenter.default.post(name: .dashboardDidClose, object: nil) }
         if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
         if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
@@ -45,25 +185,48 @@ final class DashboardWindowManager: NSObject {
 
     func openOrBringToFront(initialTimeRange: TimeRange? = nil) {
         NSApp.activate(ignoringOtherApps: true)
-        if window == nil {
-            let panel = RobotDashboardPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
-                                            styleMask: [.borderless], backing: .buffered, defer: false)
-            panel.title = I18n.t("menu.dashboard_label")
-            panel.hidesOnDeactivate = false
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            panel.hasShadow = false
-            panel.isReleasedWhenClosed = false
-            panel.level = .floating
-            panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-            panel.contentView = TransparentDashboardHostingView(rootView: DashboardView(initialTimeRange: initialTimeRange ?? .today))
-            window = panel
-        } else if let initialTimeRange {
-            NotificationCenter.default.post(name: .dashboardSwitchTab, object: nil,
-                                            userInfo: ["timeRange": initialTimeRange])
+        let wasExpanded = panelState.isExpanded
+        if let initialTimeRange {
+            if isIsland && !wasExpanded { panelState.initialTimeRange = initialTimeRange }
+            else { NotificationCenter.default.post(name: .dashboardSwitchTab, object: nil,
+                                                    userInfo: ["timeRange": initialTimeRange]) }
         }
+        ensureWindow()
         guard let window else { return }
-        if !window.isVisible {
+        if isIsland {
+            panelState.isExpanded = true
+            resizeAndPosition(animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+            if !wasExpanded { startDismissalMonitoring() }
+        } else if !window.isVisible {
+            reposition()
+            startDismissalMonitoring()
+        }
+        openedAt = ProcessInfo.processInfo.systemUptime
+        window.makeKeyAndOrderFront(nil)
+        NotificationCenter.default.post(name: .dashboardDidOpen, object: Date())
+    }
+
+    private func ensureWindow() {
+        guard window == nil else { return }
+        let panel = RobotDashboardPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
+                                        styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.title = I18n.t("menu.dashboard_label")
+        panel.hidesOnDeactivate = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        panel.contentView = TransparentDashboardHostingView(rootView: DashboardPanelContent(state: panelState))
+        window = panel
+    }
+
+    private func reposition() {
+        guard let window else { return }
+        if isIsland {
+            resizeAndPosition(animated: false)
+        } else {
             let screen = anchorButton?.window?.screen ?? NSScreen.main
             let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1000, height: 800)
             let anchor = anchorButton.flatMap { button in
@@ -71,13 +234,24 @@ final class DashboardWindowManager: NSObject {
             }
             let centerX = anchor?.midX ?? visible.midX
             let top = anchor?.minY ?? visible.maxY
-            window.setFrameOrigin(NSPoint(x: max(visible.minX, min(centerX - 280, visible.maxX - 560)),
-                                          y: max(visible.minY, min(top - 648, visible.maxY - 640))))
-            startDismissalMonitoring()
+            window.setFrame(NSRect(x: max(visible.minX, min(centerX - 280, visible.maxX - 560)),
+                                   y: max(visible.minY, min(top - 648, visible.maxY - 640)),
+                                   width: 560, height: 640), display: true)
         }
-        openedAt = ProcessInfo.processInfo.systemUptime
-        window.makeKeyAndOrderFront(nil)
-        NotificationCenter.default.post(name: .dashboardDidOpen, object: Date())
+    }
+
+    private func resizeAndPosition(animated: Bool) {
+        guard let window else { return }
+        let screen = window.screen ?? NSScreen.main ?? NSScreen.screens.first
+        guard let screen else { return }
+        let height: CGFloat = panelState.isExpanded ? 670 : 30
+        let width: CGFloat = panelState.isExpanded ? 560 : 152
+        let topInset = max(screen.safeAreaInsets.top, NSStatusBar.system.thickness)
+        let top = screen.frame.maxY - topInset
+        let frame = NSRect(x: screen.frame.midX - width / 2,
+                           y: max(screen.visibleFrame.minY, top - height),
+                           width: width, height: height)
+        window.setFrame(frame, display: true, animate: animated)
     }
 
     private func startDismissalMonitoring() {

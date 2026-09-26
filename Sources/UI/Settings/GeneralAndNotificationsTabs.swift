@@ -9,6 +9,7 @@ struct GeneralTab: View {
     @Binding var lang: String
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var demoActive = DemoData.isActive
+    @State private var dashboardEntryMode = DashboardEntryMode.current
 
     var body: some View {
         ScrollView {
@@ -32,6 +33,29 @@ struct GeneralTab: View {
                         .pickerStyle(.menu)
                         .frame(width: 200)
                         Spacer()
+                    }
+
+                    Divider()
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(SetupCopy.text("仪表盘入口", "Dashboard entry"))
+                            Text(SetupCopy.text("灵动岛风格会在屏幕顶部常驻胶囊，点击后向下展开。", "Island style keeps a capsule at the top of the screen and expands downward when clicked."))
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: $dashboardEntryMode) {
+                            Text(SetupCopy.text("菜单栏机器人", "Menu bar robot"))
+                                .tag(DashboardEntryMode.menuBar)
+                            Text(SetupCopy.text("灵动岛风格", "Island style"))
+                                .tag(DashboardEntryMode.island)
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 160)
+                        .onChange(of: dashboardEntryMode) { _, mode in
+                            UserDefaults.standard.set(mode.rawValue, forKey: DashboardEntryMode.defaultsKey)
+                            DashboardWindowManager.shared.setEntryMode(mode)
+                        }
                     }
                 }
 

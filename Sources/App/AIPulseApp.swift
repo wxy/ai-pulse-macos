@@ -108,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // v2 §3.3: menu bar flame — the perception headline (default on).
         StatusItemController.shared.start()
+        DashboardWindowManager.shared.start()
 
         // Startup feedback is default-OFF in v2 (启动 ≠ 花钱); the user can
         // enable a startup chime in Settings.

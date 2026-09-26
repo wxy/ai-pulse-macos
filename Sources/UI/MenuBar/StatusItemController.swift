@@ -51,6 +51,11 @@ final class StatusItemController: NSObject {
                                                name: .soundMuteDidChange, object: nil)
     }
 
+    func setEntryMode(_ mode: DashboardEntryMode) {
+        statusItem?.isVisible = mode == .menuBar
+        DashboardWindowManager.shared.anchorButton = mode == .menuBar ? statusItem?.button : nil
+    }
+
     @objc private func statusClicked() {
         DiagnosticJournal.log("dashboard_status_click", ["right": .bool(NSApp.currentEvent?.type == .rightMouseDown)])
         if NSApp.currentEvent?.type == .rightMouseDown, let contextMenu, let button = statusItem?.button {

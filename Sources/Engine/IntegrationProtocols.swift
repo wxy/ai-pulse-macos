@@ -18,6 +18,7 @@ extension Notification.Name {
     static let dashboardSwitchTab = Notification.Name("AIPulseDashboardSwitchTab")
     static let dashboardDidOpen = Notification.Name("AIPulseDashboardDidOpen")
     static let dashboardDidClose = Notification.Name("AIPulseDashboardDidClose")
+    static let dashboardEscapeRequested = Notification.Name("AIPulseDashboardEscapeRequested")
 
     /// Posted whenever ApiPoller writes a fresh balance or error into its cache.
     /// userInfo contains "providerId": String.
