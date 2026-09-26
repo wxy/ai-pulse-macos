@@ -9,8 +9,6 @@ struct GeneralTab: View {
     @Binding var lang: String
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var demoActive = DemoData.isActive
-    @State private var dashboardEntryMode = DashboardEntryMode.current
-    @State private var islandAvailable = DashboardEntryMode.isAvailable
 
     var body: some View {
         ScrollView {
@@ -34,39 +32,6 @@ struct GeneralTab: View {
                         .pickerStyle(.menu)
                         .frame(width: 200)
                         Spacer()
-                    }
-
-                    Divider()
-
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(SetupCopy.text("仪表盘入口", "Dashboard entry"))
-                            Text(islandAvailable
-                                ? SetupCopy.text("灵动岛风格仅在带摄像头缺口的屏幕上可用。", "Island style is available only on a display with a camera housing.")
-                                : SetupCopy.text("当前屏幕没有摄像头缺口，使用菜单栏机器人以免遮挡其他图标。", "This display has no camera housing. The menu bar robot avoids covering other icons."))
-                                .font(.caption2).foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Picker("", selection: $dashboardEntryMode) {
-                            Text(SetupCopy.text("菜单栏机器人", "Menu bar robot"))
-                                .tag(DashboardEntryMode.menuBar)
-                            if islandAvailable {
-                                Text(SetupCopy.text("灵动岛风格", "Island style"))
-                                    .tag(DashboardEntryMode.island)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 160)
-                        .onChange(of: dashboardEntryMode) { _, mode in
-                            UserDefaults.standard.set(mode.rawValue, forKey: DashboardEntryMode.defaultsKey)
-                            DashboardWindowManager.shared.setEntryMode(mode)
-                        }
-                    }
-                    .onReceive(NotificationCenter.default.publisher(
-                        for: NSApplication.didChangeScreenParametersNotification
-                    )) { _ in
-                        islandAvailable = DashboardEntryMode.isAvailable
-                        dashboardEntryMode = DashboardEntryMode.current
                     }
                 }
 

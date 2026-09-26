@@ -1903,17 +1903,10 @@ private extension DashboardView {
             .allowsHitTesting(false)
         }
         .onExitCommand {
-            dismissTopLayer()
+            if selectedToolForOverlay != nil { selectedToolForOverlay = nil }
+            else if robotDetail != nil { robotDetail = nil }
+            else { DashboardWindowManager.shared.close() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .dashboardEscapeRequested)) { _ in
-            dismissTopLayer()
-        }
-    }
-
-    func dismissTopLayer() {
-        if selectedToolForOverlay != nil { selectedToolForOverlay = nil }
-        else if robotDetail != nil { robotDetail = nil }
-        else { DashboardWindowManager.shared.close() }
     }
 
     var foreheadMessage: String? {
