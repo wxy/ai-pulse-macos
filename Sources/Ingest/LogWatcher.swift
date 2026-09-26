@@ -495,15 +495,38 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
+    /// DSH replay cooldown gate: a corrupt or truncated journal cannot be
+    /// advanced (no byte boundary in a compressed stream), so without a
+    /// cooldown it would be fully decompressed — potentially hundreds of MB —
+    /// and reported on every 30-second scan, forever. Retry when the file
+    /// changes (size/mtime) or the cooldown lapses.
+    private struct DshFailureGate {
+        let size: UInt64
+        let mtime: Date?
+        let failedAt: Date
+    }
+    private let dshFailureLock = NSLock()
+    private var dshFailures: [String: DshFailureGate] = [:]
+    private static let dshRetryCooldown: TimeInterval = 300
+
     private func parseDeepSeekHarnessFile(_ file: URL) {
         let path = file.path
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
               let fileSize = attrs[.size] as? UInt64
         else { return }
+        let mtime = attrs[.modificationDate] as? Date
 
         // A zstd journal cannot be safely read at a byte boundary. Re-parse on
         // size changes and rely on usage_event dedupe keys to keep idempotence.
         if filePositions[path] == fileSize { return }
+
+        dshFailureLock.lock()
+        let gate = dshFailures[path]
+        dshFailureLock.unlock()
+        if let gate, gate.size == fileSize, gate.mtime == mtime,
+           Date().timeIntervalSince(gate.failedAt) < Self.dshRetryCooldown {
+            return
+        }
 
         let result: DeepSeekHarnessScanResult
         do {
@@ -513,9 +536,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         } catch {
             Logger.warning("LogWatcher: DSH scan failed for \(path): \(error.localizedDescription)")
             Self.recordFileScanResult(path: path, error: error)
+            dshFailureLock.lock()
+            if dshFailures.count > 4096 { dshFailures.removeAll() }
+            dshFailures[path] = DshFailureGate(size: fileSize, mtime: mtime, failedAt: Date())
+            dshFailureLock.unlock()
             return
         }
 
+        dshFailureLock.lock()
+        dshFailures.removeValue(forKey: path)
+        dshFailureLock.unlock()
         Self.recordFileScanResult(path: path, error: nil)
         if let sessionId = result.sessionId, result.maxTs > 0 {
             upsertSessionInfo(SessionInfoRecord(
@@ -744,8 +774,11 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         else { return }
 
         for case let url as URL in enumerator
-        where url.lastPathComponent.hasPrefix("chats")
-        || (url.pathExtension == "jsonl" && url.deletingLastPathComponent().lastPathComponent == "chats") {
+        // Only the jsonl files inside a `chats` directory. Matching the
+        // directory itself (hasPrefix) fed it through the parser, where the
+        // FileHandle read failed and logged an error on every single scan.
+        where url.pathExtension == "jsonl"
+            && url.deletingLastPathComponent().lastPathComponent.hasPrefix("chats") {
             // cwd is not in the Qwen log; use nil (token tracking only).
             parseQwenFile(url, cwd: nil)
         }
@@ -795,7 +828,15 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             return OpenCodeFingerprint(size: size, modifiedAt: modifiedAt, fileNumber: fileNumber)
         }()
         if let fingerprint, openCodeFingerprints[file.path] == fingerprint { return }
-        guard let event = OpenCodeParser.parseFile(file, cwd: nil) else { return }
+        guard let event = OpenCodeParser.parseFile(file, cwd: nil) else {
+            // Valid JSON that simply carries no usage (user-side messages,
+            // meta entries) is a stable verdict: remember the fingerprint so
+            // every future scan doesn't re-read and re-parse the file.
+            if let fingerprint {
+                openCodeFingerprints[file.path] = fingerprint
+            }
+            return
+        }
         let saved = insertEvents([event])
         if saved, let fingerprint { openCodeFingerprints[file.path] = fingerprint }
         Self.recordFileScanResult(path: file.path,
@@ -818,12 +859,14 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                     Logger.debug("LogWatcher: found aider chat history at \(chatMD.path)")
                     var parsedCount = 0
                     let filePath = chatMD.path
+                    // The fallback timestamp is the file's mtime — constant
+                    // for the whole pass, so stat once instead of per line.
+                    let fileTS = Int(((try? chatMD.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate?
+                        .timeIntervalSince1970 ?? 0) * 1000)
                     parseLinesIncremental(from: chatMD) { line in
                         // Track model across lines & scans
                         if let m = AiderParser.parseModelLine(line) { aiderModels[filePath] = m; return nil }
                         let model = aiderModels[filePath]
-                        let fileModDate = (try? chatMD.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-                        let fileTS = Int((fileModDate?.timeIntervalSince1970 ?? 0) * 1000)
                         if let event = AiderParser.parseMarkdown(line: line, cwd: repoURL.path, model: model, fallbackDate: fileTS) {
                             parsedCount += 1
                             return event
@@ -1015,7 +1058,25 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Read the first line of a Claude Code JSONL file to discover and register
     /// the associated git repo — regardless of whether the file has new content.
     /// Failures are silent (the file may be mid-write); the next scan will retry.
+    /// Cache for `discoverAndWatchRepo`: path → (fingerprint, resolved repo).
+    /// Repo discovery re-reads the file head and walks git roots on every
+    /// scan for every Claude jsonl; the answer cannot change while the file
+    /// head is unchanged. Nil repoPath caches the "no repo" verdict too.
+    private let repoDiscoveryLock = NSLock()
+    private var repoDiscoveryCache: [String: (fingerprint: SessionInfoBackfill.PrefixFingerprint, repoPath: String?)] = [:]
+
     private func discoverAndWatchRepo(from file: URL) {
+        let fingerprint = SessionInfoBackfill.prefixFingerprint(of: file)
+        repoDiscoveryLock.lock()
+        if let fingerprint, let cached = repoDiscoveryCache[file.path], cached.fingerprint == fingerprint {
+            repoDiscoveryLock.unlock()
+            if let repoPath = cached.repoPath {
+                GitMonitor.shared.watch(repoPath: repoPath)
+            }
+            return
+        }
+        repoDiscoveryLock.unlock()
+
         guard let handle = try? FileHandle(forReadingFrom: file) else { return }
         defer { try? handle.close() }
         guard let data = try? handle.read(upToCount: 4096),
@@ -1024,9 +1085,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
               !firstLine.isEmpty,
               let jsonData = firstLine.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-              let cwd = json["cwd"] as? String,
-              let repoUrl = findGitRepo(containing: cwd)
+              let cwd = json["cwd"] as? String
         else { return }
+        let repoUrl = findGitRepo(containing: cwd)
+        if let fingerprint {
+            repoDiscoveryLock.lock()
+            if repoDiscoveryCache.count > 4096 { repoDiscoveryCache.removeAll() }
+            repoDiscoveryCache[file.path] = (fingerprint, repoUrl?.path)
+            repoDiscoveryLock.unlock()
+        }
+        guard let repoUrl else { return }
         GitMonitor.shared.watch(repoPath: repoUrl.path)
     }
 

@@ -8,24 +8,40 @@ enum CodexThreadTitles {
     private static let lock = NSLock()
     private static nonisolated(unsafe) var cache: [String: String]?
     private static nonisolated(unsafe) var cachedPath: String?
+    private static nonisolated(unsafe) var cachedLoadFailed = false
 
     static func title(for sessionId: String) -> String? {
-        loadIfNeeded()
+        // All access to the cache is under the lock: loadIfNeeded can run
+        // from any queue, and an unsynchronized read of a mutating
+        // dictionary reference is a data race.
+        lock.lock()
+        defer { lock.unlock() }
+        loadIfNeededLocked()
         return cache?[sessionId]
     }
 
-    static func loadIfNeeded() {
-        lock.lock()
-        defer { lock.unlock() }
+    /// Callers must hold `lock`.
+    private static func loadIfNeededLocked() {
         let path = FileManager.default.realHomeDirectory
             .appendingPathComponent(".codex/state_5.sqlite").path
-        guard cachedPath != path || cache == nil else { return }
-        cache = readTitles(from: path)
+        // A failed load (locked database) is retried on each query instead
+        // of being cached as an empty map for the rest of the run.
+        guard cachedPath != path || cache == nil || (cache?.isEmpty == true && cachedLoadFailed)
+        else { return }
+        if let titles = readTitles(from: path) {
+            cache = titles
+            cachedLoadFailed = false
+        } else {
+            cache = [:]
+            cachedLoadFailed = true
+        }
         cachedPath = path
     }
 
     /// Read-only query of the threads table; returns threadId → title map.
-    static func readTitles(from path: String) -> [String: String] {
+    /// Returns nil when the database exists but could not be opened or read
+    /// (retry later); a missing file or empty table yields an empty map.
+    static func readTitles(from path: String) -> [String: String]? {
         guard FileManager.default.fileExists(atPath: path) else { return [:] }
         do {
             var config = Configuration()
@@ -46,7 +62,7 @@ enum CodexThreadTitles {
                 return map
             }
         } catch {
-            return [:]
+            return nil
         }
     }
 }

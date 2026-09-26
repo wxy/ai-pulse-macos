@@ -5,7 +5,7 @@
   <a href="https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12"><img src="assets/readme/download-button-appstore-mac.svg" width="300" height="69" alt="Mac App Store listing"></a>
 </p>
 
-<p align="center"><code>MACOS 14+ · IOS 16+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · 2.0 RELEASE CANDIDATE</code></p>
+<p align="center"><code>MACOS 14+ · IOS 17+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · 2.0 RELEASE CANDIDATE</code></p>
 
 <p align="center">
   <a href="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml"><img src="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg" alt="CI"></a>&nbsp;
@@ -110,9 +110,9 @@ API keys stay in local credential storage and are not part of dashboard snapshot
 
 <p align="center"><img src="assets/readme/section-requirements.svg" width="100%" alt="Requirements · 环境要求"></p>
 
-macOS 14+, iOS 16+, watchOS 10+, a Swift 6/Xcode development environment, and access to the supported local logs/repositories. CloudKit requires appropriate account, entitlement, and deployment configuration; build success alone does not verify it.
+macOS 14+, iOS 17+, watchOS 10+, a Swift 6/Xcode development environment, and access to the supported local logs/repositories. CloudKit requires appropriate account, entitlement, and deployment configuration; build success alone does not verify it.
 
-> macOS 14+、iOS 16+、watchOS 10+、Swift 6／Xcode 开发环境，以及相应日志和仓库授权。CloudKit 需要账户、权限与部署配置，构建成功不证明云端可用。
+> macOS 14+、iOS 17+、watchOS 10+、Swift 6／Xcode 开发环境，以及相应日志和仓库授权。CloudKit 需要账户、权限与部署配置，构建成功不证明云端可用。
 
 <p align="center"><img src="assets/readme/section-related.svg" width="100%" alt="Related Projects · 相关项目"></p>
 

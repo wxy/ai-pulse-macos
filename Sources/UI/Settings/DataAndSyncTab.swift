@@ -79,7 +79,12 @@ struct DataAndSyncTab: View {
         .onReceive(NotificationCenter.default.publisher(for: BookmarkManager.didChange)) { _ in refresh() }
         .onReceive(NotificationCenter.default.publisher(for: LogScanObservation.didChange)) { _ in refresh() }
         .onReceive(NotificationCenter.default.publisher(for: .appHealthDidChange)) { _ in refresh() }
-        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in refresh() }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            // The settings window only orderOuts on close, so the timer keeps
+            // firing while hidden — skip the main-thread disk probe then.
+            guard SettingsWindowManager.shared.window?.isVisible == true else { return }
+            refresh()
+        }
     }
 
     private var logStatusText: String {

@@ -51,8 +51,11 @@ public struct SpendAlertThresholds: Equatable, Sendable {
 /// Pure, side-effect-free alert decision rules.
 public enum SpendAlertRules {
     public nonisolated static func median(_ values: [Double]) -> Double {
-        guard !values.isEmpty else { return 0 }
-        let sorted = values.sorted()
+        // Non-finite readings (corrupt rows) would poison the sorted midpoint
+        // and turn every later comparison false, silently disabling alerts.
+        let finite = values.filter { $0.isFinite }
+        guard !finite.isEmpty else { return 0 }
+        let sorted = finite.sorted()
         let mid = sorted.count / 2
         if sorted.count % 2 == 1 {
             return sorted[mid]
@@ -65,7 +68,14 @@ public enum SpendAlertRules {
         baseline: Double,
         thresholds: SpendAlertThresholds
     ) -> SpendAlertLevel? {
-        for level in [SpendAlertLevel.critical, .warning, .reminder] {
+        // A non-positive baseline means "no usable history yet": multiplier ×
+        // baseline collapses to zero, so the absolute floor alone would fire
+        // critical on the first real spend day. Cap cold-start severity at a
+        // gentle reminder until a baseline exists.
+        let levels: [SpendAlertLevel] = baseline > 0
+            ? [.critical, .warning, .reminder]
+            : [.reminder]
+        for level in levels {
             let (multiplier, floor) = switch level {
             case .critical: (thresholds.rateMultiplierL3, thresholds.rateFloorL3)
             case .warning:  (thresholds.rateMultiplierL2, thresholds.rateFloorL2)

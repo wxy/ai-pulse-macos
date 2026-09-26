@@ -230,7 +230,9 @@ final class SpendAlertService: @unchecked Sendable {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { _ in }
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error { Logger.error("SpendAlertService: notification add failed: \(error.localizedDescription)") }
+        }
     }
 
     private func alertBody(_ payload: SpendAlertPayload) -> String {

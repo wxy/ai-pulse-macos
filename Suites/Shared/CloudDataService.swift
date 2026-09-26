@@ -232,46 +232,6 @@ final class CloudDataService: ObservableObject {
         }
     }
 
-    /// Lightweight refresh for watchOS — fetch today snapshot with detailed error reporting.
-    func refresh() async {
-        guard Self.cloudAvailable else { return }
-        let container = CKContainer(identifier: "iCloud.com.wxy.aipulse")
-        log.info("refresh: container=\(container.containerIdentifier ?? "nil")")
-
-        do {
-            let status = try await CloudKitGate.shared.run("accountStatus") {
-                try await container.accountStatus()
-            }
-            log.info("refresh: account status=\(status.rawValue)")
-            switch status {
-            case .available: break
-            case .noAccount:       log.error("refresh: no iCloud account"); return
-            case .restricted:      log.error("refresh: iCloud restricted"); return
-            case .couldNotDetermine: log.error("refresh: could not determine iCloud status"); return
-            case .temporarilyUnavailable: log.error("refresh: iCloud temporarily unavailable"); return
-            @unknown default:      log.error("refresh: unknown iCloud status \(status.rawValue)"); return
-            }
-        } catch {
-            log.error("refresh: accountStatus() threw — \(error.localizedDescription)")
-            return
-        }
-
-        // Fetch all three time ranges independently.
-        log.info("refresh: fetching all ranges")
-        await fetchAndStore(range: "today")
-        await fetchAndStore(range: "week")
-        await fetchAndStore(range: "30d")
-        // Current activity is independent of the historical range snapshots.
-        await fetchCurrentPulse()
-        // Reload the currently displayed range so the UI reflects new data
-        loadSnapshot(for: currentRange)
-    }
-
-    /// Fetch a single snapshot record and store it independently by range.
-    /// Each tab always gets its own data — no cross-range merging.
-    func fetchAndMergeWeek() async { await fetchAndStore(range: "week") }
-    func fetchAndMergeMonth() async { await fetchAndStore(range: "30d") }
-
     func fetchAndStore(range: String, force: Bool = false) async {
         guard !isPreview, Self.cloudAvailable else {
             if !isPreview { rangeErrors[range] = "Cloud unavailable" }

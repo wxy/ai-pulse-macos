@@ -12,7 +12,7 @@ final class CodexThreadTitlesTests: XCTestCase {
             try db.execute(sql: "INSERT INTO threads (id, title) VALUES ('t2', '')")
             try db.execute(sql: "INSERT INTO threads (id, title) VALUES ('t3', '   ')")
         }
-        let map = CodexThreadTitles.readTitles(from: path)
+        let map = try XCTUnwrap(CodexThreadTitles.readTitles(from: path))
         XCTAssertEqual(map["t1"], "排查硬盘占用")
         XCTAssertNil(map["t2"])
         XCTAssertNil(map["t3"])
@@ -21,6 +21,6 @@ final class CodexThreadTitlesTests: XCTestCase {
     }
 
     func testMissingFileReturnsEmpty() {
-        XCTAssertTrue(CodexThreadTitles.readTitles(from: "/nonexistent/state_5.sqlite").isEmpty)
+        XCTAssertEqual(CodexThreadTitles.readTitles(from: "/nonexistent/state_5.sqlite"), [:])
     }
 }

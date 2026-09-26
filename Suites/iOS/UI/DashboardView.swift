@@ -2,14 +2,9 @@ import SwiftUI
 import AIPulseShared
 
 extension Color {
-    static let marsGreenBar = Color(light: .marsGreen, dark: Color(red: 0.49, green: 0.66, blue: 0.53))
-    static let deepRedBar = Color.deepRed
     init(light: Color, dark: Color) {
         self.init(UIColor { $0.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light) })
     }
-}
-struct FrostedCard: ViewModifier {
-    func body(content: Content) -> some View { content.padding(12).background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14)) }
 }
 
 private struct RobotSilhouette: Shape {

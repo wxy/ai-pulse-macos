@@ -82,24 +82,9 @@ final class GitMonitorTests: XCTestCase {
     }
 
     // MARK: - CodeChange model
-
-    func testCodeChangeIsMergeDetection() {
-        let merge = CodeChange(
-            commitHash: "abc123", ts: 1000, repoPath: "/test",
-            added: 100, deleted: 50, isMerge: true
-        )
-        XCTAssertTrue(merge.isMerge)
-        // Merge commits should be excluded from line counting
-    }
-
-    func testCodeChangeNetLines() {
-        let change = CodeChange(
-            commitHash: "def456", ts: 2000, repoPath: "/test",
-            added: 200, deleted: 80, isMerge: false
-        )
-        // Net = added - deleted = 120
-        XCTAssertEqual(change.added - change.deleted, 120)
-    }
+    // (Model-level tests removed: asserting a stored property back through
+    // the accessor was tautological. Merge handling and line counting are
+    // covered by GitCommitFactsTests against real repositories.)
 }
 
 // MARK: - WI-5: git trailer self-attribution (§4.6 信号一)

@@ -16,6 +16,21 @@ final class SpendAlertRulesTests: XCTestCase {
         XCTAssertEqual(SpendAlertRules.median([]), 0, accuracy: 0.0001)
     }
 
+    func testMedianIgnoresNonFiniteReadings() {
+        XCTAssertEqual(SpendAlertRules.median([1, .nan, 3]), 2, accuracy: 0.0001)
+        XCTAssertEqual(SpendAlertRules.median([.nan]), 0, accuracy: 0.0001)
+        XCTAssertEqual(SpendAlertRules.median([1, .infinity, 2, 3, 4]), 2.5, accuracy: 0.0001)
+    }
+
+    func testZeroBaselineCapsFirstSpendDayAtReminder() {
+        // $10 on day one must not fire critical just because the absolute
+        // floor alone is satisfied — there is no baseline to compare against.
+        XCTAssertEqual(SpendAlertRules.levelForSpendRate(
+            current: 10, baseline: 0, thresholds: thresholds), .reminder)
+        XCTAssertNil(SpendAlertRules.levelForSpendRate(
+            current: 0.5, baseline: 0, thresholds: thresholds))
+    }
+
     func testSpendRateRejectsSmallAbsoluteJumpEvenAtHighMultiplier() {
         // $0.50 is 5× a $0.10 baseline but below the $1 floor.
         XCTAssertNil(SpendAlertRules.levelForSpendRate(

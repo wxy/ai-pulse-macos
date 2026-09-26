@@ -42,9 +42,12 @@ struct CopilotChatParser {
 
                 switch field {
                 case "promptTokens":
-                    requests[index].promptTokens = entry.integerValue
+                    // Only assign on a real integer: a float payload decodes
+                    // to nil integerValue, and assigning nil would clobber a
+                    // previously observed value.
+                    if let value = entry.integerValue { requests[index].promptTokens = value }
                 case "completionTokens":
-                    requests[index].completionTokens = entry.integerValue
+                    if let value = entry.integerValue { requests[index].completionTokens = value }
                 case "copilotCredits":
                     // Presence, including a zero value, identifies Copilot's
                     // request accounting without retaining the credit amount.

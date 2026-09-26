@@ -55,11 +55,11 @@ nonisolated final class ApiPoller: @unchecked Sendable {
 
         switch api {
         case .simple(let url, _):
-            fetchSimple(provider: provider, url: url, apiKey: apiKey, parser: simpleParser(for: provider.id))
+            fetchSimple(provider: provider, url: url, apiKey: apiKey, parser: Self.simpleParser(for: provider.id))
         case .openAI(let baseURL):
             fetchOpenAIUsage(provider: provider, baseURL: baseURL, apiKey: apiKey)
         case .zhipu(let url):
-            fetchSimple(provider: provider, url: url, apiKey: apiKey, parser: zhipuParser)
+            fetchSimple(provider: provider, url: url, apiKey: apiKey, parser: Self.zhipuParser)
         }
     }
 
@@ -140,13 +140,18 @@ nonisolated final class ApiPoller: @unchecked Sendable {
     // MARK: - OpenAI (multi-day usage)
 
     private func fetchOpenAIUsage(provider: ProviderDef, baseURL: String, apiKey: String) {
-        let cal = Calendar.current
-        let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"
+        // The usage API's `date` parameter is a UTC calendar date. Pin the
+        // formatter to POSIX + UTC: without it, a non-Gregorian locale can
+        // emit an unparseable string (all days silently skipped) and a local
+        // time zone grabs the wrong day around UTC midnight.
+        let fmt = Self.openAIUsageDateFormatter()
+        var utcDays = Calendar(identifier: .gregorian)
+        utcDays.timeZone = TimeZone(identifier: "UTC")!
 
         Task {
             var total = 0.0
             for dayOffset in 0..<3 {
-                guard let date = cal.date(byAdding: .day, value: -dayOffset, to: Date()) else { continue }
+                guard let date = utcDays.date(byAdding: .day, value: -dayOffset, to: Date()) else { continue }
                 let dateStr = fmt.string(from: date)
                 guard let url = URL(string: "\(baseURL)?date=\(dateStr)") else { continue }
                 var req = URLRequest(url: url)
@@ -168,14 +173,14 @@ nonisolated final class ApiPoller: @unchecked Sendable {
     // MARK: - Zhipu parser
 
     /// Parses account balance from query-customer-account-report.
-    /// Uses availableBalance (CNY) as the usable total.
-    private nonisolated func zhipuParser(_ json: [String: Any]) -> [BalanceEntry] {
+    /// Uses availableBalance (CNY) as the usable total. Static + pure for tests.
+    static nonisolated func zhipuParser(_ json: [String: Any]) -> [BalanceEntry] {
         let balance = json["balance"] as? [String: Any] ?? json["data"] as? [String: Any] ?? [:]
         let available = Self.parseDouble(balance["availableBalance"]) ?? Self.parseDouble(balance["balance"]) ?? 0
         return [BalanceEntry(currency: "CNY", totalBalance: available, grantedBalance: 0, toppedUpBalance: 0)]
     }
 
-    private nonisolated func simpleParser(for providerId: String) -> @Sendable ([String: Any]) -> [BalanceEntry] {
+    static nonisolated func simpleParser(for providerId: String) -> @Sendable ([String: Any]) -> [BalanceEntry] {
         switch providerId {
         case "deepseek":
             return { json in
@@ -210,6 +215,16 @@ nonisolated final class ApiPoller: @unchecked Sendable {
         else { parsed = nil }
         guard let parsed, parsed.isFinite else { return nil }
         return parsed
+    }
+
+    /// Formatter for the OpenAI usage API's `date` parameter (UTC calendar
+    /// dates). Shared so the format is pinned in exactly one place.
+    static nonisolated func openAIUsageDateFormatter() -> DateFormatter {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = TimeZone(identifier: "UTC")
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt
     }
 
     // MARK: - Caching

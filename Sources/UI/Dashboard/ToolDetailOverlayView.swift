@@ -504,6 +504,9 @@ struct ToolDetailOverlayView: View {
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
+        // Fixed-format numeric timestamps must not follow the user's
+        // calendar/locale (a non-Gregorian locale would shift the digits).
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "MM-dd HH:mm"
         return f
     }()

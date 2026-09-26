@@ -151,7 +151,8 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
             return
         }
 
-        var req = URLRequest(url: URL(string: "https://api.github.com/copilot_internal/user")!)
+        guard let quotaURL = URL(string: "https://api.github.com/copilot_internal/user") else { return }
+        var req = URLRequest(url: quotaURL)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 10
 
@@ -161,7 +162,7 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
                     MainActor.assumeIsolated {
                                         Logger.debug("UsageMonitor: Copilot API error: \(error.localizedDescription)")
                                         healthMonitor.reportAPIError(providerId: "copilot-usage",
-                                            message: "Copilot usage: \(error.localizedDescription)")
+                                            message: "copilot-usage: \(error.localizedDescription)")
                     }
                 }
                 return
@@ -175,7 +176,7 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
                     MainActor.assumeIsolated {
                                         Logger.debug("UsageMonitor: Copilot API unexpected response")
                                         healthMonitor.reportAPIError(providerId: "copilot-usage",
-                                            message: "Copilot usage: unexpected response")
+                                            message: "copilot-usage: unexpected response")
                     }
                 }
                 return
@@ -186,7 +187,7 @@ nonisolated final class UsageMonitor: @unchecked Sendable {
                     MainActor.assumeIsolated {
                                         Logger.debug("UsageMonitor: Copilot API unexpected response")
                                         healthMonitor.reportAPIError(providerId: "copilot-usage",
-                                            message: "Copilot usage: unexpected response")
+                                            message: "copilot-usage: unexpected response")
                     }
                 }
                 return

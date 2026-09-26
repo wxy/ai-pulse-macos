@@ -118,9 +118,15 @@ struct WatchDashboardView: View {
             || cloud.rangeErrors["today"] != nil || cloud.missingRanges.contains("today"))
     }
     private func dashboardStatus(_ snapshot: DashboardSnapshot?, asOf now: Date) -> (text: String, color: Color)? {
+        // Only the Xcode preview path consults launch arguments; release
+        // builds skip the probe entirely.
+        #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let previewsDataState = arguments.contains("--watch-stale")
             || arguments.contains("--watch-empty") || arguments.contains("--watch-error")
+        #else
+        let previewsDataState = false
+        #endif
         if cloud.isPreview && !previewsDataState { return (t("演示", "Demo"), .secondary) }
         if refreshing || (!hasAttemptedRefresh && snapshot == nil) {
             return (t("同步中…", "Syncing…"), .secondary)

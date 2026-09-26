@@ -131,4 +131,95 @@ final class GitCommitFactsTests: XCTestCase {
         try git(["-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "next"])
         XCTAssertEqual(try repo.log(since: batch.headHash).commits.count, 1)
     }
+
+    func testLogCoverageWindowExcludesOldHistoryEvenWithoutCursor() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func git(_ arguments: [String], environment: [String: String] = [:]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", root.path] + arguments
+            var env = ProcessInfo.processInfo.environment
+            for (key, value) in environment { env[key] = value }
+            process.environment = env
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            try process.run()
+            _ = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationStatus, 0)
+        }
+        let oldDate = { () -> String in
+            let old = Calendar(identifier: .gregorian).date(byAdding: .day, value: -100, to: Date())!
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss Z"
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(identifier: "UTC")
+            return formatter.string(from: old)
+        }()
+        try git(["init", "-q"])
+        try git(["config", "user.name", "Test"])
+        try git(["config", "user.email", "test@local"])
+        for index in 0..<5 {
+            try git(["-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "old \(index)"],
+                    environment: ["GIT_AUTHOR_DATE": oldDate, "GIT_COMMITTER_DATE": oldDate])
+        }
+        for index in 0..<3 { try git(["-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "new \(index)"]) }
+        GitRepo.setup()
+        defer { GitRepo.teardown() }
+        let repo = GitRepo(path: root.path)
+        let coverageSince = Int(Calendar(identifier: .gregorian)
+            .date(byAdding: .day, value: -29, to: Date())!.timeIntervalSince1970)
+        // No cursor: the coverage-window boundary anchor must keep the walk
+        // inside the window, so only the recent commits come back.
+        let batch = try repo.log(since: nil, sinceTimestamp: coverageSince)
+        XCTAssertEqual(batch.commits.count, 3)
+        XCTAssertTrue(batch.commits.allSatisfy { $0.message.hasPrefix("new ") })
+        XCTAssertEqual(batch.headHash, batch.commits.first?.hash)
+    }
+
+    func testDiffTreeCountsExactAdditionsAndDeletions() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func git(_ arguments: [String]) throws -> String {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", root.path] + arguments
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            try process.run()
+            let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            process.waitUntilExit()
+            XCTAssertEqual(process.terminationStatus, 0)
+            return output
+        }
+        try git(["init", "-q"])
+        try git(["config", "user.name", "Test"])
+        try git(["config", "user.email", "test@local"])
+        try "".write(to: root.appendingPathComponent("keep.txt"), atomically: true, encoding: .utf8)
+        try git(["add", "."])
+        try git(["-c", "commit.gpgsign=false", "commit", "-qm", "base"])
+        // First real change: 4 added lines in a tracked file.
+        try "one\ntwo\nthree\nfour\n".write(to: root.appendingPathComponent("keep.txt"), atomically: true, encoding: .utf8)
+        try git(["add", "."])
+        try git(["-c", "commit.gpgsign=false", "commit", "-qm", "add four lines"])
+        let firstHash = try git(["rev-parse", "HEAD"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Second change: rewrite to 5 lines where 1 line is retained → 4 additions, 3 deletions.
+        try "two\nfive\nsix\nseven\neight\n".write(to: root.appendingPathComponent("keep.txt"), atomically: true, encoding: .utf8)
+        try git(["add", "."])
+        try git(["-c", "commit.gpgsign=false", "commit", "-qm", "rewrite"])
+        let secondHash = try git(["rev-parse", "HEAD"]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        GitRepo.setup()
+        defer { GitRepo.teardown() }
+        let repo = GitRepo(path: root.path)
+        XCTAssertEqual(repo.diffTree(hash: firstHash)?.added, 4)
+        XCTAssertEqual(repo.diffTree(hash: firstHash)?.deleted, 0)
+        XCTAssertEqual(repo.diffTree(hash: secondHash)?.added, 4)
+        XCTAssertEqual(repo.diffTree(hash: secondHash)?.deleted, 3)
+    }
 }

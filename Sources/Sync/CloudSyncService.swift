@@ -2,6 +2,18 @@ import CloudKit
 import Foundation
 import AIPulseShared
 
+/// Preserve every bit of the stable hash across launches. UserDefaults stores
+/// numeric doubles with only 53 bits of integer precision.
+enum CloudSyncFingerprintStore {
+    static func read(rangeKey: String, defaults: UserDefaults = .standard) -> UInt64? {
+        defaults.string(forKey: "cloud_sync_fingerprint_\(rangeKey)").flatMap(UInt64.init)
+    }
+
+    static func write(_ fingerprint: UInt64, rangeKey: String, defaults: UserDefaults = .standard) {
+        defaults.set(String(fingerprint), forKey: "cloud_sync_fingerprint_\(rangeKey)")
+    }
+}
+
 /// Syncs the cached dashboard snapshots from GRDB to iCloud.
 /// iOS/watchOS read per-range snapshots to display correct data per tab.
 @MainActor
@@ -63,9 +75,9 @@ final class CloudSyncService {
 
     /// Content fingerprint (updatedAt excluded) of the last snapshot actually
     /// written per range. Used to skip no-op CloudKit writes — see
-    /// `syncFromCache()`.
-    private var lastSyncedFingerprint: [String: Int] = [:]
-
+    /// `syncFromCache()`. Persisted with a cross-process stable hash so a
+    /// relaunch does not re-push unchanged content (each write fires a
+    /// silent push that wakes every iOS/watchOS device).
     private init() {}
 
     func syncFromCache(publishMacWidget: Bool = true) async {
@@ -88,8 +100,13 @@ final class CloudSyncService {
         // not each rebuild 30 days after a usage event cleared the cache.
         let today = await snapshot(for: .today, maxAge: 600)
         let history = await snapshot(for: .days30, maxAge: 43200)
+        // Degraded snapshots never reach the widget either: it would keep
+        // showing them offline long after the source recovered. The
+        // publisher keeps the previous healthy payload for nil ranges.
         if publishMacWidget {
-            _ = await MacWidgetLocalPublisher.publish(todaySnapshot: today, historySnapshot: history)
+            _ = await MacWidgetLocalPublisher.publish(
+                todaySnapshot: today.readFailures.isEmpty ? today : nil,
+                historySnapshot: history.readFailures.isEmpty ? history : nil)
         }
 
         guard cloudEnabled else {
@@ -115,6 +132,15 @@ final class CloudSyncService {
             guard let data = try? JSONEncoder().encode(snap),
                   let json = String(data: data, encoding: .utf8) else { didFail = true; continue }
 
+            // A snapshot with failed reads is not a fresh fact. Pushing it
+            // would overwrite the remote with a degraded (possibly empty)
+            // view even after the source recovers; leave the last healthy
+            // record in place instead. Not counted as a sync failure.
+            guard snap.readFailures.isEmpty else {
+                Logger.warning("CloudSync: \(r.key) snapshot has read failures; skipping push")
+                continue
+            }
+
             // This runs every ~5 min (throttled by DataRefreshCoordinator),
             // but the underlying numbers often haven't changed between
             // cycles. Every CloudKit write fires the iOS/watchOS
@@ -126,8 +152,10 @@ final class CloudSyncService {
             // would differ.
             var contentSnap = snap
             contentSnap.updatedAt = Date(timeIntervalSince1970: 0)
-            let fingerprint = (try? JSONEncoder().encode(contentSnap))?.hashValue
-            if let fingerprint, lastSyncedFingerprint[r.key] == fingerprint {
+            let fingerprint = (try? JSONEncoder().encode(contentSnap))
+                .flatMap { String(data: $0, encoding: .utf8) }
+                .map(stableHash)
+            if let fingerprint, CloudSyncFingerprintStore.read(rangeKey: r.key) == fingerprint {
                 Logger.debug("CloudSync: \(r.key) unchanged, skipping push")
                 continue
             }
@@ -138,10 +166,15 @@ final class CloudSyncService {
 
             do {
                 let (_, results) = try await database.modifyRecords(saving: [record], deleting: [], savePolicy: .allKeys)
-                let ok = results.compactMap({ _, r in if case .failure = r { return true }; return nil }).isEmpty
+                var ok = true
+                for (_, result) in results {
+                    if case .failure(let error) = result {
+                        if await !reconcileRecordConflict(error, with: record) { ok = false }
+                    }
+                }
                 if ok {
                     Logger.info("CloudSync: synced \(CKSchema.recordType)/\(r.recordName) len=\(json.count)")
-                    lastSyncedFingerprint[r.key] = fingerprint
+                    if let fingerprint { CloudSyncFingerprintStore.write(fingerprint, rangeKey: r.key) }
                 } else { didFail = true }
             } catch {
                 didFail = true
@@ -151,6 +184,30 @@ final class CloudSyncService {
         if !(await syncCurrentPulse()) { didFail = true }
         if !didFail { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "cloud_sync_last_success") }
         setResult(didFail ? .failed : .succeeded)
+    }
+
+    /// A rejected `.allKeys` write means the server copy moved since our read
+    /// (another device). Re-apply this snapshot's fields onto the server
+    /// record — its fresh change tag makes the retry a plain overwrite, so a
+    /// conflicting writer cannot wedge the sync into failing forever.
+    private func reconcileRecordConflict(_ error: Error, with record: CKRecord) async -> Bool {
+        guard let ckError = error as? CKError, ckError.code == .serverRecordChanged,
+              let serverRecord = ckError.serverRecord else { return false }
+        serverRecord[CKSchema.Field.json] = record[CKSchema.Field.json]
+        serverRecord[CKSchema.Field.updatedAt] = record[CKSchema.Field.updatedAt]
+        do {
+            let (_, results) = try await database.modifyRecords(
+                saving: [serverRecord], deleting: [], savePolicy: .changedKeys)
+            let ok = results.allSatisfy { _, result in
+                if case .failure = result { return false }
+                return true
+            }
+            if ok { Logger.info("CloudSync: resolved serverRecordChanged for \(record.recordID.recordName)") }
+            return ok
+        } catch {
+            Logger.error("CloudSync: conflict reconcile failed: \(error)")
+            return false
+        }
     }
 
     private func snapshot(for period: DashboardPeriodKind, maxAge: TimeInterval) async -> DashboardSnapshot {

@@ -28,6 +28,12 @@ struct GitRepo {
     /// Call once at app termination.
     static func teardown() { git_libgit2_shutdown() }
 
+    /// Thread-safe lazy one-time init for entry points that may run before
+    /// `setup()` (or in tests). Unlike `verifiedWorkingRoot`'s former
+    /// init/shutdown pair, this never tears the global libgit2 state back
+    /// down, so repeated validation calls no longer churn the global lock.
+    private static let ensureInitialized: Void = { git_libgit2_init() }()
+
     /// Find the git repository root containing the given path.
     /// Returns nil if the path is not inside a git repository.
     static func findRoot(containing path: String) -> String? {
@@ -37,8 +43,7 @@ struct GitRepo {
     /// Validate a candidate working tree, including linked worktrees. Opening
     /// is read-only and does not rely on a subprocess or a marker's existence.
     static func verifiedWorkingRoot(at path: String) -> String? {
-        guard git_libgit2_init() > 0 else { return nil }
-        defer { git_libgit2_shutdown() }
+        _ = ensureInitialized
         var pointer: OpaquePointer?
         guard git_repository_open(&pointer, path) == 0, let repository = pointer else { return nil }
         defer { git_repository_free(repository) }
@@ -77,6 +82,15 @@ struct GitRepo {
                 // A removed/unavailable cursor causes an idempotent rescan.
                 _ = git_revwalk_hide(walk, &previous)
             }
+        } else if let sinceTimestamp {
+            // Full rescan (nil cursor): hide the oldest first-parent ancestor
+            // that falls inside the coverage window so the walk cannot run
+            // past the window on long-lived repositories. Hiding an oid prunes
+            // its entire ancestry; recently-merged side branches above the
+            // anchor are still covered by the per-commit timestamp filter.
+            if var anchor = boundaryAnchor(oid: target, repo: repo, sinceTimestamp: sinceTimestamp) {
+                _ = git_revwalk_hide(walk, &anchor)
+            }
         }
         var results: [GitCommitSummary] = []
         var oid = git_oid()
@@ -100,6 +114,37 @@ struct GitRepo {
         }
         guard status == GIT_ITEROVER.rawValue else { throw GitReadError.operation("walk", status) }
         return GitLogBatch(headHash: headHash, commits: results)
+    }
+
+    /// Walk HEAD's first-parent chain just far enough to find the oldest commit
+    /// at or newer than `sinceTimestamp`, then return its first out-of-window
+    /// parent as the hide anchor. Cheap: one commit lookup per first-parent
+    /// link inside the window, no diffs. Returns nil when the whole history is
+    /// inside the window or the chain cannot be followed (the walk then simply
+    /// falls back to per-commit filtering).
+    private nonisolated func boundaryAnchor(oid start: UnsafePointer<git_oid>,
+                                            repo: OpaquePointer,
+                                            sinceTimestamp: Int) -> git_oid? {
+        var cursor = start.pointee
+        var anchor: git_oid?
+        while anchor == nil {
+            var commitPtr: OpaquePointer?
+            guard git_commit_lookup(&commitPtr, repo, &cursor) == 0, let commit = commitPtr else { break }
+            defer { git_commit_free(commit) }
+            guard Int(git_commit_time(commit)) >= sinceTimestamp else { break }
+            guard git_commit_parentcount(commit) > 0 else { break }
+            guard let parentId = git_commit_parent_id(commit, 0) else { break }
+            var parent = parentId.pointee
+            var parentPtr: OpaquePointer?
+            guard git_commit_lookup(&parentPtr, repo, &parent) == 0, let parentCommit = parentPtr else { break }
+            defer { git_commit_free(parentCommit) }
+            if Int(git_commit_time(parentCommit)) < sinceTimestamp {
+                anchor = parent
+                break
+            }
+            cursor = parent
+        }
+        return anchor
     }
 
     /// Read the git `user.email` for this repository.
@@ -176,7 +221,9 @@ struct GitRepo {
 
             var fileAdded: Int = 0
             var fileDeleted: Int = 0
-            guard git_patch_line_stats(&fileAdded, &fileDeleted, nil, patch) == 0 else { return nil }
+            // Signature is (total_context, total_additions, total_deletions,
+            // patch): additions first, deletions second, context discarded.
+            guard git_patch_line_stats(nil, &fileAdded, &fileDeleted, patch) == 0 else { return nil }
             added += fileAdded
             deleted += fileDeleted
         }

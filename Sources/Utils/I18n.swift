@@ -8,6 +8,7 @@ enum I18n {
     private static nonisolated(unsafe) var _currentLang: String?
     private static nonisolated(unsafe) var _cachedStrings: [String: String]?
     private static nonisolated(unsafe) var _cacheLang: String?
+    private static nonisolated(unsafe) var _cachedEnglish: [String: String]?
 
     /// All languages the app supports (for Settings picker).
     /// Tag is the language code; label is shown in native script.
@@ -144,10 +145,22 @@ enum I18n {
 
         if let v = dict[key] { return v }
 
-        // Fallback to English
-        if target != "en", let enPath = stringsBundle.path(forResource: "Localizable", ofType: "strings", inDirectory: "en.lproj"),
-           let enDict = NSDictionary(contentsOfFile: enPath) as? [String: String],
-           let v = enDict[key] { return v }
+        // Fallback to English — cached like the main dictionary: an
+        // untranslated key resolved on every render would otherwise hit
+        // disk each time.
+        if target != "en" {
+            langLock.lock()
+            var enDict = _cachedEnglish
+            langLock.unlock()
+            if enDict == nil,
+               let enPath = stringsBundle.path(forResource: "Localizable", ofType: "strings", inDirectory: "en.lproj") {
+                enDict = NSDictionary(contentsOfFile: enPath) as? [String: String]
+                langLock.lock()
+                _cachedEnglish = enDict
+                langLock.unlock()
+            }
+            if let v = enDict?[key] { return v }
+        }
 
         return key
     }

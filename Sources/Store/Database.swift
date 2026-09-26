@@ -61,7 +61,13 @@ final class AppDatabase: @unchecked Sendable {
     /// Run the production startup migration against an isolated database and
     /// preference domain without touching the user's active profile.
     func setup(at dbPath: String, defaults: UserDefaults) throws {
-        dbQueue = try DatabaseQueue(path: dbPath)
+        // WAL: this app commits constantly (logwatcher cursors, usage batches,
+        // dashboard cache rewrites). The default DELETE journal creates and
+        // removes a rollback journal per transaction with an extra fsync;
+        // WAL appends and checkpoints, and keeps crash recovery cheap.
+        var configuration = Configuration()
+        configuration.journalMode = .wal
+        dbQueue = try DatabaseQueue(path: dbPath, configuration: configuration)
         databaseURL = URL(fileURLWithPath: dbPath)
         Logger.info("DB opened at \(dbPath)")
 
@@ -69,21 +75,27 @@ final class AppDatabase: @unchecked Sendable {
 
         // Additive column migrations for existing installs
         // (create-ifNotExists won't add columns to tables that already exist).
-        addColumnIfMissing("quota_status", "window_seconds", "REAL")
-        addColumnIfMissing("usage_event", "cache_creation_tokens", "INTEGER")
-        addColumnIfMissing("usage_event", "reported_output_tokens", "INTEGER")
-        addColumnIfMissing("usage_event", "reasoning_tokens", "INTEGER")
+        // Failures surface to the startup DB-error path: continuing with a
+        // partial schema makes every aggregate query that references the
+        // missing column throw for the whole session.
+        try addColumnIfMissing("quota_status", "window_seconds", "REAL")
+        try addColumnIfMissing("usage_event", "cache_creation_tokens", "INTEGER")
+        try addColumnIfMissing("usage_event", "reported_output_tokens", "INTEGER")
+        try addColumnIfMissing("usage_event", "reasoning_tokens", "INTEGER")
         // v2 WI-5: AI attribution on code changes — NULL means unattributed
         // (stays a对照-only row, never counted as consumption).
-        addColumnIfMissing("code_change", "attributed_tool", "TEXT")
-        addColumnIfMissing("code_change", "attribution", "TEXT")
+        try addColumnIfMissing("code_change", "attributed_tool", "TEXT")
+        try addColumnIfMissing("code_change", "attribution", "TEXT")
         try dbQueue?.write { db in
             try Self.migrateRepositoryCodeIdentity(db)
-            try Self.backfillKnownProviderAttribution(db)
+            try Self.backfillKnownProviderAttributionIfNeeded(db, defaults: defaults)
             try Self.migrateLegacyQuotaStatus(db)
             try Self.normalizeCodeAttributionConfidence(db)
             _ = try LogCheckpointStore.prepareReliableReplay(in: db)
         }
+        // Mark completion after the transaction commits. A later migration
+        // failure must roll back the backfill and leave it eligible to retry.
+        defaults.set(true, forKey: "known_provider_attribution_backfilled_v1")
 
         // The first DSH scan marked compressed journals complete before
         // multi-frame zstd decoding worked. Their usage lines are immutable,
@@ -123,6 +135,19 @@ final class AppDatabase: @unchecked Sendable {
             defaults.set(true, forKey: codexOutputReplayKey)
         }
 
+        // Line counts recorded before the git_patch_line_stats argument-order
+        // fix carried context lines in `added` and additions in `deleted`.
+        // Drop the in-window derived rows and reset each scan cursor so the
+        // next poll rebuilds them with correct stats — persistBatch's
+        // INSERT OR IGNORE would otherwise keep the wrong rows forever.
+        let gitLineStatsReplayKey = "git_line_stats_replayed_v1"
+        if !defaults.bool(forKey: gitLineStatsReplayKey) {
+            try dbQueue?.write { db in
+                try Self.invalidateGitLineStats(db)
+            }
+            defaults.set(true, forKey: gitLineStatsReplayKey)
+        }
+
         // Startup used to cache a snapshot at the 20-second mark while cold
         // history import could still be running. Rebuild those derived rows
         // once; usage and balance facts are never touched.
@@ -147,6 +172,19 @@ final class AppDatabase: @unchecked Sendable {
     /// Earlier Codex scans missed `session_meta.payload.model`, so valid GLM
     /// and DeepSeek rows could stay unattributed after the byte offset advanced.
     /// Provider attribution is factual; pricing/cost remains untouched.
+    ///
+    /// Guarded by a one-time defaults key: without it, an unmatched model
+    /// re-triggers the scan and cache wipe on every launch. The caller marks
+    /// completion only after the enclosing database transaction commits.
+    static func backfillKnownProviderAttributionIfNeeded(
+        _ db: Database,
+        defaults: UserDefaults,
+        key: String = "known_provider_attribution_backfilled_v1"
+    ) throws {
+        guard !defaults.bool(forKey: key) else { return }
+        try backfillKnownProviderAttribution(db)
+    }
+
     static func backfillKnownProviderAttribution(_ db: Database) throws {
         let rows = try Row.fetchAll(db, sql: """
             SELECT id, model FROM usage_event
@@ -233,6 +271,23 @@ final class AppDatabase: @unchecked Sendable {
             DELETE FROM logwatcher_position
             WHERE file_path LIKE ?
             """, arguments: ["\(homeDirectory)/.dsh/sessions/%/session.jsonl.zstd"])
+        try db.execute(sql: "DELETE FROM dashboard_cache")
+    }
+
+    /// Drop the code-change rows inside GitMonitor's coverage window and
+    /// reset every scan cursor, so watches rebuild the window with corrected
+    /// line statistics. Uses the same -29-day start-of-day boundary as
+    /// GitMonitor.scanRecentCommits; rows older than the window sit outside
+    /// every dashboard window and are left untouched.
+    static func invalidateGitLineStats(
+        _ db: Database,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) throws {
+        let coverageStart = calendar.date(byAdding: .day, value: -29, to: calendar.startOfDay(for: now))!
+        let coverageSinceMs = Int(coverageStart.timeIntervalSince1970 * 1000)
+        try db.execute(sql: "DELETE FROM code_change WHERE ts >= ?", arguments: [coverageSinceMs])
+        try db.execute(sql: "UPDATE git_commit_scan SET head_hash = NULL, status = 'partial'")
         try db.execute(sql: "DELETE FROM dashboard_cache")
     }
 
@@ -400,17 +455,15 @@ final class AppDatabase: @unchecked Sendable {
         ]
 
     /// Add a column to an existing table if it doesn't already have it.
-    private func addColumnIfMissing(_ table: String, _ column: String, _ type: String) {
-        do {
-            try dbQueue?.write { db in
-                let exists = (try? db.columns(in: table).contains { $0.name == column }) ?? false
-                if !exists {
-                    try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
-                    Logger.info("  + \(table).\(column) added")
-                }
+    /// Throws so a failed migration surfaces through the startup DB-error
+    /// path instead of leaving the app to run on a partial schema.
+    private func addColumnIfMissing(_ table: String, _ column: String, _ type: String) throws {
+        try dbQueue?.write { db in
+            let exists = (try? db.columns(in: table).contains { $0.name == column }) ?? false
+            if !exists {
+                try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(type)")
+                Logger.info("  + \(table).\(column) added")
             }
-        } catch {
-            Logger.error("  ✗ addColumn \(table).\(column): \(error)")
         }
     }
 

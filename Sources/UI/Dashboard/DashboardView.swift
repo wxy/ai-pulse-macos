@@ -126,9 +126,6 @@ struct DashboardView: View {
     @State private var showScanDetails = false
     @State private var matrixViewportWidth: CGFloat = 0
 
-    var hasActiveCostSources: Bool {
-        !IntegrationRegistry.activeCostSources(editorMappings: editorMappings).isEmpty
-    }
 
     // The dashboard keeps a complete, independent snapshot per range. All UI
     // data below is a projection of the selected range; switching a tab cannot
@@ -596,6 +593,9 @@ struct DashboardView: View {
         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
             // Expiration must remain visible even when a stalled collector
             // produces no new notifications. This does not refresh source time.
+            // The window only orderOuts on close, so the timer keeps firing —
+            // skip the main-thread disk probe while nothing is visible.
+            guard dashboardIsVisible else { return }
             refreshLocalScanStatus()
         }
         .onReceive(NotificationCenter.default.publisher(for: .dashboardSwitchTab)) { notification in
@@ -669,22 +669,8 @@ struct DashboardView: View {
     }
 
 
-    func smallCard(title: String, value: String, color: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.subheadline).fontWeight(.semibold).monospacedDigit()
-                .foregroundColor(color)
-            Text(title).font(.caption).foregroundColor(.secondary).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity).padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-    }
 
 
-    var subSources: [CostSource] {
-        IntegrationRegistry.activeCostSources(editorMappings: editorMappings).filter {
-            if case .subscription(_, _, _) = $0.kind { return true }; return false
-        }
-    }
 
 
 
@@ -1470,28 +1456,9 @@ struct DashboardView: View {
 
     // MARK: - Empty state (no integrations)
 
-    var emptyStateCard: some View {
-        VStack(spacing: 12) {
-            Image(nsImage: AppIconLoader.uiImage(size: 56))
-                .resizable().frame(width: 56, height: 56)
-            Text(I18n.t("app.name")).font(.headline)
-            Text(I18n.t("dashboard.empty_state"))
-                .font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
-        }
-        .padding(24).frame(maxWidth: .infinity)
-        .background(Color(nsColor: .quaternarySystemFill).opacity(0.3))
-        .cornerRadius(10)
-    }
 
     // MARK: - Date formatting
 
-    var dateStride: AxisMarkValues {
-        if timeRange.days <= 7 {
-            return .stride(by: .day)
-        } else {
-            return .stride(by: .day, count: 10)
-        }
-    }
 
     var dateLabelFormat: Date.FormatStyle {
         .dateTime.month(.abbreviated).day().locale(I18n.resolvedLocale)
@@ -1577,55 +1544,12 @@ struct DashboardView: View {
         }
     }
 
-    func balanceString(_ v: Double, currency: String) -> String {
-        let symbol: String = {
-            switch currency { case "CNY": return "¥"; case "EUR": return "€"; default: return "$" }
-        }()
-        if v >= 1000 { return "\(symbol)\(String(format: "%.0f", v))" }
-        return "\(symbol)\(String(format: "%.2f", v))"
-    }
 
     /// Comparison badge — just the arrow + percentage, no label.
     @ViewBuilder
-    func comparisonBadge(current: Double, previous: Double) -> some View {
-        let pct = ChartMath.percentageDelta(current: current, previous: previous, fallback: 0)
-        if abs(pct) < 1 {
-            Text("→")
-                .font(.caption2).foregroundColor(.secondary)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(Color(nsColor: .quaternarySystemFill))
-                .cornerRadius(4)
-        } else if pct > 0 {
-            let badge = "↑" + I18n.percent(pct / 100)
-            Text(verbatim: badge)
-                .font(.caption2).foregroundColor(.deepRed)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(Color.deepRed.opacity(0.1))
-                .cornerRadius(4)
-        } else {
-            let badge = "↓" + I18n.percent(-pct / 100)
-            Text(verbatim: badge)
-                .font(.caption2).foregroundColor(.marsGreen)
-                .padding(.horizontal, 5).padding(.vertical, 1)
-                .background(Color.marsGreen.opacity(0.1))
-                .cornerRadius(4)
-        }
-    }
 
     // MARK: - Donut charts
 
-    /// Data for subscription-vs-API donut chart.
-    /// Gray placeholder ring shown when there's no data to fill a donut.
-    /// Matches the 120×120 real chart; the caller renders the shared center value.
-    func emptyDonut() -> some View {
-        // Ring geometry matches the real donuts (SectorMark innerRadius .ratio(0.5)
-        // in a 120×120 chart): inner radius 30, outer radius 60, thickness 30.
-        // A larger lineWidth would bleed the stroke past the outer radius.
-        Circle()
-            .stroke(Color.secondary.opacity(0.12), lineWidth: 30)
-            .frame(width: 90, height: 90)
-            .frame(width: 100, height: 100)
-    }
 
     /// Sync the cached dashboard snapshot to iCloud, throttled to 5 min.
     private func triggerCloudSync() {
@@ -1757,7 +1681,7 @@ struct DashboardView: View {
         ])
 
         if persist {
-            await DashboardCache.write(timeRange: range.cacheKey, json: snap.jsonString())
+            await DashboardCache.write(timeRange: range.cacheKey, snapshot: snap)
         }
     }
 

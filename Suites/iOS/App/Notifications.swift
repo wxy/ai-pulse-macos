@@ -90,15 +90,19 @@ final class NotificationService: NSObject {
     /// Handle remote push: fetch updated data without changing the user's
     /// currently-displayed time-range tab. Previously fetchSnapshot() defaulted
     /// to "today", which would overwrite whatever tab the user was viewing.
-    func didReceiveRemoteNotification() {
-        guard CloudDataService.cloudAvailable, !CloudDataService.shared.isPreview else { return }
+    ///
+    /// Returns whether any fetch actually ran. The caller must await this
+    /// before invoking its background-fetch completion handler — returning
+    /// early tells the system the fetch is done and the app may suspend,
+    /// which used to cancel the work mid-flight.
+    func didReceiveRemoteNotification() async -> Bool {
+        guard CloudDataService.cloudAvailable, !CloudDataService.shared.isPreview else { return false }
         Self.log.info("didReceiveRemoteNotification: push arrived")
-        Task {
-            await CloudDataService.shared.fetchAndStore(range: "today")
-            CloudDataService.shared.loadSnapshot(for: CloudDataService.shared.currentRange)
-            await CloudDataService.shared.fetchCurrentPulse()
-            await checkSpendAlert()
-        }
+        await CloudDataService.shared.fetchAndStore(range: "today")
+        CloudDataService.shared.loadSnapshot(for: CloudDataService.shared.currentRange)
+        await CloudDataService.shared.fetchCurrentPulse()
+        await checkSpendAlert()
+        return true
     }
 
     // MARK: - Private

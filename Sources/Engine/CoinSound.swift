@@ -228,7 +228,6 @@ enum CoinSound {
             "CoinSound decision: events=\(events.count) tier=\(pulse?.tier.rawValue ?? "active") " +
             "decision=\(String(describing: outcome.decision)) reason=\(outcome.reason.rawValue) " +
             "plays_in_hour=\(state.recentPlays.count)/\(settings.maxPerHour)")
-        guard outcome.decision != .none else { return }
     }
 
     static func permitsPlayback(_ decision: SoundDecision, settings: SoundSettings) -> Bool {

@@ -21,7 +21,6 @@ final class StatusItemController: NSObject {
     }
 
     func start() {
-        contextMenu = buildMenu()
         guard isEnabled, statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
