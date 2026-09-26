@@ -42,6 +42,7 @@ private final class DashboardPanelState: ObservableObject {
     @Published var capsuleHeight: CGFloat = 30
     @Published var dashboardGap: CGFloat = 0
     @Published var hasCameraHousing = false
+    @Published var isHoveringCapsule = false
 }
 
 private struct DashboardPanelContent: View {
@@ -69,9 +70,14 @@ private struct DashboardPanelContent: View {
                 VStack(spacing: 0) {
                     Button(action: { DashboardWindowManager.shared.toggle() }) {
                         HStack(spacing: 7) {
-                            Circle()
-                                .fill(capsuleColor)
-                                .frame(width: 7, height: 7)
+                            Image(nsImage: PulseAppearance(
+                                tier: currentActivity?.tier,
+                                cooling: currentActivity?.activity?.freshness == .aging
+                            ).image(size: 16))
+                                .renderingMode(.template)
+                                .foregroundStyle(currentActivity == nil
+                                    ? Color.white.opacity(0.75) : capsuleColor)
+                                .frame(width: 16, height: 16)
                                 .id(pulseRevision)
                             if state.hasCameraHousing {
                                 Spacer(minLength: 0)
@@ -82,7 +88,7 @@ private struct DashboardPanelContent: View {
                             }
                             Image(systemName: state.isExpanded ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(.white.opacity(state.isHoveringCapsule ? 1 : 0.7))
                         }
                         .padding(.horizontal, state.hasCameraHousing ? 14 : 0)
                         .frame(width: state.capsuleWidth, height: state.capsuleHeight)
@@ -90,9 +96,15 @@ private struct DashboardPanelContent: View {
                             topLeadingRadius: 0, bottomLeadingRadius: 15,
                             bottomTrailingRadius: 15, topTrailingRadius: 0
                         ))
+                        .overlay(alignment: .bottom) {
+                            Capsule()
+                                .fill(.white.opacity(state.isHoveringCapsule ? 0.28 : 0))
+                                .frame(width: 36, height: 1)
+                        }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .onHover { DashboardWindowManager.shared.setCapsuleHovered($0) }
                     .accessibilityLabel(state.isExpanded
                         ? SetupCopy.text("收起 AI Pulse 仪表盘", "Collapse AI Pulse dashboard")
                         : SetupCopy.text("展开 AI Pulse 仪表盘", "Expand AI Pulse dashboard"))
@@ -160,6 +172,7 @@ final class DashboardWindowManager: NSObject {
         if changed { close() }
         panelState.mode = mode
         panelState.isExpanded = false
+        panelState.isHoveringCapsule = false
         StatusItemController.shared.setEntryMode(mode)
         if mode == .island {
             ensureWindow()
@@ -176,10 +189,18 @@ final class DashboardWindowManager: NSObject {
         } else if window?.isVisible == true { close() } else { openOrBringToFront() }
     }
 
+    func setCapsuleHovered(_ hovered: Bool) {
+        guard isIsland, !panelState.isExpanded,
+              panelState.isHoveringCapsule != hovered else { return }
+        panelState.isHoveringCapsule = hovered
+        resizeAndPosition(animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
     func close() {
         let wasVisible = isIsland ? panelState.isExpanded : window?.isVisible == true
         if isIsland {
             panelState.isExpanded = false
+            panelState.isHoveringCapsule = false
             resizeAndPosition(animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
             window?.orderFrontRegardless()
         } else {
@@ -206,6 +227,7 @@ final class DashboardWindowManager: NSObject {
         guard let window else { return }
         if isIsland {
             panelState.isExpanded = true
+            panelState.isHoveringCapsule = false
             resizeAndPosition(animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
             if !wasExpanded { startDismissalMonitoring() }
         } else if !window.isVisible {
@@ -226,6 +248,7 @@ final class DashboardWindowManager: NSObject {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        panel.acceptsMouseMovedEvents = true
         panel.isReleasedWhenClosed = false
         panel.level = isIsland ? .statusBar : .floating
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
@@ -266,7 +289,8 @@ final class DashboardWindowManager: NSObject {
         }
         let hasCameraHousing = screen.safeAreaInsets.top > 0 && notchWidth > 0
         let capsuleHeight = hasCameraHousing ? screen.safeAreaInsets.top : NSStatusBar.system.thickness
-        let capsuleWidth = hasCameraHousing ? max(152, notchWidth + 72) : 152
+        let baseCapsuleWidth = hasCameraHousing ? max(152, notchWidth + 72) : 152
+        let capsuleWidth = baseCapsuleWidth + (panelState.isHoveringCapsule ? 16 : 0)
         let dashboardGap = max(0, screen.frame.maxY - capsuleHeight - screen.visibleFrame.maxY)
         panelState.hasCameraHousing = hasCameraHousing
         panelState.capsuleWidth = capsuleWidth
