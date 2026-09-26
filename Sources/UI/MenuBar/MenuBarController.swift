@@ -38,6 +38,10 @@ private final class DashboardPanelState: ObservableObject {
     @Published var mode: DashboardEntryMode = .menuBar
     @Published var isExpanded = false
     @Published var initialTimeRange: TimeRange = .today
+    @Published var capsuleWidth: CGFloat = 152
+    @Published var capsuleHeight: CGFloat = 30
+    @Published var dashboardGap: CGFloat = 0
+    @Published var hasCameraHousing = false
 }
 
 private struct DashboardPanelContent: View {
@@ -69,14 +73,19 @@ private struct DashboardPanelContent: View {
                                 .fill(capsuleColor)
                                 .frame(width: 7, height: 7)
                                 .id(pulseRevision)
-                            Text("AI Pulse")
-                                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.white)
+                            if state.hasCameraHousing {
+                                Spacer(minLength: 0)
+                            } else {
+                                Text("AI Pulse")
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.white)
+                            }
                             Image(systemName: state.isExpanded ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 8, weight: .bold))
                                 .foregroundStyle(.white.opacity(0.7))
                         }
-                        .frame(width: 152, height: 30)
+                        .padding(.horizontal, state.hasCameraHousing ? 14 : 0)
+                        .frame(width: state.capsuleWidth, height: state.capsuleHeight)
                         .background(Color.black, in: UnevenRoundedRectangle(
                             topLeadingRadius: 0, bottomLeadingRadius: 15,
                             bottomTrailingRadius: 15, topTrailingRadius: 0
@@ -103,11 +112,13 @@ private struct DashboardPanelContent: View {
                     }
 
                     if state.isExpanded {
+                        Color.clear.frame(height: state.dashboardGap)
                         DashboardView(initialTimeRange: state.initialTimeRange)
                     }
                 }
-                .frame(width: state.isExpanded ? 560 : 152,
-                       height: state.isExpanded ? 670 : 30, alignment: .top)
+                .frame(width: state.isExpanded ? max(560, state.capsuleWidth) : state.capsuleWidth,
+                       height: state.capsuleHeight + (state.isExpanded ? state.dashboardGap + 640 : 0),
+                       alignment: .top)
             } else {
                 DashboardView(initialTimeRange: state.initialTimeRange)
             }
@@ -216,7 +227,7 @@ final class DashboardWindowManager: NSObject {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.isReleasedWhenClosed = false
-        panel.level = .floating
+        panel.level = isIsland ? .statusBar : .floating
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         panel.contentView = TransparentDashboardHostingView(rootView: DashboardPanelContent(state: panelState))
         window = panel
@@ -225,8 +236,10 @@ final class DashboardWindowManager: NSObject {
     private func reposition() {
         guard let window else { return }
         if isIsland {
+            window.level = .statusBar
             resizeAndPosition(animated: false)
         } else {
+            window.level = .floating
             let screen = anchorButton?.window?.screen ?? NSScreen.main
             let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1000, height: 800)
             let anchor = anchorButton.flatMap { button in
@@ -244,10 +257,24 @@ final class DashboardWindowManager: NSObject {
         guard let window else { return }
         let screen = window.screen ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen else { return }
-        let height: CGFloat = panelState.isExpanded ? 670 : 30
-        let width: CGFloat = panelState.isExpanded ? 560 : 152
-        let topInset = max(screen.safeAreaInsets.top, NSStatusBar.system.thickness)
-        let top = screen.frame.maxY - topInset
+        let notchWidth: CGFloat
+        if let left = screen.auxiliaryTopLeftArea,
+           let right = screen.auxiliaryTopRightArea {
+            notchWidth = max(0, right.minX - left.maxX)
+        } else {
+            notchWidth = 0
+        }
+        let hasCameraHousing = screen.safeAreaInsets.top > 0 && notchWidth > 0
+        let capsuleHeight = hasCameraHousing ? screen.safeAreaInsets.top : NSStatusBar.system.thickness
+        let capsuleWidth = hasCameraHousing ? max(152, notchWidth + 72) : 152
+        let dashboardGap = max(0, screen.frame.maxY - capsuleHeight - screen.visibleFrame.maxY)
+        panelState.hasCameraHousing = hasCameraHousing
+        panelState.capsuleWidth = capsuleWidth
+        panelState.capsuleHeight = capsuleHeight
+        panelState.dashboardGap = dashboardGap
+        let height = capsuleHeight + (panelState.isExpanded ? dashboardGap + 640 : 0)
+        let width = panelState.isExpanded ? max(560, capsuleWidth) : capsuleWidth
+        let top = screen.frame.maxY
         let frame = NSRect(x: screen.frame.midX - width / 2,
                            y: max(screen.visibleFrame.minY, top - height),
                            width: width, height: height)

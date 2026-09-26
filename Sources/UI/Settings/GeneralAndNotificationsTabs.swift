@@ -40,7 +40,7 @@ struct GeneralTab: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(SetupCopy.text("仪表盘入口", "Dashboard entry"))
-                            Text(SetupCopy.text("灵动岛风格会在屏幕顶部常驻胶囊，点击后向下展开。", "Island style keeps a capsule at the top of the screen and expands downward when clicked."))
+                            Text(SetupCopy.text("灵动岛风格会在菜单栏中央常驻胶囊，点击后向下展开。", "Island style keeps a capsule at the center of the menu bar and expands downward when clicked."))
                                 .font(.caption2).foregroundColor(.secondary)
                         }
                         Spacer()
