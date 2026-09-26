@@ -4,6 +4,7 @@ import Combine
 import GRDB
 import AIPulseShared
 
+@MainActor
 enum DashboardEntryMode: String {
     case menuBar
     case island
@@ -11,7 +12,16 @@ enum DashboardEntryMode: String {
     static let defaultsKey = "dashboard_entry_mode"
 
     static var current: Self {
-        Self(rawValue: UserDefaults.standard.string(forKey: defaultsKey) ?? "") ?? .menuBar
+        let requested = Self(rawValue: UserDefaults.standard.string(forKey: defaultsKey) ?? "") ?? .menuBar
+        return requested == .island && !isAvailable ? .menuBar : requested
+    }
+
+    static var isAvailable: Bool {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first,
+              screen.safeAreaInsets.top > 0,
+              let left = screen.auxiliaryTopLeftArea,
+              let right = screen.auxiliaryTopRightArea else { return false }
+        return right.minX > left.maxX
     }
 }
 
@@ -163,11 +173,12 @@ final class DashboardWindowManager: NSObject {
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.reposition() }
+            Task { @MainActor in self?.setEntryMode(DashboardEntryMode.current) }
         }
     }
 
     func setEntryMode(_ mode: DashboardEntryMode) {
+        let mode = mode == .island && !DashboardEntryMode.isAvailable ? .menuBar : mode
         let changed = panelState.mode != mode
         if changed { close() }
         panelState.mode = mode
