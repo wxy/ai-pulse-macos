@@ -234,18 +234,6 @@
         }
       }
     },
-    "→" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "→"
-          }
-        }
-      },
-      "shouldTranslate" : false
-    },
     "+%@ / -%@" : {
       "localizations" : {
         "en" : {
