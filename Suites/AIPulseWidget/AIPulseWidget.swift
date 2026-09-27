@@ -87,7 +87,7 @@ struct Provider: TimelineProvider {
             TrendPoint(
                 ts: calendar.date(byAdding: .day, value: -day,
                                   to: calendar.startOfDay(for: date))!.timeIntervalSince1970,
-                value: 0, calls: 1, tokens: 1_000_000, netLines: 0
+                value: 0, calls: 1, tokens: Int64(200_000 * day), netLines: 0
             )
         }
         history.codeChanges = history.dailyStats.map {
@@ -137,13 +137,25 @@ struct AIPulseWidget: Widget {
         }
         .configurationDisplayName("AI Pulse")
         .description("See today's AI coding activity in three rings.")
-        .supportedFamilies([.systemSmall])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
         .contentMarginsDisabled()
     }
 }
 
 #if DEBUG
 #Preview(as: .systemSmall) {
+    AIPulseWidget()
+} timeline: {
+    Provider.previewEntry(at: .now)
+}
+
+#Preview(as: .systemMedium) {
+    AIPulseWidget()
+} timeline: {
+    Provider.previewEntry(at: .now)
+}
+
+#Preview(as: .systemLarge) {
     AIPulseWidget()
 } timeline: {
     Provider.previewEntry(at: .now)

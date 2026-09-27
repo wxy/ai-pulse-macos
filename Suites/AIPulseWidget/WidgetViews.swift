@@ -63,6 +63,7 @@ struct AIPulseWidgetEntryView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.showsWidgetContainerBackground) private var showsContainerBackground
     @Environment(\.widgetRenderingMode) private var renderingMode
+    @Environment(\.widgetFamily) private var family
     let entry: WidgetEntry
 
     private let tokenColor = Color.deepRed
@@ -148,6 +149,16 @@ struct AIPulseWidgetEntryView: View {
     }
 
     var body: some View {
+        switch family {
+        case .systemMedium: mediumBody
+        case .systemLarge: largeBody
+        default: smallBody
+        }
+    }
+
+    // MARK: - Small (curved corner metrics, unchanged)
+
+    private var smallBody: some View {
         GeometryReader { geometry in
             let edge = min(geometry.size.width, geometry.size.height)
             let side = edge * 0.82
@@ -169,6 +180,162 @@ struct AIPulseWidgetEntryView: View {
         .containerBackground(widgetBackground, for: .widget)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
+    }
+
+    // MARK: - Medium (rings + aligned text facts)
+
+    private var mediumBody: some View {
+        GeometryReader { geometry in
+            let side = min(geometry.size.height * 0.86, 132)
+            let thickness = side * 13 / 184
+            HStack(spacing: 16) {
+                ringCluster(side: side, thickness: thickness)
+                    .frame(width: side, height: side)
+                factsColumn
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .bottomTrailing) { statusFooter.padding(.trailing, 12).padding(.bottom, 6) }
+        }
+        .containerBackground(widgetBackground, for: .widget)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    // MARK: - Large (medium row + seven-day token rhythm)
+
+    private var largeBody: some View {
+        GeometryReader { geometry in
+            let side = min(geometry.size.height * 0.52, 138)
+            let thickness = side * 13 / 184
+            VStack(spacing: 10) {
+                HStack(spacing: 16) {
+                    ringCluster(side: side, thickness: thickness)
+                        .frame(width: side, height: side)
+                    factsColumn
+                    Spacer(minLength: 0)
+                }
+                rhythmSection
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .overlay(alignment: .bottomTrailing) { statusFooter.padding(.trailing, 12).padding(.bottom, 6) }
+        }
+        .containerBackground(widgetBackground, for: .widget)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    /// Text facts shared by the medium and large layouts: the same numbers the
+    /// curved small widget encodes around the rings, now in reading order.
+    private var factsColumn: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            factRow(color: tokenColor,
+                    label: text("今日词元", "Today tokens"),
+                    value: count(todayTokens),
+                    context: multiple(tokenRatio) + " " + text("平常", "usual"))
+            factRow(color: lineColor,
+                    label: text("今日行数", "Today lines"),
+                    value: count(todayLines),
+                    context: multiple(lineRatio) + " " + text("平常", "usual"))
+            Divider()
+            HStack(spacing: 6) {
+                Circle().fill(activityColor).frame(width: 6, height: 6)
+                Text(pulseText)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(primaryTextColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            if let date = entry.pulseEnvelope?.pulse?.asOf {
+                Text(text("观测于 ", "Observed ") + date.formatted(date: .omitted, time: .shortened))
+                    .font(.system(size: 9))
+                    .foregroundStyle(secondaryTextColor)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func factRow(color: Color, label: String, value: String, context: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(secondaryTextColor)
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(value)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(context)
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(secondaryTextColor)
+            }
+        }
+        .opacity(summaryIsStale ? 0.6 : 1)
+    }
+
+    private var statusFooter: some View {
+        Group {
+            if let status {
+                Text(status)
+                    .font(.system(size: 8))
+                    .foregroundStyle(summaryIsStale ? activityColor : secondaryTextColor)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    /// Last seven daily token points from the synced 30-day snapshot. Bar
+    /// heights scale against the maximum inside this window only; days with
+    /// no observed tokens keep a faded stub instead of vanishing.
+    private var rhythmSection: some View {
+        let days = recentDailyTokens
+        let maxTokens = days.map(\.tokens).max() ?? 0
+        return VStack(alignment: .leading, spacing: 5) {
+            Text(text("近 7 天词元", "Last 7 days of tokens"))
+                .font(.system(size: 10))
+                .foregroundStyle(secondaryTextColor)
+            HStack(alignment: .bottom, spacing: 9) {
+                ForEach(days, id: \.ts) { day in
+                    let ratio = maxTokens > 0 && day.tokens > 0
+                        ? min(Double(day.tokens) / Double(maxTokens), 1) : 0
+                    VStack(spacing: 3) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(ratio > 0 ? tokenColor.opacity(0.78) : secondaryTextColor.opacity(0.30))
+                            .frame(height: CGFloat(4 + ratio * 44))
+                            .frame(maxWidth: 26)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(rhythmAccessibility(days))
+    }
+
+    private var recentDailyTokens: [TrendPoint] {
+        guard let stats = entry.historySnapshot?.dailyStats, !stats.isEmpty else { return [] }
+        return Array(stats.sorted { $0.ts < $1.ts }.suffix(7))
+    }
+
+    private func rhythmAccessibility(_ days: [TrendPoint]) -> String {
+        guard !days.isEmpty else { return text("暂无 7 天节奏数据", "No 7-day rhythm data") }
+        let maxTokens = days.map(\.tokens).max() ?? 0
+        let parts = days.map { day -> String in
+            let weekday = Date(timeIntervalSince1970: day.ts / 1000)
+                .formatted(.dateTime.weekday(.narrow))
+            let ratio = maxTokens > 0 && day.tokens > 0
+                ? "\(Int((Double(day.tokens) / Double(maxTokens) * 100).rounded()))%" : "0%"
+            return "\(weekday) \(count(Double(day.tokens))) (\(ratio))"
+        }
+        return text("近 7 天词元", "Last 7 days of tokens") + ": " + parts.joined(separator: ", ")
     }
 
     private func ringCluster(side: CGFloat, thickness: CGFloat) -> some View {
