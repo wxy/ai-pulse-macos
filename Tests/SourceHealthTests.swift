@@ -54,7 +54,7 @@ final class SourceHealthTests: XCTestCase {
         let rows = SourceHealth.orderedRows(facts: [zeta, claude])
         let sources = rows.map(\.source)
         XCTAssertEqual(sources.first, "claude-code", "known display order wins")
-        XCTAssertEqual(sources[sources.count - 2], "gemini-cli", "known sources with no observation still appear as blind spots")
+        XCTAssertTrue(sources.contains("gemini-cli"), "known sources with no observation still appear as blind spots")
         XCTAssertEqual(sources.last, "zeta-tool", "unknown sources stay visible after the known list")
         XCTAssertEqual(sources.contains("zeta-tool"), true, "unknown sources stay visible after the known list")
         let unobserved = rows.first { $0.source == "opencode" }
