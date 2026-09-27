@@ -172,7 +172,13 @@ struct DashboardView: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("phone_sound_muted") private var muted = false
-    @State private var range = "today"
+    // Cold start lands on the user's default range (settings → this iPhone);
+    // invalid or missing values fall back to today. Tab switches during the
+    // session stay local and do not rewrite the preference.
+    @State private var range = {
+        let raw = UserDefaults.standard.string(forKey: "phone_default_range") ?? "today"
+        return ["today", "week", "30d"].contains(raw) ? raw : "today"
+    }()
     @State private var detail: String?
     private var snap: DashboardSnapshot? { cloud.cachedSnapshot(for: range) }
     private var plate: Color { Color(light: Color(red: 233/255, green: 236/255, blue: 229/255), dark: Color(red: 0.14, green: 0.17, blue: 0.15)) }

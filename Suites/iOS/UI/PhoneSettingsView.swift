@@ -13,6 +13,7 @@ struct PhoneSettingsView: View {
     @EnvironmentObject private var cloud: CloudDataService
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("phone_sound_muted") private var muted = false
+    @AppStorage("phone_default_range") private var defaultRange = "today"
     @State private var status = "—"
     @State private var notificationSettings: UNNotificationSettings?
     @State private var syncing = false
@@ -59,6 +60,17 @@ struct PhoneSettingsView: View {
             Section(t("此 iPhone", "This iPhone")) {
                 Toggle(t("静音", "Mute sounds"), isOn: $muted)
                 Text(t("静音仅影响此 iPhone，不修改 Mac。目录授权、套餐和 API Key 请在 Mac 上配置。", "Mute applies to this iPhone only. Configure directories, plans and API keys on your Mac."))
+                    .font(.footnote).foregroundStyle(.secondary)
+                Picker(t("启动时显示", "Show on launch"), selection: $defaultRange) {
+                    Text(t("今日", "Today")).tag("today")
+                    Text(t("本周", "Week")).tag("week")
+                    Text(t("30 天", "30 days")).tag("30d")
+                }
+                .onChange(of: defaultRange) { _, newValue in
+                    // Persist only known ranges; anything else snaps back.
+                    if !["today", "week", "30d"].contains(newValue) { defaultRange = "today" }
+                }
+                Text(t("仪表盘冷启动时打开所选周期。会话内切换标签不会改这个偏好。", "The dashboard opens on this range at cold start. Switching tabs during a session does not change it."))
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section {
