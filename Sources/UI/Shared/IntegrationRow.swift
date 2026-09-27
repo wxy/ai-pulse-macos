@@ -137,7 +137,8 @@ struct IntegrationRow: View {
     /// be detected at all under sandbox).
     private var needsHomeGrant: Bool {
         integration.id == "claude-code" || integration.id == "codex"
-            || integration.id == "qwen-code" || integration.id == "opencode"
+            || integration.id == "qwen-code" || integration.id == "gemini-cli"
+            || integration.id == "opencode"
             || integration.id == "deepseek-harness"
     }
 

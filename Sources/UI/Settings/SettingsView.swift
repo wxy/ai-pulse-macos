@@ -141,7 +141,7 @@ enum ToolLogLocation {
 
     static func forIntegration(_ id: String) -> Self {
         switch id {
-        case "claude-code", "codex", "qwen-code", "opencode", "deepseek-harness": return .home
+        case "claude-code", "codex", "qwen-code", "gemini-cli", "opencode", "deepseek-harness": return .home
         case "aider": return .repository
         default: return .application
         }

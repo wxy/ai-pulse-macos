@@ -291,6 +291,7 @@ nonisolated final class GitMonitor: @unchecked Sendable {
         case "aider": return "aider"
         case "opencode", "open code": return "opencode"
         case "qwen code", "qwen-code", "qwencode": return "qwencode"
+        case "gemini cli", "gemini-cli": return "gemini-cli"
         case "deepseek harness", "deepseek-harness": return "deepseek-harness"
         default: return nil
         }

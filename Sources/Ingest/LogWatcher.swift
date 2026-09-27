@@ -153,6 +153,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         scanCopilotChatSessions()
         scanDeepSeekHarnessSessions()
         scanQwenSessions()
+        scanGeminiSessions()
         scanOpenCodeSessions()
         persistPendingPositions()
         if scanChanged {
@@ -813,6 +814,44 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
         if parsedCount > 0 {
             Logger.info("LogWatcher: parsed \(parsedCount) qwen-code events from \(filePath)")
+        }
+    }
+
+    // MARK: - Gemini CLI
+
+    /// Scan `~/.gemini/tmp/<projectHash>/chats/*.jsonl` incrementally, plus
+    /// the one-level `chats/<parentSessionId>/` nesting that upstream uses for
+    /// subagent sessions. Idempotent via `parseLinesIncremental`.
+    private func scanGeminiSessions() {
+        let home = FileManager.default.realHomeDirectory
+        let tmpDir = home.appendingPathComponent(".gemini/tmp")
+        guard FileManager.default.fileExists(atPath: tmpDir.path),
+              let enumerator = FileManager.default.enumerator(
+                  at: tmpDir,
+                  includingPropertiesForKeys: nil,
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else { return }
+
+        for case let url as URL in enumerator where GeminiCLIParser.isSessionFile(url) {
+            // The record's projectHash is opaque, so no repository
+            // attribution — token facts only, like the Qwen scanner.
+            parseGeminiFile(url, cwd: nil)
+        }
+    }
+
+    private func parseGeminiFile(_ file: URL, cwd: String?) {
+        var parsedCount = 0
+        let filePath = file.path
+        let fileMtimeMs = Self.fileModificationMs(file)
+        parseLinesIncremental(from: file) { line in
+            if let event = GeminiCLIParser.parse(line: line, cwd: cwd, fallbackTimestampMs: fileMtimeMs) {
+                parsedCount += 1
+                return event
+            }
+            return nil
+        }
+        if parsedCount > 0 {
+            Logger.info("LogWatcher: parsed \(parsedCount) gemini-cli events from \(filePath)")
         }
     }
 

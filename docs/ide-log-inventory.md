@@ -8,6 +8,7 @@
 | 工具 | 本地数据 | 可采性 | 结论 |
 |---|---|---|---|
 | Claude Code / Codex / aider / OpenCode / Qwen Code | 明文 JSONL 日志 | ✅ 已采集（A 级） | 维持 |
+| Gemini CLI | `~/.gemini/tmp/<projectHash>/chats/session-*.jsonl`（含一层子代理嵌套目录） | ✅ 已采集；2026-09-27 按上游 `chatRecordingService`/`chatRecordingTypes` 源码核对格式（与 Qwen fork 同记录结构，`tokens` 语义一致）；本机暂无真实会话文件，实际文件回读验收待有使用量的机器补做 | 维持（新） |
 | DeepSeek Harness | `~/.dsh/sessions/**/session*.jsonl.zstd`（zstd JSONL） | ✅ 已采集；v3 格式 2026-09-12 起支持（同名前缀匹配 + 双载体 usage 解析） | 维持 |
 | **Cursor** | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`（SQLite：`ItemTable` / `composerHeaders` / `cursorDiskKV`） | ⚠️ **盲区**：用量在 `cursorDiskKV` 的 `agentKv:blob:*` 不透明二进制键下（压缩/私有格式，跨版本易碎） | **不解析**；燃烧感知走 WI-5 归因（`code_change` + EditorDetector） |
 | **GitHub Copilot / Copilot Chat** | `~/Library/Application Support/Code/User/workspaceStorage/<hash>/GitHub.copilot-chat/`（按工作区分散，无统一账本；本机 4+ 处） | ⚠️ **盲区**：无稳定 token/计费记录，目录结构随扩展版本漂移 | **不解析**；同上走归因兜底 |
