@@ -131,8 +131,39 @@ struct NotificationsTab: View {
     }()
     @State private var quietHoursEnabled =
         UserDefaults.standard.object(forKey: "sound_quiet_enabled") as? Bool ?? true
-    @State private var quietFrom = UserDefaults.standard.string(forKey: "sound_quiet_from") ?? "22:00"
-    @State private var quietTo = UserDefaults.standard.string(forKey: "sound_quiet_to") ?? "08:00"
+    /// Quiet hours keep the historical "HH:mm" string storage so existing
+    /// installs migrate without a settings rewrite. The Date states below are
+    /// the UI source of truth; a stored value the strict parser rejects (a
+    /// hand-edited "9am" from the old free-text field) displays — and plays
+    /// back, via CoinSound's own default — as the standard window until the
+    /// user picks a time, which then writes a normalized string.
+    @State private var quietFromTime: Date = NotificationsTab.quietTime(
+        defaultHour: 22, stored: UserDefaults.standard.string(forKey: "sound_quiet_from"))
+    @State private var quietToTime: Date = NotificationsTab.quietTime(
+        defaultHour: 8, stored: UserDefaults.standard.string(forKey: "sound_quiet_to"))
+
+    /// Builds the picker's initial date from the stored "HH:mm" string,
+    /// falling back to the standard window when the stored value predates the
+    /// DatePicker migration or was a free-text value the parser rejects.
+    static func quietTime(defaultHour: Int, stored: String?) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        if let stored, let minutes = SoundSettings.parseHM(stored) {
+            components.hour = minutes / 60
+            components.minute = minutes % 60
+        } else {
+            components.hour = defaultHour
+            components.minute = 0
+        }
+        return Calendar.current.date(from: components) ?? Date()
+    }
+
+    /// Normalizes a picked date into the storage format CoinSound parses.
+    static func quietString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
     @State private var maxSoundsPerHour =
         UserDefaults.standard.object(forKey: "sound_max_per_hour") as? Int ?? 8
     @State private var startupChimeEnabled =
@@ -247,18 +278,20 @@ struct NotificationsTab: View {
                     Text(I18n.t("perception.quiet_hours")).font(.body)
                     Spacer()
                     HStack {
-                        TextField("22:00", text: $quietFrom)
-                            .textFieldStyle(.roundedBorder).frame(width: 70)
+                        DatePicker("", selection: $quietFromTime, displayedComponents: .hourAndMinute)
+                            .datePickerStyle(.field).labelsHidden().frame(width: 90)
+                            .accessibilityLabel(I18n.t("perception.quiet_from"))
                         Text("–").foregroundColor(.secondary)
-                        TextField("08:00", text: $quietTo)
-                            .textFieldStyle(.roundedBorder).frame(width: 70)
+                        DatePicker("", selection: $quietToTime, displayedComponents: .hourAndMinute)
+                            .datePickerStyle(.field).labelsHidden().frame(width: 90)
+                            .accessibilityLabel(I18n.t("perception.quiet_until"))
                     }
                     .disabled(!quietHoursEnabled)
-                    .onChange(of: quietFrom) { _, value in
-                        UserDefaults.standard.set(value, forKey: "sound_quiet_from")
+                    .onChange(of: quietFromTime) { _, date in
+                        UserDefaults.standard.set(Self.quietString(date), forKey: "sound_quiet_from")
                     }
-                    .onChange(of: quietTo) { _, value in
-                        UserDefaults.standard.set(value, forKey: "sound_quiet_to")
+                    .onChange(of: quietToTime) { _, date in
+                        UserDefaults.standard.set(Self.quietString(date), forKey: "sound_quiet_to")
                     }
                     Toggle("", isOn: $quietHoursEnabled)
                         .toggleStyle(.switch)
