@@ -777,6 +777,27 @@ struct DashboardView: View {
         DashboardNoteButton(text: text, enabled: selectedToolForOverlay == nil)
     }
 
+    /// Token-completeness note for the selected period: partial when some
+    /// observed events lack token components, unknown when the coverage query
+    /// itself failed. nil (complete) shows no button — a missing note is the
+    /// only "complete" signal, so demo data declares explicit coverage instead
+    /// of silently riding the unknown state.
+    var coverageNoteText: String? {
+        guard let snap = activeSnapshot else { return nil }
+        if snap.readFailures.contains("activityCoverage") {
+            return SetupCopy.text(
+                "词元分项完整性未知：覆盖度查询未成功。总量仍来自已观察事件，但无法说明分项缺失程度，缺失不当作零。",
+                "Token completeness is unknown: the coverage query failed. The total still comes from observed events, but the extent of missing components cannot be stated, and missing parts are not zeros.")
+        }
+        if snap.activityCoverage.isPartial == true,
+           let incomplete = snap.activityCoverage.incompleteEvents, incomplete > 0 {
+            return SetupCopy.text(
+                "所选范围有 \(incomplete) 个事件的词元分项缺失；总量按已观察到的分项累计，缺失不当作零，也不是完整用量。",
+                "\(incomplete) events in this range are missing token components; the total counts observed components only. Missing parts are not zeros and the total is not complete usage.")
+        }
+        return nil
+    }
+
     var spendingOverview: some View {
         // Forehead: usage is the primary number — pure JSONL facts.
         let rangeTokens = dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
@@ -792,6 +813,11 @@ struct DashboardView: View {
                         .foregroundStyle(Color.marsGreen)
                         .scaleEffect(loadedTimeRange == timeRange ? (0.8 + 0.2 * barProgress) : 0.8)
                         .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
+                    // Product rule: the token-completeness note sits beside the
+                    // forehead total and disappears when coverage is complete.
+                    if let note = coverageNoteText {
+                        noteIcon(note)
+                    }
                 }
                 HStack(spacing: 4) {
                     Text("\(timeRange.label) · \(activeSnapshot?.readFailures.contains("toolUsage") == true ? "—" : String(periodSessionCount)) \(pulseText("个会话", "sessions")) · \(activeSnapshot?.readFailures.contains("dashboardUsageStats") == true ? "—" : String(periodActiveDays)) \(pulseText("个活跃日", "active days")) · \(pulseText("词元", "tokens"))")
