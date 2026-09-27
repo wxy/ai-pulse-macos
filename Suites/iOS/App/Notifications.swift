@@ -195,6 +195,9 @@ final class NotificationService: NSObject {
             content.body = alertBody(payload)
             content.sound = UserDefaults.standard.bool(forKey: "phone_sound_muted") ? nil : .default
             content.interruptionLevel = .timeSensitive
+            // Spend context is a balance observation over time, so a tap
+            // routes to the 30-day dashboard where that card lives.
+            content.userInfo = ["range": "30d"]
 
             try? await UNUserNotificationCenter.current().add(
                 UNNotificationRequest(
@@ -221,5 +224,14 @@ extension NotificationService: UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         UserDefaults.standard.bool(forKey: "phone_sound_muted") ? [.banner] : [.banner, .sound]
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+        let range = response.notification.request.content.userInfo["range"] as? String
+        await MainActor.run {
+            CloudDataService.shared.requestedRange = AIPulseDeepLink.validRanges.contains(range ?? "") ? range : nil
+        }
     }
 }

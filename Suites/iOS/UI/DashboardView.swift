@@ -234,7 +234,23 @@ struct DashboardView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
+        .task {
+            // A range requested before this view existed (notification tap
+            // cold launch) never produces an onChange; consume it here so the
+            // range task below fetches the right snapshot.
+            if let requested = cloud.requestedRange, ["today", "week", "30d"].contains(requested) {
+                range = requested
+                cloud.requestedRange = nil
+            }
+        }
         .task(id: range) { try? await cloud.fetchSnapshot(for: range) }
+        .onChange(of: cloud.requestedRange) { _, requested in
+            // Deep links (widget URL, notification tap) land here once; the
+            // range task above then fetches that snapshot.
+            guard let requested, ["today", "week", "30d"].contains(requested) else { return }
+            range = requested
+            cloud.requestedRange = nil
+        }
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {

@@ -131,6 +131,9 @@ struct AIPulseWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: Provider()) { entry in
             AIPulseWidgetEntryView(entry: entry)
+                // The widget's rings are Today's facts, so a tap lands on the
+                // app's Today tab instead of whatever the default is.
+                .widgetURL(AIPulseDeepLink.dashboardURL(for: Bundle.main.bundleIdentifier, range: "today"))
         }
         .configurationDisplayName("AI Pulse")
         .description("See today's AI coding activity in three rings.")

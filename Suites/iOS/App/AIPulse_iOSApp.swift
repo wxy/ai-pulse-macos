@@ -2,6 +2,7 @@ import SwiftUI
 import CloudKit
 import UserNotifications
 import UIKit
+import AIPulseShared
 
 @main
 struct AIPulse_iOSApp: App {
@@ -12,6 +13,12 @@ struct AIPulse_iOSApp: App {
         WindowGroup {
             NavigationStack { ContentView() }
                 .environmentObject(cloudData)
+                .onOpenURL { url in
+                    // Widget URL / notification deep links: route the
+                    // requested dashboard range, or open the app default.
+                    guard let link = AIPulseDeepLink.parse(url), let range = link.range else { return }
+                    cloudData.requestedRange = range
+                }
         }
     }
 }
@@ -20,6 +27,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UserDefaults.standard.register(defaults: ["coin_sound_enabled": true])
+        // Instantiate eagerly so its UNUserNotificationCenter delegate exists
+        // even when a notification tap cold-launches the app.
+        _ = NotificationService.shared
         if !CloudDataService.shared.isPreview && CloudDataService.cloudAvailable { application.registerForRemoteNotifications() }
         return true
     }

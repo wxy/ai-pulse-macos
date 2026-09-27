@@ -46,6 +46,10 @@ final class CloudDataService: ObservableObject {
     }
     private(set) var currentRange: String = "today"
 
+    /// A one-shot range request from a deep link (widget URL, notification
+    /// tap). The dashboard consumes and clears it; the watch target ignores it.
+    @Published var requestedRange: String?
+
     /// All three per-range snapshots. Keyed by "today" / "week" / "30d".
     @Published private var snapshots: [String: DashboardSnapshot] = [:]
 
