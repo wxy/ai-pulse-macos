@@ -55,6 +55,7 @@ struct DataAndSyncTab: View {
                         Button(SetupCopy.text("在访达中显示数据库", "Show database in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                     }
                 }
+                exportCard
                 SetupCard {
                     Text("iCloud").font(.headline)
                     Text(accountText)
@@ -162,6 +163,102 @@ struct DataAndSyncTab: View {
 
     private func countText(_ value: Int64) -> String {
         value >= Int64(Int32.max) ? "—" : "\(value)"
+    }
+
+    // MARK: - Data export
+
+    @State private var exportURL: URL?
+    @State private var exportError: String?
+    @State private var exporting = false
+
+    /// Writes the four raw-unit tables into a timestamped folder inside the
+    /// app container. The sandbox grants read-only access to user-selected
+    /// locations, so instead of widening entitlements the export lands here
+    /// and Finder reveals it — the user moves it wherever they like.
+    private var exportCard: some View {
+        SetupCard {
+            Text(SetupCopy.text("导出数据", "Export data")).font(.headline)
+            Text(SetupCopy.text("导出词元事件、余额快照、代码变更与提交四张表，按入库原样保存原单位数值：不求和、不换算币种、保留缺失为空，且不包含任何估价列。", "Exports token events, balance snapshots, code changes and commits exactly as stored: no sums, no currency conversion, missing values stay missing, and no price columns are included."))
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button(exporting ? SetupCopy.text("正在导出…", "Exporting…") : SetupCopy.text("导出 CSV（4 个文件）", "Export CSV (4 files)")) { runExport(kind: .csv) }
+                    .disabled(exporting)
+                Button(SetupCopy.text("导出 JSON（单文件）", "Export JSON (single file)")) { runExport(kind: .json) }
+                    .disabled(exporting)
+            }
+            if let exportURL {
+                Text(exportURL.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Button(SetupCopy.text("在访达中显示导出文件", "Show export in Finder")) {
+                    NSWorkspace.shared.activateFileViewerSelecting([exportURL])
+                }
+            }
+            if let exportError {
+                Text(exportError).font(.caption).foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private enum ExportKind { case csv, json }
+
+    private func runExport(kind: ExportKind) {
+        exporting = true
+        exportError = nil
+        Task.detached(priority: .utility) {
+            do {
+                let stamp = Self.exportStamp(Date())
+                let directory = try Self.exportDirectory(stamp: stamp)
+                let sections: [DataExport.Section] = try await AppDatabase.shared.read { db in
+                    [
+                        try DataExport.usageEvents(in: db),
+                        try DataExport.balanceSnapshots(in: db),
+                        try DataExport.codeChanges(in: db),
+                        try DataExport.gitCommits(in: db),
+                    ]
+                }
+                var files: [URL] = []
+                switch kind {
+                case .csv:
+                    for section in sections {
+                        let file = directory.appendingPathComponent("\(section.name).csv")
+                        try DataExport.csv(section).write(to: file, atomically: true, encoding: .utf8)
+                        files.append(file)
+                    }
+                case .json:
+                    let file = directory.appendingPathComponent("aipulse-export-\(stamp).json")
+                    try DataExport.jsonPayload(sections: sections, exportedAt: Date())
+                        .write(to: file, options: .atomic)
+                    files.append(file)
+                }
+                await MainActor.run {
+                    exporting = false
+                    exportURL = files.first.map { $0.deletingLastPathComponent() }
+                }
+            } catch {
+                await MainActor.run {
+                    exporting = false
+                    exportError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private nonisolated static func exportStamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: date)
+    }
+
+    private nonisolated static func exportDirectory(stamp: String) throws -> URL {
+        let base = try FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true)
+        let directory = base
+            .appendingPathComponent("AIPulse", isDirectory: true)
+            .appendingPathComponent("exports", isDirectory: true)
+            .appendingPathComponent("export-\(stamp)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
     }
 
     private func loadSourceHealth() {
