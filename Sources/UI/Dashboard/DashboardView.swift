@@ -1844,11 +1844,13 @@ private extension DashboardView {
                     HStack(alignment: .top) {
                         Button { DashboardWindowManager.shared.close() } label: { Image(systemName: "xmark") }
                             .robotHelp(pulseText("收起仪表盘", "Dismiss dashboard"))
+                            .accessibilityLabel(pulseText("收起仪表盘", "Dismiss dashboard"))
                         Spacer()
                         robotForehead
                         Spacer()
                         Button { DashboardWindowManager.shared.openSettings() } label: { Image(systemName: "gearshape") }
                             .robotHelp(I18n.t("menu.preferences"))
+                            .accessibilityLabel(I18n.t("menu.preferences"))
                     }
                     .foregroundStyle(.secondary)
                     periodPicker
@@ -2314,12 +2316,21 @@ private struct RobotTooltipModifier: ViewModifier {
     let text: String
     @State private var hovered = false
     func body(content: Content) -> some View {
-        content
+        let base = content
             .contentShape(Rectangle())
             .onHover { hovered = $0 }
             .anchorPreference(key: RobotTooltipPreference.self, value: .bounds) { anchor in
                 hovered && !text.isEmpty ? [RobotTooltipHint(text: text, anchor: anchor)] : []
             }
+        // The rendered tooltip panel is hidden from VoiceOver on purpose
+        // (tooltips must not become focusable); the text itself still has to
+        // reach assistive tech, so it doubles as the element's hint without
+        // clobbering any accessibility label the element already provides.
+        if text.isEmpty {
+            base
+        } else {
+            base.accessibilityHint(text)
+        }
     }
 }
 
