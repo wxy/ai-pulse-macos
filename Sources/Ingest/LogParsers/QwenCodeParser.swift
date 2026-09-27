@@ -20,8 +20,10 @@ struct QwenCodeParser {
 
     /// Parse one chat JSONL line into a UsageEvent (only model/gemini messages
     /// with a `tokens` object produce an event). `cwd` is threaded in from the
-    /// session header or the project directory.
-    static func parse(line: String, cwd: String?) -> UsageEvent? {
+    /// session header or the project directory. `fallbackTimestampMs`
+    /// (typically the file's mtime) is used when the line's timestamp is
+    /// missing or unparseable.
+    static func parse(line: String, cwd: String?, fallbackTimestampMs: Int? = nil) -> UsageEvent? {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
@@ -43,13 +45,11 @@ struct QwenCodeParser {
         let total = (tokens["total"] as? NSNumber)?.intValue ?? 0
         let out = max(total - input, thoughts + tool)
 
-        let ts: Int
-        if let tsStr = json["timestamp"] as? String,
-           let date = iso8601Frac.date(from: tsStr) ?? iso8601.date(from: tsStr) {
-            ts = Int(date.timeIntervalSince1970 * 1000)
-        } else {
-            ts = Int(Date().timeIntervalSince1970 * 1000)
-        }
+        let parsedTs: Int? = (json["timestamp"] as? String)
+            .flatMap { iso8601Frac.date(from: $0) ?? iso8601.date(from: $0) }
+            .map { Int($0.timeIntervalSince1970 * 1000) }
+        let ts = EventTimestamp.resolve(
+            parsed: parsedTs, fileModifiedMs: fallbackTimestampMs, source: "qwen-code")
 
         return UsageEvent(
             ts: ts,

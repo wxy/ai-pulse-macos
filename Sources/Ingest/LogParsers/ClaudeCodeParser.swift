@@ -22,7 +22,10 @@ struct UsageEvent: Codable {
 struct ClaudeCodeParser {
     /// Parse a Claude Code JSONL line. The `cwd` is read from the JSON's "cwd" field,
     /// NOT from the directory name (which uses ambiguous dash-encoding).
-    static func parse(line: String) -> UsageEvent? {
+    /// - Parameter fallbackTimestampMs: used when the line's timestamp is
+    ///   missing or unparseable; typically the file's modification time so a
+    ///   re-imported history lands on its own day instead of the scan day.
+    static func parse(line: String, fallbackTimestampMs: Int? = nil) -> UsageEvent? {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
@@ -57,7 +60,10 @@ struct ClaudeCodeParser {
         }
 
         return UsageEvent(
-            ts: Int((parseTimestamp(json["timestamp"]) ?? Date().timeIntervalSince1970) * 1000),
+            ts: EventTimestamp.resolve(
+                parsed: parseTimestamp(json["timestamp"]).map { Int($0 * 1000) },
+                fileModifiedMs: fallbackTimestampMs,
+                source: "claude-code"),
             source: "claude-code",
             model: model,
             inTokens: inTokens,

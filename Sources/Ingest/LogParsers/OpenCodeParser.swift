@@ -8,7 +8,11 @@ import Foundation
 /// `model`. Only assistant messages with token usage produce events.
 struct OpenCodeParser {
     /// Parse one OpenCode message JSON dictionary into a UsageEvent.
-    static func parse(json: [String: Any], cwd: String?) -> UsageEvent? {
+    /// `fallbackTimestampMs` (typically the message file's mtime) is used when
+    /// the payload carries neither `created_at` nor `timestamp`. For the rare
+    /// id-less message the dedupe key includes the timestamp, so a stable
+    /// mtime fallback also keeps rescans from minting a fresh key each pass.
+    static func parse(json: [String: Any], cwd: String?, fallbackTimestampMs: Int? = nil) -> UsageEvent? {
         let role = json["role"] as? String
         let tokens = json["tokens"] as? [String: Any] ?? [:]
         let input = (tokens["input"] as? NSNumber)?.intValue ?? 0
@@ -24,14 +28,10 @@ struct OpenCodeParser {
         let model = json["model"] as? String
         let id = json["id"] as? String ?? ""
 
-        let ts: Int
-        if let t = json["created_at"] as? NSNumber {
-            ts = t.intValue * 1000  // OpenCode timestamps are seconds
-        } else if let t = json["timestamp"] as? NSNumber {
-            ts = t.intValue * 1000
-        } else {
-            ts = Int(Date().timeIntervalSince1970 * 1000)
-        }
+        let parsedTs: Int? = (json["created_at"] as? NSNumber).map { $0.intValue * 1000 }
+            ?? (json["timestamp"] as? NSNumber).map { $0.intValue * 1000 }
+        let ts = EventTimestamp.resolve(
+            parsed: parsedTs, fileModifiedMs: fallbackTimestampMs, source: "opencode")
 
         let dedupeKey: String = id.isEmpty
             ? "opencode|\(stableHash("\(ts)-\(model ?? "")-\(input)-\(output)"))"
@@ -52,11 +52,14 @@ struct OpenCodeParser {
         )
     }
 
-    /// Parse a message JSON file (decodes then delegates to `parse(json:cwd:)`).
+    /// Parse a message JSON file (decodes then delegates to `parse(json:cwd:)`),
+    /// offering the file's mtime as the fallback timestamp.
     static func parseFile(_ file: URL, cwd: String?) -> UsageEvent? {
         guard let data = try? Data(contentsOf: file),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
-        return parse(json: json, cwd: cwd)
+        let mtimeMs = Int(((try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000)
+        return parse(json: json, cwd: cwd, fallbackTimestampMs: mtimeMs)
     }
 }

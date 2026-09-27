@@ -18,11 +18,14 @@ enum SessionInfoBackfill {
     /// Extract session metadata from the first chunk of one session log.
     /// Timestamps come from each line's top-level `timestamp` field so a
     /// snippet without token-count events still yields a valid record.
+    /// `fallbackTimestampMs` (typically the file's mtime) bounds the session
+    /// when lines lack usable timestamps, instead of the backfill run time.
     static func metadataFromSnippet(
         _ data: Data,
         source: String,
         sessionId: String?,
-        repo: String?
+        repo: String?,
+        fallbackTimestampMs: Int? = nil
     ) -> SessionInfoRecord? {
         guard let text = String(data: data, encoding: .utf8) else { return nil }
         var sid = sessionId
@@ -48,10 +51,11 @@ enum SessionInfoBackfill {
                 minTs = min(minTs, ts)
                 maxTs = max(maxTs, ts)
             }
-            if let e = CodexParser.parse(line: line, cwd: nil, model: nil) {
+            if let e = CodexParser.parse(line: line, cwd: nil, model: nil,
+                                         fallbackTimestampMs: fallbackTimestampMs) {
                 minTs = min(minTs, e.ts)
                 maxTs = max(maxTs, e.ts)
-            } else if let e = ClaudeCodeParser.parse(line: line) {
+            } else if let e = ClaudeCodeParser.parse(line: line, fallbackTimestampMs: fallbackTimestampMs) {
                 minTs = min(minTs, e.ts)
                 maxTs = max(maxTs, e.ts)
             }
@@ -73,7 +77,9 @@ enum SessionInfoBackfill {
         for case let url as URL in enumerator
         where url.lastPathComponent.hasPrefix("rollout-") && url.pathExtension == "jsonl" {
             guard let data = try? readPrefix(of: url, bytes: 64 * 1024),
-                  let record = metadataFromSnippet(data, source: "codex", sessionId: nil, repo: nil),
+                  let record = metadataFromSnippet(
+                      data, source: "codex", sessionId: nil, repo: nil,
+                      fallbackTimestampMs: LogWatcher.fileModificationMs(url)),
                   let sid = record.sessionId
             else { continue }
             let resolvedTitle = CodexThreadTitles.title(for: sid) ?? record.title
@@ -94,7 +100,9 @@ enum SessionInfoBackfill {
         for case let url as URL in enumerator where url.pathExtension == "jsonl" {
             let sid = url.deletingPathExtension().lastPathComponent
             guard let data = try? readPrefix(of: url, bytes: 64 * 1024),
-                  let record = metadataFromSnippet(data, source: "claude-code", sessionId: sid, repo: nil)
+                  let record = metadataFromSnippet(
+                      data, source: "claude-code", sessionId: sid, repo: nil,
+                      fallbackTimestampMs: LogWatcher.fileModificationMs(url))
             else { continue }
             LogWatcher.upsertForBackfill(record)
         }
