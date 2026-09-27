@@ -41,3 +41,19 @@ jobs:
       - name: Validate workflow YAML
         run: |
           ruby -e 'require "yaml"; Dir[".github/workflows/*.{yml,yaml}"].sort.each { |file| YAML.parse_file(file); puts "checked #{file}" }'
+
+  tests:
+    name: Tests (macOS)
+    # Pinned macOS 15 image for a deterministic Swift 6 toolchain; macos-latest
+    # migrates and would change the compiler under our feet.
+    runs-on: macos-15
+
+    steps:
+      # Pinned to the v5.0.0 commit — tag refs are movable.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      # Package.swift bakes the vendored libgit2/zstd search paths and the
+      # libgit2 rpath into the manifest itself, so a plain `swift test` is
+      # enough; the four real-data tests skip themselves without their env.
+      - name: Run package tests
+        run: swift test
