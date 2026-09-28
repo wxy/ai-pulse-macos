@@ -61,7 +61,11 @@ struct DeepSeekHarnessParser {
         return reason["kind"] as? String == "completed"
     }
 
-    static func parse(line: String, cwd: String?, model: String?, sessionId: String?) -> UsageEvent? {
+    /// Parse one journal line into a UsageEvent. `fallbackTimestampMs`
+    /// (typically the journal file's mtime) is used when the line carries no
+    /// usable `time` field.
+    static func parse(line: String, cwd: String?, model: String?, sessionId: String?,
+                      fallbackTimestampMs: Int? = nil) -> UsageEvent? {
         guard let json = Self.json(line) else { return nil }
 
         // Two journal generations carry usage differently (v3 shipped 2026-09):
@@ -88,7 +92,10 @@ struct DeepSeekHarnessParser {
         let reasoningTokens = usage["reasoningTokens"] as? Int ?? 0
 
         return UsageEvent(
-            ts: json["time"] as? Int ?? Int(Date().timeIntervalSince1970 * 1000),
+            ts: EventTimestamp.resolve(
+                parsed: json["time"] as? Int,
+                fileModifiedMs: fallbackTimestampMs,
+                source: "deepseek-harness"),
             source: "deepseek-harness",
             model: model,
             inTokens: inTokens,

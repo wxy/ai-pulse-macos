@@ -10,6 +10,7 @@ enum IntegrationRegistry {
         AiderIntegration(),
         CodexIntegration(),
         QwenCodeIntegration(),
+        GeminiCLIIntegration(),
         OpenCodeIntegration(),
         DeepSeekHarnessIntegration(),
         ApiKeyIntegration(
@@ -210,6 +211,7 @@ enum IntegrationRegistry {
         case "aider":       return "aider"
         case "codex":       return "Codex"
         case "qwen-code":   return "Qwen Code"
+        case "gemini-cli":  return "Gemini CLI"
         case "opencode":    return "OpenCode"
         case "cursor":      return "Cursor"
         case "copilot":     return "GitHub Copilot"

@@ -314,7 +314,7 @@ struct DashboardView: View {
                 .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(robotLine, lineWidth: 1))
                 .overlay {
                     Image(systemName: soundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.system(size: 10, weight: .medium))
+                        .dashboardFont(10, weight: .medium)
                         .scaleEffect(x: side == "left" ? -1 : 1, y: 1)
                         .foregroundStyle(soundMuted ? Color.secondary : Color.primary.opacity(0.7))
                 }
@@ -412,7 +412,7 @@ struct DashboardView: View {
                             rangeChangeStartedAt = Date()
                             timeRange = range
                         } label: {
-                            Text(range.label).font(.system(size: 11))
+                            Text(range.label).dashboardFont(11)
                                 .foregroundStyle(timeRange == range ? Color(red: 0.76, green: 0.83, blue: 0.78) : Color.secondary)
                                 .frame(maxWidth: .infinity).frame(height: 24)
                                 .background(timeRange == range ? Color(red: 0.19, green: 0.30, blue: 0.24) : .clear, in: RoundedRectangle(cornerRadius: 6))
@@ -651,7 +651,7 @@ struct DashboardView: View {
         let pctText = Text(verbatim: I18n.percent(clamped / 100))
         return HStack(spacing: 2) {
             pctText
-                .font(.system(size: 8)).monospacedDigit().foregroundColor(barColor)
+                .dashboardFont(8).monospacedDigit().foregroundColor(barColor)
                 .frame(width: 28, alignment: .trailing)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -777,6 +777,27 @@ struct DashboardView: View {
         DashboardNoteButton(text: text, enabled: selectedToolForOverlay == nil)
     }
 
+    /// Token-completeness note for the selected period: partial when some
+    /// observed events lack token components, unknown when the coverage query
+    /// itself failed. nil (complete) shows no button — a missing note is the
+    /// only "complete" signal, so demo data declares explicit coverage instead
+    /// of silently riding the unknown state.
+    var coverageNoteText: String? {
+        guard let snap = activeSnapshot else { return nil }
+        if snap.readFailures.contains("activityCoverage") {
+            return SetupCopy.text(
+                "词元分项完整性未知：覆盖度查询未成功。总量仍来自已观察事件，但无法说明分项缺失程度，缺失不当作零。",
+                "Token completeness is unknown: the coverage query failed. The total still comes from observed events, but the extent of missing components cannot be stated, and missing parts are not zeros.")
+        }
+        if snap.activityCoverage.isPartial == true,
+           let incomplete = snap.activityCoverage.incompleteEvents, incomplete > 0 {
+            return SetupCopy.text(
+                "所选范围有 \(incomplete) 个事件的词元分项缺失；总量按已观察到的分项累计，缺失不当作零，也不是完整用量。",
+                "\(incomplete) events in this range are missing token components; the total counts observed components only. Missing parts are not zeros and the total is not complete usage.")
+        }
+        return nil
+    }
+
     var spendingOverview: some View {
         // Forehead: usage is the primary number — pure JSONL facts.
         let rangeTokens = dailyStats.reduce(Int64(0)) { $0 + Int64($1.tokens) }
@@ -788,10 +809,15 @@ struct DashboardView: View {
                 HStack(spacing: 4) {
                     Text(activeSnapshot == nil || activeSnapshot?.readFailures.contains("dashboardUsageStats") == true
                          ? "—" : tokenShort(Int(clamping: rangeTokens)))
-                        .font(.system(size: 48, weight: .bold, design: .rounded)).monospacedDigit()
+                        .dashboardFont(48, weight: .bold, design: .rounded).monospacedDigit()
                         .foregroundStyle(Color.marsGreen)
                         .scaleEffect(loadedTimeRange == timeRange ? (0.8 + 0.2 * barProgress) : 0.8)
                         .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.6), value: barProgress)
+                    // Product rule: the token-completeness note sits beside the
+                    // forehead total and disappears when coverage is complete.
+                    if let note = coverageNoteText {
+                        noteIcon(note)
+                    }
                 }
                 HStack(spacing: 4) {
                     Text("\(timeRange.label) · \(activeSnapshot?.readFailures.contains("toolUsage") == true ? "—" : String(periodSessionCount)) \(pulseText("个会话", "sessions")) · \(activeSnapshot?.readFailures.contains("dashboardUsageStats") == true ? "—" : String(periodActiveDays)) \(pulseText("个活跃日", "active days")) · \(pulseText("词元", "tokens"))")
@@ -862,16 +888,16 @@ struct DashboardView: View {
                 VStack(spacing: 2) {
                     Text(!available || (!localDataStatus.canReportCurrentActivity && totalTokens == 0)
                          ? "—" : tokenShort(Int(clamping: Int64(min(totalTokens, Double(Int64.max).nextDown)))))
-                        .font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit()
+                        .dashboardFont(20, weight: .semibold, design: .rounded).monospacedDigit()
                         .foregroundStyle(Color.primary)
-                    Text(verbatim: "TOKENS").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text(verbatim: "TOKENS").dashboardFont(9).foregroundStyle(.secondary)
                 }
             }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 5, alignment: .leading), GridItem(.flexible(), spacing: 5, alignment: .leading)], spacing: 4) {
                 ForEach(Array(segments.prefix(4))) { item in
                     HStack(spacing: 4) {
                         Circle().fill(item.color).frame(width: 6, height: 6)
-                        Text(item.label).font(.system(size: 9)).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
+                        Text(item.label).dashboardFont(9).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
             }.frame(height: 28, alignment: .topLeading)
@@ -913,16 +939,16 @@ struct DashboardView: View {
                 }
                 VStack(spacing: 2) {
                     Text(centerText)
-                        .font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit()
+                        .dashboardFont(20, weight: .semibold, design: .rounded).monospacedDigit()
                         .foregroundStyle(Color.primary)
-                    Text(verbatim: "LINES").font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text(verbatim: "LINES").dashboardFont(9).foregroundStyle(.secondary)
                 }
             }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 5, alignment: .leading), GridItem(.flexible(), spacing: 5, alignment: .leading)], spacing: 4) {
                 ForEach(Array(segments.prefix(4))) { item in
                     HStack(spacing: 4) {
                         Circle().fill(item.color).frame(width: 6, height: 6)
-                        Text(item.label).font(.system(size: 9)).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
+                        Text(item.label).dashboardFont(9).foregroundColor(.secondary).lineLimit(1).truncationMode(.tail)
                             .robotHelp(changes[item.id] == nil ? item.label : item.id)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -1119,7 +1145,7 @@ struct DashboardView: View {
                 Text(pulseText("消费节奏", "Consumption rhythm"))
                     .font(.caption).foregroundColor(.secondary)
                 Spacer()
-                Text(timeRange == .today ? pulseText("按小时", "hourly") : pulseText("按天", "daily"))
+                Text(timeRange == .today ? pulseText("按小时", "per hour") : pulseText("按天", "per day"))
                     .font(.caption2).foregroundColor(.secondary)
             }
             rhythmRow(
@@ -1844,11 +1870,13 @@ private extension DashboardView {
                     HStack(alignment: .top) {
                         Button { DashboardWindowManager.shared.close() } label: { Image(systemName: "xmark") }
                             .robotHelp(pulseText("收起仪表盘", "Dismiss dashboard"))
+                            .accessibilityLabel(pulseText("收起仪表盘", "Dismiss dashboard"))
                         Spacer()
                         robotForehead
                         Spacer()
                         Button { DashboardWindowManager.shared.openSettings() } label: { Image(systemName: "gearshape") }
                             .robotHelp(I18n.t("menu.preferences"))
+                            .accessibilityLabel(I18n.t("menu.preferences"))
                     }
                     .foregroundStyle(.secondary)
                     periodPicker
@@ -1889,7 +1917,7 @@ private extension DashboardView {
                     let bounds = geometry[hint.anchor]
                     let below = bounds.midY < geometry.size.height / 2
                     Text(hint.text)
-                        .font(.system(size: 11)).foregroundStyle(Color.primary)
+                        .dashboardFont(11).foregroundStyle(Color.primary)
                         .lineSpacing(3).padding(12)
                         .frame(width: 280, alignment: .leading)
                         .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 12))
@@ -1922,7 +1950,7 @@ private extension DashboardView {
         Group {
             if let message = foreheadMessage {
                 HStack(spacing: 8) {
-                    Text(message).font(.system(size: 11)).lineLimit(2)
+                    Text(message).dashboardFont(11).lineLimit(2)
                     if localDataStatus.activity == .needsAccess || localDataStatus.activity == .accessExpired {
                         Button {
                             guard BookmarkManager.requestHomeAccess(message: I18n.t("bookmark.home_message")) != nil else { return }
@@ -1953,7 +1981,7 @@ private extension DashboardView {
             HStack(spacing: 10) {
                 Button { robotDetail = nil } label: {
                     Label(pulseText("返回", "Back"), systemImage: "arrow.left")
-                        .font(.system(size: 11))
+                        .dashboardFont(11)
                 }
 
             }.foregroundStyle(.secondary)
@@ -1965,7 +1993,7 @@ private extension DashboardView {
             Divider()
             ScrollView {
                 robotDetailContent(detail)
-                    .font(.system(size: 13))
+                    .dashboardFont(13)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -2029,8 +2057,8 @@ private extension DashboardView {
 
     func robotLink(_ title: String, detail: String) -> some View {
         Button { selectedToolForOverlay = nil; robotDetail = detail } label: {
-            HStack(spacing: 4) { Text(title); Image(systemName: "arrow.up.right").font(.system(size: 8)) }
-                .font(.system(size: 10)).foregroundStyle(.secondary)
+            HStack(spacing: 4) { Text(title); Image(systemName: "arrow.up.right").dashboardFont(8) }
+                .dashboardFont(10).foregroundStyle(.secondary)
         }.buttonStyle(.plain)
     }
 
@@ -2049,7 +2077,7 @@ private extension DashboardView {
                                 if index == 1 {
                                     let input = values[0] + values[1]
                                     Text(verbatim: input > 0 ? I18n.percent(values[1] / input) : "—")
-                                        .font(.system(size: 8, weight: .semibold)).foregroundStyle(Color(nsColor: .labelColor))
+                                        .dashboardFont(8, weight: .semibold).foregroundStyle(Color(nsColor: .labelColor))
                                         .lineLimit(1).minimumScaleFactor(0.5)
                                 }
                             }
@@ -2072,7 +2100,7 @@ private extension DashboardView {
                 Text(pulseText("活动节奏（词元｜行数）", "Activity rhythm (Tokens | Lines)"))
                 Spacer()
                 Text(timeRange == .today ? pulseText("按小时", "Hourly") : pulseText("按天", "Daily"))
-            }.font(.system(size: 9)).foregroundStyle(.secondary)
+            }.dashboardFont(9).foregroundStyle(.secondary)
             robotRhythmRow(label: pulseText("词元", "Tokens"), values: tokenRhythmValues, color: .marsGreen, growsDownward: true)
             robotRhythmRow(label: pulseText("行数", "Lines"), values: codeRhythmValues, color: .deepRed2, growsDownward: false)
         }
@@ -2087,7 +2115,7 @@ private extension DashboardView {
         return Group {
             if values.allSatisfy({ $0 == 0 }) && ((growsDownward && !localDataStatus.canReportCurrentActivity) || (!growsDownward && localDataStatus.repositories != .ready)) {
                 Text(growsDownward ? SetupCopy.activity(localDataStatus.activity) : SetupCopy.repositories(localDataStatus.repositories))
-                    .font(.system(size: 9)).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                    .dashboardFont(9).foregroundStyle(.secondary).frame(maxWidth: .infinity)
             } else {
         HStack(alignment: growsDownward ? .top : .bottom, spacing: 3) {
             ForEach(Array(slots.enumerated()), id: \.offset) { index, value in
@@ -2116,15 +2144,15 @@ private extension DashboardView {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(I18n.t("dashboard.account_observations")).font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text(robotObservedLabel).font(.system(size: 18, weight: .medium)).monospacedDigit()
+                    Text(I18n.t("dashboard.account_observations")).dashboardFont(10).foregroundStyle(.secondary)
+                    Text(robotObservedLabel).dashboardFont(18, weight: .medium).monospacedDigit()
                     robotLink(pulseText("账户观测明细", "Observation details"), detail: "spend")
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 Divider()
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(I18n.t("dashboard.fixed_monthly_context")).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(I18n.t("dashboard.fixed_monthly_context")).dashboardFont(10).foregroundStyle(.secondary)
                     Text(activeSnapshot?.declaredMonthlyCostUSD.map { "USD " + String(format: "%.2f", $0) + pulseText(" / 月", " / mo") } ?? "—")
-                        .font(.system(size: 18, weight: .medium)).monospacedDigit()
+                        .dashboardFont(18, weight: .medium).monospacedDigit()
                     robotLink(pulseText("固定费用说明", "Fixed cost context"), detail: "subscription")
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.fixedSize(horizontal: false, vertical: true).padding(.horizontal, 20).padding(.vertical, 16)
@@ -2151,7 +2179,7 @@ private extension DashboardView {
                     Spacer()
                     Text("CloudKit " + (activeSnapshot?.payloadVersion ?? CKSchema.payloadVersion))
                 }.foregroundStyle(.secondary)
-            }.font(.system(size: 9)).padding(.horizontal, 20).padding(.vertical, 10)
+            }.dashboardFont(9).padding(.horizontal, 20).padding(.vertical, 10)
                 .background(Color.primary.opacity(0.035))
         }
         .frame(width: 440, height: 128)
@@ -2314,12 +2342,21 @@ private struct RobotTooltipModifier: ViewModifier {
     let text: String
     @State private var hovered = false
     func body(content: Content) -> some View {
-        content
+        let base = content
             .contentShape(Rectangle())
             .onHover { hovered = $0 }
             .anchorPreference(key: RobotTooltipPreference.self, value: .bounds) { anchor in
                 hovered && !text.isEmpty ? [RobotTooltipHint(text: text, anchor: anchor)] : []
             }
+        // The rendered tooltip panel is hidden from VoiceOver on purpose
+        // (tooltips must not become focusable); the text itself still has to
+        // reach assistive tech, so it doubles as the element's hint without
+        // clobbering any accessibility label the element already provides.
+        if text.isEmpty {
+            base
+        } else {
+            base.accessibilityHint(text)
+        }
     }
 }
 

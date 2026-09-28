@@ -185,6 +185,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         AppSoundControl.isMuted() ? [.banner] : [.banner, .sound]
     }
 
+    /// Tapping any app notification (spend alert, closing bell, health) opens
+    /// the dashboard — the common surface for all the facts behind them.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+        await MainActor.run {
+            if didFinishLaunching {
+                openDashboard()
+            } else {
+                shouldOpenDashboardAfterLaunch = true
+            }
+        }
+    }
+
     // MARK: - Dock menu
 
     /// Both right-click entry points share actions; the Dock supplies its own Quit.

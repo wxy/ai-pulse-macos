@@ -354,11 +354,12 @@ Today、This Week 与 30 Days 在内存中各自持有独立 `DashboardSnapshot`
 
 仓库归属也已收紧为统一边界：日志 cwd 必须先解析到真实 Git 根，且 Git 根必须位于 `repo_search_dirs` 内；否则全局 token 仍保留，但 `repo_path` 写为 nil。历史记录不删除，查询时按同一边界过滤；移除开发目录后，监控器会停止轮询目录外仓库。因此 `Referenced…` 这类非 Git 工作区路径不会再进入仓库眼睛和仓库列表。
 
-当前代码仍有三项明确债务：
+当前代码仍有两项明确债务：
 
 1. 共享快照的旧 `todayCost/weekCost/monthCost/subDaily` 仍为旧客户端兼容字段，内部还会计算 B+C 旧口径；macOS 新首屏不再读取它们，但下一次跨端契约升级应将其标为 decode-only，并停止新写入。
 2. `StatsService.repoBreakdown` 与菜单旧结构仍保留不可见的 catalog cost/CPL 计算；它们已不进入新 UI，但应进一步删除，减少维护服务商牌价的诱因。
-3. Today 小时节奏目前来自可识别会话的起始小时；它表达活动节奏而非逐小时精确 token。后续应在共享快照增加明确的 hourly activity buckets，并携带覆盖度。
+
+原第三项债务（Today 小时节奏取会话起始小时）已于 2026-09-27 闭环：`hourlyUsageStatsToday`／`hourlyCodeChangesToday` 按真实 `usage_event.ts`／代码变更时刻落到本地小时桶；共享快照逐周期携带 `ActivityCoverage`（已观察行数与缺失分项行数，计数缺失即未知、不当零）；仪表盘额头在分项不完整或覆盖度查询失败时显示叹号说明、完整时不显示（演示数据声明显式完整覆盖，不伪造警告）。逐小时落桶与半开边界行为由 `HourlyBucketTests` 回归。
 
 ---
 

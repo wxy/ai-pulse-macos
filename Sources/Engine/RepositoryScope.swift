@@ -13,6 +13,13 @@ enum RepositoryScope {
         private var resolved: [String: String] = [:]
         private var unavailable: Set<String> = []
 
+        /// Explicit init: the memberwise one would inherit `private` access
+        /// from the private stored properties, which newer compilers tolerate
+        /// but older ones reject outside this file.
+        init(roots: [String]) {
+            self.roots = roots
+        }
+
         mutating func root(
             for path: String,
             resolvingWith resolve: ((String, [String]) -> String?)? = nil

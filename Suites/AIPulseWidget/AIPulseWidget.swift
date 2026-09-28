@@ -34,6 +34,24 @@ struct Provider: TimelineProvider {
                 transitionDates.append(snapshot.period.end)
             }
         }
+        if let snapshot = entry.weekSnapshot {
+            let staleAt = snapshot.updatedAt.addingTimeInterval(
+                WatchDashboardData.summaryFreshnessInterval + 1
+            )
+            if staleAt > now, staleAt < nextRefresh { transitionDates.append(staleAt) }
+            if snapshot.period.end > now, snapshot.period.end < nextRefresh {
+                transitionDates.append(snapshot.period.end)
+            }
+        }
+        if let snapshot = entry.historySnapshot {
+            let staleAt = snapshot.updatedAt.addingTimeInterval(
+                WatchDashboardData.summaryFreshnessInterval + 1
+            )
+            if staleAt > now, staleAt < nextRefresh { transitionDates.append(staleAt) }
+            if snapshot.period.end > now, snapshot.period.end < nextRefresh {
+                transitionDates.append(snapshot.period.end)
+            }
+        }
         let entries = [entry] + Set(transitionDates).sorted().map(entry.at)
         completion(Timeline(entries: entries, policy: .after(nextRefresh)))
     }
@@ -42,10 +60,12 @@ struct Provider: TimelineProvider {
         guard let groupURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
         ) else {
-            return WidgetEntry(date: date, todaySnapshot: nil, historySnapshot: nil, pulseEnvelope: nil)
+            return WidgetEntry(date: date, todaySnapshot: nil, weekSnapshot: nil,
+                               historySnapshot: nil, pulseEnvelope: nil)
         }
 
         var todaySnapshot: DashboardSnapshot?
+        var weekSnapshot: DashboardSnapshot?
         var historySnapshot: DashboardSnapshot?
         let dashboardURL = groupURL.appendingPathComponent(Self.dashboardCacheName)
         if let data = try? Data(contentsOf: dashboardURL),
@@ -53,6 +73,9 @@ struct Provider: TimelineProvider {
             if let today = snapshots["today"], PhoneDashboardData.accepts(today, range: "today"),
                date >= today.period.start, date < today.period.end {
                 todaySnapshot = today.sanitized()
+            }
+            if let week = snapshots["week"], PhoneDashboardData.accepts(week, range: "week") {
+                weekSnapshot = week.sanitized()
             }
             if let history = snapshots["30d"], PhoneDashboardData.accepts(history, range: "30d") {
                 historySnapshot = history.sanitized()
@@ -66,7 +89,7 @@ struct Provider: TimelineProvider {
            envelope.payloadVersion == CKSchema.payloadVersion {
             pulseEnvelope = envelope
         }
-        return WidgetEntry(date: date, todaySnapshot: todaySnapshot,
+        return WidgetEntry(date: date, todaySnapshot: todaySnapshot, weekSnapshot: weekSnapshot,
                            historySnapshot: historySnapshot, pulseEnvelope: pulseEnvelope)
     }
 
@@ -83,17 +106,45 @@ struct Provider: TimelineProvider {
         var history = DashboardSnapshot(payloadVersion: CKSchema.payloadVersion, updatedAt: date)
         history.period = DashboardPeriod(kind: .days30, now: date)
         let calendar = Calendar.current
-        history.dailyStats = (1...10).map { day in
+        history.dailyStats = (1...29).map { day in
             TrendPoint(
                 ts: calendar.date(byAdding: .day, value: -day,
                                   to: calendar.startOfDay(for: date))!.timeIntervalSince1970,
-                value: 0, calls: 1, tokens: 1_000_000, netLines: 0
+                value: 0, calls: 1, tokens: Int64(200_000 * day), netLines: 0
             )
         }
-        history.codeChanges = history.dailyStats.map {
-            TrendPoint(ts: $0.ts, value: 0, calls: 0, tokens: 0,
-                       netLines: 300, added: 200, deleted: 100)
+        history.dailyStats.append(TrendPoint(
+            ts: calendar.startOfDay(for: date).timeIntervalSince1970,
+            value: 0, calls: 1, tokens: 2_400_000, netLines: 0
+        ))
+        history.codeChanges = history.dailyStats.map { point in
+            let isToday = point.ts == calendar.startOfDay(for: date).timeIntervalSince1970
+            return TrendPoint(ts: point.ts, value: 0, calls: 0, tokens: 0,
+                       netLines: isToday ? 500 : 300,
+                       added: isToday ? 700 : 200 + Int(point.tokens / 20_000),
+                       deleted: isToday ? 200 : 100)
         }
+
+        let weekPeriod = DashboardPeriod(kind: .week, now: date, calendar: calendar)
+        let weekStats = history.dailyStats.filter {
+            let day = Date(timeIntervalSince1970: $0.ts)
+            return day >= weekPeriod.start && day < weekPeriod.end
+        }
+        let weekChanges = history.codeChanges.filter {
+            let day = Date(timeIntervalSince1970: $0.ts)
+            return day >= weekPeriod.start && day < weekPeriod.end
+        }
+        var week = DashboardSnapshot(
+            todayTokens: weekStats.reduce(0) { $0 + $1.tokens },
+            topRepos: [RepoItem(repoPath: "/preview", name: "Preview",
+                                added: weekChanges.reduce(0) { $0 + $1.added },
+                                deleted: weekChanges.reduce(0) { $0 + $1.deleted }, commits: 0)],
+            dailyStats: weekStats,
+            codeChanges: weekChanges,
+            payloadVersion: CKSchema.payloadVersion,
+            updatedAt: date
+        )
+        week.period = weekPeriod
 
         let signal = PulseSignal(kind: .activity, rawValue: 100, unit: "tokens",
                                  baseline: 50, normalized: 2.4, freshness: .fresh,
@@ -104,6 +155,7 @@ struct Provider: TimelineProvider {
         return WidgetEntry(
             date: date,
             todaySnapshot: today,
+            weekSnapshot: week,
             historySnapshot: history,
             pulseEnvelope: CurrentPulseEnvelope(pulse: pulse, writerAppVersion: "Widget preview", generatedAt: date)
         )
@@ -113,6 +165,7 @@ struct Provider: TimelineProvider {
 struct WidgetEntry: TimelineEntry {
     let date: Date
     let todaySnapshot: DashboardSnapshot?
+    let weekSnapshot: DashboardSnapshot?
     let historySnapshot: DashboardSnapshot?
     let pulseEnvelope: CurrentPulseEnvelope?
 
@@ -120,7 +173,7 @@ struct WidgetEntry: TimelineEntry {
         let today = todaySnapshot.flatMap {
             date >= $0.period.start && date < $0.period.end ? $0 : nil
         }
-        return WidgetEntry(date: date, todaySnapshot: today,
+        return WidgetEntry(date: date, todaySnapshot: today, weekSnapshot: weekSnapshot,
                            historySnapshot: historySnapshot, pulseEnvelope: pulseEnvelope)
     }
 }
@@ -131,16 +184,31 @@ struct AIPulseWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: Provider()) { entry in
             AIPulseWidgetEntryView(entry: entry)
+                // The widget's rings are Today's facts, so a tap lands on the
+                // app's Today tab instead of whatever the default is.
+                .widgetURL(AIPulseDeepLink.dashboardURL(for: Bundle.main.bundleIdentifier, range: "today"))
         }
         .configurationDisplayName("AI Pulse")
         .description("See today's AI coding activity in three rings.")
-        .supportedFamilies([.systemSmall])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
         .contentMarginsDisabled()
     }
 }
 
 #if DEBUG
 #Preview(as: .systemSmall) {
+    AIPulseWidget()
+} timeline: {
+    Provider.previewEntry(at: .now)
+}
+
+#Preview(as: .systemMedium) {
+    AIPulseWidget()
+} timeline: {
+    Provider.previewEntry(at: .now)
+}
+
+#Preview(as: .systemLarge) {
     AIPulseWidget()
 } timeline: {
     Provider.previewEntry(at: .now)

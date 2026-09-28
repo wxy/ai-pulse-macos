@@ -123,9 +123,42 @@ enum I18n {
     /// SwiftPM/XCTest resources live in the module bundle, not Bundle.main.
     /// The Xcode app still reads its normal main-bundle localizations.
     private static func loadStrings(for lang: String) -> [String: String] {
-        guard let path = stringsBundle.path(forResource: "Localizable", ofType: "strings", inDirectory: "\(lang).lproj"),
-              let dict = NSDictionary(contentsOfFile: path) as? [String: String] else {
-            return [:]
+        if let path = stringsBundle.path(forResource: "Localizable", ofType: "strings", inDirectory: "\(lang).lproj"),
+           let dict = NSDictionary(contentsOfFile: path) as? [String: String] {
+            return dict
+        }
+        // Some toolchains copy the .xcstrings catalog verbatim instead of
+        // compiling per-locale tables (observed on CI). The catalog is our
+        // own JSON, so resolve the language from it directly.
+        if let path = stringsBundle.path(forResource: "Localizable", ofType: "xcstrings"),
+           let data = FileManager.default.contents(atPath: path),
+           let doc = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return stringsFromCatalog(doc, lang: lang)
+        }
+        return [:]
+    }
+
+    /// Resolve one language out of a parsed String Catalog document. Keys with
+    /// `shouldTranslate == false` are excluded; a locale missing the key falls
+    /// back to its English value so behavior matches the compiled tables.
+    static func stringsFromCatalog(_ doc: [String: Any], lang: String) -> [String: String] {
+        let strings = doc["strings"] as? [String: Any] ?? [:]
+        var dict: [String: String] = [:]
+        for (key, entryAny) in strings {
+            guard let entry = entryAny as? [String: Any] else { continue }
+            if (entry["shouldTranslate"] as? Bool) == false { continue }
+            let localizations = entry["localizations"] as? [String: Any] ?? [:]
+            if let unit = localizations[lang] as? [String: Any],
+               let value = (unit["stringUnit"] as? [String: Any])?["value"] as? String,
+               !value.isEmpty {
+                dict[key] = value
+                continue
+            }
+            if let unit = localizations["en"] as? [String: Any],
+               let value = (unit["stringUnit"] as? [String: Any])?["value"] as? String,
+               !value.isEmpty {
+                dict[key] = value
+            }
         }
         return dict
     }
@@ -152,9 +185,8 @@ enum I18n {
             langLock.lock()
             var enDict = _cachedEnglish
             langLock.unlock()
-            if enDict == nil,
-               let enPath = stringsBundle.path(forResource: "Localizable", ofType: "strings", inDirectory: "en.lproj") {
-                enDict = NSDictionary(contentsOfFile: enPath) as? [String: String]
+            if enDict == nil {
+                enDict = loadStrings(for: "en")
                 langLock.lock()
                 _cachedEnglish = enDict
                 langLock.unlock()

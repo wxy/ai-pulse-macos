@@ -80,6 +80,7 @@ final class ModelCatalogManager: @unchecked Sendable {
         if normalized.hasPrefix("glm-") || normalized == "glm" { return "zhipu" }
         if normalized.hasPrefix("deepseek-") { return "deepseek" }
         if normalized.hasPrefix("qwen") { return "qwen" }
+        if normalized.hasPrefix("gemini-") || normalized == "gemini" { return "google" }
         return nil
     }
 

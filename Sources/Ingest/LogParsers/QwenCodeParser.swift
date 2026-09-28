@@ -20,8 +20,15 @@ struct QwenCodeParser {
 
     /// Parse one chat JSONL line into a UsageEvent (only model/gemini messages
     /// with a `tokens` object produce an event). `cwd` is threaded in from the
-    /// session header or the project directory.
-    static func parse(line: String, cwd: String?) -> UsageEvent? {
+    /// session header or the project directory. `fallbackTimestampMs`
+    /// (typically the file's mtime) is used when the line's timestamp is
+    /// missing or unparseable. The Gemini CLI writes the same record shape
+    /// (see `GeminiCLIParser`), so it reuses this parser under its own
+    /// `source` label and dedupe prefix; the qwen defaults keep existing
+    /// dedupe keys stable across the refactor.
+    static func parse(line: String, cwd: String?, fallbackTimestampMs: Int? = nil,
+                      source: String = "qwen-code", dedupePrefix: String = "qwen",
+                      headerSessionId: String? = nil) -> UsageEvent? {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
@@ -32,7 +39,7 @@ struct QwenCodeParser {
         else { return nil }
 
         let model = json["model"] as? String
-        let sessionId = json["sessionId"] as? String
+        let sessionId = (json["sessionId"] as? String) ?? headerSessionId
 
         // Gemini-style token object: input includes cached; cached/tool/thoughts are sub-slices.
         let input = (tokens["input"] as? NSNumber)?.intValue ?? 0
@@ -43,24 +50,22 @@ struct QwenCodeParser {
         let total = (tokens["total"] as? NSNumber)?.intValue ?? 0
         let out = max(total - input, thoughts + tool)
 
-        let ts: Int
-        if let tsStr = json["timestamp"] as? String,
-           let date = iso8601Frac.date(from: tsStr) ?? iso8601.date(from: tsStr) {
-            ts = Int(date.timeIntervalSince1970 * 1000)
-        } else {
-            ts = Int(Date().timeIntervalSince1970 * 1000)
-        }
+        let parsedTs: Int? = (json["timestamp"] as? String)
+            .flatMap { iso8601Frac.date(from: $0) ?? iso8601.date(from: $0) }
+            .map { Int($0.timeIntervalSince1970 * 1000) }
+        let ts = EventTimestamp.resolve(
+            parsed: parsedTs, fileModifiedMs: fallbackTimestampMs, source: source)
 
         return UsageEvent(
             ts: ts,
-            source: "qwen-code",
+            source: source,
             model: model,
             inTokens: input,
             outTokens: out,
             cacheTokens: cached,
             repoPath: cwd,
             sessionId: sessionId,
-            dedupeKey: "qwen|\(stableHash(line))"
+            dedupeKey: "\(dedupePrefix)|\(stableHash(line))"
         )
     }
 

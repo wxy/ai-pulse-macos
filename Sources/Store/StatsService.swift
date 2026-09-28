@@ -185,36 +185,43 @@ enum StatsService {
         let endMs = ObservationBounds.upperExclusive(now: now, periodEnd: end)
 
         do {
-            let rows = try await AppDatabase.shared.read { db -> [(ts: Int64, tokens: Int64)] in
-                try Row.fetchAll(db, sql: """
-                    SELECT ts,
-                           \(TokenAccounting.observedTotalSQL) AS tok
-                    FROM usage_event
-                    WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
-                    ORDER BY ts
-                    """, arguments: [startMs, endMs]).map { row in
-                        (ts: row["ts"] as Int64? ?? 0,
-                         tokens: row["tok"] as Int64? ?? 0)
-                    }
+            return try await AppDatabase.shared.read { db in
+                try hourlyUsageStats(in: db, startMs: startMs, endMs: endMs, now: now, calendar: cal)
             }
-            var buckets: [Date: (calls: Int, tokens: Int64)] = [:]
-            for row in rows {
-                let date = Date(timeIntervalSince1970: Double(row.ts) / 1_000)
-                guard let hour = cal.dateInterval(of: .hour, for: date)?.start else { continue }
-                buckets[hour, default: (0, 0)].calls += 1
-                buckets[hour, default: (0, 0)].tokens += max(row.tokens, 0)
-            }
-            return buckets.map { hour, values in
-                DailyStat(
-                    date: hour,
-                    calls: values.calls,
-                    tokens: Int(clamping: values.tokens),
-                    netLines: 0)
-            }.sorted { $0.date < $1.date }
         } catch {
             Logger.error("StatsService.hourlyUsageStatsToday error: \(error)")
             throw error
         }
+    }
+
+    /// Database-injectable core of `hourlyUsageStatsToday`; `endMs` is
+    /// exclusive. Events land in the local hour they actually occurred in.
+    static func hourlyUsageStats(in db: Database, startMs: Int64, endMs: Int64,
+                                 now: Date, calendar cal: Calendar) throws -> [DailyStat] {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT ts,
+                   \(TokenAccounting.observedTotalSQL) AS tok
+            FROM usage_event
+            WHERE ts >= ? AND ts < ? AND (model IS NULL OR model != '<synthetic>')
+            ORDER BY ts
+            """, arguments: [startMs, endMs]).map { row in
+                (ts: row["ts"] as Int64? ?? 0,
+                 tokens: row["tok"] as Int64? ?? 0)
+            }
+        var buckets: [Date: (calls: Int, tokens: Int64)] = [:]
+        for row in rows {
+            let date = Date(timeIntervalSince1970: Double(row.ts) / 1_000)
+            guard let hour = cal.dateInterval(of: .hour, for: date)?.start else { continue }
+            buckets[hour, default: (0, 0)].calls += 1
+            buckets[hour, default: (0, 0)].tokens += max(row.tokens, 0)
+        }
+        return buckets.map { hour, values in
+            DailyStat(
+                date: hour,
+                calls: values.calls,
+                tokens: Int(clamping: values.tokens),
+                netLines: 0)
+        }.sorted { $0.date < $1.date }
     }
 
     /// Dashboard buckets follow the selected horizon: hourly for Today and

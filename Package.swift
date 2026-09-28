@@ -9,10 +9,14 @@ import PackageDescription
 // which made `swift test` fail to load libgit2 at runtime.
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 let libgit2LibPath = "\(packageRoot)/Libraries/libgit2/lib"
+let libgit2IncludePath = "\(packageRoot)/Libraries/libgit2/include"
 let zstdLibPath = "\(packageRoot)/Libraries/zstd/lib"
 let zstdIncludePath = "\(packageRoot)/Libraries/zstd/include"
-let zstdSwiftSettings: [SwiftSetting] = [
-    .unsafeFlags(["-I\(zstdIncludePath)"]),
+// Clibgit2's modulemap resolves git2.h, but the libgit2 headers include each
+// other as "git2/….h" — that nested form needs the include root on the search
+// path (cold builds fail without it; a warm module cache used to mask this).
+let swiftIncludeSettings: [SwiftSetting] = [
+    .unsafeFlags(["-I\(zstdIncludePath)", "-I\(libgit2IncludePath)"]),
 ]
 let nativeLibrarySettings: [LinkerSetting] = [
     .unsafeFlags([
@@ -26,6 +30,10 @@ let nativeLibrarySettings: [LinkerSetting] = [
 
 let package = Package(
     name: "AIPulse",
+    // Required for SwiftPM to compile Localizable.xcstrings into per-locale
+    // .lproj tables; without it some toolchains copy the catalog verbatim
+    // and I18n finds no strings at runtime.
+    defaultLocalization: "en",
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(path: "Packages/AIPulseShared"),
@@ -49,7 +57,7 @@ let package = Package(
                 .process("Localizable.xcstrings"),
                 .copy("PrivacyInfo.xcprivacy"),
             ],
-            swiftSettings: zstdSwiftSettings,
+            swiftSettings: swiftIncludeSettings,
             linkerSettings: nativeLibrarySettings
         ),
         .testTarget(
@@ -60,7 +68,11 @@ let package = Package(
                 .product(name: "AIPulseShared", package: "AIPulseShared"),
             ],
             path: "Tests",
-            swiftSettings: zstdSwiftSettings,
+            resources: [
+                // The synthetic DeepSeek Harness journal for scan-loop tests.
+                .copy("Fixtures"),
+            ],
+            swiftSettings: swiftIncludeSettings,
             linkerSettings: nativeLibrarySettings
         ),
     ]

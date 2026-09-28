@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Validate the shared String Catalog used by every AI Pulse surface."""
+"""Validate the shared String Catalog used by every AI Pulse surface.
+
+Also inventories the inline zh/en bilingual pairs (pulseText / SetupCopy.text /
+WidgetCopy.text / I18n.prototype call shapes) that the string catalog does not
+cover yet: `--dump-inline PATH` writes the migration worklist as JSON, and the
+default run enforces basic invariants so a broken pair cannot land silently.
+"""
 
 from __future__ import annotations
 
@@ -29,13 +35,48 @@ RAW_PERCENT_FORMAT = re.compile(r"%(?:\d+\$)?(?:lld|ld|d|@|(?:\.\d+)?f)%%")
 SIMPLE_PERCENT_INTERPOLATION = re.compile(
     r'Text\(\s*"\\\([A-Za-z_][A-Za-z0-9_.]*\)%"'
 )
+CJK = re.compile(r"[\u4e00-\u9fff]")
+# A Chinese string literal followed by ", <string literal>" on one line —
+# the shape of every inline bilingual call site. Line-scoped on purpose:
+# cross-line matching would need real Swift parsing to avoid false pairs.
+INLINE_PAIR = re.compile(r'"((?:[^"\\\n]|\\.)*)"\s*,\s*"((?:[^"\\\n]|\\.)*)"')
 
 
 def placeholders(value: str) -> list[str]:
     return sorted(PLACEHOLDER.findall(value))
 
 
+def strip_line_comment(line: str) -> str:
+    """Cut a trailing // comment, ignoring // inside string literals."""
+    masked = re.sub(r'"(?:[^"\\]|\\.)*"', '""', line)
+    cut = masked.find("//")
+    return line if cut < 0 else line[:cut]
+
+
+def scan_inline_pairs() -> list[dict]:
+    """Collect inline zh/en pairs from UI-layer Swift sources."""
+    entries: list[dict] = []
+    for swift_root in ("Sources", "Suites", "AIPulse/AIPulseMacWidget"):
+        for path in (ROOT / swift_root).rglob("*.swift"):
+            relative = str(path.relative_to(ROOT))
+            for number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), 1
+            ):
+                for match in INLINE_PAIR.finditer(strip_line_comment(line)):
+                    zh, en = match.group(1), match.group(2)
+                    if not CJK.search(zh):
+                        continue
+                    entries.append(
+                        {"file": relative, "line": number, "zh": zh, "en": en}
+                    )
+    return entries
+
+
 def main() -> int:
+    dump_path = None
+    if "--dump-inline" in sys.argv:
+        dump_path = Path(sys.argv[sys.argv.index("--dump-inline") + 1])
+
     document = json.loads(CATALOG.read_text(encoding="utf-8"))
     failures: list[str] = []
     checked = 0
@@ -107,13 +148,51 @@ def main() -> int:
                     f"{relative}: percentage Text interpolation must use I18n.percent"
                 )
 
+    inline = scan_inline_pairs()
+    if dump_path is not None:
+        dump_path.write_text(
+            json.dumps(inline, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"Inline pair inventory written to {dump_path} ({len(inline)} pairs)")
+
+    # The inline bilingual helpers (pulseText / SetupCopy.text / t(...)) bridge
+    # through the catalog by using their English literal AS the catalog key —
+    # see I18n.prototype. That only translates when the key exists, so every
+    # static inline pair must be a catalog key. Interpolated literals
+    # (`\(x)`) cannot be catalog keys; they are a known structural gap and are
+    # reported separately instead of failing.
+    catalog_keys = set(document.get("strings", {}).keys())
+    interpolated = 0
+    for entry in inline:
+        if not entry["en"].strip():
+            failures.append(
+                f"{entry['file']}:{entry['line']}: empty en fallback for {entry['zh']!r}"
+            )
+            continue
+        if entry["en"] == entry["zh"]:
+            failures.append(
+                f"{entry['file']}:{entry['line']}: en fallback equals the zh literal"
+            )
+        if r"\(" in entry["en"] or r"\(" in entry["zh"]:
+            interpolated += 1
+            continue
+        if entry["en"] not in catalog_keys:
+            failures.append(
+                f"{entry['file']}:{entry['line']}: inline pair {entry['en']!r} is not a "
+                "catalog key — add it with all locales so the bridge translates"
+            )
+
     if failures:
         print(f"Localization validation failed ({len(failures)} issues):", file=sys.stderr)
         for failure in failures:
             print(f"- {failure}", file=sys.stderr)
         return 1
 
-    print(f"Localization validation passed: {checked} active keys, {len(SUPPORTED_LOCALES)} locales")
+    print(
+        f"Localization validation passed: {checked} active keys, "
+        f"{len(SUPPORTED_LOCALES)} locales, {len(inline)} inline pairs "
+        f"({interpolated} interpolated)"
+    )
     return 0
 
 

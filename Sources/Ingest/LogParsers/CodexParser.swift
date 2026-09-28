@@ -27,8 +27,10 @@ struct CodexParser {
 
     /// Parse one rollout JSONL line into a UsageEvent (only `token_count` lines
     /// produce an event). `cwd` / `model` / `sessionId` are threaded in from
-    /// surrounding lines.
-    static func parse(line: String, cwd: String?, model: String?, sessionId: String? = nil) -> UsageEvent? {
+    /// surrounding lines. `fallbackTimestampMs` (typically the file's mtime)
+    /// is used when the line's timestamp is missing or unparseable.
+    static func parse(line: String, cwd: String?, model: String?, sessionId: String? = nil,
+                      fallbackTimestampMs: Int? = nil) -> UsageEvent? {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
@@ -58,13 +60,11 @@ struct CodexParser {
         // Codex maps Responses API output directly; reasoning is its detail,
         // not additional output. Preserve both counters without double-counting.
 
-        let ts: Int
-        if let tsStr = json["timestamp"] as? String,
-           let date = iso8601Frac.date(from: tsStr) ?? iso8601.date(from: tsStr) {
-            ts = Int(date.timeIntervalSince1970 * 1000)
-        } else {
-            ts = Int(Date().timeIntervalSince1970 * 1000)
-        }
+        let parsedTs: Int? = (json["timestamp"] as? String)
+            .flatMap { iso8601Frac.date(from: $0) ?? iso8601.date(from: $0) }
+            .map { Int($0.timeIntervalSince1970 * 1000) }
+        let ts = EventTimestamp.resolve(
+            parsed: parsedTs, fileModifiedMs: fallbackTimestampMs, source: "codex")
 
         return UsageEvent(
             ts: ts,

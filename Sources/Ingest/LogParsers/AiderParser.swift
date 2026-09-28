@@ -7,7 +7,10 @@ struct AiderParser {
 
     /// Parse JSONL format from `.aider.llm.history`
     /// Format: {"model":"gpt-4o","input_tokens":1234,"output_tokens":567,"cost":0.0123,"timestamp":"2026-06-26T10:00:00"}
-    static func parseJSONL(line: String, cwd: String?) -> UsageEvent? {
+    /// - Parameter fallbackTimestampMs: used when the timestamp field is
+    ///   missing or unparseable; typically the file's modification time so a
+    ///   re-imported history lands on its own day instead of the scan day.
+    static func parseJSONL(line: String, cwd: String?, fallbackTimestampMs: Int? = nil) -> UsageEvent? {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
@@ -18,12 +21,10 @@ struct AiderParser {
         // Aider tracks its own cost in the JSON
         _ = json["cost"] as? Double
 
-        let ts: Int
-        if let tsStr = json["timestamp"] as? String {
-            ts = parseISO8601(tsStr) ?? Int(Date().timeIntervalSince1970 * 1000)
-        } else {
-            ts = Int(Date().timeIntervalSince1970 * 1000)
-        }
+        let ts = EventTimestamp.resolve(
+            parsed: (json["timestamp"] as? String).flatMap(parseISO8601),
+            fileModifiedMs: fallbackTimestampMs,
+            source: "aider")
 
         // Dedupe by timestamp (one entry per LLM call)
         let dedupeKey: String
@@ -120,8 +121,15 @@ struct AiderParser {
         let inTokens = parseK(inStr)
         let outTokens = parseK(outStr)
 
+        // Markdown has no per-line time by design: the file mtime (passed in
+        // by the caller) is the intended timestamp source, so this fallback
+        // is not counted as an anomaly.
         return UsageEvent(
-            ts: fallbackDate ?? Int(Date().timeIntervalSince1970 * 1000),
+            ts: EventTimestamp.resolve(
+                parsed: nil,
+                fileModifiedMs: fallbackDate,
+                source: "aider",
+                reportFallback: false),
             source: "aider",
             model: model,
             inTokens: inTokens,

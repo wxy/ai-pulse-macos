@@ -86,9 +86,9 @@ The Mac App Store button links to the existing listing. This working tree is not
 
     > 授权读取本地工具日志，并配置包含 Git 仓库的开发目录；工作区目录本身不是仓库。
 
-3. Supported log adapters include Claude Code, Codex, DeepSeek Harness, aider, OpenCode, and Qwen Code. Availability depends on installed tools, log formats, and access permissions; missing data does not mean zero account usage.
+3. Supported log adapters include Claude Code, Codex, DeepSeek Harness, aider, OpenCode, Qwen Code, and Gemini CLI. Availability depends on installed tools, log formats, and access permissions; missing data does not mean zero account usage.
 
-    > 日志适配包括 Claude Code、Codex、DeepSeek Harness、aider、OpenCode 和 Qwen Code；可用性取决于安装、格式与授权，缺失数据不等于账户零用量。
+    > 日志适配包括 Claude Code、Codex、DeepSeek Harness、aider、OpenCode、Qwen Code 与 Gemini CLI；可用性取决于安装、格式与授权，缺失数据不等于账户零用量。
 
 4. API keys and plan declarations are optional enhancements, not prerequisites for sensing local AI activity. Chinese UI applies the China-region visibility policy; switch to English to configure OpenAI/Anthropic where supported.
 
