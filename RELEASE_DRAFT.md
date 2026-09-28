@@ -1,95 +1,66 @@
-# AI Pulse 2.0.0 — One Pulse Across Mac, iPhone, and Apple Watch
+# AI Pulse 2.0.1 — Performance and Stability
 
-> Draft only. Publish only after App Store approval.
+> Draft release. Publish after App Store approval.
 
 ## What's New
 
-- A unified, fact-first AI activity dashboard across Mac, iPhone, and Apple Watch.
-- Native macOS and iPhone widgets, an Apple Watch companion app, and ten Watch widget presentations for glanceable access.
-- Adaptive curved corner metrics keep the Mac, iPhone, and Apple Watch dashboards readable across different display shapes and localized text lengths.
-- Regular-width iPad layouts use the available canvas instead of retaining the narrower iPhone dashboard scale.
-- Independent Today, This Week, and 30 Days snapshots with aligned token and local Git rhythms.
-- Tool, model, repository, captured-session, observed balance, quota, and declared-subscription details without fabricated cost estimates.
-- Ten complete interface localizations: English, Simplified Chinese, Traditional Chinese for Taiwan and Hong Kong, Japanese, Korean, German, French, Spanish, and Brazilian Portuguese.
+- Mac refreshes are lighter when reading local activity and Git repositories.
+- Small dashboard and iPhone widget refinements make Today, This Week, and 30 Days easier to scan; medium and large widgets also have clearer accessibility summaries.
 
 ## Fixes & Engineering
 
-- Kept current activity separate from historical summaries and stopped presenting missing or stale observations as zero usage.
-- iPhone and Watch widgets retain the last observed activity and its timestamp after expiration, with reduced emphasis instead of replacing it with “no data.”
-- Dashboard footers now distinguish the last collection time from the last CloudKit synchronization time; synchronization failures use a warning indicator.
-- Reopening the macOS dashboard now revalidates its resident snapshot, so a previous-day or stale chart refreshes without switching ranges.
-- The macOS widget now reads the host app's local App Group snapshot first, reflects stale state honestly, and opens the dashboard for a real refresh when needed.
-- Localized dashboard and chart labels were refined after store-screenshot review, including German, French, Spanish, and Brazilian Portuguese layouts.
-- Successful account observations no longer retain a stale failure status.
-- Removed the non-actionable partial-resource warning from the dashboard.
-- Localized percentage formatting now uses the platform number-formatting APIs rather than a literal percent placeholder.
-- Completed privacy manifests, target resource membership, extension embedding, localization validation, and the 2.0 code audit.
+- Reduced repeated log and Git reads, bounded repository rescans, and moved startup backfill and filesystem probes away from the main thread.
+- Improved CloudKit conflict handling, stale cache recovery, database migration reporting, and local folder access recovery.
+- Fixed ingestion edge cases, export precision and failure cleanup, and iPhone widget and deep-link regressions.
 
 ## Deployment Notes
 
-- Version: 2.0.0 (build 32).
-- Upload two archives: the macOS archive includes the native macOS widget; the iOS archive includes the iPhone widget, Watch app, and Watch widget.
-- Before App Store release, deploy and verify the `DashboardCache_v2` schema and the `current-pulse` records in the CloudKit Production environment.
-- No Russian localization is included. `Tokens`, `Lines`, currency codes, and explicit product identifiers intentionally remain stable where specified.
-- `Sources/Localizable.xcstrings` is the localization source of truth.
+- Version 2.0.1 (build 33) covers macOS, iPhone, Apple Watch, and their widgets.
+- The macOS archive embeds the Mac widget. The iOS archive embeds the iPhone widget and Watch app, which embeds the Watch widget.
+- Before App Store submission, verify the `DashboardCache_v2` schema and `current-pulse` records in CloudKit Production.
+- This GitHub Release is a draft. The source tag and store builds are held until the release process is complete.
 
 ## Verification
 
-- Localization: 738 active keys across 10 locales; no missing translations, stale entries, placeholder mismatches, Russian entries, or raw percentage formats.
-- Tests: `make test` — 440 executed, 4 optional real-data tests skipped, 0 failures.
-- Builds: the final macOS widget integration passed an Apple Development-signed Debug build; final localized-layout changes passed iOS and watchOS Release Simulator builds.
-- Product inspection: all app surfaces package the expected localization bundles and privacy manifests; the two host archives embed their required extensions.
-- Device acceptance: macOS, macOS widget, iPhone, iPhone widget, Watch app, and Watch widgets passed user acceptance testing.
+- [CI on merged `main` commit `dfc4594`](https://github.com/wxy/ai-pulse-macos/actions/runs/36412787720) passed static analysis and macOS Swift package tests.
+- [iPhone widget layout](https://github.com/wxy/ai-pulse-macos/blob/dfc4594/docs/verification/pr-91-widget-layout-e2e-2026-09-28.md) passed a signed iPhone Simulator build and visual inspection. [Deep-link routing](https://github.com/wxy/ai-pulse-macos/blob/dfc4594/docs/verification/pr-91-ios-deeplink-e2e-2026-09-28.md) was checked in the Simulator.
+- Final 2.0.1 App Store archives, production CloudKit checks, and physical-device acceptance remain release gates.
 
 ---
 
-# AI Pulse 2.0.0 — Mac、iPhone 与 Apple Watch 的统一脉搏
+# AI Pulse 2.0.1 — 性能与稳定性
 
-> 仅为草案。App Store 审核通过前不得公开发布。
+> 发布草稿。App Store 审核通过后再公开发布。
 
-## 新功能
+## 本次改进
 
-- 在 Mac、iPhone 与 Apple Watch 上提供统一、事实优先的 AI 活动仪表盘。
-- 原生 macOS 与 iPhone 小组件、Apple Watch 伴侣应用，以及十种可快速查看的 Watch 小组件呈现。
-- 自适应曲线角落指标让 Mac、iPhone 与 Apple Watch 仪表盘在不同屏幕形状和本地化文字长度下保持可读。
-- 常规宽度的 iPad 布局会利用更大的画布，不再沿用较窄的 iPhone 仪表盘尺寸。
-- 今日、本周与 30 天使用独立快照，并对齐词元活动与本地 Git 成果节奏。
-- 展示工具、模型、仓库、已捕获会话、已观测余额、额度及声明订阅，不虚构费用估算。
-- 完成 10 种界面语言：英语、简体中文、台湾繁体中文、香港繁体中文、日语、韩语、德语、法语、西班牙语和巴西葡萄牙语。
+- Mac 读取本地活动和 Git 仓库时刷新更轻快。
+- 小幅调整仪表盘和 iPhone 小组件，让今日、本周与 30 天数据更易浏览；中号和大号小组件的辅助功能摘要也更清晰。
 
 ## 修复与工程改进
 
-- 当前活动与历史摘要保持独立，不再把缺失或过期观察显示为零使用量。
-- iPhone 与 Watch 小组件在观察过期后保留最后一次活动及其时间，以降低强调度代替“没有数据”。
-- 仪表盘页脚明确区分最后采集时间与最后 CloudKit 同步时间；同步失败以警告图标提示。
-- 重新打开 macOS 仪表盘时会复核驻留快照，跨日或陈旧图表无需切换周期即可刷新。
-- macOS 小组件优先读取宿主应用写入 App Group 的本机快照，如实呈现过期状态，并在需要真实刷新时打开仪表盘。
-- 根据商店截图审查修整本地化仪表盘与图表标签，包括德语、法语、西班牙语和巴西葡萄牙语布局。
-- 成功的账户观测不再保留此前的失败状态。
-- 移除用户无法处理的“部分资源组成缺失”仪表盘提示。
-- 百分比本地化改用系统数字格式化 API，不再使用字面百分号占位符。
-- 完成隐私清单、target 资源成员关系、扩展嵌入、国际化完整性检查和 2.0 代码审计。
+- 减少重复读取日志与 Git 数据，限制仓库重新扫描，并将启动时的历史补录和文件系统检查移出主线程。
+- 改进 CloudKit 冲突处理、过期缓存恢复、数据库迁移报错及本地文件夹授权恢复。
+- 修复采集边界情况、导出精度与失败清理，以及 iPhone 小组件和深度链接的问题。
 
 ## 部署说明
 
-- 版本：2.0.0（构建 32）。
-- 只需上传两个归档：macOS 归档包含原生 macOS 小组件；iOS 归档包含 iPhone 小组件、Watch 应用和 Watch 小组件。
-- 提交 App Store 前，在 CloudKit Production 环境部署并核对 `DashboardCache_v2` schema 与 `current-pulse` 记录。
-- 不包含俄语。`Tokens`、`Lines`、货币代码及明确指定的产品标识按约定保持稳定。
-- `Sources/Localizable.xcstrings` 是国际化的唯一事实源。
+- 版本 2.0.1（构建 33），覆盖 macOS、iPhone、Apple Watch 及其小组件。
+- macOS 归档内含 Mac 小组件；iOS 归档内含 iPhone 小组件与 Watch 应用，Watch 应用内含 Watch 小组件。
+- 提交 App Store 前，核对 CloudKit Production 环境中的 `DashboardCache_v2` schema 和 `current-pulse` 记录。
+- GitHub Release 目前是草稿；源码标签和商店构建待发布流程完成后再处理。
 
 ## 验证
 
-- 国际化：738 个有效词条、10 种语言；无缺失翻译、陈旧条目、占位符不匹配、俄语条目或原始百分号格式。
-- 测试：`make test` 共执行 440 项，4 项可选真实数据测试跳过，0 失败。
-- 构建：最终 macOS 小组件集成通过 Apple Development 签名 Debug 构建；最终本地化布局修改通过 iOS 与 watchOS Release 模拟器构建。
-- 产品检查：各应用界面均打包预期的本地化资源与隐私清单；两个宿主归档均嵌入所需扩展。
-- 真机验收：macOS、macOS 小组件、iPhone、iPhone 小组件、Watch 应用和 Watch 小组件均已通过用户验收。
+- 合并后的 [`main` 提交 `dfc4594` 的 CI](https://github.com/wxy/ai-pulse-macos/actions/runs/36412787720) 已通过静态检查和 macOS Swift Package 测试。
+- [iPhone 小组件布局](https://github.com/wxy/ai-pulse-macos/blob/dfc4594/docs/verification/pr-91-widget-layout-e2e-2026-09-28.md)通过签名的 iPhone 模拟器构建与画面检查；[深度链接](https://github.com/wxy/ai-pulse-macos/blob/dfc4594/docs/verification/pr-91-ios-deeplink-e2e-2026-09-28.md)已在模拟器验证。
+- 2.0.1 最终 App Store 归档、CloudKit 生产环境检查和真机验收仍属于发布前检查项。
 
 ## Store Copy Handoff
 
-- Version: 2.0.0 (build 32)
+- Version: 2.0.1 (build 33)
 - Platforms: macOS, iPhone, Apple Watch, and their widgets
-- Core themes: unified activity pulse, fact-first dashboard, adaptive cross-device widgets, private iCloud sync, local Git companion output, ten interface languages
-- Required deployment note: verify the `DashboardCache_v2` Production schema before submission
-- Publication boundary: GitHub Release remains a draft until App Store approval
+- Core themes: lighter Mac refreshes, more reliable collection and synchronization, small dashboard and widget refinements
+- Required deployment note: verify `DashboardCache_v2` and `current-pulse` in CloudKit Production before App Store submission
+- Verification boundary: merged-main CI and iPhone Simulator evidence; final archives, production CloudKit, and physical devices remain unchecked for 2.0.1
+- Publication boundary: keep this GitHub Release as a draft until App Store approval
