@@ -1145,7 +1145,7 @@ struct DashboardView: View {
                 Text(pulseText("消费节奏", "Consumption rhythm"))
                     .font(.caption).foregroundColor(.secondary)
                 Spacer()
-                Text(timeRange == .today ? pulseText("按小时", "hourly") : pulseText("按天", "daily"))
+                Text(timeRange == .today ? pulseText("按小时", "per hour") : pulseText("按天", "per day"))
                     .font(.caption2).foregroundColor(.secondary)
             }
             rhythmRow(

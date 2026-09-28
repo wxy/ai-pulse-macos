@@ -30,6 +30,10 @@ let nativeLibrarySettings: [LinkerSetting] = [
 
 let package = Package(
     name: "AIPulse",
+    // Required for SwiftPM to compile Localizable.xcstrings into per-locale
+    // .lproj tables; without it some toolchains copy the catalog verbatim
+    // and I18n finds no strings at runtime.
+    defaultLocalization: "en",
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(path: "Packages/AIPulseShared"),

@@ -72,7 +72,7 @@ struct DataAndSyncTab: View {
                 }
                 SetupCard {
                     Text(SetupCopy.text("支持与版本", "Support & versions")).font(.headline)
-                    Text("AI Pulse " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") + " · " + SetupCopy.text("数据格式 ", "Data format ") + CKSchema.payloadVersion)
+                    Text("AI Pulse " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—") + " · " + SetupCopy.text("数据格式", "Data format") + ": " + CKSchema.payloadVersion)
                     Button(SetupCopy.text("查看本地日志", "Show local log")) { NSWorkspace.shared.activateFileViewerSelecting([Logger.logFileURL]) }
                 }
             }.font(.system(size: 13)).padding(.trailing, 12)
@@ -129,7 +129,7 @@ struct DataAndSyncTab: View {
                         Text(SetupCopy.text("部分分项缺失", "partial components"))
                             .font(.caption2).foregroundStyle(.secondary)
                     }
-                    Text(fact.map { countText($0.events7d) + SetupCopy.text(" 事件", " events") } ?? SetupCopy.text("无观察", "no observation"))
+                    Text(fact.map { countText($0.events7d) + SetupCopy.text(" 事件", " events") } ?? SetupCopy.text("暂无观测", "No observation"))
                         .font(.system(size: 12)).monospacedDigit()
                         .foregroundStyle(.secondary)
                     Text(lastObservedText(fact?.lastEventMs))
