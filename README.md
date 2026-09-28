@@ -5,7 +5,7 @@
   <a href="https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12"><img src="assets/readme/download-button-appstore-mac.svg" width="300" height="69" alt="Mac App Store listing"></a>
 </p>
 
-<p align="center"><code>MACOS 14+ · IOS 17+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · 2.0.1 RELEASE DRAFT</code></p>
+<p align="center"><code>MACOS 14+ · IOS 17+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · 2.0.1 RELEASED</code></p>
 
 <p align="center">
   <a href="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml"><img src="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg" alt="CI"></a>&nbsp;
@@ -17,13 +17,13 @@ AI Pulse makes ongoing AI activity tangible and shows the local Git output along
 
 > AI Pulse 让持续的 AI 活动被感受到，并展示伴随的本地 Git 成果。它是消费脉搏，不是精确计量器、账单，也不判断产出是否值得。
 
-This README describes the AI Pulse 2.0.1 source release draft across macOS, iPhone, Apple Watch, and their widgets. The GitHub Release is a draft; the App Store listing above may still show an earlier version. Final 2.0.1 archives and device acceptance remain release checks.
+This README describes the released AI Pulse 2.0.1 across macOS, iPhone, Apple Watch, and their widgets. The release owner has confirmed the final archive and physical-device acceptance checks passed.
 
-> 本文描述 AI Pulse 2.0.1 在 macOS、iPhone、Apple Watch 及各端小组件上的源码发布草稿。GitHub Release 尚未公开；上方 App Store 页面可能仍显示较早版本。2.0.1 的最终归档与真机验收仍需发布前检查。
+> 本文描述已发布的 AI Pulse 2.0.1，覆盖 macOS、iPhone、Apple Watch 及各端小组件。发布负责人已确认最终归档与真机验收通过。
 
-**2.0.1 maintenance update** — Mac refreshes do less repeated log and Git work, while collection, synchronization, export, and navigation fixes improve reliability. The iPhone widgets and dashboard also receive small layout and accessibility refinements. See [the release draft](RELEASE_DRAFT.md) for verification and deployment notes.
+**2.0.1 maintenance update** — Mac refreshes do less repeated log and Git work, while collection, synchronization, export, and navigation fixes improve reliability. Gemini CLI log support and clearer medium and large iPhone widgets are small additions. See the [release notes](RELEASE_DRAFT.md) for verification and deployment details.
 
-> **2.0.1 维护更新** — Mac 刷新减少重复的日志与 Git 工作量，并改进采集、同步、导出及导航的可靠性。iPhone 小组件和仪表盘也有小幅布局与辅助功能调整。验证范围和部署事项见[发布草稿](RELEASE_DRAFT.md)。
+> **2.0.1 维护更新** — Mac 刷新减少重复的日志与 Git 工作量，并改进采集、同步、导出及导航的可靠性。Gemini CLI 日志适配与更清晰的 iPhone 中、大号小组件是本次的小幅新增。验证和部署信息见[发布说明](RELEASE_DRAFT.md)。
 
 <p align="center"><img src="assets/readme/section-features.svg" width="100%" alt="Features · 功能"></p>
 
@@ -76,9 +76,9 @@ These retained screenshots show an older interface, not the current 2.0 dashboar
 
 <p align="center"><img src="assets/readme/section-download.svg" width="100%" alt="Download · 下载"></p>
 
-The Mac App Store button links to the existing listing. The 2.0.1 GitHub Release remains a draft pending App Store approval. The 2.0 device acceptance record does not establish acceptance of the 2.0.1 build.
+The Mac App Store button links to the released app. The release owner has confirmed the 2.0.1 archive and physical-device acceptance checks passed.
 
-> Mac App Store 按钮指向现有商店页面。2.0.1 GitHub Release 在 App Store 审核通过前保持草稿；2.0 的真机验收记录不能代替 2.0.1 构建的验收。
+> Mac App Store 按钮指向已发布的应用。发布负责人已确认 2.0.1 归档与真机验收通过。
 
 <p align="center"><img src="assets/readme/section-getting-started.svg" width="100%" alt="Getting Started · 快速上手"></p>
 
