@@ -5,7 +5,7 @@
   <a href="https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12"><img src="assets/readme/download-button-appstore-mac.svg" width="300" height="69" alt="Mac App Store listing"></a>
 </p>
 
-<p align="center"><code>MACOS 14+ · IOS 17+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · 2.0 RELEASE CANDIDATE</code></p>
+<p align="center"><code>MACOS 14+ · IOS 17+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · 2.0.1 RELEASED</code></p>
 
 <p align="center">
   <a href="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml"><img src="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg" alt="CI"></a>&nbsp;
@@ -17,9 +17,13 @@ AI Pulse makes ongoing AI activity tangible and shows the local Git output along
 
 > AI Pulse 让持续的 AI 活动被感受到，并展示伴随的本地 Git 成果。它是消费脉搏，不是精确计量器、账单，也不判断产出是否值得。
 
-This README describes the AI Pulse 2.0 release candidate across macOS, iPhone, Apple Watch, and their widgets. Implementation and device acceptance are complete; the candidate is awaiting final release operations. The App Store listing above does not imply that 2.0 has been released.
+This README describes the released AI Pulse 2.0.1 across macOS, iPhone, Apple Watch, and their widgets. The release owner has confirmed the final archive and physical-device acceptance checks passed.
 
-> 本文描述 AI Pulse 2.0 在 macOS、iPhone、Apple Watch 及各端小组件上的候选发布版本。功能实现与真机验收已经完成，当前等待最终发布操作；上方商店入口不代表 2.0 已经发布。
+> 本文描述已发布的 AI Pulse 2.0.1，覆盖 macOS、iPhone、Apple Watch 及各端小组件。发布负责人已确认最终归档与真机验收通过。
+
+**2.0.1 maintenance update** — Mac refreshes do less repeated log and Git work, while collection, synchronization, export, and navigation fixes improve reliability. Gemini CLI log support and clearer medium and large iPhone widgets are small additions. See the [release notes](RELEASE_DRAFT.md) for verification and deployment details.
+
+> **2.0.1 维护更新** — Mac 刷新减少重复的日志与 Git 工作量，并改进采集、同步、导出及导航的可靠性。Gemini CLI 日志适配与更清晰的 iPhone 中、大号小组件是本次的小幅新增。验证和部署信息见[发布说明](RELEASE_DRAFT.md)。
 
 <p align="center"><img src="assets/readme/section-features.svg" width="100%" alt="Features · 功能"></p>
 
@@ -72,9 +76,9 @@ These retained screenshots show an older interface, not the current 2.0 dashboar
 
 <p align="center"><img src="assets/readme/section-download.svg" width="100%" alt="Download · 下载"></p>
 
-The Mac App Store button links to the existing listing. This working tree is not a release announcement. macOS, the macOS widget, iPhone, the iPhone widget, the Watch app, and Watch widgets have all passed device acceptance for the 2.0 candidate.
+The Mac App Store button links to the released app. The release owner has confirmed the 2.0.1 archive and physical-device acceptance checks passed.
 
-> Mac App Store 按钮指向现有商店页面，本工作树不是发版公告。macOS、macOS 小组件、iPhone、iPhone 小组件、Watch 应用和 Watch 小组件均已完成 2.0 候选版本的真机验收。
+> Mac App Store 按钮指向已发布的应用。发布负责人已确认 2.0.1 归档与真机验收通过。
 
 <p align="center"><img src="assets/readme/section-getting-started.svg" width="100%" alt="Getting Started · 快速上手"></p>
 
