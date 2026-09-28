@@ -545,6 +545,7 @@ struct AIPulseWidgetEntryView: View {
                 text("观测于 ", "Observed ")
                     + $0.asOf.formatted(date: .omitted, time: .shortened)
             },
+            family == .systemLarge ? rhythmAccessibility(recentDailyTokens) : nil,
             status
         ]
         .compactMap { $0 }
