@@ -49,6 +49,17 @@ final class CloudDataService: ObservableObject {
     /// A one-shot range request from a deep link (widget URL, notification
     /// tap). The dashboard consumes and clears it; the watch target ignores it.
     @Published var requestedRange: String?
+    /// A separate navigation signal survives the dashboard consuming its
+    /// range request. The iPhone root uses it to return from Settings.
+    @Published private(set) var dashboardRequestID = UUID()
+
+    func requestDashboard(range: String?) {
+        let storedDefault = UserDefaults.standard.string(forKey: "phone_default_range") ?? "today"
+        let defaultRange = AIPulseDeepLink.validRanges.contains(storedDefault) ? storedDefault : "today"
+        requestedRange = range.flatMap { AIPulseDeepLink.validRanges.contains($0) ? $0 : nil }
+            ?? defaultRange
+        dashboardRequestID = UUID()
+    }
 
     /// All three per-range snapshots. Keyed by "today" / "week" / "30d".
     @Published private var snapshots: [String: DashboardSnapshot] = [:]

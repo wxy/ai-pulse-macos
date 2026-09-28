@@ -23,10 +23,31 @@ import Foundation
 struct GeminiCLIParser {
     static let source = "gemini-cli"
 
-    static func parse(line: String, cwd: String?, fallbackTimestampMs: Int? = nil) -> UsageEvent? {
+    static func parse(line: String, cwd: String?, fallbackTimestampMs: Int? = nil,
+                      sessionId: String? = nil) -> UsageEvent? {
         QwenCodeParser.parse(
             line: line, cwd: cwd, fallbackTimestampMs: fallbackTimestampMs,
-            source: source, dedupePrefix: source)
+            source: source, dedupePrefix: source, headerSessionId: sessionId)
+    }
+
+    /// Read only the first complete JSONL record. Re-read it for each scan so
+    /// resumed scans retain identity without storing extra per-file state.
+    static func sessionId(at file: URL) -> String? {
+        sessionHeader(at: file)?.sessionId
+    }
+
+    static func sessionHeader(at file: URL) -> (sessionId: String, signature: UInt64)? {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+        guard let prefix = try? handle.read(upToCount: 1 << 20),
+              let newline = prefix.firstIndex(of: 0x0a),
+              let headerLine = String(data: prefix.prefix(upTo: newline), encoding: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: prefix.prefix(upTo: newline)) as? [String: Any],
+              json["type"] == nil,
+              let projectHash = json["projectHash"] as? String, !projectHash.isEmpty,
+              let sessionId = json["sessionId"] as? String, !sessionId.isEmpty
+        else { return nil }
+        return (sessionId, stableHash(headerLine))
     }
 
     /// Session files live in a `chats` directory, either directly (main

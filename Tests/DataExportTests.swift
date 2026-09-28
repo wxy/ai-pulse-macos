@@ -74,4 +74,69 @@ final class DataExportTests: XCTestCase {
             XCTAssertEqual(csv.split(separator: "\n").count, 1, "header only, no invented rows")
         }
     }
+
+    /// Exercises DB read -> file write -> file read for the same path as the
+    /// Settings export action, including two exports in one clock second.
+    func testDiskExportPreservesRealValuesAndEarlierExport() throws {
+        let queue = try DatabaseQueue()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        try queue.write { db in
+            try seed(db)
+            try db.execute(sql: """
+                INSERT INTO balance_snapshot (ts, provider_id, balance, currency)
+                VALUES (2001, 'negative', -0.125, 'USD'),
+                       (2002, 'whole', 42, 'JPY')
+                """)
+        }
+
+        func sections() throws -> [DataExport.Section] {
+            try queue.read { db in
+                [try DataExport.usageEvents(in: db),
+                 try DataExport.balanceSnapshots(in: db),
+                 try DataExport.codeChanges(in: db),
+                 try DataExport.gitCommits(in: db)]
+            }
+        }
+
+        let first = try DataExport.write(sections: sections(), kind: .csv, exportsDirectory: root, exportedAt: date)
+        let firstCSV = try String(contentsOf: first.appendingPathComponent("balance_snapshots.csv"), encoding: .utf8)
+        XCTAssertTrue(firstCSV.contains("deepseek,12.5,CNY"))
+        XCTAssertTrue(firstCSV.contains("negative,-0.125,USD"))
+        XCTAssertTrue(firstCSV.contains("whole,42.0,JPY"))
+
+        let second = try DataExport.write(sections: sections(), kind: .json, exportsDirectory: root, exportedAt: date)
+        XCTAssertNotEqual(first, second)
+        XCTAssertEqual(try String(contentsOf: first.appendingPathComponent("balance_snapshots.csv"), encoding: .utf8), firstCSV)
+        let jsonFile = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: second, includingPropertiesForKeys: nil).first)
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: jsonFile)) as? [String: Any]
+        let balances = try XCTUnwrap(object?["balance_snapshots"] as? [[String: Any]])
+        XCTAssertEqual(balances[0]["balance"] as? Double, 12.5)
+        XCTAssertEqual(balances[1]["balance"] as? Double, -0.125)
+        XCTAssertEqual(balances[2]["balance"] as? Double, 42.0)
+        let events = try XCTUnwrap(object?["usage_events"] as? [[String: Any]])
+        XCTAssertTrue(events[0]["cache_creation_tokens"] is NSNull)
+
+        try queue.write { db in
+            try db.execute(sql: "UPDATE balance_snapshot SET balance = 99 WHERE provider_id = 'deepseek'")
+        }
+        let third = try DataExport.write(sections: sections(), kind: .csv, exportsDirectory: root, exportedAt: date)
+        XCTAssertNotEqual(third, first)
+        XCTAssertNotEqual(third, second)
+        XCTAssertEqual(try String(contentsOf: first.appendingPathComponent("balance_snapshots.csv"), encoding: .utf8), firstCSV)
+        XCTAssertTrue(try String(contentsOf: third.appendingPathComponent("balance_snapshots.csv"), encoding: .utf8).contains("deepseek,99.0,CNY"))
+    }
+
+    func testFailedDiskExportRemovesIncompleteDirectory() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sections = [
+            DataExport.Section(name: "first", header: ["value"], rows: [[1.databaseValue]]),
+            DataExport.Section(name: "invalid/subpath", header: ["value"], rows: [[2.databaseValue]]),
+        ]
+        XCTAssertThrowsError(try DataExport.write(sections: sections, kind: .csv,
+                                                  exportsDirectory: root, exportedAt: Date(timeIntervalSince1970: 0)))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
+    }
 }

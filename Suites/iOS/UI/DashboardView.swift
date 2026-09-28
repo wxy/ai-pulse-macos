@@ -240,6 +240,7 @@ struct DashboardView: View {
             // range task below fetches the right snapshot.
             if let requested = cloud.requestedRange, ["today", "week", "30d"].contains(requested) {
                 range = requested
+                detail = nil
                 cloud.requestedRange = nil
             }
         }
@@ -249,6 +250,7 @@ struct DashboardView: View {
             // range task above then fetches that snapshot.
             guard let requested, ["today", "week", "30d"].contains(requested) else { return }
             range = requested
+            detail = nil
             cloud.requestedRange = nil
         }
         .task(id: scenePhase) {
@@ -282,7 +284,7 @@ struct DashboardView: View {
                         }.buttonStyle(.plain).accessibilityLabel(t("查看当前活动强度依据", "Current activity details"))
                     }
                     Spacer()
-                    NavigationLink { PhoneSettingsView() } label: { Image(systemName: "gearshape").phoneFont(14).foregroundStyle(.secondary) }.accessibilityLabel(t("设置", "Settings"))
+                    NavigationLink(value: PhoneRoute.settings) { Image(systemName: "gearshape").phoneFont(14).foregroundStyle(.secondary) }.accessibilityLabel(t("设置", "Settings"))
                 }
                 HStack(spacing: 0) {
                     ForEach(["today", "week", "30d"], id: \.self) { key in

@@ -231,7 +231,7 @@ extension NotificationService: UNUserNotificationCenterDelegate {
         guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
         let range = response.notification.request.content.userInfo["range"] as? String
         await MainActor.run {
-            CloudDataService.shared.requestedRange = AIPulseDeepLink.validRanges.contains(range ?? "") ? range : nil
+            CloudDataService.shared.requestDashboard(range: range)
         }
     }
 }

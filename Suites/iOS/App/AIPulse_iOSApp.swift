@@ -7,20 +7,35 @@ import AIPulseShared
 @main
 struct AIPulse_iOSApp: App {
     @StateObject private var cloudData = CloudDataService.shared
+    @State private var navigationPath: [PhoneRoute] = []
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
 
     var body: some Scene {
         WindowGroup {
-            NavigationStack { ContentView() }
+            NavigationStack(path: $navigationPath) {
+                ContentView()
+                    .navigationDestination(for: PhoneRoute.self) { route in
+                        switch route {
+                        case .settings: PhoneSettingsView()
+                        }
+                    }
+            }
                 .environmentObject(cloudData)
+                .onChange(of: cloudData.dashboardRequestID) { _, _ in
+                    navigationPath.removeAll()
+                }
                 .onOpenURL { url in
                     // Widget URL / notification deep links: route the
                     // requested dashboard range, or open the app default.
-                    guard let link = AIPulseDeepLink.parse(url), let range = link.range else { return }
-                    cloudData.requestedRange = range
+                    guard let link = AIPulseDeepLink.parse(url) else { return }
+                    cloudData.requestDashboard(range: link.range)
                 }
         }
     }
+}
+
+enum PhoneRoute: Hashable {
+    case settings
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
@@ -95,7 +110,7 @@ struct ContentView: View {
         }
         .toolbar {
             if state != .ready {
-                ToolbarItem(placement: .topBarTrailing) { NavigationLink { PhoneSettingsView() } label: { Image(systemName: "gearshape") } }
+                ToolbarItem(placement: .topBarTrailing) { NavigationLink(value: PhoneRoute.settings) { Image(systemName: "gearshape") } }
             }
         }
         .task {

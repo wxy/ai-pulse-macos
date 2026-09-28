@@ -198,15 +198,11 @@ struct DataAndSyncTab: View {
         }
     }
 
-    private enum ExportKind { case csv, json }
-
-    private func runExport(kind: ExportKind) {
+    private func runExport(kind: DataExport.Kind) {
         exporting = true
         exportError = nil
         Task.detached(priority: .utility) {
             do {
-                let stamp = Self.exportStamp(Date())
-                let directory = try Self.exportDirectory(stamp: stamp)
                 let sections: [DataExport.Section] = try await AppDatabase.shared.read { db in
                     [
                         try DataExport.usageEvents(in: db),
@@ -215,23 +211,17 @@ struct DataAndSyncTab: View {
                         try DataExport.gitCommits(in: db),
                     ]
                 }
-                var files: [URL] = []
-                switch kind {
-                case .csv:
-                    for section in sections {
-                        let file = directory.appendingPathComponent("\(section.name).csv")
-                        try DataExport.csv(section).write(to: file, atomically: true, encoding: .utf8)
-                        files.append(file)
-                    }
-                case .json:
-                    let file = directory.appendingPathComponent("aipulse-export-\(stamp).json")
-                    try DataExport.jsonPayload(sections: sections, exportedAt: Date())
-                        .write(to: file, options: .atomic)
-                    files.append(file)
-                }
+                let base = try FileManager.default.url(
+                    for: .applicationSupportDirectory, in: .userDomainMask,
+                    appropriateFor: nil, create: true)
+                let exports = base
+                    .appendingPathComponent("AIPulse", isDirectory: true)
+                    .appendingPathComponent("exports", isDirectory: true)
+                let directory = try DataExport.write(
+                    sections: sections, kind: kind, exportsDirectory: exports, exportedAt: Date())
                 await MainActor.run {
                     exporting = false
-                    exportURL = files.first.map { $0.deletingLastPathComponent() }
+                    exportURL = directory
                 }
             } catch {
                 await MainActor.run {
@@ -240,25 +230,6 @@ struct DataAndSyncTab: View {
                 }
             }
         }
-    }
-
-    private nonisolated static func exportStamp(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return formatter.string(from: date)
-    }
-
-    private nonisolated static func exportDirectory(stamp: String) throws -> URL {
-        let base = try FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: true)
-        let directory = base
-            .appendingPathComponent("AIPulse", isDirectory: true)
-            .appendingPathComponent("exports", isDirectory: true)
-            .appendingPathComponent("export-\(stamp)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
     }
 
     private func loadSourceHealth() {

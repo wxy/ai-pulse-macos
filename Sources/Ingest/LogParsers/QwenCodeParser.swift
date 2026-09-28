@@ -27,7 +27,8 @@ struct QwenCodeParser {
     /// `source` label and dedupe prefix; the qwen defaults keep existing
     /// dedupe keys stable across the refactor.
     static func parse(line: String, cwd: String?, fallbackTimestampMs: Int? = nil,
-                      source: String = "qwen-code", dedupePrefix: String = "qwen") -> UsageEvent? {
+                      source: String = "qwen-code", dedupePrefix: String = "qwen",
+                      headerSessionId: String? = nil) -> UsageEvent? {
         guard let data = line.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
@@ -38,7 +39,7 @@ struct QwenCodeParser {
         else { return nil }
 
         let model = json["model"] as? String
-        let sessionId = json["sessionId"] as? String
+        let sessionId = (json["sessionId"] as? String) ?? headerSessionId
 
         // Gemini-style token object: input includes cached; cached/tool/thoughts are sub-slices.
         let input = (tokens["input"] as? NSNumber)?.intValue ?? 0

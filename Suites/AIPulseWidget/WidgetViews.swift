@@ -302,7 +302,7 @@ struct AIPulseWidgetEntryView: View {
                 .font(.system(size: 10))
                 .foregroundStyle(secondaryTextColor)
             HStack(alignment: .bottom, spacing: 9) {
-                ForEach(days, id: \.ts) { day in
+                ForEach(days) { day in
                     let ratio = maxTokens > 0 && day.tokens > 0
                         ? min(Double(day.tokens) / Double(maxTokens), 1) : 0
                     VStack(spacing: 3) {
@@ -320,22 +320,69 @@ struct AIPulseWidgetEntryView: View {
         .accessibilityLabel(rhythmAccessibility(days))
     }
 
-    private var recentDailyTokens: [TrendPoint] {
-        guard let stats = entry.historySnapshot?.dailyStats, !stats.isEmpty else { return [] }
-        return Array(stats.sorted { $0.ts < $1.ts }.suffix(7))
+    private struct RhythmDay: Identifiable {
+        let date: Date
+        let tokens: Int64
+        var id: Date { date }
     }
 
-    private func rhythmAccessibility(_ days: [TrendPoint]) -> String {
+    /// Project sparse Unix-second trend points into seven local calendar days.
+    /// A missing point inside the covered period means zero activity; an old
+    /// cache that no longer covers this window remains unknown instead.
+    private var recentDailyTokens: [RhythmDay] {
+        guard let snapshot = entry.historySnapshot,
+              !snapshot.readFailures.contains("dashboardUsageStats") else { return [] }
+        var calendar = Calendar(identifier: .gregorian)
+        guard let timeZone = TimeZone(identifier: snapshot.period.timeZoneIdentifier) else { return [] }
+        calendar.timeZone = timeZone
+
+        let today = calendar.startOfDay(for: entry.date)
+        guard let windowStart = calendar.date(byAdding: .day, value: -6, to: today),
+              let windowEnd = calendar.date(byAdding: .day, value: 1, to: today),
+              snapshot.period.start <= windowStart,
+              snapshot.period.end >= windowEnd else { return [] }
+
+        var totals: [Date: Int64] = [:]
+        for point in snapshot.dailyStats where point.ts.isFinite {
+            let date = Date(timeIntervalSince1970: point.ts)
+            guard date >= windowStart, date < windowEnd, date <= entry.date else { continue }
+            let day = calendar.startOfDay(for: date)
+            let tokens = max(0, point.tokens)
+            let (sum, overflow) = (totals[day] ?? 0).addingReportingOverflow(tokens)
+            totals[day] = overflow ? Int64.max : sum
+        }
+
+        return (0..<7).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: windowStart) else { return nil }
+            return RhythmDay(date: date, tokens: totals[date] ?? 0)
+        }
+    }
+
+    private func rhythmAccessibility(_ days: [RhythmDay]) -> String {
         guard !days.isEmpty else { return text("暂无 7 天节奏数据", "No 7-day rhythm data") }
         let maxTokens = days.map(\.tokens).max() ?? 0
+        let calendar = rhythmCalendar
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "EEEEE"
         let parts = days.map { day -> String in
-            let weekday = Date(timeIntervalSince1970: day.ts / 1000)
-                .formatted(.dateTime.weekday(.narrow))
+            let weekday = formatter.string(from: day.date)
             let ratio = maxTokens > 0 && day.tokens > 0
                 ? "\(Int((Double(day.tokens) / Double(maxTokens) * 100).rounded()))%" : "0%"
-            return "\(weekday) \(count(Double(day.tokens))) (\(ratio))"
+            return "\(weekday) \(ChartMath.compactCount(day.tokens)) (\(ratio))"
         }
         return text("近 7 天词元", "Last 7 days of tokens") + ": " + parts.joined(separator: ", ")
+    }
+
+    private var rhythmCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        if let identifier = entry.historySnapshot?.period.timeZoneIdentifier,
+           let timeZone = TimeZone(identifier: identifier) {
+            calendar.timeZone = timeZone
+        }
+        return calendar
     }
 
     private func ringCluster(side: CGFloat, thickness: CGFloat) -> some View {

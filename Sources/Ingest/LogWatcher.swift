@@ -40,6 +40,45 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         let modifiedAt: Date
         let fileNumber: UInt64?
     }
+    struct GeminiRepairFingerprint: Codable, Equatable {
+        let size: UInt64
+        let modifiedAt: Date
+        let fileNumber: UInt64
+        let createdAt: Date?
+
+        static func of(_ file: URL) -> Self? {
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
+                  let size = attrs[.size] as? UInt64,
+                  let modifiedAt = attrs[.modificationDate] as? Date,
+                  let number = attrs[.systemFileNumber] as? NSNumber
+            else { return nil }
+            return Self(size: size, modifiedAt: modifiedAt, fileNumber: number.uint64Value,
+                        createdAt: attrs[.creationDate] as? Date)
+        }
+    }
+
+    struct GeminiRepairState: Codable, Equatable {
+        let fingerprint: GeminiRepairFingerprint
+        let cursor: UInt64
+        let sessionId: String
+        let headerSignature: UInt64
+        let tailSignature: UInt64
+
+        init?(serialized: String) {
+            guard let data = serialized.data(using: .utf8),
+                  let value = try? JSONDecoder().decode(Self.self, from: data) else { return nil }
+            self = value
+        }
+
+        init(fingerprint: GeminiRepairFingerprint, cursor: UInt64,
+             sessionId: String, headerSignature: UInt64, tailSignature: UInt64) {
+            self.fingerprint = fingerprint
+            self.cursor = cursor
+            self.sessionId = sessionId
+            self.headerSignature = headerSignature
+            self.tailSignature = tailSignature
+        }
+    }
     /// Last seen model per aider file (survives incremental scans).
     private var aiderModels: [String: String] = [:]
     /// VS Code chat journals are patches over prior request state. Retain the
@@ -832,19 +871,159 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                   options: [.skipsHiddenFiles, .skipsPackageDescendants])
         else { return }
 
+        var repairState: [String: GeminiRepairState]? = nil
+        do {
+            let hasMissingSessionIds = try AppDatabase.shared.readSynchronously { db in
+                try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS(SELECT 1 FROM usage_event
+                                  WHERE source = 'gemini-cli' AND session_id IS NULL)
+                    """) ?? false
+            }
+            if hasMissingSessionIds {
+                repairState = try AppDatabase.shared.writeSynchronously { db in
+                    try Self.loadGeminiRepairState(in: db)
+                }
+            }
+        } catch {
+            Logger.error("LogWatcher: Gemini session repair check failed: \(error)")
+        }
+
         for case let url as URL in enumerator where GeminiCLIParser.isSessionFile(url) {
+            if let repairState {
+                repairGeminiFileIfNeeded(url, state: repairState)
+            }
             // The record's projectHash is opaque, so no repository
             // attribution — token facts only, like the Qwen scanner.
             parseGeminiFile(url, cwd: nil)
         }
     }
 
+    private func repairGeminiFileIfNeeded(_ file: URL, state: [String: GeminiRepairState]) {
+        let path = file.path
+        guard let fingerprint = GeminiRepairFingerprint.of(file),
+              state[path]?.fingerprint != fingerprint else { return }
+        do {
+            let result = try Self.repairGeminiSessionIds(at: file, previous: state[path]) { sessionId, keys in
+                let changed = try AppDatabase.shared.writeSynchronously { db in
+                    try Self.updateMissingGeminiSessionIds(in: db, sessionId: sessionId, keys: keys)
+                }
+                if changed > 0 { scanChanged = true }
+                return changed
+            }
+            guard let result else { return } // Header unavailable or file changed; retry later.
+            try AppDatabase.shared.writeSynchronously { db in
+                try Self.saveGeminiRepairState(in: db, path: path, state: result.state)
+            }
+            if result.repaired > 0 {
+                Logger.info("LogWatcher: repaired \(result.repaired) Gemini session IDs from \(path)")
+            }
+        } catch {
+            Logger.error("LogWatcher: Gemini session repair failed for \(path): \(error)")
+        }
+    }
+
+    /// DB-local state survives restarts and disappears with the DB. Creation
+    /// is limited to installations that still have unattributed Gemini rows.
+    static func loadGeminiRepairState(in db: Database) throws -> [String: GeminiRepairState] {
+        try db.execute(sql: """
+            CREATE TABLE IF NOT EXISTS gemini_session_repair_state
+              (file_path TEXT PRIMARY KEY, fingerprint TEXT NOT NULL)
+            """)
+        var result: [String: GeminiRepairState] = [:]
+        for row in try Row.fetchAll(db, sql: "SELECT file_path, fingerprint FROM gemini_session_repair_state") {
+            let path: String = row["file_path"]
+            let fingerprint: String = row["fingerprint"]
+            if let state = GeminiRepairState(serialized: fingerprint) {
+                result[path] = state
+            }
+        }
+        return result
+    }
+
+    static func saveGeminiRepairState(in db: Database, path: String,
+                                      state: GeminiRepairState) throws {
+        let serialized = String(decoding: try JSONEncoder().encode(state), as: UTF8.self)
+        try db.execute(sql: """
+            INSERT INTO gemini_session_repair_state (file_path, fingerprint) VALUES (?, ?)
+            ON CONFLICT(file_path) DO UPDATE SET fingerprint = excluded.fingerprint
+            """, arguments: [path, serialized])
+    }
+
+    static func updateMissingGeminiSessionIds(in db: Database, sessionId: String,
+                                               keys: [String]) throws -> Int {
+        var repaired = 0
+        for key in keys {
+            try db.execute(sql: """
+                UPDATE usage_event SET session_id = ?
+                WHERE source = 'gemini-cli' AND session_id IS NULL AND dedupe_key = ?
+                """, arguments: [sessionId, key])
+            repaired += db.changesCount
+        }
+        return repaired
+    }
+
+    /// Stream the file outside the DB write lock. The update callback receives
+    /// at most 512 dedupe keys at a time. Only a complete, stable scan may be
+    /// marked done; partial updates are safe to replay after an I/O failure.
+    static func repairGeminiSessionIds(at file: URL, previous: GeminiRepairState?,
+        update: (String, [String]) throws -> Int) throws
+        -> (state: GeminiRepairState, repaired: Int, startedAt: UInt64)? {
+        guard let fingerprint = GeminiRepairFingerprint.of(file),
+              let header = GeminiCLIParser.sessionHeader(at: file) else { return nil }
+        let canResume = previous.map {
+            $0.fingerprint.fileNumber == fingerprint.fileNumber
+                && $0.fingerprint.createdAt == fingerprint.createdAt
+                && $0.fingerprint.size < fingerprint.size
+                && $0.cursor == $0.fingerprint.size
+                && $0.sessionId == header.sessionId
+                && $0.headerSignature == header.signature
+                && Self.geminiTailSignature(at: file, through: $0.cursor) == $0.tailSignature
+        } ?? false
+        let start: UInt64 = canResume ? (previous?.cursor ?? 0) : 0
+        var repaired = 0
+        let checkpoint = try JSONLCheckpoint.read(at: file, from: start, fileSize: fingerprint.size,
+            parse: { line in GeminiCLIParser.parse(line: line, cwd: nil)?.dedupeKey },
+            persist: { keys in repaired += try update(header.sessionId, keys) })
+        guard checkpoint == fingerprint.size,
+              GeminiRepairFingerprint.of(file) == fingerprint,
+              GeminiCLIParser.sessionHeader(at: file)?.signature == header.signature,
+              let tailSignature = Self.geminiTailSignature(at: file, through: checkpoint)
+        else { return nil }
+        return (GeminiRepairState(fingerprint: fingerprint, cursor: checkpoint,
+                                  sessionId: header.sessionId, headerSignature: header.signature,
+                                  tailSignature: tailSignature),
+                repaired, start)
+    }
+
+    /// Guard the previous complete-line boundary against a rewrite followed
+    /// by growth. A bounded suffix check keeps append scans proportional to
+    /// new bytes while catching changes around the resume point.
+    private static func geminiTailSignature(at file: URL, through cursor: UInt64) -> UInt64? {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+        let start = cursor > 4096 ? cursor - 4096 : 0
+        do {
+            try handle.seek(toOffset: start)
+            guard let data = try handle.read(upToCount: Int(cursor - start)),
+                  data.count == Int(cursor - start) else { return nil }
+            var hash: UInt64 = 0xcbf29ce484222325
+            for byte in data {
+                hash ^= UInt64(byte)
+                hash = hash &* 0x100000001b3
+            }
+            return hash
+        } catch { return nil }
+    }
+
     private func parseGeminiFile(_ file: URL, cwd: String?) {
         var parsedCount = 0
         let filePath = file.path
         let fileMtimeMs = Self.fileModificationMs(file)
+        let sessionId = GeminiCLIParser.sessionId(at: file)
         parseLinesIncremental(from: file) { line in
-            if let event = GeminiCLIParser.parse(line: line, cwd: cwd, fallbackTimestampMs: fileMtimeMs) {
+            if let event = GeminiCLIParser.parse(line: line, cwd: cwd,
+                                                  fallbackTimestampMs: fileMtimeMs,
+                                                  sessionId: sessionId) {
                 parsedCount += 1
                 return event
             }
