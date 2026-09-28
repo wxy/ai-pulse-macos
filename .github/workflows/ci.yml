@@ -44,9 +44,11 @@ jobs:
 
   tests:
     name: Tests (macOS)
-    # Pinned macOS 15 image for a deterministic Swift 6 toolchain; macos-latest
-    # migrates and would change the compiler under our feet.
-    runs-on: macos-15
+    # Pinned to the macos-26 image: the sources are developed against the
+    # current SDK (Xcode 26/27), where the notification/image types carry the
+    # concurrency annotations Swift 6 mode expects; the older macos-15 SDK
+    # flags them as errors. macos-latest would migrate under our feet.
+    runs-on: macos-26
 
     steps:
       # Pinned to the v5.0.0 commit — tag refs are movable.
