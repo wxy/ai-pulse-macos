@@ -279,7 +279,7 @@ struct ToolDetailOverlayView: View {
     private func legendSwatch(cross color: Color, _ label: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "multiply")
-                .font(.system(size: 9, weight: .bold))
+                .dashboardFont(9, weight: .bold)
                 .foregroundColor(color)
                 .frame(width: 10, height: 10)
             Text(label)
