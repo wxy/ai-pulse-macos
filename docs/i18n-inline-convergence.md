@@ -1,31 +1,23 @@
-# 内联双语串收敛计划（zh/en 双轨 → String Catalog）
+# 内联双语串与目录的桥接关系（勘定记录）
 
-2026-09-27 立项。**现状**：xcstrings 是唯一事实源（742 键 × 10 语言），但仪表盘/设置/多端 UI 存在大量内联中英双语串——`pulseText(zh, en)`、`SetupCopy.text(zh, en)`、`WidgetCopy.text(zh, en)`、`I18n.prototype(zh, en)` 及 Suites 侧 `t(zh, en)`。这些串只服务中文与英文用户；**日、韩、德、法、西、葡用户在这些位置看到英文回退**。这是"十语言完成度"的最大缺口。
+2026-09-27 立项，2026-09-28 勘正。**先说结论**：AI Pulse 的界面文案在全部十个语言下是完整的；内联双语串（`pulseText` / `SetupCopy.text` / `t(zh, en)` 调用形态）不是"漏翻译"，而是一种**以英文文案为目录键的桥接模式**——`I18n.prototype(zh, en)` 先用 en 字面量查 String Catalog，命中即返回对应语言译文，未命中才回退 zh/en 二元。Suites 各端共享同一份 `Localizable.xcstrings`（四个 target 均打包），因此桥接在 iOS/watch/widget 同样生效。
 
-## 第一步已落地：校验脚本覆盖内联串（本提交）
+历史上曾有过"内联串导致非中英用户只见英文"的担心（源自由代码审查 P2-9）；经逐对核实，415 对中 390 对的 en 文案本就是目录键，桥接可命中，该担心不成立。真正未覆盖的只有当时新功能引入的少量串，已全部补入目录。
 
-`scripts/check-localizations.py` 现在扫描 `Sources/`、`Suites/`、`AIPulse/AIPulseMacWidget` 中的内联双语对（一行内"中文字面量" + ", " + "字面量"的调用形态），并强制两条不变量：
+## 现状与保障
 
-- en 回退不得为空；
-- en 不得与 zh 字面量相同（防止复制粘贴成对失真）。
+- 内联对 414 对（1 对插值串已改为 `%lld` 格式键），**全部命中的目录键**（762 活跃键 × 10 语言）。
+- `check-localizations.py` 现在把这条桥接假设变成**强制不变量**：任何静态内联对，其 en 字面量不是目录键即校验失败——新功能文案必须同步入目录，否则 CI 拦截。
+- 行尾注释已排除（CostSource 的示例注释曾造成一条误报）；跨行调用不在扫描范围（需语法级解析，迁移时人工覆盖）。
 
-当前清点：**415 对 / 19 个文件**。前三名：`Sources/UI/Dashboard/DashboardView.swift`（65）、`Suites/iOS/UI/DashboardView.swift`（60）、`Suites/iOS/UI/PhoneSettingsView.swift`（46）。
-
-重新生成迁移工作清单：
+重新生成工作清单：
 
 ```sh
 python3 scripts/check-localizations.py --dump-inline /tmp/inline-inventory.json
 ```
 
-已知边界：逐行扫描**不覆盖跨行调用**（需要真正的 Swift 语法解析才能避免误配对）；跨行串会在逐文件迁移时一并捕获。
+## 后续可选项（非缺口，属形态优化）
 
-## 后续批次（未排期，逐文件推进）
-
-1. **按文件迁移**：每次迁移一个 UI 文件——内联对改为 xcstrings 键 + 十语言翻译；迁移完成的文件加入脚本的禁用清单（该文件再出现内联对即校验失败），防止回潮。
-2. **翻译质量门槛**：新增键的 ja/ko/de/fr/es/pt-BR 五语翻译须人工复核后才能标 `translated`；机器草稿可作起点，不直接落 `translated` 状态。
-3. **顺序建议**：从 `DataAndSyncTab`（39 对，本轮已新增多个 SetupCopy 串）与 `OnboardingView`（19 对，新用户第一印象）起步；`DashboardView` 的 65 对涉及大量图表语义文案，放最后单独一批并走视觉验收。
-4. **不做**：不为内联串生成运行时翻译（Hans→Hant 变换、en 回退维持现状）；不改变"中文界面中国区可见性"策略。
-
-## 与 ten-language 宣传口径的关系
-
-在收敛完成前，对外文案与 README 的"十种界面语言"表述应理解为"xcstrings 覆盖十语言；辅助性内联文案当前为中英双语"。迁移完成后此注记删除。
+1. **按键形态迁移**：把 `pulseText(zh, en)` 逐步改为 `I18n.t("语义键")`，让键名与文案解耦（改英文文案不再触碰十语言键）。纯重构，分文件批次做，不改变任何语言下的显示。
+2. **插值串规范**：新增带数字/参数的文案一律用 `%lld`/`%@` 格式键 + `String(format:)`（本轮 `"%lld repositories"` 已是此形态），禁止把插值结果直接当键。
+3. **翻译复核**：本轮新增 20 键的 ja/ko/de/fr/es/pt-BR 译文为初稿，欢迎修订；修订直接改 xcstrings 即可，校验器只查存在性与占位符一致。

@@ -46,6 +46,13 @@ def placeholders(value: str) -> list[str]:
     return sorted(PLACEHOLDER.findall(value))
 
 
+def strip_line_comment(line: str) -> str:
+    """Cut a trailing // comment, ignoring // inside string literals."""
+    masked = re.sub(r'"(?:[^"\\]|\\.)*"', '""', line)
+    cut = masked.find("//")
+    return line if cut < 0 else line[:cut]
+
+
 def scan_inline_pairs() -> list[dict]:
     """Collect inline zh/en pairs from UI-layer Swift sources."""
     entries: list[dict] = []
@@ -55,7 +62,7 @@ def scan_inline_pairs() -> list[dict]:
             for number, line in enumerate(
                 path.read_text(encoding="utf-8").splitlines(), 1
             ):
-                for match in INLINE_PAIR.finditer(line):
+                for match in INLINE_PAIR.finditer(strip_line_comment(line)):
                     zh, en = match.group(1), match.group(2)
                     if not CJK.search(zh):
                         continue
@@ -147,14 +154,32 @@ def main() -> int:
             json.dumps(inline, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
         print(f"Inline pair inventory written to {dump_path} ({len(inline)} pairs)")
+
+    # The inline bilingual helpers (pulseText / SetupCopy.text / t(...)) bridge
+    # through the catalog by using their English literal AS the catalog key —
+    # see I18n.prototype. That only translates when the key exists, so every
+    # static inline pair must be a catalog key. Interpolated literals
+    # (`\(x)`) cannot be catalog keys; they are a known structural gap and are
+    # reported separately instead of failing.
+    catalog_keys = set(document.get("strings", {}).keys())
+    interpolated = 0
     for entry in inline:
         if not entry["en"].strip():
             failures.append(
                 f"{entry['file']}:{entry['line']}: empty en fallback for {entry['zh']!r}"
             )
+            continue
         if entry["en"] == entry["zh"]:
             failures.append(
                 f"{entry['file']}:{entry['line']}: en fallback equals the zh literal"
+            )
+        if r"\(" in entry["en"] or r"\(" in entry["zh"]:
+            interpolated += 1
+            continue
+        if entry["en"] not in catalog_keys:
+            failures.append(
+                f"{entry['file']}:{entry['line']}: inline pair {entry['en']!r} is not a "
+                "catalog key — add it with all locales so the bridge translates"
             )
 
     if failures:
@@ -165,7 +190,8 @@ def main() -> int:
 
     print(
         f"Localization validation passed: {checked} active keys, "
-        f"{len(SUPPORTED_LOCALES)} locales, {len(inline)} inline pairs inventoried"
+        f"{len(SUPPORTED_LOCALES)} locales, {len(inline)} inline pairs "
+        f"({interpolated} interpolated)"
     )
     return 0
 

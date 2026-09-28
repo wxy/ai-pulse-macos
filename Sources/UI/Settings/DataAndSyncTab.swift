@@ -148,7 +148,7 @@ struct DataAndSyncTab: View {
                 Spacer()
                 Text(watchedRepos == 1
                      ? SetupCopy.text("1 个仓库", "1 repository")
-                     : SetupCopy.text("\(watchedRepos) 个仓库", "\(watchedRepos) repositories"))
+                     : String(format: SetupCopy.text("%lld 个仓库", "%lld repositories"), watchedRepos))
                     .font(.system(size: 12)).monospacedDigit().foregroundStyle(.secondary)
                     .frame(width: 120, alignment: .trailing)
             }
