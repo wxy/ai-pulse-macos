@@ -60,6 +60,10 @@ let package = Package(
                 .product(name: "AIPulseShared", package: "AIPulseShared"),
             ],
             path: "Tests",
+            resources: [
+                // The synthetic DeepSeek Harness journal for scan-loop tests.
+                .copy("Fixtures"),
+            ],
             swiftSettings: zstdSwiftSettings,
             linkerSettings: nativeLibrarySettings
         ),
