@@ -141,6 +141,16 @@ struct AIPulseWidgetEntryView: View {
             && !WatchDashboardData.isSummaryFresh(entry.todaySnapshot, now: entry.date)
     }
 
+    private var weekIsStale: Bool {
+        guard let snapshot = validCurrentWeekSnapshot else { return false }
+        return !WatchDashboardData.isSummaryFresh(snapshot, now: entry.date)
+    }
+
+    private var historyIsStale: Bool {
+        guard let snapshot = validCurrentHistorySnapshot else { return false }
+        return !WatchDashboardData.isSummaryFresh(snapshot, now: entry.date)
+    }
+
     private var status: String? {
         guard let snapshot = entry.todaySnapshot else { return text("暂无数据", "No data") }
         guard summaryIsStale else { return nil }
@@ -182,19 +192,15 @@ struct AIPulseWidgetEntryView: View {
         .accessibilityLabel(accessibilitySummary)
     }
 
-    // MARK: - Medium (rings + aligned text facts)
+    // MARK: - Medium (today rings + weekly facts)
 
     private var mediumBody: some View {
         GeometryReader { geometry in
-            let side = min(geometry.size.height * 0.86, 132)
-            let thickness = side * 13 / 184
-            HStack(spacing: 16) {
-                ringCluster(side: side, thickness: thickness)
-                    .frame(width: side, height: side)
-                factsColumn
-                Spacer(minLength: 0)
+            VStack(spacing: 0) {
+                todayAndWeekHeader(side: min(geometry.size.height * 0.72, 112))
+                    .frame(maxHeight: .infinity)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .bottomTrailing) { statusFooter.padding(.trailing, 12).padding(.bottom, 6) }
         }
@@ -203,186 +209,267 @@ struct AIPulseWidgetEntryView: View {
         .accessibilityLabel(accessibilitySummary)
     }
 
-    // MARK: - Large (medium row + seven-day token rhythm)
+    // MARK: - Large (today + weekly facts + 30-day rhythm)
 
     private var largeBody: some View {
-        GeometryReader { geometry in
-            let side = min(geometry.size.height * 0.52, 138)
-            let thickness = side * 13 / 184
-            VStack(spacing: 10) {
-                HStack(spacing: 16) {
-                    ringCluster(side: side, thickness: thickness)
-                        .frame(width: side, height: side)
-                    factsColumn
-                    Spacer(minLength: 0)
-                }
-                rhythmSection
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .overlay(alignment: .bottomTrailing) { statusFooter.padding(.trailing, 12).padding(.bottom, 6) }
+        VStack(spacing: 10) {
+            todayAndWeekHeader(side: 112)
+                .frame(height: 152)
+            rhythmSection
+                .frame(maxHeight: .infinity, alignment: .center)
+                .opacity(historyIsStale ? 0.6 : 1)
         }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlay(alignment: .bottomTrailing) { statusFooter.padding(.trailing, 12).padding(.bottom, 6) }
         .containerBackground(widgetBackground, for: .widget)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
     }
 
-    /// Text facts shared by the medium and large layouts: the same numbers the
-    /// curved small widget encodes around the rings, now in reading order.
-    private var factsColumn: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            factRow(color: tokenColor,
-                    label: text("今日词元", "Today tokens"),
-                    value: count(todayTokens),
-                    context: multiple(tokenRatio) + " " + text("平常", "usual"))
-            factRow(color: lineColor,
-                    label: text("今日行数", "Today lines"),
-                    value: count(todayLines),
-                    context: multiple(lineRatio) + " " + text("平常", "usual"))
-            Divider()
-            HStack(spacing: 6) {
-                Circle().fill(activityColor).frame(width: 6, height: 6)
-                Text(pulseText)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(primaryTextColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+    /// The medium and large widgets share the same Today rings and four corner facts.
+    private func todayAndWeekHeader(side: CGFloat) -> some View {
+        let thickness = side * 13 / 184
+        let panelSide = side + 40
+        return HStack(spacing: 8) {
+            ZStack {
+                ringCluster(side: side, thickness: thickness)
+                    .position(x: panelSide / 2, y: panelSide / 2)
+                cornerFacts(in: CGSize(width: panelSide, height: panelSide),
+                            ringSide: side, ringWidth: thickness)
             }
-            if let date = entry.pulseEnvelope?.pulse?.asOf {
-                Text(text("观测于 ", "Observed ") + date.formatted(date: .omitted, time: .shortened))
-                    .font(.system(size: 9))
-                    .foregroundStyle(secondaryTextColor)
-            }
-            Spacer(minLength: 0)
+            .frame(width: panelSide, height: panelSide)
+            weekFactsColumn
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .opacity(weekIsStale ? 0.6 : 1)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func factRow(color: Color, label: String, value: String, context: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
+    private var weekFactsColumn: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            weekFactRow(color: tokenColor,
+                        label: text("本周词元", "This week tokens"),
+                        value: count(weekTokens), ratio: weekTokenRatio)
+            weekFactRow(color: lineColor,
+                        label: text("本周行数", "This week lines"),
+                        value: count(weekLines), ratio: weekLineRatio)
+        }
+        .frame(maxHeight: .infinity, alignment: .center)
+    }
+
+    private func weekFactRow(color: Color, label: String, value: String, ratio: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             Text(label)
                 .font(.system(size: 10))
                 .foregroundStyle(secondaryTextColor)
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(value)
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(color)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                Text(context)
-                    .font(.system(size: 10))
+                Text(multiple(ratio) + " " + text("上周", "last week"))
+                    .font(.system(size: 9))
                     .monospacedDigit()
                     .foregroundStyle(secondaryTextColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
         }
-        .opacity(summaryIsStale ? 0.6 : 1)
+    }
+
+    private var weekTokens: Double? {
+        guard let snapshot = validCurrentWeekSnapshot,
+              !snapshot.readFailures.contains("dashboardUsageStats") else { return nil }
+        return Double(snapshot.todayTokens)
+    }
+
+    private var weekLines: Double? {
+        guard let snapshot = validCurrentWeekSnapshot,
+              !snapshot.readFailures.contains("repositoryCode") else { return nil }
+        return snapshot.topRepos.reduce(0) { $0 + Double($1.added) + Double($1.deleted) }
+    }
+
+    private var weekTokenRatio: Double? {
+        WatchDashboardData.ratio(value: weekTokens, baseline: previousWeekTotal(tokens: true))
+    }
+
+    private var weekLineRatio: Double? {
+        WatchDashboardData.ratio(value: weekLines, baseline: previousWeekTotal(tokens: false))
+    }
+
+    private struct WeekWindow {
+        let snapshot: DashboardSnapshot
+        let calendar: Calendar
+        let start: Date
+        let nextStart: Date
+        let previousStart: Date
+    }
+
+    private var currentWeekWindow: WeekWindow? {
+        guard let snapshot = entry.weekSnapshot,
+              PhoneDashboardData.accepts(snapshot, range: "week"),
+              let timeZone = TimeZone(identifier: snapshot.period.timeZoneIdentifier) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let today = calendar.startOfDay(for: entry.date)
+        let weekday = calendar.component(.weekday, from: today)
+        let daysSinceMonday = (weekday + 5) % 7
+        guard let start = calendar.date(byAdding: .day, value: -daysSinceMonday, to: today),
+              let nextStart = calendar.date(byAdding: .day, value: 7, to: start),
+              let previousStart = calendar.date(byAdding: .day, value: -7, to: start),
+              snapshot.period.start == start,
+              snapshot.period.end > entry.date,
+              snapshot.period.end <= nextStart,
+              entry.date < nextStart,
+              snapshot.updatedAt <= entry.date.addingTimeInterval(60) else { return nil }
+        return WeekWindow(snapshot: snapshot, calendar: calendar, start: start,
+                          nextStart: nextStart, previousStart: previousStart)
+    }
+
+    private var validCurrentWeekSnapshot: DashboardSnapshot? {
+        currentWeekWindow?.snapshot
+    }
+
+    /// Previous-week totals require a successful 30-day snapshot covering the
+    /// whole Monday-to-Monday interval in the same Mac timezone.
+    private func previousWeekTotal(tokens: Bool) -> Double? {
+        guard let week = currentWeekWindow,
+              let history = entry.historySnapshot,
+              PhoneDashboardData.accepts(history, range: "30d"),
+              history.period.timeZoneIdentifier == week.snapshot.period.timeZoneIdentifier,
+              history.period.start <= week.previousStart,
+              history.period.end >= week.start,
+              history.period.end > entry.date,
+              !history.readFailures.contains(tokens ? "dashboardUsageStats" : "dashboardCodeChanges") else {
+            return nil
+        }
+        let points = tokens ? history.dailyStats : history.codeChanges
+        var total = 0.0
+        for point in points where point.ts.isFinite {
+            let date = Date(timeIntervalSince1970: point.ts)
+            guard date >= week.previousStart, date < week.start else { continue }
+            let value = tokens
+                ? Double(max(0, point.tokens))
+                : max(0, Double(point.added) + Double(point.deleted))
+            guard value.isFinite else { return nil }
+            total += value
+            guard total.isFinite else { return nil }
+        }
+        return total
     }
 
     private var statusFooter: some View {
         Group {
-            if let status {
-                Text(status)
+            if let footerStatus = status ?? weekCacheStatus ?? historyCacheStatus {
+                Text(footerStatus)
                     .font(.system(size: 8))
-                    .foregroundStyle(summaryIsStale ? activityColor : secondaryTextColor)
+                    .foregroundStyle(summaryIsStale || weekIsStale || historyIsStale
+                                     ? activityColor : secondaryTextColor)
                     .lineLimit(1)
             }
         }
     }
 
-    /// Last seven daily token points from the synced 30-day snapshot. Bar
-    /// heights scale against the maximum inside this window only; days with
-    /// no observed tokens keep a faded stub instead of vanishing.
+    private var weekCacheStatus: String? {
+        guard weekIsStale, let snapshot = validCurrentWeekSnapshot else { return nil }
+        return text("本周缓存 ", "Week cached ")
+            + snapshot.updatedAt.formatted(date: .omitted, time: .shortened)
+    }
+
+    private var historyCacheStatus: String? {
+        guard family == .systemLarge, historyIsStale,
+              let snapshot = validCurrentHistorySnapshot else { return nil }
+        return text("30 天缓存 ", "30 days cached ")
+            + snapshot.updatedAt.formatted(date: .omitted, time: .shortened)
+    }
+
     private var rhythmSection: some View {
-        let days = recentDailyTokens
-        let maxTokens = days.map(\.tokens).max() ?? 0
-        return VStack(alignment: .leading, spacing: 5) {
-            Text(text("近 7 天词元", "Last 7 days of tokens"))
+        VStack(alignment: .leading, spacing: 3) {
+            Text(text("近 30 天节奏", "Last 30 days rhythm"))
                 .font(.system(size: 10))
                 .foregroundStyle(secondaryTextColor)
-            HStack(alignment: .bottom, spacing: 9) {
-                ForEach(days) { day in
-                    let ratio = maxTokens > 0 && day.tokens > 0
-                        ? min(Double(day.tokens) / Double(maxTokens), 1) : 0
-                    VStack(spacing: 3) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(ratio > 0 ? tokenColor.opacity(0.78) : secondaryTextColor.opacity(0.30))
-                            .frame(height: CGFloat(4 + ratio * 44))
-                            .frame(maxWidth: 26)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
+            rhythmRow(tokens: true).frame(height: 34)
+            rhythmRow(tokens: false).frame(height: 34)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(rhythmAccessibility(days))
     }
 
-    private struct RhythmDay: Identifiable {
-        let date: Date
-        let tokens: Int64
-        var id: Date { date }
+    private func rhythmRow(tokens: Bool) -> some View {
+        let values = monthlyRhythm(tokens: tokens)
+        let peak = max(1, values?.filter { $0.isFinite && $0 >= 0 }.max() ?? 0)
+        let color = tokens ? Color.marsGreen : Color.deepRed2
+        return HStack(spacing: 4) {
+            Text(text(tokens ? "词元" : "行数", tokens ? "Tokens" : "Lines")
+                 + (values == nil ? " N/A" : ""))
+                .font(.system(size: 8))
+                .foregroundStyle(values == nil ? secondaryTextColor : color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(width: 42, alignment: .leading)
+            GeometryReader { geometry in
+                HStack(alignment: tokens ? .top : .bottom, spacing: 3) {
+                    ForEach(0..<30, id: \.self) { index in
+                        let value = values.flatMap { $0.indices.contains(index) ? $0[index] : nil } ?? -1
+                        Capsule()
+                            .fill(value < 0
+                                  ? Color.secondary.opacity(0.15)
+                                  : color.opacity(value == 0 ? 0.15 : 0.9))
+                            .frame(height: value < 0 ? 3 : max(3, geometry.size.height * value / peak))
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .frame(height: geometry.size.height, alignment: tokens ? .top : .bottom)
+            }
+        }
+        .accessibilityHidden(true)
     }
 
-    /// Project sparse Unix-second trend points into seven local calendar days.
-    /// A missing point inside the covered period means zero activity; an old
-    /// cache that no longer covers this window remains unknown instead.
-    private var recentDailyTokens: [RhythmDay] {
+    private func monthlyRhythm(tokens: Bool) -> [Double]? {
+        guard let snapshot = validCurrentHistorySnapshot,
+              !snapshot.readFailures.contains(tokens ? "dashboardUsageStats" : "dashboardCodeChanges") else {
+            return nil
+        }
+        let points = tokens ? snapshot.dailyStats : snapshot.codeChanges
+        let values = PhoneDashboardData.rhythm(points, period: snapshot.period, tokens: tokens)
+        return values.count == 30 && values.allSatisfy { $0.isFinite && $0 >= 0 } ? values : nil
+    }
+
+    private var validCurrentHistorySnapshot: DashboardSnapshot? {
         guard let snapshot = entry.historySnapshot,
-              !snapshot.readFailures.contains("dashboardUsageStats") else { return [] }
+              PhoneDashboardData.accepts(snapshot, range: "30d"),
+              let timeZone = TimeZone(identifier: snapshot.period.timeZoneIdentifier) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
-        guard let timeZone = TimeZone(identifier: snapshot.period.timeZoneIdentifier) else { return [] }
         calendar.timeZone = timeZone
-
         let today = calendar.startOfDay(for: entry.date)
-        guard let windowStart = calendar.date(byAdding: .day, value: -6, to: today),
-              let windowEnd = calendar.date(byAdding: .day, value: 1, to: today),
-              snapshot.period.start <= windowStart,
-              snapshot.period.end >= windowEnd else { return [] }
-
-        var totals: [Date: Int64] = [:]
-        for point in snapshot.dailyStats where point.ts.isFinite {
-            let date = Date(timeIntervalSince1970: point.ts)
-            guard date >= windowStart, date < windowEnd, date <= entry.date else { continue }
-            let day = calendar.startOfDay(for: date)
-            let tokens = max(0, point.tokens)
-            let (sum, overflow) = (totals[day] ?? 0).addingReportingOverflow(tokens)
-            totals[day] = overflow ? Int64.max : sum
-        }
-
-        return (0..<7).compactMap { offset in
-            guard let date = calendar.date(byAdding: .day, value: offset, to: windowStart) else { return nil }
-            return RhythmDay(date: date, tokens: totals[date] ?? 0)
-        }
+        guard let start = calendar.date(byAdding: .day, value: -29, to: today),
+              let end = calendar.date(byAdding: .day, value: 1, to: today),
+              snapshot.period.start == start,
+              snapshot.period.end >= end else { return nil }
+        return snapshot
     }
 
-    private func rhythmAccessibility(_ days: [RhythmDay]) -> String {
-        guard !days.isEmpty else { return text("暂无 7 天节奏数据", "No 7-day rhythm data") }
-        let maxTokens = days.map(\.tokens).max() ?? 0
-        let calendar = rhythmCalendar
+    private func monthlyRhythmAccessibility(tokens: Bool) -> String {
+        let label = text(tokens ? "近 30 天词元" : "近 30 天行数",
+                         tokens ? "Last 30 days of tokens" : "Last 30 days of lines")
+        guard let snapshot = validCurrentHistorySnapshot,
+              let values = monthlyRhythm(tokens: tokens),
+              let timeZone = TimeZone(identifier: snapshot.period.timeZoneIdentifier) else { return label + ": N/A" }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
         let formatter = DateFormatter()
         formatter.locale = Locale.current
         formatter.calendar = calendar
         formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = "EEEEE"
-        let parts = days.map { day -> String in
-            let weekday = formatter.string(from: day.date)
-            let ratio = maxTokens > 0 && day.tokens > 0
-                ? "\(Int((Double(day.tokens) / Double(maxTokens) * 100).rounded()))%" : "0%"
-            return "\(weekday) \(ChartMath.compactCount(day.tokens)) (\(ratio))"
+        formatter.dateFormat = "M/d"
+        let points = values.enumerated().compactMap { index, value -> String? in
+            guard let date = calendar.date(byAdding: .day, value: index, to: snapshot.period.start) else { return nil }
+            return "\(formatter.string(from: date)) \(count(value))"
         }
-        return text("近 7 天词元", "Last 7 days of tokens") + ": " + parts.joined(separator: ", ")
-    }
-
-    private var rhythmCalendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        if let identifier = entry.historySnapshot?.period.timeZoneIdentifier,
-           let timeZone = TimeZone(identifier: identifier) {
-            calendar.timeZone = timeZone
-        }
-        return calendar
+        return label + ": " + points.joined(separator: ", ")
     }
 
     private func ringCluster(side: CGFloat, thickness: CGFloat) -> some View {
@@ -535,7 +622,7 @@ struct AIPulseWidgetEntryView: View {
     }
 
     private var accessibilitySummary: String {
-        [
+        var parts = [
             "\(text("今日词元", "Today tokens")): \(count(todayTokens))",
             "\(text("词元相对平常", "Tokens versus usual")): \(multiple(tokenRatio))",
             "\(text("今日行数", "Today lines")): \(count(todayLines))",
@@ -544,11 +631,19 @@ struct AIPulseWidgetEntryView: View {
             latestPulse.map {
                 text("观测于 ", "Observed ")
                     + $0.asOf.formatted(date: .omitted, time: .shortened)
-            },
-            family == .systemLarge ? rhythmAccessibility(recentDailyTokens) : nil,
-            status
-        ]
-        .compactMap { $0 }
-        .joined(separator: ", ")
+            }
+        ].compactMap { $0 }
+        if family == .systemMedium || family == .systemLarge {
+            parts.append("\(text("本周词元", "This week tokens")): \(count(weekTokens)), \(text("相对上周", "versus last week")): \(multiple(weekTokenRatio))")
+            parts.append("\(text("本周行数", "This week lines")): \(count(weekLines)), \(text("相对上周", "versus last week")): \(multiple(weekLineRatio))")
+        }
+        if family == .systemLarge {
+            parts.append(monthlyRhythmAccessibility(tokens: true))
+            parts.append(monthlyRhythmAccessibility(tokens: false))
+        }
+        if let footerStatus = status ?? weekCacheStatus ?? historyCacheStatus {
+            parts.append(footerStatus)
+        }
+        return parts.joined(separator: ", ")
     }
 }
