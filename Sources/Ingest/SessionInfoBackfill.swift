@@ -70,12 +70,12 @@ enum SessionInfoBackfill {
     private static func backfillCodex(home: URL) {
         let dir = home.appendingPathComponent(".codex/sessions")
         guard FileManager.default.fileExists(atPath: dir.path),
-              let enumerator = FileManager.default.enumerator(
+              let enumerator = SymlinkFileTree.enumerator(
                   at: dir, includingPropertiesForKeys: nil,
-                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                  matchingFiles: { $0.lastPathComponent.hasPrefix("rollout-") && $0.pathExtension == "jsonl" })
         else { return }
-        for case let url as URL in enumerator
-        where url.lastPathComponent.hasPrefix("rollout-") && url.pathExtension == "jsonl" {
+        for case let url as URL in enumerator {
             guard let data = try? readPrefix(of: url, bytes: 64 * 1024),
                   let record = metadataFromSnippet(
                       data, source: "codex", sessionId: nil, repo: nil,
@@ -93,11 +93,12 @@ enum SessionInfoBackfill {
     private static func backfillClaude(home: URL) {
         let dir = home.appendingPathComponent(".claude/projects")
         guard FileManager.default.fileExists(atPath: dir.path),
-              let enumerator = FileManager.default.enumerator(
+              let enumerator = SymlinkFileTree.enumerator(
                   at: dir, includingPropertiesForKeys: nil,
-                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                  matchingFiles: { $0.pathExtension == "jsonl" })
         else { return }
-        for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+        for case let url as URL in enumerator {
             let sid = url.deletingPathExtension().lastPathComponent
             guard let data = try? readPrefix(of: url, bytes: 64 * 1024),
                   let record = metadataFromSnippet(

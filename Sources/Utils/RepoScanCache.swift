@@ -120,7 +120,9 @@ nonisolated final class RepoScanCache: @unchecked Sendable {
 
     /// Total repos across `dirs`, using only fresh cache entries.
     nonisolated func totalRepos(in dirs: [String]) -> Int {
-        dirs.reduce(0) { $0 + (cachedScan(for: $1)?.repos.count ?? 0) }
+        Set(dirs.flatMap { cachedScan(for: $0)?.repos.map {
+            URL(fileURLWithPath: $0.path).standardizedFileURL.resolvingSymlinksInPath().path
+        } ?? [] }).count
     }
 
     // MARK: - Internal

@@ -112,8 +112,10 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     /// Stops polling repositories that are no longer under a configured
     /// development root. Historical usage and code-change facts are untouched.
     func pruneWatchedRepos(outside roots: [String]) {
+        var lookup = RepositoryScope.AuthorizedRootLookup(roots: roots)
+        let candidates = watchedRepoPaths
+        let removed = candidates.filter { lookup.root(for: $0) == nil }
         lock.lock()
-        let removed = watchedRepos.filter { !RepositoryScope.isInsideConfiguredRoots($0, roots: roots) }
         watchedRepos.subtract(removed)
         for path in removed { lastSeenCommit.removeValue(forKey: path) }
         lock.unlock()

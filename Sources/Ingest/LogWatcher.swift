@@ -12,6 +12,8 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     static let shared = LogWatcher()
     private var claudeSource: DispatchSourceFileSystemObject?
     private var codexSource: DispatchSourceFileSystemObject?
+    private var claudeWatchPath: String?
+    private var codexWatchPath: String?
 
     /// Serial queue for ALL scanning/parsing. Serializing prevents data races on
     /// the mutable scan state below (filePositions) and on GitMonitor's
@@ -21,6 +23,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private let scanQueue = DispatchQueue(label: "com.wxy.aipulse.logwatcher.scan", qos: .utility,
                                          autoreleaseFrequency: .workItem)
     private var stopped = false // scanQueue only
+    private var watchingEnabled = false // scanQueue only
     private var positionsLoaded = false // retry if DB was not ready at init
     private var suppressConsumptionEvents = false // initial history scan only
     private let liveObservationStartMs = Int64(Date().timeIntervalSince1970 * 1_000)
@@ -96,14 +99,22 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// mistaken for an empty account while backfill is running.
     static let backfill = IngestionBackfillState()
 
-    private init() {
+    private let homeDirectory: URL
+    private let database: AppDatabase
+    private let repositoryRoots: [String]?
+
+    init(homeDirectory: URL = FileManager.default.realHomeDirectory,
+         database: AppDatabase = .shared, repositoryRoots: [String]? = nil) {
+        self.homeDirectory = homeDirectory
+        self.database = database
+        self.repositoryRoots = repositoryRoots
         scanQueue.async { self.loadPositionsFromDB() }
     }
 
     private func loadPositionsFromDB() {
         dispatchPrecondition(condition: .onQueue(scanQueue))
         do {
-            filePositions = try AppDatabase.shared.readSynchronously { try LogCheckpointStore.load(in: $0) }
+            filePositions = try database.readSynchronously { try LogCheckpointStore.load(in: $0) }
             positionsLoaded = true
             AppHealthMonitor.shared.clearIngestError(source: "log.offsets.load")
         } catch {
@@ -117,14 +128,13 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             guard let self else { return }
             self.stopped = false
             if !self.positionsLoaded { self.loadPositionsFromDB() }
-        let isColdStart = self.filePositions.values.allSatisfy { $0 == 0 }
-        self.suppressConsumptionEvents = true
-        defer { self.suppressConsumptionEvents = false }
-        LogWatcher.backfill.setActive(isColdStart)
-        self.watchClaudeCode(scanNow: false)
-        self.watchCodex(scanNow: false)
-        self.runScan(includeClaudeProjects: true)
-        LogWatcher.backfill.setActive(false)
+            let isColdStart = self.filePositions.values.allSatisfy { $0 == 0 }
+            self.suppressConsumptionEvents = true
+            defer { self.suppressConsumptionEvents = false }
+            LogWatcher.backfill.setActive(isColdStart)
+            self.watchingEnabled = true
+            self.runScan(includeClaudeProjects: true)
+            LogWatcher.backfill.setActive(false)
             if isColdStart {
                 // A previous launch could have cached a snapshot before the
                 // cold backfill finished. Rebuild after history is settled.
@@ -184,8 +194,14 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         scanSource = nil
         LogScanObservation.shared.begin()
         defer { LogScanObservation.shared.finish() }
+        // A link (including an ancestor/home link) can be retargeted while the
+        // app runs. Rebind the fast notification source to the current target.
+        if watchingEnabled {
+            watchClaudeCode(scanNow: false)
+            watchCodex(scanNow: false)
+        }
         if includeClaudeProjects {
-                self.scanClaudeProjectsOnly()
+            scanClaudeProjectsOnly()
         }
         discoverAndWatchRepos()
         scanCodexSessions()
@@ -208,11 +224,14 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         // Never block the main thread waiting for ingest or queued UI work.
         scanQueue.async {
             self.stopped = true
+            self.watchingEnabled = false
             LogScanObservation.shared.stop()
             self.claudeSource?.cancel()
             self.claudeSource = nil
             self.codexSource?.cancel()
             self.codexSource = nil
+            self.claudeWatchPath = nil
+            self.codexWatchPath = nil
             self.persistPendingPositions()
         }
     }
@@ -222,17 +241,22 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Scan-only variant of watchClaudeCode() — no FSEvent registration.
     /// Used by DataRefreshCoordinator for periodic incremental scans.
     private func scanClaudeProjectsOnly() {
-        let dir = FileManager.default.realHomeDirectory
+        let dir = homeDirectory
             .appendingPathComponent(".claude/projects")
         guard FileManager.default.fileExists(atPath: dir.path) else { return }
         scanClaudeCode(at: dir)
     }
 
     private func watchClaudeCode(scanNow: Bool = true) {
-        let dir = FileManager.default.realHomeDirectory
+        let dir = homeDirectory
             .appendingPathComponent(".claude/projects")
-        guard FileManager.default.fileExists(atPath: dir.path) else {
-            Logger.warning("Claude Code projects dir not found")
+        let resolved = dir.resolvingSymlinksInPath()
+        if claudeWatchPath != resolved.path || !FileManager.default.fileExists(atPath: resolved.path) {
+            claudeSource?.cancel()
+            claudeSource = nil
+            claudeWatchPath = nil
+        }
+        guard FileManager.default.fileExists(atPath: resolved.path) else {
             return
         }
         if scanNow {
@@ -243,7 +267,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         // or adding repos) — re-scan above is enough; don't create a 2nd source.
         guard claudeSource == nil else { return }
 
-        let fd = open(dir.path, O_EVTONLY)
+        let fd = open(resolved.path, O_EVTONLY)
         guard fd >= 0 else { return }
         claudeSource = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
@@ -255,6 +279,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             self.scan()
         }
         claudeSource?.setCancelHandler { close(fd) }
+        claudeWatchPath = resolved.path
         claudeSource?.resume()
     }
 
@@ -263,16 +288,18 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// or unparseable, so re-imported history lands on its own day instead of
     /// the scan day.
     static func fileModificationMs(_ url: URL) -> Int {
-        Int(((try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+        Int(((try? url.standardizedFileURL.resolvingSymlinksInPath()
+            .resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000)
     }
 
     private func scanClaudeCode(at dir: URL) {
-        guard let enumerator = FileManager.default.enumerator(
+        guard let enumerator = SymlinkFileTree.enumerator(
             at: dir, includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            matchingFiles: { $0.pathExtension == "jsonl" }
         ) else { return }
-        for case let file as URL in enumerator where file.pathExtension == "jsonl" {
+        for case let file as URL in enumerator {
             // Register the repo even for files with no new content — ensures
             // repos from past sessions are re-watched after an app restart.
             discoverAndWatchRepo(from: file)
@@ -315,18 +342,18 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Idempotent — `parseLinesIncremental` resumes from the persisted byte
     /// offset of each file. Runs on every phase-1 tick.
     private func scanCodexSessions() {
-        let home = FileManager.default.realHomeDirectory
+        let home = homeDirectory
         let sessionsDir = home.appendingPathComponent(".codex/sessions")
         guard FileManager.default.fileExists(atPath: sessionsDir.path),
-              let enumerator = FileManager.default.enumerator(
+              let enumerator = SymlinkFileTree.enumerator(
                   at: sessionsDir,
                   includingPropertiesForKeys: nil,
-                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                  matchingFiles: { $0.lastPathComponent.hasPrefix("rollout-") && $0.pathExtension == "jsonl" })
         else { return }
 
         var files = [URL]()
-        for case let url as URL in enumerator
-        where url.lastPathComponent.hasPrefix("rollout-") && url.pathExtension == "jsonl" {
+        for case let url as URL in enumerator {
             files.append(url)
         }
 
@@ -341,10 +368,15 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Watch `~/.codex/sessions` with FSEvents for Codex rollout activity;
     /// sessions are ingested in real time, mirroring the Claude Code watcher.
     private func watchCodex(scanNow: Bool = true) {
-        let home = FileManager.default.realHomeDirectory
+        let home = homeDirectory
         let sessionsDir = home.appendingPathComponent(".codex/sessions")
-        guard FileManager.default.fileExists(atPath: sessionsDir.path) else {
-            Logger.warning("Codex sessions dir not found")
+        let resolved = sessionsDir.resolvingSymlinksInPath()
+        if codexWatchPath != resolved.path || !FileManager.default.fileExists(atPath: resolved.path) {
+            codexSource?.cancel()
+            codexSource = nil
+            codexWatchPath = nil
+        }
+        guard FileManager.default.fileExists(atPath: resolved.path) else {
             return
         }
         if scanNow {
@@ -353,7 +385,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
         guard codexSource == nil else { return }
 
-        let fd = open(sessionsDir.path, O_EVTONLY)
+        let fd = open(resolved.path, O_EVTONLY)
         guard fd >= 0 else { return }
         codexSource = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
@@ -365,6 +397,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             self.scan()
         }
         codexSource?.setCancelHandler { close(fd) }
+        codexWatchPath = resolved.path
         codexSource?.resume()
     }
 
@@ -379,7 +412,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Scan VS Code's native chat journals. These contain full conversations,
     /// but CopilotChatParser decodes only IDs, timestamps, models and usage.
     private func scanCopilotChatSessions() {
-        let home = FileManager.default.realHomeDirectory
+        let home = homeDirectory
         let applicationSupport = home.appendingPathComponent("Library/Application Support")
         let userRoots = ["Code", "Code - Insiders"].map {
             applicationSupport.appendingPathComponent($0).appendingPathComponent("User")
@@ -408,7 +441,8 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                 to: &files)
         }
 
-        for file in files.sorted(by: { $0.modified > $1.modified }) {
+        var seenFiles: Set<String> = []
+        for file in files.sorted(by: { $0.modified > $1.modified }) where seenFiles.insert(file.url.path).inserted {
             parseCopilotSessionFile(file.url, repoPath: file.repoPath)
         }
     }
@@ -426,7 +460,8 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         // Legacy .json files are pretty-printed conversation snapshots and do
         // not contain the server usage counters. Current usage journals are
         // append-only .jsonl files.
-        for url in urls where url.pathExtension == "jsonl" {
+        for candidate in urls where candidate.pathExtension == "jsonl" {
+            let url = candidate.resolvingSymlinksInPath()
             let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
             guard values?.isRegularFile == true else { continue }
             files.append(CopilotSessionFile(
@@ -521,19 +556,18 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     // MARK: - DeepSeek Harness
 
     private func scanDeepSeekHarnessSessions() {
-        let home = FileManager.default.realHomeDirectory
+        let home = homeDirectory
         let sessionsDir = home.appendingPathComponent(".dsh/sessions")
         guard FileManager.default.fileExists(atPath: sessionsDir.path),
-              let enumerator = FileManager.default.enumerator(
+              let enumerator = SymlinkFileTree.enumerator(
                   at: sessionsDir,
                   includingPropertiesForKeys: [.contentModificationDateKey],
-                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                  matchingFiles: { $0.lastPathComponent.hasPrefix("session") && $0.lastPathComponent.hasSuffix(".jsonl.zstd") })
         else { return }
 
         var files = [(url: URL, modified: Date)]()
-        for case let url as URL in enumerator
-        where url.lastPathComponent.hasPrefix("session")
-            && url.lastPathComponent.hasSuffix(".jsonl.zstd") {
+        for case let url as URL in enumerator {
             // Matches session.jsonl.zstd (journal v1/v2) AND session.v3.jsonl.zstd
             // (v3, 2026-09) — prefix+suffix so future generations keep flowing.
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
@@ -820,21 +854,21 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Scan `~/.qwen/projects/*/chats/*.jsonl` incrementally.
     /// Idempotent via `parseLinesIncremental` byte-offset resume.
     private func scanQwenSessions() {
-        let home = FileManager.default.realHomeDirectory
+        let home = homeDirectory
         let projectsDir = home.appendingPathComponent(".qwen/projects")
         guard FileManager.default.fileExists(atPath: projectsDir.path),
-              let enumerator = FileManager.default.enumerator(
+              let enumerator = SymlinkFileTree.enumerator(
                   at: projectsDir,
                   includingPropertiesForKeys: nil,
-                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                  matchingFiles: {
+                      $0.pathExtension == "jsonl"
+                          && $0.deletingLastPathComponent().lastPathComponent.hasPrefix("chats")
+                  },
+                  directoryContext: { $0.lastPathComponent.hasPrefix("chats") ? "chats" : "" })
         else { return }
 
-        for case let url as URL in enumerator
-        // Only the jsonl files inside a `chats` directory. Matching the
-        // directory itself (hasPrefix) fed it through the parser, where the
-        // FileHandle read failed and logged an error on every single scan.
-        where url.pathExtension == "jsonl"
-            && url.deletingLastPathComponent().lastPathComponent.hasPrefix("chats") {
+        for case let url as URL in enumerator {
             // cwd is not in the Qwen log; use nil (token tracking only).
             parseQwenFile(url, cwd: nil)
         }
@@ -862,25 +896,30 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// the one-level `chats/<parentSessionId>/` nesting that upstream uses for
     /// subagent sessions. Idempotent via `parseLinesIncremental`.
     private func scanGeminiSessions() {
-        let home = FileManager.default.realHomeDirectory
+        let home = homeDirectory
         let tmpDir = home.appendingPathComponent(".gemini/tmp")
         guard FileManager.default.fileExists(atPath: tmpDir.path),
-              let enumerator = FileManager.default.enumerator(
+              let enumerator = SymlinkFileTree.enumerator(
                   at: tmpDir,
                   includingPropertiesForKeys: nil,
-                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                  matchingFiles: { GeminiCLIParser.isSessionFile($0) },
+                  directoryContext: {
+                      if $0.lastPathComponent == "chats" { return "chats" }
+                      return $0.deletingLastPathComponent().lastPathComponent == "chats" ? "subagent" : ""
+                  })
         else { return }
 
         var repairState: [String: GeminiRepairState]? = nil
         do {
-            let hasMissingSessionIds = try AppDatabase.shared.readSynchronously { db in
+            let hasMissingSessionIds = try database.readSynchronously { db in
                 try Bool.fetchOne(db, sql: """
                     SELECT EXISTS(SELECT 1 FROM usage_event
                                   WHERE source = 'gemini-cli' AND session_id IS NULL)
                     """) ?? false
             }
             if hasMissingSessionIds {
-                repairState = try AppDatabase.shared.writeSynchronously { db in
+                repairState = try database.writeSynchronously { db in
                     try Self.loadGeminiRepairState(in: db)
                 }
             }
@@ -888,7 +927,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             Logger.error("LogWatcher: Gemini session repair check failed: \(error)")
         }
 
-        for case let url as URL in enumerator where GeminiCLIParser.isSessionFile(url) {
+        for case let url as URL in enumerator {
             if let repairState {
                 repairGeminiFileIfNeeded(url, state: repairState)
             }
@@ -904,14 +943,14 @@ nonisolated final class LogWatcher: @unchecked Sendable {
               state[path]?.fingerprint != fingerprint else { return }
         do {
             let result = try Self.repairGeminiSessionIds(at: file, previous: state[path]) { sessionId, keys in
-                let changed = try AppDatabase.shared.writeSynchronously { db in
+                let changed = try database.writeSynchronously { db in
                     try Self.updateMissingGeminiSessionIds(in: db, sessionId: sessionId, keys: keys)
                 }
                 if changed > 0 { scanChanged = true }
                 return changed
             }
             guard let result else { return } // Header unavailable or file changed; retry later.
-            try AppDatabase.shared.writeSynchronously { db in
+            try database.writeSynchronously { db in
                 try Self.saveGeminiRepairState(in: db, path: path, state: result.state)
             }
             if result.repaired > 0 {
@@ -1039,17 +1078,17 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Scan `~/.local/share/opencode/storage/message/**/msg_*.json`.
     /// Each file is one message JSON; dedupe is via the stable message id.
     private func scanOpenCodeSessions() {
-        let home = FileManager.default.realHomeDirectory
+        let home = homeDirectory
         let msgDir = home.appendingPathComponent(".local/share/opencode/storage/message")
         guard FileManager.default.fileExists(atPath: msgDir.path),
-              let enumerator = FileManager.default.enumerator(
+              let enumerator = SymlinkFileTree.enumerator(
                   at: msgDir,
                   includingPropertiesForKeys: nil,
-                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                  matchingFiles: { $0.lastPathComponent.hasPrefix("msg_") && $0.pathExtension == "json" })
         else { return }
 
-        for case let url as URL in enumerator
-        where url.lastPathComponent.hasPrefix("msg_") && url.pathExtension == "json" {
+        for case let url as URL in enumerator {
             insertOpenCodeFile(url)
         }
     }
@@ -1082,11 +1121,13 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     // MARK: - aider
 
     private func discoverAndWatchRepos() {
-        let dirs = RepositoryScope.configuredRoots()
+        let dirs = repositoryRoots ?? RepositoryScope.configuredRoots()
+        var seenRepos: Set<String> = []
         for dir in dirs {
             let expanded = NSString(string: dir).expandingTildeInPath
             guard FileManager.default.fileExists(atPath: expanded) else { continue }
             enumerateGitRepos(in: URL(fileURLWithPath: expanded)) { repoURL in
+                guard seenRepos.insert(repoURL.path).inserted else { return }
                 GitMonitor.shared.watch(repoPath: repoURL.path)
                 // aider v0.75+: Markdown chat history
                 let chatMD = repoURL.appendingPathComponent(".aider.chat.history.md")
@@ -1129,6 +1170,8 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// a partial-line buffer so we never lose or duplicate a line when the
     /// file is appended mid-write.
     private func parseLinesIncremental(from url: URL, parser: (String) -> UsageEvent?) {
+        // Direct aider history paths do not go through the log tree walker.
+        let url = url.standardizedFileURL.resolvingSymlinksInPath()
         let path = url.path
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
               let fileSize = attrs[.size] as? UInt64
@@ -1159,7 +1202,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         guard !pendingPositions.isEmpty else { return }
         do {
             let positions = pendingPositions
-            try AppDatabase.shared.writeSynchronously { try LogCheckpointStore.save(positions, in: $0) }
+            try database.writeSynchronously { try LogCheckpointStore.save(positions, in: $0) }
             pendingPositions.removeAll(keepingCapacity: true)
             AppHealthMonitor.shared.clearIngestError(source: "log.offsets")
         } catch {
@@ -1190,15 +1233,10 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private func insertEvents(_ events: [UsageEvent]) -> Bool {
         dispatchPrecondition(condition: .onQueue(scanQueue))
         guard !events.isEmpty else { return true }
-        let roots = RepositoryScope.configuredRoots()
-        var normalizedRepos: [String: String?] = [:]
+        let roots = repositoryRoots ?? RepositoryScope.configuredRoots()
+        var lookup = RepositoryScope.AuthorizedRootLookup(roots: roots)
         let rows = events.map { rawEvent -> (event: UsageEvent, providerId: String) in
-            let normalizedRepo: String? = rawEvent.repoPath.flatMap { path in
-                if let cached = normalizedRepos[path] { return cached }
-                let resolved = RepositoryScope.authorizedGitRoot(for: path, roots: roots)
-                normalizedRepos[path] = .some(resolved)
-                return resolved
-            }
+            let normalizedRepo = rawEvent.repoPath.flatMap { lookup.root(for: $0) }
             let event = UsageEvent(
                 ts: rawEvent.ts, source: rawEvent.source, model: rawEvent.model,
                 inTokens: rawEvent.inTokens, outTokens: rawEvent.outTokens,
@@ -1213,7 +1251,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
             do {
                 let nowMs = Int64(Date().timeIntervalSince1970 * 1_000)
-                let batchTokens = try AppDatabase.shared.writeSynchronously { db in
+                let batchTokens = try database.writeSynchronously { db in
                     try Self.persistObservedEvents(in: db, rows: rows, nowMs: nowMs,
                                                    liveSinceMs: liveObservationStartMs)
                 }
@@ -1339,7 +1377,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         guard let sid = record.sessionId else { return }
         Task {
             do {
-                try await AppDatabase.shared.write { db in
+                try await database.write { db in
                     try db.execute(sql: """
                         INSERT INTO session_info (source, session_id, title, repo, first_ts, last_ts, completed, window_tokens)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
