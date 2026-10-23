@@ -14,8 +14,26 @@ struct GitLogBatch: Sendable {
     let commits: [GitCommitSummary]
 }
 
-enum GitReadError: Error {
-    case operation(String, Int32)
+enum GitReadError: LocalizedError {
+    case operation(String, Int32, String? = nil)
+
+    static func failure(_ operation: String, _ code: Int32) -> Self {
+        let detail = git_error_last().flatMap { $0.pointee.message }.map { String(cString: $0) }
+        return .operation(operation, code, detail)
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case let .operation(operation, code, detail):
+            return "Git \(operation) (\(code)): " + (detail ?? I18n.t("access.failed"))
+        }
+    }
+
+    var isPermissionFailure: Bool {
+        let message = (errorDescription ?? "").lowercased()
+        return message.contains("permission denied") || message.contains("operation not permitted")
+            || message.contains("access denied")
+    }
 }
 
 /// libgit2-backed Git repository reader.
@@ -58,24 +76,24 @@ struct GitRepo {
                         authorEmail: String? = nil) throws -> GitLogBatch {
         var repoPtr: OpaquePointer?
         let opened = git_repository_open(&repoPtr, path)
-        guard opened == 0, let repo = repoPtr else { throw GitReadError.operation("open", opened) }
+        guard opened == 0, let repo = repoPtr else { throw GitReadError.failure("open", opened) }
         defer { git_repository_free(repo) }
         var reference: OpaquePointer?
         let headStatus = git_repository_head(&reference, repo)
         if headStatus == GIT_EUNBORNBRANCH.rawValue || headStatus == GIT_ENOTFOUND.rawValue {
             return GitLogBatch(headHash: nil, commits: [])
         }
-        guard headStatus == 0, let head = reference else { throw GitReadError.operation("HEAD", headStatus) }
+        guard headStatus == 0, let head = reference else { throw GitReadError.failure("HEAD", headStatus) }
         defer { git_reference_free(head) }
-        guard let target = git_reference_target(head) else { throw GitReadError.operation("HEAD target", -1) }
+        guard let target = git_reference_target(head) else { throw GitReadError.failure("HEAD target", -1) }
         let headHash = String(cString: git_oid_tostr_s(target))
         var walker: OpaquePointer?
         let created = git_revwalk_new(&walker, repo)
-        guard created == 0, let walk = walker else { throw GitReadError.operation("revwalk", created) }
+        guard created == 0, let walk = walker else { throw GitReadError.failure("revwalk", created) }
         defer { git_revwalk_free(walk) }
         git_revwalk_sorting(walk, GIT_SORT_TOPOLOGICAL.rawValue | GIT_SORT_TIME.rawValue)
         let pushed = git_revwalk_push(walk, target)
-        guard pushed == 0 else { throw GitReadError.operation("push", pushed) }
+        guard pushed == 0 else { throw GitReadError.failure("push", pushed) }
         if let lastHash {
             var previous = git_oid()
             if git_oid_fromstr(&previous, lastHash) == 0 {
@@ -98,7 +116,7 @@ struct GitRepo {
         while status == 0 {
             var commitPtr: OpaquePointer?
             let lookedUp = git_commit_lookup(&commitPtr, repo, &oid)
-            guard lookedUp == 0, let commit = commitPtr else { throw GitReadError.operation("commit", lookedUp) }
+            guard lookedUp == 0, let commit = commitPtr else { throw GitReadError.failure("commit", lookedUp) }
             defer { git_commit_free(commit) }
             let timestamp = Int(git_commit_time(commit))
             let email = git_commit_author(commit).flatMap { $0.pointee.email }.map { String(cString: $0) } ?? ""
@@ -112,7 +130,7 @@ struct GitRepo {
             }
             status = git_revwalk_next(&oid, walk)
         }
-        guard status == GIT_ITEROVER.rawValue else { throw GitReadError.operation("walk", status) }
+        guard status == GIT_ITEROVER.rawValue else { throw GitReadError.failure("walk", status) }
         return GitLogBatch(headHash: headHash, commits: results)
     }
 

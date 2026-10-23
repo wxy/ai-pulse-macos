@@ -1939,6 +1939,7 @@ private extension DashboardView {
 
     var foreheadMessage: String? {
         if isDemoMode { return I18n.t("demo.banner") }
+        if let issue = DirectoryAccess.shared.issues.first { return issue.message }
         if !localDataStatus.canReportCurrentActivity { return SetupCopy.activity(localDataStatus.activity) }
         if healthSeverity >= .impaired { return healthMessages.first ?? robotDataStatus }
         if isImportingHistory { return I18n.t("menu.loading") }
@@ -1951,7 +1952,16 @@ private extension DashboardView {
             if let message = foreheadMessage {
                 HStack(spacing: 8) {
                     Text(message).dashboardFont(11).lineLimit(2)
-                    if localDataStatus.activity == .needsAccess || localDataStatus.activity == .accessExpired {
+                    if let issue = DirectoryAccess.shared.issues.first, issue.kind == .permission {
+                        Button {
+                            guard BookmarkManager.requestAccess(for: issue) else { return }
+                            DirectoryAccessGuidance.resumeReading()
+                        } label: { Image(systemName: "arrow.up.right") }
+                        .robotHelp(I18n.t("access.authorize"))
+                    } else if DirectoryAccess.shared.issues.first != nil {
+                        Button { DirectoryAccessGuidance.resumeReading() } label: { Image(systemName: "arrow.clockwise") }
+                            .robotHelp(I18n.t("access.retry"))
+                    } else if localDataStatus.activity == .needsAccess || localDataStatus.activity == .accessExpired {
                         Button {
                             guard BookmarkManager.requestHomeAccess(message: I18n.t("bookmark.home_message")) != nil else { return }
                             LogWatcher.shared.start()
@@ -2280,6 +2290,7 @@ private extension DashboardView {
             VStack(alignment: .leading, spacing: 12) {
                 Text(robotSyncStatus)
                 ForEach(activeSnapshot?.readFailures ?? [], id: \.self) { Text($0) }
+                DirectoryAccessGuidance()
                 ForEach(healthMessages, id: \.self) { Text($0) }
                 Text(pulseText("本地活动与账户观测分别更新；费用与代码产出分别呈现。", "Local activity and account observations update separately; money and Git output remain independent."))
                 Text("AI Pulse " + Self.appVersion + " / " + (activeSnapshot?.payloadVersion ?? CKSchema.payloadVersion))

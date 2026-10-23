@@ -85,6 +85,7 @@ struct OnboardingView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Text(SetupCopy.activity(status.activity)).font(.caption)
             }
+            DirectoryAccessGuidance()
             SetupCard {
                 HStack {
                     Label(SetupCopy.text("开发目录 · 可选", "Development folders · optional"), systemImage: "folder")
@@ -124,7 +125,7 @@ struct OnboardingView: View {
         status = LocalDataStatus.current()
         roots = RepositoryScope.configuredRoots()
         detectedTools = IntegrationRegistry.visible.filter { IntegrationCategory.category(for: $0) == .devTools && $0.detect().found }.map { $0.displayName }
-        for root in roots { counts[root] = RepoScanCache.shared.cachedScan(for: root)?.repos.count }
+        for root in roots { counts[root] = RepoScanCache.shared.cachedScan(for: root)?.usableCount }
     }
     private func startReading() {
         LogWatcher.shared.start()

@@ -25,8 +25,10 @@ struct AiderIntegration: Detectable {
         let dirs = UserDefaults.standard.stringArray(forKey: "repo_search_dirs")
             ?? ["~/dev", "~/projects", "~/code"]
         var count = 0
+        var incomplete = false
         for d in dirs {
             if let scan = cache.cachedScan(for: d) {
+                if scan.usableCount == nil { incomplete = true; continue }
                 count += scan.repos.filter(\.hasAiderMarkers).count
             } else {
                 // No fresh scan yet — warm the cache in the background so a
@@ -36,7 +38,7 @@ struct AiderIntegration: Detectable {
         }
         return DetectionResult(
             found: count > 0,
-            summary: count > 0
+            summary: incomplete ? I18n.t("access.incomplete") : count > 0
                 ? String(format: I18n.t("detect.aider_found"), count)
                 : I18n.t("detect.aider_not_found")
         )

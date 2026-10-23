@@ -43,6 +43,9 @@ struct CodexIntegration: Detectable {
         let appInstalled = Self.codexAppInstalled()
 
         let found = hasSessions || hasDesktopData
+        if !DirectoryAccess.shared.issues(under: sessionsDir.path).isEmpty {
+            return DetectionResult(found: found, summary: I18n.t("access.required"))
+        }
         return DetectionResult(
             found: found,
             summary: found

@@ -90,7 +90,7 @@ enum BookmarkManager {
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 
-        createAndSave(for: url)
+        guard createAndSave(for: url) else { return nil }
         return url
     }
 
@@ -112,7 +112,7 @@ enum BookmarkManager {
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 
-        createAndSave(for: url)
+        guard createAndSave(for: url) else { return nil }
         return url
     }
 
@@ -133,7 +133,7 @@ enum BookmarkManager {
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 
-        createAndSave(for: url)
+        guard createAndSave(for: url) else { return nil }
         return url
     }
 
@@ -154,7 +154,7 @@ enum BookmarkManager {
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 
-        createAndSave(for: url)
+        guard createAndSave(for: url) else { return nil }
         return url
     }
 
@@ -178,7 +178,7 @@ enum BookmarkManager {
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
 
-        createAndSave(for: url)
+        guard createAndSave(for: url) else { return nil }
         return url
     }
 
@@ -189,30 +189,68 @@ enum BookmarkManager {
     }
 
     /// Create and persist a security-scoped bookmark for a URL.
-    static func createAndSave(for url: URL) {
-        let bookmark: Data
+    @discardableResult
+    static func createAndSave(for url: URL, logicalURL: URL? = nil) -> Bool {
+        let target = url.standardizedFileURL.resolvingSymlinksInPath()
         do {
-            bookmark = try url.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
+            let bookmark = try target.bookmarkData(
+                options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                includingResourceValuesForKeys: nil, relativeTo: nil)
+            var stale = false
+            let scoped = try URL(resolvingBookmarkData: bookmark, options: .withSecurityScope,
+                                 relativeTo: nil, bookmarkDataIsStale: &stale)
+            guard !isSandboxed || activate(scoped) else {
+                throw CocoaError(.fileReadNoPermission)
+            }
+            _ = try FileManager.default.contentsOfDirectory(atPath: target.path)
+            var bookmarks = savedBookmarks()
+            let coveredPaths = bookmarks.keys.filter { DirectoryAccess.contains(RepositoryScope.canonicalPath($0), in: target.path) }
+            for path in Array(bookmarks.keys) where path != target.path && RepositoryScope.canonicalPath(path) == target.path {
+                bookmarks.removeValue(forKey: path)
+            }
+            bookmarks[target.path] = bookmark
+            try saveChecked(bookmarks)
+            NotificationCenter.default.post(name: didChange, object: nil)
+            AppHealthMonitor.shared.clearIngestError(source: "Bookmark.create")
+            for path in coveredPaths {
+                let label = path == homeDirPath ? "home" : URL(fileURLWithPath: path).lastPathComponent
+                AppHealthMonitor.shared.clearIngestError(source: "Bookmark.\(label)")
+            }
+            let targetLabel = target.path == RepositoryScope.canonicalPath(homeDirPath) ? "home" : target.lastPathComponent
+            AppHealthMonitor.shared.clearIngestError(source: "Bookmark.\(targetLabel)")
+            return true
         } catch {
-            // Silent failure here used to read as success to callers: access
-            // was never persisted, and every collection pass stayed empty
-            // with no hint why.
-            Logger.error("BookmarkManager: bookmark creation failed: \(error.localizedDescription)")
-            AppHealthMonitor.shared.reportIngestError(
-                "bookmark creation failed: \(error.localizedDescription)",
-                source: "Bookmark.create")
-            return
+            Logger.error("BookmarkManager: grant failed: \(error.localizedDescription)")
+            DirectoryAccess.shared.record(error, at: logicalURL ?? target, includeMissing: true)
+            AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Bookmark.create")
+            return false
         }
+    }
 
-        var bookmarks = savedBookmarks()
-        bookmarks[url.path] = bookmark
-        save(bookmarks)
-        _ = activate(url)
-        NotificationCenter.default.post(name: didChange, object: nil)
+    /// Prompt for the current real target without replacing the configured alias.
+    @MainActor
+    static func requestAccess(for issue: DirectoryAccessIssue) -> Bool {
+        let current = URL(fileURLWithPath: issue.logicalPath).standardizedFileURL.resolvingSymlinksInPath()
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.showsHiddenFiles = true
+        panel.resolvesAliases = true
+        panel.prompt = I18n.t("access.authorize")
+        panel.message = I18n.t("access.explanation") + "\n" + issue.logicalPath + " → " + current.path
+        let isFile = (try? current.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+        panel.directoryURL = isFile ? current.deletingLastPathComponent() : current
+        guard panel.runModal() == .OK, let selected = panel.url else { return false }
+        // Recheck after the panel: the alias may have changed while it was open.
+        let latest = URL(fileURLWithPath: issue.logicalPath).resolvingSymlinksInPath().standardizedFileURL.path
+        guard pathIsCovered(latest, by: selected.path) else {
+            let alert = NSAlert()
+            alert.messageText = I18n.t("access.wrong_folder")
+            alert.informativeText = latest
+            alert.runModal()
+            return false
+        }
+        return createAndSave(for: selected, logicalURL: URL(fileURLWithPath: issue.logicalPath))
     }
 
     /// Resolve all persisted bookmarks and begin accessing their resources.
@@ -261,16 +299,36 @@ enum BookmarkManager {
 
             if activate(url) {
                 resolved.append(url)
+                AppHealthMonitor.shared.clearIngestError(source: "Bookmark.\(label(for: path))")
+            } else {
+                DirectoryAccess.shared.record(CocoaError(.fileReadNoPermission), at: URL(fileURLWithPath: path))
             }
         }
         if mutated { save(bookmarks) }
         return resolved
     }
 
+    /// A same-resource move may still be recoverable from a saved bookmark.
+    /// Restore that existing grant before asking the user for a new one.
+    static func restoreAccess(to path: String) -> Bool {
+        guard isSandboxed else { return false }
+        let target = RepositoryScope.canonicalPath(path)
+        for data in savedBookmarks().values {
+            var stale = false
+            guard let url = try? URL(resolvingBookmarkData: data, options: .withSecurityScope,
+                                     relativeTo: nil, bookmarkDataIsStale: &stale),
+                  DirectoryAccess.contains(target, in: RepositoryScope.canonicalPath(url.path)),
+                  activate(url) else { continue }
+            return true
+        }
+        return false
+    }
+
     static func isAccessAvailable(for path: String) -> Bool {
         guard isSandboxed else { return true }
         accessLock.lock(); defer { accessLock.unlock() }
-        return activeResources.keys.contains { pathIsCovered(path, by: $0) }
+        let target = RepositoryScope.canonicalPath(path)
+        return activeResources.keys.contains { DirectoryAccess.contains(target, in: $0) }
     }
 
     /// Compare actual targets so a granted physical directory also covers its
@@ -283,9 +341,11 @@ enum BookmarkManager {
 
     private static func activate(_ url: URL) -> Bool {
         accessLock.lock(); defer { accessLock.unlock() }
-        if activeResources[url.path] != nil { return true }
+        let target = url.standardizedFileURL.resolvingSymlinksInPath().path
+        if activeResources[target] != nil { return true }
         guard url.startAccessingSecurityScopedResource() else { return false }
-        activeResources[url.path] = url
+        // Snapshot the granted target, so retargeting an alias cannot expand it.
+        activeResources[target] = url
         return true
     }
 
@@ -299,7 +359,7 @@ enum BookmarkManager {
             return
         }
         for url in urls {
-            guard activeResources.removeValue(forKey: url.path) != nil else { continue }
+            guard activeResources.removeValue(forKey: url.standardizedFileURL.resolvingSymlinksInPath().path) != nil else { continue }
             url.stopAccessingSecurityScopedResource()
         }
     }
@@ -319,7 +379,12 @@ enum BookmarkManager {
     }
 
     private static func save(_ bookmarks: [String: Data]) {
-        guard let data = try? JSONEncoder().encode(bookmarks) else { return }
+        do { try saveChecked(bookmarks) }
+        catch { AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Bookmark.save") }
+    }
+
+    private static func saveChecked(_ bookmarks: [String: Data]) throws {
+        let data = try JSONEncoder().encode(bookmarks)
         UserDefaults.standard.set(data, forKey: bookmarksKey)
     }
 }

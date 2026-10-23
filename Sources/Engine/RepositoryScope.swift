@@ -58,8 +58,8 @@ enum RepositoryScope {
 
     static func configuredRoots(defaults: UserDefaults = .standard) -> [String] {
         (defaults.stringArray(forKey: "repo_search_dirs") ?? [])
-            .map(canonicalPath)
             .filter { !$0.isEmpty }
+            .map { URL(fileURLWithPath: NSString(string: $0).expandingTildeInPath).standardizedFileURL.path }
     }
 
     static func canonicalPath(_ path: String) -> String {
@@ -87,7 +87,7 @@ enum RepositoryScope {
     static func reachableRepositoryRoots(in roots: [String]) -> [String] {
         var repositories: Set<String> = []
         for root in roots {
-            GitRepoScanner.enumerate(in: URL(fileURLWithPath: canonicalPath(root))) {
+            GitRepoScanner.enumerate(in: URL(fileURLWithPath: root)) {
                 repositories.insert(canonicalPath($0.path))
             }
         }
