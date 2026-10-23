@@ -12,7 +12,9 @@ enum RepositoryScope {
         let roots: [String]
         private var resolved: [String: String] = [:]
         private var unavailable: Set<String> = []
-        private var reachableRoots: [String]?
+        private var reachableRoots: Set<String>?
+        /// Read-scoped diagnostics: repeated rows must not multiply tree walks.
+        private(set) var linkedRootScanCount = 0
 
         /// Explicit init: the memberwise one would inherit `private` access
         /// from the private stored properties, which newer compilers tolerate
@@ -36,7 +38,10 @@ enum RepositoryScope {
                 if RepositoryScope.isCanonicallyInside(repo, roots: roots) {
                     root = repo
                 } else {
-                    if reachableRoots == nil { reachableRoots = RepositoryScope.reachableRepositoryRoots(in: roots) }
+                    if reachableRoots == nil {
+                        linkedRootScanCount += 1
+                        reachableRoots = Set(RepositoryScope.reachableRepositoryRoots(in: roots))
+                    }
                     root = reachableRoots?.contains(repo) == true ? repo : nil
                 }
             } else {

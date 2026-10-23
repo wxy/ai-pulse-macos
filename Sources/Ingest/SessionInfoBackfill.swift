@@ -28,7 +28,9 @@ enum SessionInfoBackfill {
         fallbackTimestampMs: Int? = nil
     ) -> SessionInfoRecord? {
         guard let text = String(data: data, encoding: .utf8) else { return nil }
-        var sid = sessionId
+        // Claude's content identity wins over an alias name. The logical
+        // filename remains a fallback for older snippets with no sessionId.
+        var sid = source == "claude-code" ? nil : sessionId
         var title: String? = nil
         var repoPath = repo
         var completed = false
@@ -36,8 +38,17 @@ enum SessionInfoBackfill {
         var minTs = Int.max
         var maxTs = 0
         text.enumerateLines { line, _ in
-            if sid == nil, let s = CodexParser.sessionId(fromLine: line) { sid = s }
-            if repoPath == nil, let c = CodexParser.cwd(fromLine: line) { repoPath = c }
+            if source == "claude-code" {
+                if sid == nil || repoPath == nil,
+                   let data = line.data(using: .utf8),
+                   let fields = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if sid == nil, let value = fields["sessionId"] as? String, !value.isEmpty { sid = value }
+                    if repoPath == nil { repoPath = fields["cwd"] as? String }
+                }
+            } else {
+                if sid == nil { sid = CodexParser.sessionId(fromLine: line) }
+                if repoPath == nil { repoPath = CodexParser.cwd(fromLine: line) }
+            }
             if title == nil {
                 if source == "codex", let m = CodexParser.firstUserMessage(fromLine: line) {
                     title = SessionInfoRecord.makeTitle(m)
@@ -60,7 +71,7 @@ enum SessionInfoBackfill {
                 maxTs = max(maxTs, e.ts)
             }
         }
-        guard let session = sid, maxTs > 0 else { return nil }
+        guard let session = sid ?? sessionId, maxTs > 0 else { return nil }
         return SessionInfoRecord(
             source: source, sessionId: session, title: title, repo: repoPath,
             firstTs: minTs, lastTs: maxTs, completed: completed ? true : nil,
@@ -90,7 +101,7 @@ enum SessionInfoBackfill {
         }
     }
 
-    private static func backfillClaude(home: URL) {
+    static func backfillClaude(home: URL, persist: (SessionInfoRecord) -> Void = LogWatcher.upsertForBackfill) {
         let dir = home.appendingPathComponent(".claude/projects")
         guard FileManager.default.fileExists(atPath: dir.path),
               let enumerator = SymlinkFileTree.enumerator(
@@ -99,13 +110,13 @@ enum SessionInfoBackfill {
                   matchingFiles: { $0.pathExtension == "jsonl" })
         else { return }
         for case let url as URL in enumerator {
-            let sid = url.deletingPathExtension().lastPathComponent
+            let sid = enumerator.logicalURL?.deletingPathExtension().lastPathComponent
             guard let data = try? readPrefix(of: url, bytes: 64 * 1024),
                   let record = metadataFromSnippet(
                       data, source: "claude-code", sessionId: sid, repo: nil,
                       fallbackTimestampMs: LogWatcher.fileModificationMs(url))
             else { continue }
-            LogWatcher.upsertForBackfill(record)
+            persist(record)
         }
     }
 

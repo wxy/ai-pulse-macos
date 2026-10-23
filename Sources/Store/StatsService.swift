@@ -744,12 +744,8 @@ enum StatsService {
         }
 
         // Repository activity
-        let repoRoots = RepositoryScope.configuredRoots()
-        var authorizedRepoTokens: [String: Int64] = [:]
-        for row in repoTokens {
-            guard let root = RepositoryScope.authorizedGitRoot(for: row.path, roots: repoRoots) else { continue }
-            authorizedRepoTokens[root, default: 0] += row.tokens
-        }
+        var repoAuthorization = RepositoryScope.AuthorizedRootLookup(roots: RepositoryScope.configuredRoots())
+        let authorizedRepoTokens = authorizedRepositoryTokens(repoTokens, using: &repoAuthorization)
         let repoItems = repositoryActivities(tokensByRoot: authorizedRepoTokens, changes: repoCode.map {
             (repoPath: $0.repoPath, added: $0.added, deleted: $0.deleted, commitHash: $0.commitHash)
         }, commits: repoCommits.map { (repoPath: $0.repoPath, commitHash: $0.commitHash) })
@@ -793,39 +789,95 @@ enum StatsService {
         return sanitized
     }
 
+    /// Normalize a whole dashboard read with one linked-root discovery, even
+    /// when its rows contain many distinct historical working directories.
+    static func authorizedRepositoryTokens(
+        _ rows: [(path: String, tokens: Int64)],
+        using authorization: inout RepositoryScope.AuthorizedRootLookup
+    ) -> [String: Int64] {
+        var result: [String: Int64] = [:]
+        for row in rows {
+            guard let root = authorization.root(for: row.path) else { continue }
+            result[root, default: 0] += row.tokens
+        }
+        return result
+    }
+
     // MARK: - Tool detail (conclusion card + session explorer)
 
     static func toolActivitySummary(source: String, sinceMs: Int64, sessionCount: Int, now: Date = Date()) async throws -> ToolActivitySummary {
         let calendar = Calendar.current
         let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
         let endMs = ObservationBounds.upperExclusive(now: now, periodEnd: end)
-        let paths = try await AppDatabase.shared.read { db in
-            try String.fetchAll(db, sql: """
-                SELECT DISTINCT repo_path FROM usage_event
-                WHERE source = ? AND ts >= ? AND ts < ? AND repo_path IS NOT NULL
-                  AND (model IS NULL OR model != '<synthetic>')
-                """, arguments: [source, sinceMs, endMs])
-        }
         let roots = RepositoryScope.configuredRoots()
-        let touched = Set(paths.compactMap { RepositoryScope.authorizedGitRoot(for: $0, roots: roots) })
-        let rows = try await AppDatabase.shared.read { db in
-            try Row.fetchAll(db, sql: """
-                SELECT repo_path, commit_hash, COALESCE(added, 0) AS a, COALESCE(deleted, 0) AS d
-                FROM code_change WHERE is_merge = 0 AND ts >= ? AND ts < ?
-                """, arguments: [sinceMs, endMs]).map { row in
-                (path: row["repo_path"] as String? ?? "", hash: row["commit_hash"] as String? ?? "",
+        let facts = try await AppDatabase.shared.read { db in
+            try toolActivityFacts(in: db, source: source, sinceMs: sinceMs, beforeMs: endMs)
+        }
+        // Resolving a linked path can involve slow filesystem I/O. Keep it
+        // outside the serial database queue so ingestion writes can continue.
+        var authorization = RepositoryScope.AuthorizedRootLookup(roots: roots)
+        return toolActivitySummary(facts, sessionCount: sessionCount, using: &authorization)
+    }
+
+    private struct ToolActivityFacts: Sendable {
+        let paths: [String]
+        let changes: [(path: String, added: Int, deleted: Int)]
+        let commits: [(path: String, hash: String)]
+    }
+
+    private static func toolActivityFacts(
+        in db: Database, source: String, sinceMs: Int64, beforeMs: Int64
+    ) throws -> ToolActivityFacts {
+        let paths = try String.fetchAll(db, sql: """
+            SELECT DISTINCT repo_path FROM usage_event
+            WHERE source = ? AND ts >= ? AND ts < ? AND repo_path IS NOT NULL
+              AND (model IS NULL OR model != '<synthetic>')
+            """, arguments: [source, sinceMs, beforeMs])
+        let changes = try Row.fetchAll(db, sql: """
+            SELECT repo_path, COALESCE(added, 0) AS a, COALESCE(deleted, 0) AS d
+            FROM code_change WHERE is_merge = 0 AND ts >= ? AND ts < ?
+            """, arguments: [sinceMs, beforeMs]).map { row in
+                (path: row["repo_path"] as String? ?? "",
                  added: row["a"] as Int? ?? 0, deleted: row["d"] as Int? ?? 0)
             }
+        let commits = try Row.fetchAll(db, sql: """
+            SELECT repo_path, commit_hash FROM git_commit WHERE ts >= ? AND ts < ?
+            """, arguments: [sinceMs, beforeMs]).map { row in
+                (path: row["repo_path"] as String? ?? "", hash: row["commit_hash"] as String? ?? "")
+            }
+        return ToolActivityFacts(paths: paths, changes: changes, commits: commits)
+    }
+
+    /// The database facts share one snapshot; one lookup covers usage, line
+    /// changes and independent commits. No cache outlives this result.
+    static func toolActivitySummary(
+        in db: Database, source: String, sinceMs: Int64, beforeMs: Int64,
+        sessionCount: Int, using authorization: inout RepositoryScope.AuthorizedRootLookup
+    ) throws -> ToolActivitySummary {
+        let facts = try toolActivityFacts(in: db, source: source, sinceMs: sinceMs, beforeMs: beforeMs)
+        return toolActivitySummary(facts, sessionCount: sessionCount, using: &authorization)
+    }
+
+    private static func toolActivitySummary(
+        _ facts: ToolActivityFacts, sessionCount: Int,
+        using authorization: inout RepositoryScope.AuthorizedRootLookup
+    ) -> ToolActivitySummary {
+        let touched = Set(facts.paths.compactMap { authorization.root(for: $0) })
+        var added = 0
+        var deleted = 0
+        for row in facts.changes {
+            guard let root = authorization.root(for: row.path), touched.contains(root) else { continue }
+            added += max(row.added, 0)
+            deleted += max(row.deleted, 0)
         }
-        let relevant = rows.filter { row in
-            guard let root = RepositoryScope.authorizedGitRoot(for: row.path, roots: roots) else { return false }
-            return touched.contains(root)
+        var identities: Set<String> = []
+        for row in facts.commits {
+            guard !row.hash.isEmpty,
+                  let root = authorization.root(for: row.path), touched.contains(root) else { continue }
+            identities.insert(root + "|" + row.hash)
         }
-        let commits = try await authorizedCommits(sinceMs: sinceMs, beforeMs: endMs)
-        return ToolActivitySummary(sessionCount: sessionCount,
-            commitCount: Set(commits.filter { touched.contains($0.repoPath) }.map(\.identity)).count,
-            addedLines: relevant.reduce(0) { $0 + max($1.added, 0) },
-            deletedLines: relevant.reduce(0) { $0 + max($1.deleted, 0) })
+        return ToolActivitySummary(sessionCount: sessionCount, commitCount: identities.count,
+                                   addedLines: added, deletedLines: deleted)
     }
 
     /// Sessions with non-synthetic observations in the selected local period.
@@ -848,24 +900,13 @@ enum StatsService {
     static func authorizedSessionRepositories(
         _ rows: [SessionRow], roots: [String], resolve: ((String) -> String?)? = nil
     ) -> [SessionRow] {
-        let resolvePath = resolve ?? { RepositoryScope.authorizedGitRoot(for: $0, roots: roots) }
-        var resolved: [String: String] = [:]
-        var unavailable: Set<String> = []
+        var authorization = RepositoryScope.AuthorizedRootLookup(roots: roots)
         return rows.map { row in
             var result = row
-            guard let path = row.repo, !path.isEmpty else {
-                result.repo = nil
-                return result
-            }
-            if let root = resolved[path] {
-                result.repo = root
-            } else if unavailable.contains(path) {
-                result.repo = nil
-            } else if let root = resolvePath(path) {
-                resolved[path] = root
-                result.repo = root
+            if let path = row.repo, !path.isEmpty {
+                result.repo = authorization.root(for: path,
+                    resolvingWith: resolve.map { resolver in { candidate, _ in resolver(candidate) } })
             } else {
-                unavailable.insert(path)
                 result.repo = nil
             }
             return result

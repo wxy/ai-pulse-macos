@@ -32,6 +32,7 @@ enum GitRepoScanner {
     @discardableResult
     nonisolated static func enumerate(in dir: URL, deadline: Date? = nil,
                                       _ handler: (URL) -> Void) -> Bool {
+        if let deadline, Date() >= deadline { return true }
         // The selected development directory can itself be a repository.
         // Enumerators only yield children, so check this boundary explicitly
         // and preserve shallow-first semantics (including worktree .git files).
@@ -44,6 +45,7 @@ enum GitRepoScanner {
             at: dir,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            deadline: deadline,
             maximumDepth: maxDepth,
             skippingDirectoryNames: skippedDirNames.union(heavyDirNames)
         ) else { return false }
@@ -82,6 +84,6 @@ enum GitRepoScanner {
                 enumerator.skipDescendants()
             }
         }
-        return truncated
+        return truncated || enumerator.truncated
     }
 }
