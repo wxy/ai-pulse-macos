@@ -278,19 +278,22 @@ nonisolated final class ApiPoller: @unchecked Sendable {
             }
         }
 
-        // Record only balances that can affect spend: the first baseline or a
-        // real balance move. Re-recording an unchanged balance would invalidate
-        // the dashboard cache and trigger a full snapshot recompute.
+        // Record every observed change as the new baseline, but treat only a
+        // move in the spend direction as consumption (2026-10-23 review F09).
+        // Previously a recharge (prepaid rise) or a usage-window reset was
+        // kept in the memory cache yet never written, so the next real move
+        // was measured against a stale baseline: 100 → (recharge) 200 → 190
+        // landed as 100 → 190 and the delta system counted 90 instead of the
+        // observed 10.
         var detectedSpend = false
         var balancesToRecord: [BalanceEntry] = []
         // For usage-type providers (OpenAI), cumulative spend grows over time —
         // store as negative so that "balance decreases" correctly represents spend.
         for entry in safeEntries {
-            let moved = prevBalance.map {
-                isUsageType ? entry.totalBalance > $0 : entry.totalBalance < $0
-            } ?? false
-            guard prevBalance == nil || moved else { continue }
-            if moved { detectedSpend = true }
+            let decision = Self.recordDecision(
+                previous: prevBalance, current: entry.totalBalance, isUsageType: isUsageType)
+            guard decision.recordsBaseline else { continue }
+            if decision.isSpend { detectedSpend = true }
             balancesToRecord.append(entry)
         }
 
@@ -328,6 +331,19 @@ nonisolated final class ApiPoller: @unchecked Sendable {
         Logger.info("ApiPoller[\(pid)]: ok — \(safeEntries.map { "\($0.currency) \($0.totalBalance)" }.joined(separator: ", "))")
         AppHealthMonitor.shared.clearAPIError(providerId: pid)
         notifyBalanceUpdated(pid: pid)
+    }
+
+    /// Pure decision for one observed balance sample (F09): whether it must
+    /// become the stored baseline, and whether that same move is consumption.
+    /// A recharge (prepaid rise) or a usage-type window reset records a new
+    /// baseline but is not spend; only the spend direction rings the coin.
+    static nonisolated func recordDecision(
+        previous: Double?, current: Double, isUsageType: Bool
+    ) -> (recordsBaseline: Bool, isSpend: Bool) {
+        guard let previous else { return (true, false) } // first observation: baseline, never spend
+        let changed = previous != current
+        let spend = isUsageType ? current > previous : current < previous
+        return (changed, spend)
     }
 
     private func cacheError(pid: String, msg: String) {

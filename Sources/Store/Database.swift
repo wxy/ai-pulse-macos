@@ -86,6 +86,7 @@ final class AppDatabase: @unchecked Sendable {
         // (stays a对照-only row, never counted as consumption).
         try addColumnIfMissing("code_change", "attributed_tool", "TEXT")
         try addColumnIfMissing("code_change", "attribution", "TEXT")
+        try addColumnIfMissing("git_commit", "diff_scanned", "INTEGER NOT NULL DEFAULT 0")
         try dbQueue?.write { db in
             try Self.migrateRepositoryCodeIdentity(db)
             try Self.backfillKnownProviderAttributionIfNeeded(db, defaults: defaults)
@@ -287,6 +288,7 @@ final class AppDatabase: @unchecked Sendable {
         let coverageStart = calendar.date(byAdding: .day, value: -29, to: calendar.startOfDay(for: now))!
         let coverageSinceMs = Int(coverageStart.timeIntervalSince1970 * 1000)
         try db.execute(sql: "DELETE FROM code_change WHERE ts >= ?", arguments: [coverageSinceMs])
+        try db.execute(sql: "UPDATE git_commit SET diff_scanned = 0 WHERE ts >= ?", arguments: [coverageSinceMs])
         try db.execute(sql: "UPDATE git_commit_scan SET head_hash = NULL, status = 'partial'")
         try db.execute(sql: "DELETE FROM dashboard_cache")
     }
@@ -345,6 +347,7 @@ final class AppDatabase: @unchecked Sendable {
                     // Recognized tool trailer is provenance, not proof of
                     // AI authorship or of the value of the resulting code.
                     t.column("attributed_tool", .text)
+                    t.column("diff_scanned", .integer).notNull().defaults(to: 0)
                     t.primaryKey(["repo_path", "commit_hash"])
                 }
                 try db.create(index: "git_commit_ts", on: "git_commit", columns: ["ts"], ifNotExists: true)

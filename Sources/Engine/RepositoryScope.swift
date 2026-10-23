@@ -13,14 +13,20 @@ enum RepositoryScope {
         private var resolved: [String: String] = [:]
         private var unavailable: Set<String> = []
         private var reachableRoots: Set<String>?
+        /// Optional generation-shared answer for linked repositories. Called
+        /// at most once per lookup, and only when a path actually resolves
+        /// outside the configured roots — the common all-inside case never
+        /// walks (2026-10-23 review F02).
+        private let sharedReachableRoots: (() -> Set<String>)?
         /// Read-scoped diagnostics: repeated rows must not multiply tree walks.
         private(set) var linkedRootScanCount = 0
 
         /// Explicit init: the memberwise one would inherit `private` access
         /// from the private stored properties, which newer compilers tolerate
         /// but older ones reject outside this file.
-        init(roots: [String]) {
+        init(roots: [String], sharedReachableRoots: (() -> Set<String>)? = nil) {
             self.roots = roots
+            self.sharedReachableRoots = sharedReachableRoots
         }
 
         mutating func root(
@@ -40,7 +46,8 @@ enum RepositoryScope {
                 } else {
                     if reachableRoots == nil {
                         linkedRootScanCount += 1
-                        reachableRoots = Set(RepositoryScope.reachableRepositoryRoots(in: roots))
+                        reachableRoots = sharedReachableRoots.map { $0() }
+                            ?? Set(RepositoryScope.reachableRepositoryRoots(in: roots))
                     }
                     root = reachableRoots?.contains(repo) == true ? repo : nil
                 }
@@ -75,11 +82,46 @@ enum RepositoryScope {
         }
     }
 
-    private static func isCanonicallyInside(_ candidate: String, roots: [String]) -> Bool {
+    static func isCanonicallyInside(_ candidate: String, roots: [String]) -> Bool {
         roots.contains { rawRoot in
             let root = canonicalPath(rawRoot)
             return candidate == root || candidate.hasPrefix(root.hasSuffix("/") ? root : root + "/")
         }
+    }
+
+    /// One authorization generation for linked repositories (2026-10-23
+    /// review F02). A repository reached through a link inside a configured
+    /// development root authorizes only via a full tree walk with no
+    /// deadline; per-repository, per-batch, and per-poll readers share one
+    /// walk for the whole generation lifetime instead. The next generation
+    /// re-walks, so a retargeted or removed link stops authorizing its old
+    /// target — the revocation semantics of the uncached read are kept, only
+    /// delayed to the following independent read.
+    private static let generationLock = NSLock()
+    private static nonisolated(unsafe) var generation: (
+        roots: [String], reachable: Set<String>, expiresAt: Date
+    )?
+
+    /// Lifetime of one generation. Half a phase-1 tick: a burst (history
+    /// backfill, a poll round, a prune) costs one walk, and revocation lands
+    /// on the next tick after the change.
+    static let reachableRootsGenerationLifetime: TimeInterval = 15
+
+    static func generationReachableRoots(in roots: [String]) -> Set<String> {
+        let now = Date()
+        generationLock.lock()
+        if let cached = generation, cached.roots == roots, now < cached.expiresAt {
+            generationLock.unlock()
+            return cached.reachable
+        }
+        generationLock.unlock()
+        // Walk outside the lock: concurrent first readers may both walk, but
+        // neither blocks the other, and the tree walk has no internal lock.
+        let reachable = Set(reachableRepositoryRoots(in: roots))
+        generationLock.lock()
+        generation = (roots, reachable, now.addingTimeInterval(reachableRootsGenerationLifetime))
+        generationLock.unlock()
+        return reachable
     }
 
     /// Recomputed for each independent read, so removed/retargeted links stop

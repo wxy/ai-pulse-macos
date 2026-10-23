@@ -157,4 +157,74 @@ final class EventTimestampTests: XCTestCase {
             ParserTimestampFallbackCounter.shared.count(source: "aider", mode: .fileMtime), 0,
             "a successfully parsed timestamp is not a fallback")
     }
+
+    // MARK: - 2026-10-23 review F01:非法数值时间戳必须降级而不是陷阱退出
+
+    func testScaledBy1000RejectsValuesOutsideRepresentableRange() {
+        XCTAssertEqual(EventTimestamp.scaledBy1000(1_730_000_000), 1_730_000_000_000)
+        XCTAssertEqual(EventTimestamp.scaledBy1000(-1_730_000_000), -1_730_000_000_000)
+        XCTAssertEqual(EventTimestamp.scaledBy1000(1_730_000_000.5), 1_730_000_000_500)
+        XCTAssertNil(EventTimestamp.scaledBy1000(1e20), "1e20 s is a legal JSON number but not an Int")
+        XCTAssertNil(EventTimestamp.scaledBy1000(-1e20))
+        XCTAssertNil(EventTimestamp.scaledBy1000(1e308), "×1000 is not even finite")
+        XCTAssertNil(EventTimestamp.scaledBy1000(.infinity))
+        XCTAssertNil(EventTimestamp.scaledBy1000(.nan))
+    }
+
+    func testClaudeNumericTimestampFarOutsideIntRangeFallsBackToMtime() {
+        // The previous implementation executed `Int(1e20 * 1000)` here, which
+        // traps — and startup re-reads the file, so one corrupted line could
+        // keep the app from launching. It must degrade to the mtime instead.
+        let line = """
+        {"timestamp":1e20,"message":{"role":"assistant","id":"m","usage":{"input_tokens":1,"output_tokens":1}}}
+        """
+        let event = ClaudeCodeParser.parse(line: line, fallbackTimestampMs: 1_760_000_000_000)
+        XCTAssertNotNil(event)
+        XCTAssertEqual(event?.ts, 1_760_000_000_000)
+        XCTAssertEqual(
+            ParserTimestampFallbackCounter.shared.count(source: "claude-code", mode: .fileMtime), 1)
+    }
+
+    func testClaudeNegativeHugeNumericTimestampFallsBackToMtime() {
+        let line = """
+        {"timestamp":-1e20,"message":{"role":"assistant","id":"m","usage":{"input_tokens":1,"output_tokens":1}}}
+        """
+        let event = ClaudeCodeParser.parse(line: line, fallbackTimestampMs: 1_760_000_000_001)
+        XCTAssertEqual(event?.ts, 1_760_000_000_001)
+    }
+
+    func testClaudeNormalNumericTimestampStillWins() {
+        let line = """
+        {"timestamp":1781770172,"message":{"role":"assistant","id":"m","usage":{"input_tokens":1,"output_tokens":1}}}
+        """
+        let event = ClaudeCodeParser.parse(line: line, fallbackTimestampMs: 1_760_000_000_002)
+        XCTAssertEqual(event?.ts, 1_781_770_172_000)
+        XCTAssertEqual(
+            ParserTimestampFallbackCounter.shared.count(source: "claude-code", mode: .fileMtime), 0)
+    }
+
+    func testOpenCodeNumericTimestampOutsideIntRangeFallsBackToMtime() {
+        var json: [String: Any] = [
+            "role": "assistant", "id": "msg_1",
+            "tokens": ["input": 10, "output": 4],
+            "created_at": Double(1e20),
+        ]
+        let event = OpenCodeParser.parse(json: json, cwd: nil, fallbackTimestampMs: 1_760_000_000_003)
+        XCTAssertNotNil(event)
+        XCTAssertEqual(event?.ts, 1_760_000_000_003)
+
+        json["created_at"] = 1_730_000_000.0
+        json.removeValue(forKey: "timestamp")
+        let normal = OpenCodeParser.parse(json: json, cwd: nil, fallbackTimestampMs: 1_760_000_000_004)
+        XCTAssertEqual(normal?.ts, 1_730_000_000_000)
+    }
+
+    func testAiderMarkdownHugeKTokenCountDoesNotTrap() {
+        let event = AiderParser.parseMarkdown(
+            line: "> Tokens: 99999999999999999999k sent, 47 received. Cost: $0.0034 message, $0.0034 session.",
+            cwd: "/repo", model: "gpt-4o", fallbackDate: 1_760_000_000_005)
+        XCTAssertNotNil(event)
+        XCTAssertEqual(event?.inTokens, 0, "an absurd digit run degrades to 0 like an unparseable count")
+        XCTAssertEqual(event?.outTokens, 47)
+    }
 }

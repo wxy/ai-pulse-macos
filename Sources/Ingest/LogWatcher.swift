@@ -25,6 +25,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private var stopped = false // scanQueue only
     private var watchingEnabled = false // scanQueue only
     private var positionsLoaded = false // retry if DB was not ready at init
+    private var claudeReplayPrepared = false // scanQueue only; durable state lives in SQLite
     private var suppressConsumptionEvents = false // initial history scan only
     private let liveObservationStartMs = Int64(Date().timeIntervalSince1970 * 1_000)
 
@@ -125,6 +126,34 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
+    /// Rewind checkpoints and record that preparation in one transaction.
+    /// Never trust the former UserDefaults completion flag: it could be set
+    /// while both the import and the checkpoint write had failed.
+    private func prepareClaudeTokenReplayIfNeeded() -> Bool {
+        dispatchPrecondition(condition: .onQueue(scanQueue))
+        if claudeReplayPrepared { return true }
+        do {
+            let positions: [String: UInt64]? = try database.writeSynchronously { db in
+                guard try LogCheckpointStore.prepareClaudeTokenReplay(
+                    in: db, projectDirectory: homeDirectory.appendingPathComponent(".claude/projects").path
+                ) else { return nil }
+                return try LogCheckpointStore.load(in: db)
+            }
+            if let positions {
+                filePositions = positions
+                pendingPositions.removeAll(keepingCapacity: true)
+                positionsLoaded = true
+            }
+            claudeReplayPrepared = true
+            AppHealthMonitor.shared.clearIngestError(source: "log.claudeReplay")
+            return true
+        } catch {
+            Logger.warning("LogWatcher: Claude replay preparation failed: \(error)")
+            AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "log.claudeReplay")
+            return false
+        }
+    }
+
     func start() {
         let activity = LocalDataProcessing.shared.begin(.reading)
         scanQueue.async { [weak self] in
@@ -132,6 +161,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             guard let self else { return }
             self.stopped = false
             if !self.positionsLoaded { self.loadPositionsFromDB() }
+            guard self.prepareClaudeTokenReplayIfNeeded() else { return }
             let isColdStart = self.filePositions.values.allSatisfy { $0 == 0 }
             self.suppressConsumptionEvents = true
             defer { self.suppressConsumptionEvents = false }
@@ -199,6 +229,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
     private func runScan(includeClaudeProjects: Bool, activity: LocalDataProcessing.Activity) {
         dispatchPrecondition(condition: .onQueue(scanQueue))
+        guard prepareClaudeTokenReplayIfNeeded() else { return }
         processingActivity = activity
         defer { processingActivity = nil }
         scanChanged = false
@@ -345,9 +376,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                     GitMonitor.shared.watch(repoPath: repoUrl.path)
                     repoPath = repoUrl.path
                 }
+                // Rebuild only to swap in the resolved repo root. Every data
+                // field must survive: dropping cacheCreationTokens here is
+                // exactly how cache-creation input went uncounted for years
+                // of history (2026-10-23 review F03).
                 return UsageEvent(ts: event.ts, source: event.source, model: event.model,
                     inTokens: event.inTokens, outTokens: event.outTokens, cacheTokens: event.cacheTokens,
-                    repoPath: repoPath, sessionId: event.sessionId, dedupeKey: event.dedupeKey)
+                    repoPath: repoPath, sessionId: event.sessionId, dedupeKey: event.dedupeKey,
+                    cacheCreationTokens: event.cacheCreationTokens,
+                    reportedOutputTokens: event.reportedOutputTokens,
+                    reasoningTokens: event.reasoningTokens)
             }
             guard let sid = sessionId, maxTs > 0 else { continue }
             upsertSessionInfo(SessionInfoRecord(
@@ -1261,7 +1299,13 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         dispatchPrecondition(condition: .onQueue(scanQueue))
         guard !events.isEmpty else { return true }
         let roots = repositoryRoots ?? RepositoryScope.configuredRoots()
-        var lookup = RepositoryScope.AuthorizedRootLookup(roots: roots)
+        // Linked-repository authorization walks the whole development tree.
+        // Batches arrive every few hundred bytes of new log; without the
+        // generation-shared answer, a 2048-row history backfill re-walked the
+        // tree once per 512-row batch (2026-10-23 review F02).
+        var lookup = RepositoryScope.AuthorizedRootLookup(
+            roots: roots,
+            sharedReachableRoots: { RepositoryScope.generationReachableRoots(in: roots) })
         let rows = events.map { rawEvent -> (event: UsageEvent, providerId: String) in
             let normalizedRepo = rawEvent.repoPath.flatMap { lookup.root(for: $0) }
             let event = UsageEvent(
@@ -1362,20 +1406,21 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Repo discovery re-reads the file head and walks git roots on every
     /// scan for every Claude jsonl; the answer cannot change while the file
     /// head is unchanged. Nil repoPath caches the "no repo" verdict too.
-    private let repoDiscoveryLock = NSLock()
-    private var repoDiscoveryCache: [String: (fingerprint: SessionInfoBackfill.PrefixFingerprint, repoPath: String?)] = [:]
+    /// Bounded by selective eviction (F07): a full clear at the capacity edge
+    /// re-read every file head on every pass once history outgrew the table.
+    private let repoDiscoveryCache = OrderedBoundedCache<(
+        fingerprint: SessionInfoBackfill.PrefixFingerprint, repoPath: String?
+    )>(capacity: 16384)
 
     private func discoverAndWatchRepo(from file: URL) {
         let fingerprint = SessionInfoBackfill.prefixFingerprint(of: file)
-        repoDiscoveryLock.lock()
-        if let fingerprint, let cached = repoDiscoveryCache[file.path], cached.fingerprint == fingerprint {
-            repoDiscoveryLock.unlock()
+        if let fingerprint, let cached = repoDiscoveryCache.value(for: file.path),
+           cached.fingerprint == fingerprint {
             if let repoPath = cached.repoPath {
                 GitMonitor.shared.watch(repoPath: repoPath)
             }
             return
         }
-        repoDiscoveryLock.unlock()
 
         guard let handle = try? FileHandle(forReadingFrom: file) else { return }
         defer { try? handle.close() }
@@ -1389,10 +1434,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         else { return }
         let repoUrl = findGitRepo(containing: cwd)
         if let fingerprint {
-            repoDiscoveryLock.lock()
-            if repoDiscoveryCache.count > 4096 { repoDiscoveryCache.removeAll() }
-            repoDiscoveryCache[file.path] = (fingerprint, repoUrl?.path)
-            repoDiscoveryLock.unlock()
+            repoDiscoveryCache.insert((fingerprint, repoUrl?.path), for: file.path)
         }
         guard let repoUrl else { return }
         GitMonitor.shared.watch(repoPath: repoUrl.path)

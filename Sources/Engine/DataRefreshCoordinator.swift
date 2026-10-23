@@ -15,8 +15,13 @@ struct IngestActions: Sendable {
         scanLogs: { LogWatcher.shared.scan() },
         // LogWatcher already discovers repositories while scanning aider logs.
         // Keep scope pruning here without walking the same tree twice per tick.
+        // Off the main thread: authorizing a linked repository walks the whole
+        // development tree with no deadline, and runPhase1 runs on the
+        // MainActor (2026-10-23 review F02).
         scanRepos: {
-            GitMonitor.shared.pruneWatchedRepos(outside: RepositoryScope.configuredRoots())
+            DispatchQueue.global(qos: .utility).async {
+                GitMonitor.shared.pruneWatchedRepos(outside: RepositoryScope.configuredRoots())
+            }
             return 0
         },
         refreshClaudeStatus: { UsageMonitor.shared.refreshClaudeStatus() },
@@ -216,7 +221,9 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         defer { preparation.finish() }
         let startedAt = Date()
         await LogWatcher.shared.scanAndWait()
-        GitMonitor.shared.pruneWatchedRepos(outside: RepositoryScope.configuredRoots())
+        // Awaited, not run inline: this method is MainActor-isolated and the
+        // prune's linked-repository authorization can walk the dev tree (F02).
+        await GitMonitor.shared.pruneWatchedReposInBackground(outside: RepositoryScope.configuredRoots())
         await GitMonitor.shared.pollAndWait()
         await DashboardCache.invalidateAll()
 
