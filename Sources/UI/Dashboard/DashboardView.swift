@@ -1915,17 +1915,17 @@ private extension DashboardView {
             GeometryReader { geometry in
                 if let hint = hints.last {
                     let bounds = geometry[hint.anchor]
-                    let below = bounds.midY < geometry.size.height / 2
-                    Text(hint.text)
-                        .dashboardFont(11).foregroundStyle(Color.primary)
-                        .lineSpacing(3).padding(12)
-                        .frame(width: 280, alignment: .leading)
-                        .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(robotLine))
-                        .frame(width: 280, height: 190, alignment: below ? .top : .bottom)
-                        .offset(x: min(max(bounds.midX - 140, 12), geometry.size.width - 292), y: below ? bounds.maxY + 7 : bounds.minY - 197)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                    RobotTooltipLayout(anchor: bounds) {
+                        Text(hint.text)
+                            .dashboardFont(11).foregroundStyle(Color.primary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(robotLine))
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 }
             }
             .allowsHitTesting(false)
@@ -2334,6 +2334,31 @@ private struct RobotPulseCurve: Shape {
             path.addCurve(to: CGPoint(x: x2, y: y2), control1: CGPoint(x: (x1+x2)/2, y: y1), control2: CGPoint(x: (x1+x2)/2, y: y2))
         }
         return path
+    }
+}
+
+/// Measure the text before placing it, keeping short hints compact and long
+/// descriptions wrapped within the dashboard's available width.
+private struct RobotTooltipLayout: Layout {
+    let anchor: CGRect
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let content = subviews.first else { return }
+        let margin: CGFloat = 12
+        let naturalWidth = content.sizeThatFits(.unspecified).width
+        let width = min(naturalWidth, 280, max(0, bounds.width - 2 * margin))
+        let contentProposal = ProposedViewSize(width: width, height: nil)
+        let size = content.sizeThatFits(contentProposal)
+        let x = min(max(anchor.midX - size.width / 2, margin), max(margin, bounds.width - size.width - margin))
+        let preferredY = anchor.midY < bounds.height / 2
+            ? anchor.maxY + 7 : anchor.minY - size.height - 7
+        let y = min(max(preferredY, margin), max(margin, bounds.height - size.height - margin))
+        content.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y),
+                      anchor: .topLeading, proposal: contentProposal)
     }
 }
 
