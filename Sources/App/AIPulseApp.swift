@@ -37,6 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
 
+        #if DEBUG
+        if AccessSandboxQA.isEnabled { AccessSandboxQA.start(); return }
+        #endif
+
         // Register defaults (fresh install values)
         UserDefaults.standard.register(defaults: [
             "coin_sound_enabled": true,
@@ -174,6 +178,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Re-open handler: Dock click or Cmd+Tab → show Dashboard
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        #if DEBUG
+        if AccessSandboxQA.isEnabled { return false }
+        #endif
+
         openDashboard()
         return true
     }

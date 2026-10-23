@@ -98,7 +98,7 @@ struct IntegrationRow: View {
                     if detected.found {
                         // verbatim: the summary is already localized; a plain
                         // Text(...) would let Xcode extract a spurious "(%@)" key.
-                        Text(verbatim: "(\(detected.summary))")
+                        Text(verbatim: "(\(summaryText))")
                             .font(.caption).foregroundColor(.secondary)
                             .lineLimit(1)
                     }
@@ -143,6 +143,9 @@ struct IntegrationRow: View {
     }
 
     var summaryText: String {
+        if integration.id == "codex", !DirectoryAccess.shared.issues(under: BookmarkManager.codexDirPath).isEmpty {
+            return I18n.t("access.required")
+        }
         if detected.found {
             if isAPIKeyType, let bal = balanceText { return bal }
             return detected.summary

@@ -13,6 +13,9 @@ struct CachedDirScan: Codable, Equatable {
     let repos: [CachedRepo]
     let scannedAt: Date
     var truncated: Bool = false   // deadline hit → result incomplete
+    var failure: DirectoryAccessIssue? = nil
+    var resolvedPath: String? = nil
+    var usableCount: Int? { failure == nil && !truncated ? repos.count : nil }
 }
 
 /// Shared, persisted repository-scan cache — the single source of truth for
@@ -57,6 +60,7 @@ nonisolated final class RepoScanCache: @unchecked Sendable {
         let key = Self.expand(dir)
         lock.lock(); defer { lock.unlock() }
         guard let s = _scans[key],
+              s.resolvedPath == RepositoryScope.canonicalPath(key),
               Date().timeIntervalSince(s.scannedAt) < Self.ttl else { return nil }
         return s
     }
@@ -64,12 +68,21 @@ nonisolated final class RepoScanCache: @unchecked Sendable {
     /// Run a fast background scan of `dir`, collecting repos + aider markers in
     /// one pass, then store + persist + notify. Progress is published live as
     /// each repo is found so the UI can show a running count instead of an
-    /// indefinite spinner. No-op if the dir isn't readable.
+    /// indefinite spinner. Failed reads are explicit unavailable results.
     nonisolated func scan(dir: String) async {
         let expanded = Self.expand(dir)
         let scanStart = Date()
-        guard FileManager.default.fileExists(atPath: expanded) else {
-            Logger.warning("RepoScanCache: scan skipped (not readable): \(expanded)")
+        let rootURL = URL(fileURLWithPath: expanded, isDirectory: true)
+        let targetAtStart = RepositoryScope.canonicalPath(expanded)
+        do {
+            // stat/fileExists may succeed while listing the target is denied.
+            _ = try DirectoryAccess.read(at: rootURL) {
+                try FileManager.default.contentsOfDirectory(atPath: rootURL.resolvingSymlinksInPath().path)
+            }
+        } catch {
+            let failure = DirectoryAccess.shared.record(error, at: rootURL, includeMissing: true)
+            DirectoryAccess.shared.completeScan(at: rootURL, retaining: Set(failure.map { [$0.id] } ?? []))
+            storeResult(CachedDirScan(dirPath: expanded, repos: [], scannedAt: Date(), failure: failure, resolvedPath: targetAtStart), for: expanded)
             return
         }
         Logger.info("RepoScanCache: scan start: \(expanded)")
@@ -90,7 +103,9 @@ nonisolated final class RepoScanCache: @unchecked Sendable {
         }.value
         let sorted = result.repos.sorted { $0.name < $1.name }
         let scan = CachedDirScan(dirPath: expanded, repos: sorted,
-                                 scannedAt: Date(), truncated: result.truncated)
+                                 scannedAt: Date(), truncated: result.truncated,
+                                 failure: DirectoryAccess.shared.issues(under: expanded).first,
+                                 resolvedPath: targetAtStart)
         storeResult(scan, for: expanded)
         Logger.info("RepoScanCache: scanned \(expanded): \(result.repos.count) repos, "
                     + "truncated=\(result.truncated), "
@@ -104,7 +119,7 @@ nonisolated final class RepoScanCache: @unchecked Sendable {
     private nonisolated func publishPartial(repos: [CachedRepo], for key: String) {
         lock.lock()
         _scans[key] = CachedDirScan(dirPath: key, repos: repos,
-                                    scannedAt: Date(), truncated: true)
+                                    scannedAt: Date(), truncated: true, resolvedPath: RepositoryScope.canonicalPath(key))
         lock.unlock()
         postDidChange()
     }
@@ -120,7 +135,7 @@ nonisolated final class RepoScanCache: @unchecked Sendable {
 
     /// Total repos across `dirs`, using only fresh cache entries.
     nonisolated func totalRepos(in dirs: [String]) -> Int {
-        Set(dirs.flatMap { cachedScan(for: $0)?.repos.map {
+        Set(dirs.flatMap { cachedScan(for: $0).flatMap { $0.failure == nil ? $0 : nil }?.repos.map {
             URL(fileURLWithPath: $0.path).standardizedFileURL.resolvingSymlinksInPath().path
         } ?? [] }).count
     }

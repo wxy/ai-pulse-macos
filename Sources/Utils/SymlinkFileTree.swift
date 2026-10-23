@@ -19,7 +19,13 @@ nonisolated enum SymlinkFileTree {
         directoryContext: @escaping (URL) -> String = { _ in "" }
     ) -> Enumerator? {
         let root = directory.standardizedFileURL.resolvingSymlinksInPath()
-        guard (try? root.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { return nil }
+        do {
+            guard try DirectoryAccess.read(at: directory, { try root.resourceValues(forKeys: [.isDirectoryKey]) }).isDirectory == true else { return nil }
+        } catch {
+            let issue = DirectoryAccess.shared.record(error, at: directory)
+            DirectoryAccess.shared.completeScan(at: directory, retaining: Set(issue.map { [$0.id] } ?? []))
+            return nil
+        }
         return Enumerator(root: root, keys: keys ?? [], options: options,
                           deadline: deadline, now: now, maximumDepth: maximumDepth, skippedNames: skippingDirectoryNames,
                           logicalRoot: directory, matchingFiles: matchingFiles, directoryContext: directoryContext)
@@ -42,6 +48,9 @@ nonisolated enum SymlinkFileTree {
         private var pendingDirectory: (url: URL, logical: URL, depth: Int)?
         private var visitedDirectories: Set<String>
         private var visitedFiles: Set<String> = []
+        private var restoredTargets: Set<String> = []
+        private var failures: Set<String> = []
+        private let logicalRoot: URL
         private(set) var level = 0
         private(set) var logicalURL: URL?
         private(set) var truncated = false
@@ -58,9 +67,14 @@ nonisolated enum SymlinkFileTree {
             self.matchingFiles = matchingFiles
             self.directoryContext = directoryContext
             currentLogicalRoot = logicalRoot
+            self.logicalRoot = logicalRoot
             directories = [(root, logicalRoot, 0)]
             visitedDirectories = [root.path + "\0" + directoryContext(logicalRoot)]
             super.init()
+        }
+
+        private func report(_ error: Error, at logical: URL) {
+            if let issue = DirectoryAccess.shared.record(error, at: logical) { failures.insert(issue.id) }
         }
 
         func skipDescendants() { pendingDirectory = nil }
@@ -82,7 +96,9 @@ nonisolated enum SymlinkFileTree {
                     // root, even for non-link entries. Normalize every URL.
                     let url = entry.standardizedFileURL.resolvingSymlinksInPath()
                     let logical = currentLogicalRoot.appendingPathComponent(entry.lastPathComponent)
-                    guard let values = try? url.resourceValues(forKeys: Set(keys)) else { continue }
+                    let values: URLResourceValues
+                    do { values = try url.resourceValues(forKeys: Set(keys)) }
+                    catch { report(error, at: logical); continue }
                     level = currentDepth + 1
                     if values.isDirectory == true {
                         // Apply exclusions to both the alias and its target.
@@ -106,14 +122,30 @@ nonisolated enum SymlinkFileTree {
                     logicalURL = logical
                     return url
                 }
-                guard nextDirectory < directories.count else { return nil }
+                guard nextDirectory < directories.count else {
+                    DirectoryAccess.shared.completeScan(at: logicalRoot, retaining: failures)
+                    return nil
+                }
                 let directory = directories[nextDirectory]
                 nextDirectory += 1
                 currentDepth = directory.depth
                 currentLogicalRoot = directory.logical
                 current = FileManager.default.enumerator(
                     at: directory.url, includingPropertiesForKeys: keys,
-                    options: options.union(.skipsSubdirectoryDescendants))
+                    options: options.union(.skipsSubdirectoryDescendants),
+                    errorHandler: { [weak self] failedURL, error in
+                        let suffix = failedURL.path.hasPrefix(directory.url.path + "/")
+                            ? String(failedURL.path.dropFirst(directory.url.path.count + 1)) : ""
+                        let logical = suffix.isEmpty ? directory.logical : directory.logical.appendingPathComponent(suffix)
+                        if let self, DirectoryAccess.isPermissionError(error),
+                           self.restoredTargets.insert(failedURL.path).inserted,
+                           BookmarkManager.restoreAccess(to: failedURL.path) {
+                            self.directories.append((failedURL, logical, directory.depth))
+                        } else {
+                            self?.report(error, at: logical)
+                        }
+                        return true
+                    })
             }
         }
     }

@@ -74,6 +74,7 @@ enum LocalDataStatusCache {
         let center = NotificationCenter.default
         center.addObserver(forName: LogScanObservation.didChange, object: nil, queue: .main) { _ in invalidate() }
         center.addObserver(forName: BookmarkManager.didChange, object: nil, queue: .main) { _ in invalidate() }
+        center.addObserver(forName: DirectoryAccess.didChange, object: nil, queue: .main) { _ in invalidate() }
         center.addObserver(forName: .appHealthDidChange, object: nil, queue: .main) { _ in invalidate() }
         return ()
     }()
@@ -97,6 +98,7 @@ extension LocalDataStatus {
             }
         let roots = RepositoryScope.configuredRoots()
         let failed = AppHealthMonitor.shared.failingIngestSources.contains { $0.lowercased().hasPrefix("log.") }
+            || DirectoryAccess.shared.issues.contains { issue in Self.logPaths.contains { DirectoryAccess.contains(issue.logicalPath, in: $0) } }
         return resolve(homeAccess: home, hasReadableLogs: readable,
                        scan: LogScanObservation.shared.status(hasReadFailure: failed), hasActivity: hasActivity,
                        rootsConfigured: !roots.isEmpty,

@@ -226,8 +226,15 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 }
             } catch {
                 lock.withLock { _ = scanningRepos.remove(repo) }
-                Logger.error("Git scan failed for \(repoName): \(error)")
-                AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Git.scan.\(repo)")
+                Logger.error("Git scan failed for \(repoName): \(error.localizedDescription)")
+                if let gitError = error as? GitReadError, gitError.isPermissionFailure {
+                    let roots = UserDefaults.standard.stringArray(forKey: "repo_search_dirs") ?? []
+                    let logical = roots.first { DirectoryAccess.contains(repo, in: RepositoryScope.canonicalPath($0)) } ?? repo
+                    DirectoryAccess.shared.record(CocoaError(.fileReadNoPermission), at: URL(fileURLWithPath: logical))
+                    AppHealthMonitor.shared.clearIngestError(source: "Git.scan.\(repo)")
+                } else {
+                    AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Git.scan.\(repo)")
+                }
             }
         }
     }

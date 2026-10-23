@@ -39,6 +39,7 @@ enum GitRepoScanner {
         if FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path) {
             if let deadline, Date() >= deadline { return true }
             handler(dir.standardizedFileURL.resolvingSymlinksInPath())
+            DirectoryAccess.shared.completeScan(at: dir)
             return false
         }
         guard let enumerator = SymlinkFileTree.enumerator(

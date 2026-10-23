@@ -33,6 +33,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Only offsets advanced by this process need another durable write.
     private var pendingPositions: [String: UInt64] = [:]
     private var codexMetadata: [String: CodexResumeMetadata] = [:]
+    private var logicalLogPaths: [String: String] = [:]
     private var openCodeFingerprints: [String: OpenCodeFingerprint] = [:]
     private var scanChanged = false
     private var scanFreshTokens: Int64 = 0
@@ -344,8 +345,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private func scanCodexSessions() {
         let home = homeDirectory
         let sessionsDir = home.appendingPathComponent(".codex/sessions")
-        guard FileManager.default.fileExists(atPath: sessionsDir.path),
-              let enumerator = SymlinkFileTree.enumerator(
+        guard let enumerator = SymlinkFileTree.enumerator(
                   at: sessionsDir,
                   includingPropertiesForKeys: nil,
                   options: [.skipsHiddenFiles, .skipsPackageDescendants],
@@ -354,6 +354,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
         var files = [URL]()
         for case let url as URL in enumerator {
+            logicalLogPaths[url.path] = enumerator.logicalURL?.path ?? url.path
             files.append(url)
         }
 
@@ -537,7 +538,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             copilotStates[path] = state
             filePositions[path] = checkpoint
             pendingPositions[path] = checkpoint
-            Self.recordFileScanResult(path: path, error: nil)
+            recordReadResult(path: path, error: nil)
 
             if let sessionId = state.sessionId, maxTs > 0 {
                 upsertSessionInfo(SessionInfoRecord(
@@ -549,7 +550,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             }
         } catch {
             Logger.warning("LogWatcher: Copilot scan failed for \(path): \(error.localizedDescription)")
-            Self.recordFileScanResult(path: path, error: error)
+            recordReadResult(path: path, error: error)
         }
     }
 
@@ -558,8 +559,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private func scanDeepSeekHarnessSessions() {
         let home = homeDirectory
         let sessionsDir = home.appendingPathComponent(".dsh/sessions")
-        guard FileManager.default.fileExists(atPath: sessionsDir.path),
-              let enumerator = SymlinkFileTree.enumerator(
+        guard let enumerator = SymlinkFileTree.enumerator(
                   at: sessionsDir,
                   includingPropertiesForKeys: [.contentModificationDateKey],
                   options: [.skipsHiddenFiles, .skipsPackageDescendants],
@@ -619,7 +619,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             }
         } catch {
             Logger.warning("LogWatcher: DSH scan failed for \(path): \(error.localizedDescription)")
-            Self.recordFileScanResult(path: path, error: error)
+            recordReadResult(path: path, error: error)
             dshFailureLock.lock()
             if dshFailures.count > 4096 { dshFailures.removeAll() }
             dshFailures[path] = DshFailureGate(size: fileSize, mtime: mtime, failedAt: Date())
@@ -630,7 +630,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         dshFailureLock.lock()
         dshFailures.removeValue(forKey: path)
         dshFailureLock.unlock()
-        Self.recordFileScanResult(path: path, error: nil)
+        recordReadResult(path: path, error: nil)
         if let sessionId = result.sessionId, result.maxTs > 0 {
             upsertSessionInfo(SessionInfoRecord(
                 source: "deepseek-harness", sessionId: sessionId,
@@ -856,8 +856,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private func scanQwenSessions() {
         let home = homeDirectory
         let projectsDir = home.appendingPathComponent(".qwen/projects")
-        guard FileManager.default.fileExists(atPath: projectsDir.path),
-              let enumerator = SymlinkFileTree.enumerator(
+        guard let enumerator = SymlinkFileTree.enumerator(
                   at: projectsDir,
                   includingPropertiesForKeys: nil,
                   options: [.skipsHiddenFiles, .skipsPackageDescendants],
@@ -898,8 +897,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private func scanGeminiSessions() {
         let home = homeDirectory
         let tmpDir = home.appendingPathComponent(".gemini/tmp")
-        guard FileManager.default.fileExists(atPath: tmpDir.path),
-              let enumerator = SymlinkFileTree.enumerator(
+        guard let enumerator = SymlinkFileTree.enumerator(
                   at: tmpDir,
                   includingPropertiesForKeys: nil,
                   options: [.skipsHiddenFiles, .skipsPackageDescendants],
@@ -1080,8 +1078,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private func scanOpenCodeSessions() {
         let home = homeDirectory
         let msgDir = home.appendingPathComponent(".local/share/opencode/storage/message")
-        guard FileManager.default.fileExists(atPath: msgDir.path),
-              let enumerator = SymlinkFileTree.enumerator(
+        guard let enumerator = SymlinkFileTree.enumerator(
                   at: msgDir,
                   includingPropertiesForKeys: nil,
                   options: [.skipsHiddenFiles, .skipsPackageDescendants],
@@ -1113,7 +1110,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
         let saved = insertEvents([event])
         if saved, let fingerprint { openCodeFingerprints[file.path] = fingerprint }
-        Self.recordFileScanResult(path: file.path,
+        recordReadResult(path: file.path,
                                   error: saved ? nil : JSONLCheckpoint.Failure.persistenceFailed)
         Logger.debug("LogWatcher: parsed opencode event from \(file.path)")
     }
@@ -1190,10 +1187,10 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                 })
             filePositions[path] = checkpoint
             pendingPositions[path] = checkpoint
-            Self.recordFileScanResult(path: path, error: nil)
+            recordReadResult(path: path, error: nil)
         } catch {
             Logger.error("LogWatcher: file scan did not advance checkpoint: \(error)")
-            Self.recordFileScanResult(path: path, error: error)
+            recordReadResult(path: path, error: error)
         }
     }
 
@@ -1213,6 +1210,13 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
     private func enumerateGitRepos(in dir: URL, handler: (URL) -> Void) {
         GitRepoScanner.enumerate(in: dir, handler)
+    }
+
+    private func recordReadResult(path: String, error: Error?) {
+        let logical = URL(fileURLWithPath: logicalLogPaths[path] ?? path)
+        if let error { DirectoryAccess.shared.record(error, at: logical) }
+        else { DirectoryAccess.shared.clear(at: logical) }
+        Self.recordFileScanResult(path: path, error: error)
     }
 
     /// A retry may contain different batches after the log grows. Track the

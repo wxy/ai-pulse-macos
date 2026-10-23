@@ -229,6 +229,7 @@ struct IntegrationGroupedTab: View {
                                ? SetupCopy.text("重新授权", "Renew access") : SetupCopy.text("授权主目录", "Authorize home")) { grantHomeAccess() }
                     }
                 }
+                DirectoryAccessGuidance(logicalPrefix: BookmarkManager.homeDirPath)
                 Text(BookmarkManager.homeDirPath).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 Text(SetupCopy.text("授权此目录后，可检测并读取下面这些工具保存的本地日志。", "Access to this folder allows detection and reading of the local logs below."))
                     .font(.caption).foregroundStyle(.secondary)
@@ -360,6 +361,8 @@ struct ReposTab: View {
                                     .font(.caption2).foregroundColor(.secondary)
                                     .padding(.horizontal, 5)
                                     .background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
+                            } else if let failure = RepoScanCache.shared.cachedScan(for: entry.path)?.failure {
+                                Text(failure.message).font(.caption2).foregroundStyle(.orange).lineLimit(1)
                             } else {
                                 // Static placeholder — an indeterminate
                                 // ProgressView with scaleEffect can trigger the
@@ -376,6 +379,7 @@ struct ReposTab: View {
                 }
             }
 
+            DirectoryAccessGuidance()
             HStack {
                 Button(action: pickDir) {
                     Label(I18n.t("repos.add"), systemImage: "plus.circle").font(.caption)
@@ -384,7 +388,9 @@ struct ReposTab: View {
             }
 
             let totalRepos = repoCounts.values.reduce(0, +)
-            Text(String(format: I18n.t("repos.summary"), dirEntries.count, totalRepos))
+            Text(dirEntries.contains { RepoScanCache.shared.cachedScan(for: $0.path)?.usableCount == nil }
+                 ? I18n.t("access.incomplete")
+                 : String(format: I18n.t("repos.summary"), dirEntries.count, totalRepos))
                 .font(.caption2).foregroundColor(.secondary)
         }
         .onAppear { loadAndScan() }
@@ -426,7 +432,7 @@ struct ReposTab: View {
         var counts: [String: Int] = [:]
         for entry in dirEntries {
             if let scan = RepoScanCache.shared.cachedScan(for: entry.path) {
-                counts[entry.path] = scan.repos.count
+                counts[entry.path] = scan.usableCount
             }
         }
         repoCounts = counts
@@ -439,7 +445,7 @@ struct ReposTab: View {
         panel.message = I18n.t("bookmark.repos_message")
         panel.directoryURL = FileManager.default.realHomeDirectory
         if panel.runModal() == .OK, let url = panel.url {
-            BookmarkManager.createAndSave(for: url)
+            guard BookmarkManager.createAndSave(for: url) else { return }
             // Store the absolute path. `NSOpenPanel` returns an absolute path;
             // persisting it as-is keeps scans working under sandbox, where a
             // tilde-relative path could resolve against the wrong home directory.
