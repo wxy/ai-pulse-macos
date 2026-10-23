@@ -185,11 +185,7 @@ enum BookmarkManager {
     /// Whether any saved bookmark grants access to `path` (i.e. a bookmark whose
     /// directory is `path` itself or an ancestor of it).
     static func hasBookmark(covering path: String) -> Bool {
-        let target = URL(fileURLWithPath: path).standardizedFileURL.path
-        return savedBookmarks().keys.contains { key in
-            let k = URL(fileURLWithPath: key).standardizedFileURL.path
-            return target == k || target.hasPrefix(k + "/")
-        }
+        savedBookmarks().keys.contains { pathIsCovered(path, by: $0) }
     }
 
     /// Create and persist a security-scoped bookmark for a URL.
@@ -274,8 +270,15 @@ enum BookmarkManager {
     static func isAccessAvailable(for path: String) -> Bool {
         guard isSandboxed else { return true }
         accessLock.lock(); defer { accessLock.unlock() }
-        let target = URL(fileURLWithPath: path).standardizedFileURL.path
-        return activeResources.keys.contains { target == $0 || target.hasPrefix($0 + "/") }
+        return activeResources.keys.contains { pathIsCovered(path, by: $0) }
+    }
+
+    /// Compare actual targets so a granted physical directory also covers its
+    /// aliases. A link escaping that directory still requires a target grant.
+    static func pathIsCovered(_ path: String, by directory: String) -> Bool {
+        let target = RepositoryScope.canonicalPath(path)
+        let root = RepositoryScope.canonicalPath(directory)
+        return target == root || target.hasPrefix(root.hasSuffix("/") ? root : root + "/")
     }
 
     private static func activate(_ url: URL) -> Bool {

@@ -55,14 +55,14 @@ struct CodexIntegration: Detectable {
 
     /// Number of rollout JSONL files, not directories or account conversations.
     private func sessionCount(in sessionsDir: URL) -> Int {
-        guard let enumerator = FileManager.default.enumerator(
+        guard let enumerator = SymlinkFileTree.enumerator(
             at: sessionsDir,
             includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            matchingFiles: { $0.pathExtension == "jsonl" && $0.lastPathComponent.hasPrefix("rollout-") }
         ) else { return 0 }
         var count = 0
-        for case let url as URL in enumerator
-        where url.pathExtension == "jsonl" && url.lastPathComponent.hasPrefix("rollout-") {
+        for _ in enumerator {
             count += 1
         }
         return count

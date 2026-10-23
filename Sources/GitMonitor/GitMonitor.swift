@@ -62,26 +62,27 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 }
                 return (seen, watched)
             }
+            var authorization = RepositoryScope.AuthorizedRootLookup(roots: RepositoryScope.configuredRoots())
+            let restored = watched.filter { authorization.root(for: $0) != nil }
+            let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) ?? []
+            let restoredFallback = saved.filter { authorization.root(for: $0) != nil }
             lock.withLock {
                 // Loading may complete after watch/scan has already added live
                 // state. Never replace it with the older database snapshot.
-                watchedRepos.formUnion(watched.filter { RepositoryScope.authorizedGitRoot(for: $0) != nil })
+                watchedRepos.formUnion(restored)
                 lastSeenCommit.merge(seen) { live, _ in live }
                 // Fall back to UserDefaults if DB returned empty (e.g. fresh migration)
-                if watchedRepos.isEmpty, let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) {
-                    watchedRepos.formUnion(saved.filter { RepositoryScope.authorizedGitRoot(for: $0) != nil })
-                }
+                if watchedRepos.isEmpty { watchedRepos.formUnion(restoredFallback) }
             }
             AppHealthMonitor.shared.clearIngestError(source: "Git.state.load")
             return true
         } catch {
             AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Git.state.load")
-            // DB not ready; fall back to UserDefaults
-            lock.withLock {
-                if let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) {
-                    watchedRepos.formUnion(saved.filter { RepositoryScope.authorizedGitRoot(for: $0) != nil })
-                }
-            }
+            // DB not ready; fall back to UserDefaults.
+            var authorization = RepositoryScope.AuthorizedRootLookup(roots: RepositoryScope.configuredRoots())
+            let saved = UserDefaults.standard.stringArray(forKey: Self.watchedReposKey) ?? []
+            let restored = saved.filter { authorization.root(for: $0) != nil }
+            lock.withLock { watchedRepos.formUnion(restored) }
             return false
         }
     }
@@ -99,6 +100,9 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     /// Start watching a git repo for new commits
     func watch(repoPath: String) {
         let canonical = RepositoryScope.canonicalPath(repoPath)
+        // Existing watches are revalidated by pruning and every commit scan.
+        // Repeated log discovery must not rewalk the tree for each file.
+        if lock.withLock({ watchedRepos.contains(canonical) }) { return }
         guard RepositoryScope.authorizedGitRoot(for: canonical) == canonical else { return }
         lock.lock()
         let inserted = watchedRepos.insert(canonical).inserted
@@ -112,8 +116,10 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     /// Stops polling repositories that are no longer under a configured
     /// development root. Historical usage and code-change facts are untouched.
     func pruneWatchedRepos(outside roots: [String]) {
+        var lookup = RepositoryScope.AuthorizedRootLookup(roots: roots)
+        let candidates = watchedRepoPaths
+        let removed = candidates.filter { lookup.root(for: $0) == nil }
         lock.lock()
-        let removed = watchedRepos.filter { !RepositoryScope.isInsideConfiguredRoots($0, roots: roots) }
         watchedRepos.subtract(removed)
         for path in removed { lastSeenCommit.removeValue(forKey: path) }
         lock.unlock()

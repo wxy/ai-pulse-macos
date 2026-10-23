@@ -24,7 +24,7 @@ enum GitRepoScanner {
     /// Skips descendant traversal inside system/heavy dirs and once a repo is
     /// found (shallow-first: nested repos are not reported separately).
     /// Honors `deadline` (soft scan budget): when exceeded, stops early and
-    /// returns `true` (truncated result). `FileManager.enumerator` yields
+    /// returns `true` (truncated result). `SymlinkFileTree` yields
     /// immediate children at level 1, so `maxDepth` bounds repos to 4 levels.
     /// `nonisolated`: callable from background contexts (RepoScanCache.scan
     /// runs the walk inside `Task.detached`); the Xcode target compiles with
@@ -32,18 +32,22 @@ enum GitRepoScanner {
     @discardableResult
     nonisolated static func enumerate(in dir: URL, deadline: Date? = nil,
                                       _ handler: (URL) -> Void) -> Bool {
+        if let deadline, Date() >= deadline { return true }
         // The selected development directory can itself be a repository.
         // Enumerators only yield children, so check this boundary explicitly
         // and preserve shallow-first semantics (including worktree .git files).
         if FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path) {
             if let deadline, Date() >= deadline { return true }
-            handler(dir)
+            handler(dir.standardizedFileURL.resolvingSymlinksInPath())
             return false
         }
-        guard let enumerator = FileManager.default.enumerator(
+        guard let enumerator = SymlinkFileTree.enumerator(
             at: dir,
             includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            deadline: deadline,
+            maximumDepth: maxDepth,
+            skippingDirectoryNames: skippedDirNames.union(heavyDirNames)
         ) else { return false }
 
         var truncated = false
@@ -80,6 +84,6 @@ enum GitRepoScanner {
                 enumerator.skipDescendants()
             }
         }
-        return truncated
+        return truncated || enumerator.truncated
     }
 }

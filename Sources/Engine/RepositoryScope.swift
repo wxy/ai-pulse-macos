@@ -12,6 +12,9 @@ enum RepositoryScope {
         let roots: [String]
         private var resolved: [String: String] = [:]
         private var unavailable: Set<String> = []
+        private var reachableRoots: Set<String>?
+        /// Read-scoped diagnostics: repeated rows must not multiply tree walks.
+        private(set) var linkedRootScanCount = 0
 
         /// Explicit init: the memberwise one would inherit `private` access
         /// from the private stored properties, which newer compilers tolerate
@@ -28,8 +31,22 @@ enum RepositoryScope {
             if let root = resolved[path] { return root }
             if unavailable.contains(path) { return nil }
 
-            let resolver = resolve ?? { RepositoryScope.authorizedGitRoot(for: $0, roots: $1) }
-            let root = resolver(path, roots)
+            let root: String?
+            if let resolve {
+                root = resolve(path, roots)
+            } else if let repo = RepositoryScope.gitRoot(containing: path) {
+                if RepositoryScope.isCanonicallyInside(repo, roots: roots) {
+                    root = repo
+                } else {
+                    if reachableRoots == nil {
+                        linkedRootScanCount += 1
+                        reachableRoots = Set(RepositoryScope.reachableRepositoryRoots(in: roots))
+                    }
+                    root = reachableRoots?.contains(repo) == true ? repo : nil
+                }
+            } else {
+                root = nil
+            }
             if let root {
                 resolved[path] = root
             } else {
@@ -52,10 +69,29 @@ enum RepositoryScope {
 
     static func isInsideConfiguredRoots(_ path: String, roots: [String]) -> Bool {
         let candidate = canonicalPath(path)
-        return roots.contains { rawRoot in
+        if isCanonicallyInside(candidate, roots: roots) { return true }
+        return reachableRepositoryRoots(in: roots).contains { repo in
+            candidate == repo || candidate.hasPrefix(repo + "/")
+        }
+    }
+
+    private static func isCanonicallyInside(_ candidate: String, roots: [String]) -> Bool {
+        roots.contains { rawRoot in
             let root = canonicalPath(rawRoot)
             return candidate == root || candidate.hasPrefix(root.hasSuffix("/") ? root : root + "/")
         }
+    }
+
+    /// Recomputed for each independent read, so removed/retargeted links stop
+    /// authorizing their old targets. Callers handling a batch reuse one lookup.
+    static func reachableRepositoryRoots(in roots: [String]) -> [String] {
+        var repositories: Set<String> = []
+        for root in roots {
+            GitRepoScanner.enumerate(in: URL(fileURLWithPath: canonicalPath(root))) {
+                repositories.insert(canonicalPath($0.path))
+            }
+        }
+        return Array(repositories)
     }
 
     static func gitRoot(containing path: String, fileManager: FileManager = .default) -> String? {

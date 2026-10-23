@@ -10,26 +10,26 @@ enum RepoDiscovery {
     static func scan() -> Int {
         let dirs = RepositoryScope.configuredRoots()
         GitMonitor.shared.pruneWatchedRepos(outside: dirs)
-        let known = GitMonitor.shared.watchedRepoPaths
+        var known = GitMonitor.shared.watchedRepoPaths
         var found = 0
 
         for dir in dirs {
             guard FileManager.default.fileExists(atPath: dir) else { continue }
-            found += scanDirectory(URL(fileURLWithPath: dir), known: known)
+            found += scanDirectory(URL(fileURLWithPath: dir), known: &known)
         }
         return found
     }
 
     // MARK: - Private
 
-    private static func scanDirectory(_ dir: URL, known: Set<String>) -> Int {
+    private static func scanDirectory(_ dir: URL, known: inout Set<String>) -> Int {
         var count = 0
         GitRepoScanner.enumerate(in: dir) { url in
             // `known` holds canonical paths (GitMonitor.watch canonicalizes
             // before inserting); comparing raw paths let already-watched
             // repos re-register and inflate the discovery count.
             let canonical = RepositoryScope.canonicalPath(url.path)
-            if !known.contains(canonical) {
+            if known.insert(canonical).inserted {
                 GitMonitor.shared.watch(repoPath: url.path)
                 Logger.info("RepoDiscovery: new repo → \(url.path)")
                 count += 1
