@@ -5,7 +5,7 @@
   <a href="https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12"><img src="assets/readme/download-button-appstore-mac.svg" width="300" height="69" alt="Mac App Store listing"></a>
 </p>
 
-<p align="center"><code>MACOS 14+ · IOS 17+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · 2.0.1 RELEASED</code></p>
+<p align="center"><code>MACOS 14+ · IOS 17+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · MACOS 2.0.2 DRAFT</code></p>
 
 <p align="center">
   <a href="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml"><img src="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg" alt="CI"></a>&nbsp;
@@ -17,13 +17,13 @@ AI Pulse makes ongoing AI activity tangible and shows the local Git output along
 
 > AI Pulse 让持续的 AI 活动被感受到，并展示伴随的本地 Git 成果。它是消费脉搏，不是精确计量器、账单，也不判断产出是否值得。
 
-This README describes the released AI Pulse 2.0.1 across macOS, iPhone, Apple Watch, and their widgets. The release owner has confirmed the final archive and physical-device acceptance checks passed.
+AI Pulse 2.0.2 (build 34) is being prepared for the macOS app and its bundled Mac widget. iPhone, Apple Watch, and their widgets remain at the released 2.0.1 (build 33). The signed macOS Archive and App Store submission are pending; the shared CloudKit payload stays at 2.0.0.
 
-> 本文描述已发布的 AI Pulse 2.0.1，覆盖 macOS、iPhone、Apple Watch 及各端小组件。发布负责人已确认最终归档与真机验收通过。
+> AI Pulse 2.0.2（构建 34）正在准备发布，仅覆盖 macOS App 与内嵌 Mac 小组件。iPhone、Apple Watch 及其小组件保持已发布的 2.0.1（构建 33）。macOS 签名归档与商店提交尚待完成，CloudKit 共享载荷继续使用 2.0.0。
 
-**2.0.1 maintenance update** — Mac refreshes do less repeated log and Git work, while collection, synchronization, export, and navigation fixes improve reliability. Gemini CLI log support and clearer medium and large iPhone widgets are small additions. See the [release notes](RELEASE_DRAFT.md) for verification and deployment details.
+**2.0.2 maintenance update** — Follow symbolic links with clearer target-folder authorization, see local processing stages, and recover interrupted Git scans and Claude history backfills. The update also improves log caching, reduces redundant synchronization, fits dashboard tooltips to their content, and upgrades libgit2 to 1.9.7. See the [release draft](RELEASE_DRAFT.md) for verification and deployment details.
 
-> **2.0.1 维护更新** — Mac 刷新减少重复的日志与 Git 工作量，并改进采集、同步、导出及导航的可靠性。Gemini CLI 日志适配与更清晰的 iPhone 中、大号小组件是本次的小幅新增。验证和部署信息见[发布说明](RELEASE_DRAFT.md)。
+> **2.0.2 维护更新** — 支持跟随符号链接并明确提示真实目录授权，展示本地处理阶段，恢复中断的 Git 扫描与 Claude 历史回填；同时改进日志缓存、减少冗余同步、调整提示框尺寸，并升级 libgit2 至 1.9.7。验证和部署信息见[发布草稿](RELEASE_DRAFT.md)。
 
 <p align="center"><img src="assets/readme/section-features.svg" width="100%" alt="Features · 功能"></p>
 
