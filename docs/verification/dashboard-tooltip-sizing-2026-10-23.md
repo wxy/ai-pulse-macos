@@ -47,3 +47,5 @@ Observations are visual; no exact pixel measurements are claimed. Full live hove
 ## Cleanup
 
 The temporary QA applications, fixture source, screenshots/logs, DerivedData and newly created sandbox container Data are removed after verification. No widget from either QA app was registered. OS-managed container metadata is left to macOS. Only this report is retained as verification material; no process artifacts enter Git.
+
+The later processing-status change in the same PR is verified in [its report](local-processing-status-2026-10-23.md); the scope/results above describe the tooltip-only change at `3c75cd0`.

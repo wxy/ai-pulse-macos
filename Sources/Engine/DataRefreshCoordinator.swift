@@ -68,6 +68,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     /// Main-thread only: every writer hops through DispatchQueue.main.async.
     private var pendingEvents: [ConsumptionEvent] = []
     private var pendingConsumptionBeat = false
+    private var pendingPreparation: LocalDataProcessing.Activity? // main thread only
     private var lastNotifyTime: Date = .distantPast
     private let notifyQueue = DispatchQueue(label: "com.wxy.aipulse.coordinator", qos: .utility)
     private var screenSleepObserver: NSObjectProtocol?
@@ -103,7 +104,9 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         // thread: the first pass walks every existing Codex/Claude session
         // file and would beachball launch for seconds on large histories.
         let runSessionBackfill = actions.runSessionBackfill
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
         DispatchQueue.global(qos: .utility).async { [weak self] in
+            defer { preparation.finish() }
             runSessionBackfill()
             self?.notifyDataChange()
         }
@@ -172,6 +175,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         pulseTimer?.cancel(); pulseTimer = nil
         pendingNotifyWorkItem?.cancel(); pendingNotifyWorkItem = nil
         notifyTask?.cancel(); notifyTask = nil
+        pendingPreparation?.finish(); pendingPreparation = nil
     }
 
     private func recreateTimers() {
@@ -208,6 +212,8 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     /// widget nor CloudKit receives the pre-refresh snapshot.
     @MainActor
     func refreshFromMacWidget() async {
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
+        defer { preparation.finish() }
         let startedAt = Date()
         await LogWatcher.shared.scanAndWait()
         GitMonitor.shared.pruneWatchedRepos(outside: RepositoryScope.configuredRoots())
@@ -220,6 +226,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         }
 
         NotificationCenter.default.post(name: .dataDidChange, object: nil)
+        preparation.finish()
         await CloudSyncService.shared.syncFromCache()
         Logger.info(
             "MacWidget: explicit refresh completed in "
@@ -228,7 +235,10 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     }
 
     func notifyDataChange() {
-        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.scheduleUINotify() } }
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.scheduleUINotify(processing: preparation) }
+        }
     }
 
     // MARK: - Phase runners
@@ -349,6 +359,8 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     }
 
     private func runPhase4Refresh() async {
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
+        defer { preparation.finish() }
         await LogWatcher.shared.waitForPendingScan()
         guard !LogWatcher.backfill.isActive else { return }
         let now = Date().timeIntervalSince1970
@@ -369,6 +381,7 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
             UserDefaults.standard.set(now, forKey: lastKey)
         }
 
+        preparation.finish()
         await CloudSyncService.shared.syncFromCache()
         Task { @MainActor in Logger.debug("Phase 4 refreshed") }
     }
@@ -389,12 +402,13 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         DiagnosticJournal.log("cache_invalidate", [
             "reason": .string("usage_event"),
         ])
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
         Task { [weak self] in
             guard let self else { return }
             await invalidateDashboardCache()
             await MainActor.run {
                 self.appendEvent(event)
-                self.scheduleUINotify()
+                self.scheduleUINotify(processing: preparation)
             }
         }
     }
@@ -403,10 +417,11 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
     /// are not consumption events (v2 §4.2 — unattributed output never burns),
     /// so this only refreshes UI.
     func notifyPhaseGitScan() {
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
         Task { [weak self] in
             guard let self else { return }
             await invalidateDashboardCache()
-            await MainActor.run { self.scheduleUINotify() }
+            await MainActor.run { self.scheduleUINotify(processing: preparation) }
         }
     }
 
@@ -422,12 +437,13 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         DiagnosticJournal.log("cache_invalidate", [
             "reason": .string("balance_snapshot"),
         ])
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
         Task { [weak self] in
             guard let self else { return }
             await invalidateDashboardCache()
             await MainActor.run {
                 self.appendEvent(event)
-                self.scheduleUINotify()
+                self.scheduleUINotify(processing: preparation)
             }
         }
     }
@@ -448,8 +464,10 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
 
     private var notifyTask: Task<Void, Never>?
 
-    private func scheduleUINotify() {
-        guard !stopped else { return }
+    private func scheduleUINotify(processing: LocalDataProcessing.Activity) {
+        guard !stopped else { processing.finish(); return }
+        pendingPreparation?.finish()
+        pendingPreparation = processing
         notifyTask?.cancel()
         notifyTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
@@ -480,7 +498,10 @@ nonisolated final class DataRefreshCoordinator: @unchecked Sendable {
         pendingEvents.removeAll()
         let shouldBeat = pendingConsumptionBeat
         pendingConsumptionBeat = false
+        let preparation = pendingPreparation
+        pendingPreparation = nil
         Task { @MainActor in
+            defer { preparation?.finish() }
             await PulseEngine.shared.invalidate()
             NotificationCenter.default.post(name: .dataDidChange, object: nil)
             if shouldBeat {

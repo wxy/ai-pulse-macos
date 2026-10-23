@@ -38,6 +38,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private var scanChanged = false
     private var scanFreshTokens: Int64 = 0
     private var scanSource: String?
+    private var processingActivity: LocalDataProcessing.Activity? // scanQueue only
 
     private struct OpenCodeFingerprint: Equatable {
         let size: UInt64
@@ -125,7 +126,9 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     }
 
     func start() {
+        let activity = LocalDataProcessing.shared.begin(.reading)
         scanQueue.async { [weak self] in
+            defer { activity.finish() }
             guard let self else { return }
             self.stopped = false
             if !self.positionsLoaded { self.loadPositionsFromDB() }
@@ -134,13 +137,15 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             defer { self.suppressConsumptionEvents = false }
             LogWatcher.backfill.setActive(isColdStart)
             self.watchingEnabled = true
-            self.runScan(includeClaudeProjects: true)
+            self.runScan(includeClaudeProjects: true, activity: activity)
             LogWatcher.backfill.setActive(false)
             if isColdStart {
                 // A previous launch could have cached a snapshot before the
                 // cold backfill finished. Rebuild after history is settled.
-                Task { await DashboardCache.invalidateAll() }
-                DispatchQueue.main.async {
+                let preparation = LocalDataProcessing.shared.begin(.preparing)
+                Task {
+                    defer { preparation.finish() }
+                    await DashboardCache.invalidateAll()
                     DataRefreshCoordinator.shared.notifyDataChange()
                 }
             }
@@ -150,14 +155,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Perform an incremental scan without setting up FSEvent watchers.
     /// Safe to call repeatedly; idempotent. Used by DataRefreshCoordinator.
     func scan() {
+        let activity = LocalDataProcessing.shared.begin(.reading)
         scanQueue.async { [weak self] in
-            guard let self, !self.stopped, !self.scanQueued else { return }
+            guard let self, !self.stopped, !self.scanQueued else { activity.finish(); return }
             self.scanQueued = true
             self.scanQueue.async { [weak self] in
+                defer { activity.finish() }
                 guard let self else { return }
                 defer { self.scanQueued = false }
                 guard !self.stopped else { return }
-                self.runScan(includeClaudeProjects: true)
+                self.runScan(includeClaudeProjects: true, activity: activity)
             }
         }
     }
@@ -165,14 +172,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Completes one incremental scan before returning. Used for explicit
     /// user refreshes that must publish a snapshot of the newly collected data.
     func scanAndWait() async {
+        let activity = LocalDataProcessing.shared.begin(.reading)
         await withCheckedContinuation { continuation in
             scanQueue.async { [weak self] in
+                defer { activity.finish() }
                 guard let self, !self.stopped else {
                     continuation.resume()
                     return
                 }
                 if !self.positionsLoaded { self.loadPositionsFromDB() }
-                self.runScan(includeClaudeProjects: true)
+                self.runScan(includeClaudeProjects: true, activity: activity)
                 continuation.resume()
             }
         }
@@ -188,8 +197,10 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
-    private func runScan(includeClaudeProjects: Bool) {
+    private func runScan(includeClaudeProjects: Bool, activity: LocalDataProcessing.Activity) {
         dispatchPrecondition(condition: .onQueue(scanQueue))
+        processingActivity = activity
+        defer { processingActivity = nil }
         scanChanged = false
         scanFreshTokens = 0
         scanSource = nil
@@ -204,13 +215,21 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         if includeClaudeProjects {
             scanClaudeProjectsOnly()
         }
+        activity.update(.reading)
         discoverAndWatchRepos()
+        activity.update(.reading)
         scanCodexSessions()
+        activity.update(.reading)
         scanCopilotChatSessions()
+        activity.update(.reading)
         scanDeepSeekHarnessSessions()
+        activity.update(.reading)
         scanQwenSessions()
+        activity.update(.reading)
         scanGeminiSessions()
+        activity.update(.reading)
         scanOpenCodeSessions()
+        activity.update(.preparing)
         persistPendingPositions()
         if scanChanged {
             let event: ConsumptionEvent? = scanFreshTokens > 0 && !suppressConsumptionEvents
@@ -488,6 +507,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     }
 
     private func parseCopilotSessionFile(_ file: URL, repoPath: String?) {
+        processingActivity?.update(.parsing)
         let path = file.path
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
               let fileSize = attrs[.size] as? UInt64
@@ -612,6 +632,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             return
         }
 
+        processingActivity?.update(.parsing)
         let result: DeepSeekHarnessScanResult
         do {
             result = try Self.parseDeepSeekHarnessStream(at: file) { events in
@@ -1099,6 +1120,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             return OpenCodeFingerprint(size: size, modifiedAt: modifiedAt, fileNumber: fileNumber)
         }()
         if let fingerprint, openCodeFingerprints[file.path] == fingerprint { return }
+        processingActivity?.update(.parsing)
         guard let event = OpenCodeParser.parseFile(file, cwd: nil) else {
             // Valid JSON that simply carries no usage (user-side messages,
             // meta entries) is a stable verdict: remember the fingerprint so
@@ -1179,6 +1201,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         // File was truncated or rotated — start over
         let startPos = lastPos <= fileSize ? lastPos : 0
         guard startPos < fileSize else { return } // nothing new
+        processingActivity?.update(.parsing)
 
         do {
             let checkpoint = try JSONLCheckpoint.read(at: url, from: startPos, fileSize: fileSize,

@@ -9,6 +9,8 @@ enum SessionInfoBackfill {
 
     static func runIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: doneKey) else { return }
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
+        defer { preparation.finish() }
         let home = FileManager.default.realHomeDirectory
         backfillCodex(home: home)
         backfillClaude(home: home)

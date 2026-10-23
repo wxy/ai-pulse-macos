@@ -603,6 +603,8 @@ enum StatsService {
     /// Computes everything needed for a complete DashboardSnapshot for `days`.
     /// Used by both live Dashboard loading and background cache refresh.
     static func dashboardSnapshot(period: DashboardPeriodKind) async -> DashboardSnapshot {
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
+        defer { preparation.finish() }
         let failures = ObservationFailures()
         return await $observationFailures.withValue(failures) {
             await $observationPeriod.withValue(period) {
