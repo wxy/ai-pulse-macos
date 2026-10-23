@@ -12,6 +12,25 @@ enum CloudSyncFingerprintStore {
     static func write(_ fingerprint: UInt64, rangeKey: String, defaults: UserDefaults = .standard) {
         defaults.set(String(fingerprint), forKey: "cloud_sync_fingerprint_\(rangeKey)")
     }
+
+    /// Canonical content fingerprint (updatedAt excluded) of a snapshot.
+    ///
+    /// `sortedKeys` is the whole point (2026-10-23 review F08): the default
+    /// encoder serializes `[String: …]` properties in per-process dictionary
+    /// order, so identical content produced different raw hashes — within one
+    /// process and especially across relaunches. With non-normalized JSON the
+    /// "unchanged, skip upload" comparison was unreliable and each mismatch
+    /// became an extra CloudKit write plus a silent push to every device.
+    /// `updatedAt` is zeroed here so every caller compares content only.
+    static func contentFingerprint(_ snapshot: DashboardSnapshot) -> UInt64? {
+        var content = snapshot
+        content.updatedAt = Date(timeIntervalSince1970: 0)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(content),
+              let json = String(data: data, encoding: .utf8) else { return nil }
+        return stableHash(json)
+    }
 }
 
 /// Syncs the cached dashboard snapshots from GRDB to iCloud.
@@ -150,11 +169,7 @@ final class CloudSyncService {
             // several times an hour even when nobody is using the app.
             // Skip the write (and the push) entirely when only `updatedAt`
             // would differ.
-            var contentSnap = snap
-            contentSnap.updatedAt = Date(timeIntervalSince1970: 0)
-            let fingerprint = (try? JSONEncoder().encode(contentSnap))
-                .flatMap { String(data: $0, encoding: .utf8) }
-                .map(stableHash)
+            let fingerprint = CloudSyncFingerprintStore.contentFingerprint(snap)
             if let fingerprint, CloudSyncFingerprintStore.read(rangeKey: r.key) == fingerprint {
                 Logger.debug("CloudSync: \(r.key) unchanged, skipping push")
                 continue

@@ -141,25 +141,27 @@ enum SessionInfoBackfill {
         return PrefixFingerprint(size: UInt64(size), mtime: mtime, inode: UInt64(inode))
     }
 
-    private static let prefixCacheLock = NSLock()
-    private static nonisolated(unsafe) var prefixMetadataCache:
-        [String: (fingerprint: PrefixFingerprint, value: (sessionId: String?, title: String?, repo: String?)?)] = [:]
-
     /// Claude session metadata read from the file head (first user message +
     /// session id + cwd), so titles are correct even when a session is scanned
     /// while still being written.
     ///
     /// Cached by (size, mtime, inode): the scan loop calls this for every
     /// jsonl on every 30-second pass, and an unchanged head would otherwise
-    /// cost a 4KB read plus per-line JSON re-parsing each tick.
+    /// cost a 4KB read plus per-line JSON re-parsing each tick. Bounded by
+    /// selective eviction, not a full clear: clearing everything at the
+    /// capacity edge made every pass re-read the entire history forever
+    /// (2026-10-23 review F07).
+    static let prefixMetadataCache = OrderedBoundedCache<(
+        fingerprint: PrefixFingerprint,
+        value: (sessionId: String?, title: String?, repo: String?)?
+    )>(capacity: 16384)
+
     static func claudePrefixMetadata(from file: URL) -> (sessionId: String?, title: String?, repo: String?)? {
         let fingerprint = prefixFingerprint(of: file)
-        prefixCacheLock.lock()
-        if let fingerprint, let cached = prefixMetadataCache[file.path], cached.fingerprint == fingerprint {
-            prefixCacheLock.unlock()
+        if let fingerprint, let cached = prefixMetadataCache.value(for: file.path),
+           cached.fingerprint == fingerprint {
             return cached.value
         }
-        prefixCacheLock.unlock()
 
         let value: (sessionId: String?, title: String?, repo: String?)?
         if let data = try? readPrefix(of: file, bytes: 4096),
@@ -170,13 +172,7 @@ enum SessionInfoBackfill {
         }
 
         if let fingerprint {
-            prefixCacheLock.lock()
-            // Sessions accumulate across project directories; drop the whole
-            // table rather than tracking LRU — the next pass repopulates it
-            // with one 4KB read per file.
-            if prefixMetadataCache.count > 4096 { prefixMetadataCache.removeAll() }
-            prefixMetadataCache[file.path] = (fingerprint, value)
-            prefixCacheLock.unlock()
+            prefixMetadataCache.insert((fingerprint, value), for: file.path)
         }
         return value
     }
@@ -206,6 +202,6 @@ enum SessionInfoBackfill {
               let raw = json["timestamp"] as? String,
               let date = iso8601WithFraction.date(from: raw) ?? iso8601.date(from: raw)
         else { return nil }
-        return Int(date.timeIntervalSince1970 * 1000)
+        return EventTimestamp.epochMillis(fromSeconds: date.timeIntervalSince1970)
     }
 }

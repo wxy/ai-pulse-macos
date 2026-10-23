@@ -77,4 +77,44 @@ final class ObservedLogIngestTests: XCTestCase {
             XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT reported_output_tokens FROM usage_event"), 99)
         }
     }
+
+    // MARK: - 2026-10-23 review F03:补齐丢失的 cache_creation_input_tokens
+
+    func testReplayWithCacheCreationTokensHealsLegacyNullWithoutChangingCounters() throws {
+        let queue = try DatabaseQueue()
+        // A row persisted by the old scanner: cache creation was dropped to
+        // NULL while input/cache-read/output counters were already stored.
+        let legacy = UsageEvent(ts: 100, source: "claude-code", model: "claude-sonnet-4",
+                                inTokens: 6, outTokens: 5, cacheTokens: 7, repoPath: "/repo",
+                                sessionId: "s", dedupeKey: "claude-code|s|m")
+        let healed = UsageEvent(ts: 100, source: "claude-code", model: "claude-sonnet-4",
+                                inTokens: 6, outTokens: 5, cacheTokens: 7, repoPath: "/repo",
+                                sessionId: "s", dedupeKey: "claude-code|s|m", cacheCreationTokens: 900)
+        try queue.write { db in
+            try AppDatabase.createAllTables(db)
+            _ = try LogWatcher.persistObservedEvents(in: db, rows: [(legacy, "anthropic")], nowMs: 100)
+            XCTAssertEqual(try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM usage_event
+                WHERE source = 'claude-code' AND cache_creation_tokens IS NULL
+                """), 1, "the legacy defect this backfill heals")
+
+            // The F03 fix re-reads the source files once; the upsert's
+            // COALESCE fills the NULL while every other counter stays put.
+            _ = try LogWatcher.persistObservedEvents(in: db, rows: [(healed, "anthropic")], nowMs: 100)
+            let row = try Row.fetchOne(db, sql: """
+                SELECT in_tokens, out_tokens, cache_tokens, cache_creation_tokens
+                FROM usage_event WHERE dedupe_key = 'claude-code|s|m'
+                """)
+            XCTAssertEqual(row?["in_tokens"], 6)
+            XCTAssertEqual(row?["out_tokens"], 5)
+            XCTAssertEqual(row?["cache_tokens"], 7)
+            XCTAssertEqual(row?["cache_creation_tokens"], 900)
+            XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usage_event"), 1,
+                           "the heal replay must stay idempotent")
+            XCTAssertEqual(try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM usage_event
+                WHERE source = 'claude-code' AND cache_creation_tokens IS NULL
+                """), 0, "the one-shot heal query stops once nothing is missing")
+        }
+    }
 }

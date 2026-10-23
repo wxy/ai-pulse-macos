@@ -113,7 +113,10 @@ struct AiderParser {
         func parseK(_ s: String) -> Int {
             if s.hasSuffix("k") {
                 let num = Double(s.dropLast()) ?? 0
-                return Int(num * 1000)
+                // Bounded like the timestamp path (F01): an absurd digit run
+                // in a markdown line must not trap Int(num * 1000). Mirror
+                // the non-suffix `Int(s) ?? 0` behavior of returning 0.
+                return EventTimestamp.scaledBy1000(num) ?? 0
             }
             return Int(s) ?? 0
         }
@@ -144,7 +147,7 @@ struct AiderParser {
     private static func parseISO8601(_ str: String) -> Int? {
         if let date = iso8601Frac.date(from: str) ?? iso8601.date(from: str) ??
             naiveFrac.date(from: str) ?? naive.date(from: str) {
-            return Int(date.timeIntervalSince1970 * 1000)
+            return EventTimestamp.epochMillis(fromSeconds: date.timeIntervalSince1970)
         }
         return nil
     }

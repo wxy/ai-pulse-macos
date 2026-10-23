@@ -9,6 +9,30 @@ import Foundation
 /// parsed → file mtime → wall clock, and every downgrade is counted with a
 /// rate-limited diagnostic event so clock-stamping stays visible.
 nonisolated enum EventTimestamp {
+    /// Bounded `value * 1000` → `Int?` conversion for numbers read out of log
+    /// files (2026-10-23 review F01).
+    ///
+    /// A JSON number such as `1e20` parses into a perfectly legal `Double`,
+    /// but the plain `Int(value * 1000)` conversion traps outside `Int`'s
+    /// range (and `1e308 * 1000` is not even finite), and a trapping
+    /// conversion cannot be recovered by any enclosing `do/catch`. Startup
+    /// re-reads the offending file, so one corrupted line could keep the app
+    /// from launching. In-range values truncate exactly like the previous
+    /// in-line conversions; anything non-finite or beyond ±1e15 after scaling
+    /// (≈ year 33658 for epoch seconds, far outside every real value) returns
+    /// `nil` so callers degrade explicitly instead of crashing.
+    static func scaledBy1000(_ value: Double) -> Int? {
+        guard value.isFinite else { return nil }
+        let scaled = value * 1000
+        guard scaled.isFinite, scaled >= -1e15, scaled <= 1e15 else { return nil }
+        return Int(scaled)
+    }
+
+    /// Epoch seconds → epoch milliseconds through the bounded conversion.
+    static func epochMillis(fromSeconds seconds: Double) -> Int? {
+        scaledBy1000(seconds)
+    }
+
     /// Resolves the event timestamp in milliseconds after the source-provided
     /// value is missing or failed to parse.
     ///

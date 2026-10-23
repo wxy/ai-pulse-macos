@@ -55,3 +55,70 @@ final class RepositoryAuthorizationLookupTests: XCTestCase {
         XCTAssertEqual(calls, ["/allowed/project", "/allowed/project-link"])
     }
 }
+
+// MARK: - 2026-10-23 review F02:链接仓库的 reachable-roots 走查按代次分摊
+
+final class SharedReachableRootsLookupTests: XCTestCase {
+    private func git(_ arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+    }
+
+    func testInsidePathsNeverConsultSharedAnswer() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("auth-lookup-\(UUID().uuidString)", isDirectory: true)
+        let repo = base.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        try git(["init", "--quiet", repo.path])
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        var providerCalls = 0
+        var lookup = RepositoryScope.AuthorizedRootLookup(roots: [base.path]) {
+            providerCalls += 1
+            return []
+        }
+        XCTAssertNotNil(lookup.root(for: repo.path))
+        XCTAssertNil(lookup.root(for: base.appendingPathComponent("plain").path))
+        XCTAssertEqual(providerCalls, 0,
+                       "canonically-inside repos authorize without any tree walk")
+    }
+
+    func testLinkedRepoUsesSharedAnswerOncePerLookup() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("auth-lookup-\(UUID().uuidString)", isDirectory: true)
+        let external = FileManager.default.temporaryDirectory
+            .appendingPathComponent("auth-external-\(UUID().uuidString)", isDirectory: true)
+        let linked = external.appendingPathComponent("linked-repo")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+        try git(["init", "--quiet", linked.path])
+        defer {
+            try? FileManager.default.removeItem(at: base)
+            try? FileManager.default.removeItem(at: external)
+        }
+
+        let linkedRoot = RepositoryScope.canonicalPath(linked.path)
+        var providerCalls = 0
+        var lookup = RepositoryScope.AuthorizedRootLookup(roots: [base.path]) {
+            providerCalls += 1
+            return [linkedRoot]
+        }
+        // 2048 historical rows resolving to the same linked repo: one shared
+        // answer per lookup, not one tree walk per batch.
+        for _ in 0..<2048 {
+            XCTAssertNotNil(lookup.root(for: linked.path))
+        }
+        XCTAssertEqual(providerCalls, 1)
+
+        // A repository absent from the shared answer is denied — without any
+        // fallback walk.
+        var denied = RepositoryScope.AuthorizedRootLookup(roots: [base.path]) { [] }
+        XCTAssertNil(denied.root(for: linked.path))
+    }
+}

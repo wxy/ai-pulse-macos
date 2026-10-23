@@ -52,7 +52,7 @@ struct QwenCodeParser {
 
         let parsedTs: Int? = (json["timestamp"] as? String)
             .flatMap { iso8601Frac.date(from: $0) ?? iso8601.date(from: $0) }
-            .map { Int($0.timeIntervalSince1970 * 1000) }
+            .flatMap { EventTimestamp.epochMillis(fromSeconds: $0.timeIntervalSince1970) }
         let ts = EventTimestamp.resolve(
             parsed: parsedTs, fileModifiedMs: fallbackTimestampMs, source: source)
 

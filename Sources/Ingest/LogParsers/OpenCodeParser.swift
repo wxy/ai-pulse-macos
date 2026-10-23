@@ -28,8 +28,12 @@ struct OpenCodeParser {
         let model = json["model"] as? String
         let id = json["id"] as? String ?? ""
 
-        let parsedTs: Int? = (json["created_at"] as? NSNumber).map { $0.intValue * 1000 }
-            ?? (json["timestamp"] as? NSNumber).map { $0.intValue * 1000 }
+        // Same hardening as Claude (F01): an absurd numeric epoch must
+        // degrade to the mtime fallback, not trap the Int conversion.
+        let parsedTs: Int? = (json["created_at"] as? NSNumber)
+            .flatMap { EventTimestamp.epochMillis(fromSeconds: $0.doubleValue) }
+            ?? (json["timestamp"] as? NSNumber)
+            .flatMap { EventTimestamp.epochMillis(fromSeconds: $0.doubleValue) }
         let ts = EventTimestamp.resolve(
             parsed: parsedTs, fileModifiedMs: fallbackTimestampMs, source: "opencode")
 

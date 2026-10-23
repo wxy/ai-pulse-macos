@@ -61,7 +61,7 @@ struct ClaudeCodeParser {
 
         return UsageEvent(
             ts: EventTimestamp.resolve(
-                parsed: parseTimestamp(json["timestamp"]).map { Int($0 * 1000) },
+                parsed: parseTimestampMs(json["timestamp"]),
                 fileModifiedMs: fallbackTimestampMs,
                 source: "claude-code"),
             source: "claude-code",
@@ -88,11 +88,16 @@ struct ClaudeCodeParser {
         return f
     }()
 
-    private static func parseTimestamp(_ value: Any?) -> TimeInterval? {
-        if let num = value as? TimeInterval { return num }
+    /// Parse a top-level `timestamp` into epoch milliseconds. Accepts an ISO
+    /// 8601 string (e.g. "2026-06-18T09:29:32.485Z") or a numeric epoch in
+    /// seconds. Numeric values go through the bounded conversion: an absurd
+    /// JSON number (`1e20`, `1e308`) returns nil and degrades via the
+    /// documented fallback chain instead of trapping the process (F01).
+    private static func parseTimestampMs(_ value: Any?) -> Int? {
+        if let num = value as? Double { return EventTimestamp.epochMillis(fromSeconds: num) }
         if let str = value as? String {
             if let date = iso8601WithFraction.date(from: str) ?? iso8601.date(from: str) {
-                return date.timeIntervalSince1970
+                return EventTimestamp.epochMillis(fromSeconds: date.timeIntervalSince1970)
             }
         }
         return nil

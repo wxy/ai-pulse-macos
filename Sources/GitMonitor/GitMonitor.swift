@@ -24,10 +24,25 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     private var watchedRepos: Set<String> = []
     private var lastSeenCommit: [String: String] = [:] // repo -> last processed commit hash
     private var scanningRepos: Set<String> = []
-    /// Concurrent queue for running libgit2 operations with a timeout,
-    /// so a hung repo never blocks the serial notifyQueue indefinitely.
+    /// Concurrent queue for libgit2 operations. Slots cap how many native
+    /// reads run at once (2026-10-23 review F04): without a bound, every
+    /// repository's full log/diff ran simultaneously and stacked CPU, disk,
+    /// and native object memory pressure. Synchronous C calls cannot be
+    /// aborted mid-flight, so the per-read deadline is enforced at the Swift
+    /// loop boundaries (before/inside the per-commit diff loop) instead of
+    /// claiming to time out each libgit2 call.
     private let gitOpQueue = DispatchQueue(label: "com.wxy.aipulse.git.op",
                                            qos: .utility, attributes: .concurrent)
+    /// Maximum simultaneous native git reads across all repositories.
+    private static let maxConcurrentGitReads = 2
+    private let gitReadSlots = DispatchSemaphore(value: maxConcurrentGitReads)
+    /// Wall-clock budget for one repository read pass. A pass that runs out
+    /// stops diffing with `complete = false`: facts collected so far persist,
+    /// the cursor stays at the previous head, and the next poll retries.
+    private static let scanPassBudgetSeconds: TimeInterval = 60
+    /// Upper bound for `pollAndWait`, so an explicit refresh cannot hang
+    /// forever behind a pathologically slow repository read.
+    private static let explicitRefreshWaitLimit: TimeInterval = 120
 
     /// Read-only snapshot of currently watched repo paths.
     /// Used by RepoDiscovery to diff against the filesystem.
@@ -97,13 +112,25 @@ nonisolated final class GitMonitor: @unchecked Sendable {
         "node_modules", "dist", "build", ".next", "vendor", "__pycache__"
     ]
 
+    /// Authorization for monitor-internal decisions (watch, scan, prune).
+    /// Repositories canonically inside a configured root resolve cheaply; a
+    /// linked repository falls back to the generation-cached reachable-roots
+    /// answer instead of re-walking the whole development tree per watch, per
+    /// poll, or per batch (2026-10-23 review F02).
+    private func authorizedRoot(for path: String) -> String? {
+        guard let repo = RepositoryScope.gitRoot(containing: path) else { return nil }
+        let roots = RepositoryScope.configuredRoots()
+        if RepositoryScope.isCanonicallyInside(repo, roots: roots) { return repo }
+        return RepositoryScope.generationReachableRoots(in: roots).contains(repo) ? repo : nil
+    }
+
     /// Start watching a git repo for new commits
     func watch(repoPath: String) {
         let canonical = RepositoryScope.canonicalPath(repoPath)
         // Existing watches are revalidated by pruning and every commit scan.
         // Repeated log discovery must not rewalk the tree for each file.
         if lock.withLock({ watchedRepos.contains(canonical) }) { return }
-        guard RepositoryScope.authorizedGitRoot(for: canonical) == canonical else { return }
+        guard authorizedRoot(for: canonical) == canonical else { return }
         lock.lock()
         let inserted = watchedRepos.insert(canonical).inserted
         lock.unlock()
@@ -115,8 +142,16 @@ nonisolated final class GitMonitor: @unchecked Sendable {
 
     /// Stops polling repositories that are no longer under a configured
     /// development root. Historical usage and code-change facts are untouched.
+    ///
+    /// Callers on the UI thread must use `pruneWatchedReposInBackground` —
+    /// authorizing a linked repository can walk the development tree, and
+    /// that walk has no deadline (2026-10-23 review F02).
     func pruneWatchedRepos(outside roots: [String]) {
-        var lookup = RepositoryScope.AuthorizedRootLookup(roots: roots)
+        // One generation answer serves every watched repository in this call;
+        // the lookup consults it lazily, so all-inside setups never walk.
+        var lookup = RepositoryScope.AuthorizedRootLookup(
+            roots: roots,
+            sharedReachableRoots: { RepositoryScope.generationReachableRoots(in: roots) })
         let candidates = watchedRepoPaths
         let removed = candidates.filter { lookup.root(for: $0) == nil }
         lock.lock()
@@ -128,6 +163,18 @@ nonisolated final class GitMonitor: @unchecked Sendable {
             AppHealthMonitor.shared.clearIngestError(source: "Git.scan.\(path)")
         }
         persistWatchedRepos()
+    }
+
+    /// Off-main-thread prune for UI-thread callers. The walk still happens
+    /// (a linked repository must revalidate against the real tree), but the
+    /// main thread only awaits it (F02).
+    func pruneWatchedReposInBackground(outside roots: [String]) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .utility).async { [self] in
+                pruneWatchedRepos(outside: roots)
+                continuation.resume()
+            }
+        }
     }
 
     /// Poll watched repos - called periodically or after log ingestion
@@ -142,42 +189,79 @@ nonisolated final class GitMonitor: @unchecked Sendable {
         }
     }
 
-    /// Completes one repository poll before returning so an explicit refresh
-    /// can rebuild dashboard snapshots from the latest committed changes.
+    /// Completes one repository poll — the reads AND their database
+    /// persistence — before returning, so an explicit refresh rebuilds
+    /// dashboard snapshots from the latest committed changes (F06). Dispatch
+    /// alone is not completion: each read continues into a database Task, and
+    /// an already-in-flight scan is deduplicated rather than restarted.
     func pollAndWait() async {
         guard await stateLoadGate.ensureLoaded({ await self.loadFromDB() }) else { return }
-        await withCheckedContinuation { continuation in
+        let claimed: Set<String> = await withCheckedContinuation { continuation in
             gitOpQueue.async { [self] in
-                pollLoadedState()
-                continuation.resume()
+                continuation.resume(returning: pollLoadedState())
             }
+        }
+        // `scanningRepos` releases only after a repo's read and its
+        // persistence Task finish, so waiting for the round's repos (plus any
+        // already in flight when the round was captured) to drain waits for
+        // exactly the facts this refresh must include.
+        var pending = claimed.union(lock.withLock { scanningRepos })
+        let deadline = Date().addingTimeInterval(Self.explicitRefreshWaitLimit)
+        while !pending.isEmpty {
+            guard Date() < deadline else {
+                Logger.warning("GitMonitor: explicit refresh proceeded with \(pending.count) scan(s) unfinished")
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+            pending = pending.intersection(lock.withLock { scanningRepos })
         }
     }
 
-    private func pollLoadedState() {
+    /// Dispatches one read per watched repo. Returns the repositories claimed
+    /// this round (dedup may skip repos already scanning).
+    @discardableResult
+    private func pollLoadedState() -> Set<String> {
         lock.lock()
         let repos = watchedRepos
         lock.unlock()
+        var claimed: Set<String> = []
         for repo in repos {
-            scanRecentCommits(repo: repo)
+            if scanRecentCommits(repo: repo) { claimed.insert(repo) }
         }
+        return claimed
     }
 
     // MARK: - Private
 
-    private func scanRecentCommits(repo: String) {
-        guard RepositoryScope.authorizedGitRoot(for: repo) != nil else { return }
+    /// Claims and dispatches one bounded read pass for `repo`. Returns false
+    /// when the repo was unauthorized, already scanning, or no read slot was
+    /// free (F04) — in every skipped case the cursor is left untouched and a
+    /// later poll retries.
+    @discardableResult
+    private func scanRecentCommits(repo: String) -> Bool {
+        guard authorizedRoot(for: repo) != nil else { return false }
         let state = lock.withLock { () -> (Bool, String?) in
             guard !scanningRepos.contains(repo) else { return (false, nil) }
             scanningRepos.insert(repo)
             return (true, lastSeenCommit[repo])
         }
-        guard state.0 else { return }
+        guard state.0 else { return false }
         let lastHash = state.1
         let repoName = URL(fileURLWithPath: repo).lastPathComponent
+        // Try to claim a native-read slot without blocking: a saturated pool
+        // skips this repo for the round instead of piling unbounded queued
+        // work onto the concurrent queue (F04).
+        guard gitReadSlots.wait(timeout: .now()) == .success else {
+            lock.withLock { _ = scanningRepos.remove(repo) }
+            Logger.debug("GitMonitor: read pool saturated, skipping \(repoName) this round")
+            return false
+        }
         let activity = LocalDataProcessing.shared.begin(.reading)
         gitOpQueue.async { [self] in
-            defer { activity.finish() }
+            defer {
+                gitReadSlots.signal()
+                activity.finish()
+            }
             do {
                 let gitRepo = GitRepo(path: repo)
                 let authorEmail = gitRepo.userEmail()
@@ -191,7 +275,18 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 }
                 var changes: [CodeChange] = []
                 var complete = true
+                let passDeadline = Date().addingTimeInterval(Self.scanPassBudgetSeconds)
                 for commit in batch.commits {
+                    // The diff loop is where a heavy repository spends its
+                    // time. Stop the pass at the deadline: partial facts
+                    // persist below, the cursor stays, and the next poll
+                    // retries from the same head (idempotent INSERT OR
+                    // IGNORE) instead of blocking a slot forever (F04).
+                    if Date() >= passDeadline {
+                        complete = false
+                        Logger.info("GitMonitor: scan pass deadline reached for \(repoName); will retry")
+                        break
+                    }
                     guard let stats = gitRepo.diffTree(hash: commit.hash) else { complete = false; continue }
                     if stats.added > 0 || stats.deleted > 0 {
                         let tool = Self.attributedToolFromTrailer(commit.message)
@@ -207,7 +302,7 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 Task { [self] in
                     defer { preparation.finish() }
                     defer { lock.withLock { _ = scanningRepos.remove(repo) } }
-                    guard RepositoryScope.authorizedGitRoot(for: repo) != nil else { return }
+                    guard authorizedRoot(for: repo) != nil else { return }
                     do {
                         let changed = try await AppDatabase.shared.write { db in
                             try Self.persistBatch(in: db, repo: repo, commits: batch.commits,
@@ -241,6 +336,7 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 }
             }
         }
+        return true
     }
 
     /// Called within one database transaction. Commit identity is independent

@@ -125,6 +125,42 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
+    /// One-shot guard for the F03 cache-creation-token heal. Bumped only if a
+    /// future schema change needs to run a new backfill generation.
+    private static let claudeTokenHealDoneKey = "usage_event_claude_cache_creation_heal_v1"
+
+    /// scanQueue only. Returns true when this launch should re-read the Claude
+    /// project files to backfill NULL `cache_creation_tokens` (F03).
+    private func resetClaudePositionsForTokenHealIfNeeded() -> Bool {
+        dispatchPrecondition(condition: .onQueue(scanQueue))
+        guard !UserDefaults.standard.bool(forKey: Self.claudeTokenHealDoneKey) else { return false }
+        let hasMissing: Bool
+        do {
+            hasMissing = try database.readSynchronously { db in
+                try Bool.fetchOne(db, sql: """
+                    SELECT EXISTS(SELECT 1 FROM usage_event
+                                  WHERE source = 'claude-code' AND cache_creation_tokens IS NULL)
+                    """) ?? false
+            }
+        } catch {
+            Logger.warning("LogWatcher: token-heal check failed, skipping this launch: \(error)")
+            return false
+        }
+        guard hasMissing else { return false }
+        let prefix = homeDirectory.appendingPathComponent(".claude/projects")
+            .resolvingSymlinksInPath().path + "/"
+        var reset = 0
+        for (path, _) in filePositions where path.hasPrefix(prefix) {
+            filePositions[path] = 0
+            pendingPositions[path] = 0
+            reset += 1
+        }
+        if reset > 0 {
+            Logger.info("LogWatcher: re-reading \(reset) Claude file(s) to backfill cache-creation tokens")
+        }
+        return true
+    }
+
     func start() {
         let activity = LocalDataProcessing.shared.begin(.reading)
         scanQueue.async { [weak self] in
@@ -132,12 +168,23 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             guard let self else { return }
             self.stopped = false
             if !self.positionsLoaded { self.loadPositionsFromDB() }
+            // F03 backfill: rows persisted while the scanner dropped
+            // cache_creation_input_tokens carry NULL. Re-reading those files
+            // once heals them through the upsert's COALESCE (dedupe keys keep
+            // it idempotent), and the checkpoint stays at zero until a file's
+            // re-read fully succeeds, so an interrupted launch resumes.
+            let tokenHealPending = self.resetClaudePositionsForTokenHealIfNeeded()
             let isColdStart = self.filePositions.values.allSatisfy { $0 == 0 }
             self.suppressConsumptionEvents = true
             defer { self.suppressConsumptionEvents = false }
             LogWatcher.backfill.setActive(isColdStart)
             self.watchingEnabled = true
             self.runScan(includeClaudeProjects: true, activity: activity)
+            if tokenHealPending {
+                // Arm the one-shot guard only after a full pass, so quitting
+                // mid-import retries the heal on the next launch.
+                UserDefaults.standard.set(true, forKey: Self.claudeTokenHealDoneKey)
+            }
             LogWatcher.backfill.setActive(false)
             if isColdStart {
                 // A previous launch could have cached a snapshot before the
@@ -345,9 +392,16 @@ nonisolated final class LogWatcher: @unchecked Sendable {
                     GitMonitor.shared.watch(repoPath: repoUrl.path)
                     repoPath = repoUrl.path
                 }
+                // Rebuild only to swap in the resolved repo root. Every data
+                // field must survive: dropping cacheCreationTokens here is
+                // exactly how cache-creation input went uncounted for years
+                // of history (2026-10-23 review F03).
                 return UsageEvent(ts: event.ts, source: event.source, model: event.model,
                     inTokens: event.inTokens, outTokens: event.outTokens, cacheTokens: event.cacheTokens,
-                    repoPath: repoPath, sessionId: event.sessionId, dedupeKey: event.dedupeKey)
+                    repoPath: repoPath, sessionId: event.sessionId, dedupeKey: event.dedupeKey,
+                    cacheCreationTokens: event.cacheCreationTokens,
+                    reportedOutputTokens: event.reportedOutputTokens,
+                    reasoningTokens: event.reasoningTokens)
             }
             guard let sid = sessionId, maxTs > 0 else { continue }
             upsertSessionInfo(SessionInfoRecord(
@@ -1261,7 +1315,13 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         dispatchPrecondition(condition: .onQueue(scanQueue))
         guard !events.isEmpty else { return true }
         let roots = repositoryRoots ?? RepositoryScope.configuredRoots()
-        var lookup = RepositoryScope.AuthorizedRootLookup(roots: roots)
+        // Linked-repository authorization walks the whole development tree.
+        // Batches arrive every few hundred bytes of new log; without the
+        // generation-shared answer, a 2048-row history backfill re-walked the
+        // tree once per 512-row batch (2026-10-23 review F02).
+        var lookup = RepositoryScope.AuthorizedRootLookup(
+            roots: roots,
+            sharedReachableRoots: { RepositoryScope.generationReachableRoots(in: roots) })
         let rows = events.map { rawEvent -> (event: UsageEvent, providerId: String) in
             let normalizedRepo = rawEvent.repoPath.flatMap { lookup.root(for: $0) }
             let event = UsageEvent(
@@ -1362,20 +1422,21 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     /// Repo discovery re-reads the file head and walks git roots on every
     /// scan for every Claude jsonl; the answer cannot change while the file
     /// head is unchanged. Nil repoPath caches the "no repo" verdict too.
-    private let repoDiscoveryLock = NSLock()
-    private var repoDiscoveryCache: [String: (fingerprint: SessionInfoBackfill.PrefixFingerprint, repoPath: String?)] = [:]
+    /// Bounded by selective eviction (F07): a full clear at the capacity edge
+    /// re-read every file head on every pass once history outgrew the table.
+    private let repoDiscoveryCache = OrderedBoundedCache<(
+        fingerprint: SessionInfoBackfill.PrefixFingerprint, repoPath: String?
+    )>(capacity: 16384)
 
     private func discoverAndWatchRepo(from file: URL) {
         let fingerprint = SessionInfoBackfill.prefixFingerprint(of: file)
-        repoDiscoveryLock.lock()
-        if let fingerprint, let cached = repoDiscoveryCache[file.path], cached.fingerprint == fingerprint {
-            repoDiscoveryLock.unlock()
+        if let fingerprint, let cached = repoDiscoveryCache.value(for: file.path),
+           cached.fingerprint == fingerprint {
             if let repoPath = cached.repoPath {
                 GitMonitor.shared.watch(repoPath: repoPath)
             }
             return
         }
-        repoDiscoveryLock.unlock()
 
         guard let handle = try? FileHandle(forReadingFrom: file) else { return }
         defer { try? handle.close() }
@@ -1389,10 +1450,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         else { return }
         let repoUrl = findGitRepo(containing: cwd)
         if let fingerprint {
-            repoDiscoveryLock.lock()
-            if repoDiscoveryCache.count > 4096 { repoDiscoveryCache.removeAll() }
-            repoDiscoveryCache[file.path] = (fingerprint, repoUrl?.path)
-            repoDiscoveryLock.unlock()
+            repoDiscoveryCache.insert((fingerprint, repoUrl?.path), for: file.path)
         }
         guard let repoUrl else { return }
         GitMonitor.shared.watch(repoPath: repoUrl.path)
