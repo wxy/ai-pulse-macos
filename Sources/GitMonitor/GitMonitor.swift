@@ -175,7 +175,9 @@ nonisolated final class GitMonitor: @unchecked Sendable {
         guard state.0 else { return }
         let lastHash = state.1
         let repoName = URL(fileURLWithPath: repo).lastPathComponent
+        let activity = LocalDataProcessing.shared.begin(.reading)
         gitOpQueue.async { [self] in
+            defer { activity.finish() }
             do {
                 let gitRepo = GitRepo(path: repo)
                 let authorEmail = gitRepo.userEmail()
@@ -201,7 +203,9 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 }
                 let readyChanges = changes
                 let readComplete = complete
+                let preparation = LocalDataProcessing.shared.begin(.preparing)
                 Task { [self] in
+                    defer { preparation.finish() }
                     defer { lock.withLock { _ = scanningRepos.remove(repo) } }
                     guard RepositoryScope.authorizedGitRoot(for: repo) != nil else { return }
                     do {

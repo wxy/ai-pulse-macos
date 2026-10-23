@@ -120,6 +120,7 @@ struct DashboardView: View {
     @State private var reposExpanded = false
     @State private var modelsExpanded = false
     @State private var isImportingHistory = LogWatcher.backfill.isActive
+    @State private var processingStage = LocalDataProcessing.shared.stage
     @State private var localDataStatus = LocalDataStatus.current()
     @State private var localScanStatus = LogScanObservation.Status.inactive
     @State private var showScanCompletion = false
@@ -494,6 +495,9 @@ struct DashboardView: View {
             if enabled { startEntryAnimation() }
         }
         .task {
+            let preparation = LocalDataProcessing.shared.begin(.preparing)
+            defer { preparation.finish() }
+            processingStage = LocalDataProcessing.shared.stage
             refreshLocalScanStatus()
             let health = AppHealthMonitor.shared.current
             healthSeverity = health.severity
@@ -579,6 +583,9 @@ struct DashboardView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: CloudSyncService.didChange)) { _ in
             refreshCloudSyncStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: LocalDataProcessing.didChange, object: LocalDataProcessing.shared)) { _ in
+            processingStage = LocalDataProcessing.shared.stage
         }
         .onReceive(NotificationCenter.default.publisher(for: IngestionBackfillState.changeNotification)) { _ in
             isImportingHistory = LogWatcher.backfill.isActive
@@ -1595,7 +1602,11 @@ struct DashboardView: View {
     @MainActor
     private func scheduleLoad(for range: TimeRange) {
         rangeLoadTasks[range]?.cancel()
-        rangeLoadTasks[range] = Task { await load(range: range) }
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
+        rangeLoadTasks[range] = Task {
+            defer { preparation.finish() }
+            await load(range: range)
+        }
     }
 
     @MainActor
@@ -1652,6 +1663,8 @@ struct DashboardView: View {
 
     @MainActor
     private func forceRefresh() async {
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
+        defer { preparation.finish() }
         // Invalidate before computing, not after publishing. A tab selection
         // during the refresh then reads fresh facts, never the old cache.
         await DashboardCache.invalidateAll()
@@ -1711,6 +1724,8 @@ struct DashboardView: View {
 
     @MainActor
     func load(range requestedRange: TimeRange) async {
+        let preparation = LocalDataProcessing.shared.begin(.preparing)
+        defer { preparation.finish() }
         // Today / Week / 30d are three independent in-memory channels. A newer
         // request invalidates only an older request for the same range.
         loadGenerationByRange[requestedRange, default: 0] += 1
@@ -1915,17 +1930,17 @@ private extension DashboardView {
             GeometryReader { geometry in
                 if let hint = hints.last {
                     let bounds = geometry[hint.anchor]
-                    let below = bounds.midY < geometry.size.height / 2
-                    Text(hint.text)
-                        .dashboardFont(11).foregroundStyle(Color.primary)
-                        .lineSpacing(3).padding(12)
-                        .frame(width: 280, alignment: .leading)
-                        .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(robotLine))
-                        .frame(width: 280, height: 190, alignment: below ? .top : .bottom)
-                        .offset(x: min(max(bounds.midX - 140, 12), geometry.size.width - 292), y: below ? bounds.maxY + 7 : bounds.minY - 197)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                    RobotTooltipLayout(anchor: bounds) {
+                        Text(hint.text)
+                            .dashboardFont(11).foregroundStyle(Color.primary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .background(robotEyeSurface, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(robotLine))
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
                 }
             }
             .allowsHitTesting(false)
@@ -1938,12 +1953,15 @@ private extension DashboardView {
     }
 
     var foreheadMessage: String? {
-        if isDemoMode { return I18n.t("demo.banner") }
         if let issue = DirectoryAccess.shared.issues.first { return issue.message }
-        if !localDataStatus.canReportCurrentActivity { return SetupCopy.activity(localDataStatus.activity) }
+        if [.needsAccess, .accessExpired, .failed].contains(localDataStatus.activity) {
+            return SetupCopy.activity(localDataStatus.activity)
+        }
         if healthSeverity >= .impaired { return healthMessages.first ?? robotDataStatus }
+        if let processingStage { return processingStage.message }
+        if isDemoMode { return I18n.t("demo.banner") }
+        if !localDataStatus.canReportCurrentActivity { return SetupCopy.activity(localDataStatus.activity) }
         if isImportingHistory { return I18n.t("menu.loading") }
-        if showScanCompletion { return SetupCopy.activity(.ready) }
         return nil
     }
 
@@ -1952,6 +1970,7 @@ private extension DashboardView {
             if let message = foreheadMessage {
                 HStack(spacing: 8) {
                     Text(message).dashboardFont(11).lineLimit(2)
+                        .accessibilityIdentifier("dashboard-forehead-status")
                     if let issue = DirectoryAccess.shared.issues.first, issue.kind == .permission {
                         Button {
                             guard BookmarkManager.requestAccess(for: issue) else { return }
@@ -1979,6 +1998,7 @@ private extension DashboardView {
                     .frame(width: 125, height: 38)
                     .robotHelp(PulseAppearance(tier: currentPulse?.tier).label + "\n" + PulseCopy.recentFacts(currentPulse?.activityFacts) + "\n" + StatusItemController.detail(snapshot: currentPulse) + "\n" + SetupCopy.text("当前强度不受下方时间范围影响。", "Current intensity is independent of the range below."))
                     .accessibilityLabel(SetupCopy.text("当前 AI 活动强度：", "Current AI activity: ") + PulseAppearance(tier: currentPulse?.tier).label)
+                    .accessibilityIdentifier("dashboard-activity-waveform")
             }
         }
         .frame(width: 270, height: 57)
@@ -2334,6 +2354,31 @@ private struct RobotPulseCurve: Shape {
             path.addCurve(to: CGPoint(x: x2, y: y2), control1: CGPoint(x: (x1+x2)/2, y: y1), control2: CGPoint(x: (x1+x2)/2, y: y2))
         }
         return path
+    }
+}
+
+/// Measure the text before placing it, keeping short hints compact and long
+/// descriptions wrapped within the dashboard's available width.
+private struct RobotTooltipLayout: Layout {
+    let anchor: CGRect
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let content = subviews.first else { return }
+        let margin: CGFloat = 12
+        let naturalWidth = content.sizeThatFits(.unspecified).width
+        let width = min(naturalWidth, 280, max(0, bounds.width - 2 * margin))
+        let contentProposal = ProposedViewSize(width: width, height: nil)
+        let size = content.sizeThatFits(contentProposal)
+        let x = min(max(anchor.midX - size.width / 2, margin), max(margin, bounds.width - size.width - margin))
+        let preferredY = anchor.midY < bounds.height / 2
+            ? anchor.maxY + 7 : anchor.minY - size.height - 7
+        let y = min(max(preferredY, margin), max(margin, bounds.height - size.height - margin))
+        content.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y),
+                      anchor: .topLeading, proposal: contentProposal)
     }
 }
 

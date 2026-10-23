@@ -70,6 +70,8 @@ nonisolated final class RepoScanCache: @unchecked Sendable {
     /// each repo is found so the UI can show a running count instead of an
     /// indefinite spinner. Failed reads are explicit unavailable results.
     nonisolated func scan(dir: String) async {
+        let activity = LocalDataProcessing.shared.begin(.reading)
+        defer { activity.finish() }
         let expanded = Self.expand(dir)
         let scanStart = Date()
         let rootURL = URL(fileURLWithPath: expanded, isDirectory: true)
