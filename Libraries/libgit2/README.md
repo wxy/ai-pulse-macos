@@ -1,35 +1,72 @@
 # libgit2
 
-Dynamic arm64 build of libgit2 1.9.0 for macOS, linked read-only by
-`GitRepo` (log walks and per-commit tree diffs).
+Vendored libgit2 **1.9.7**, arm64, macOS 14.0 or later. AI Pulse uses it
+for local repository discovery, log walks and tree diffs. SSH, HTTPS, GSSAPI
+and NTLM transports are disabled in this build.
 
-## 已知风险(2026-10-23 全库审查 F05)
+## Source and security
 
-当前版本 **1.9.0** 落在官方安全公告
-[GHSA-27m5-gxxh-x79j](https://github.com/libgit2/libgit2/security/advisories/GHSA-27m5-gxxh-x79j)
-的受影响范围内(< 1.9.5):攻击者提供的**本地 pack 文件**可在读取路径上触发
-内存耗尽。本应用不执行 fetch,但 `GitRepo.log` / `GitRepo.diffTree` 会读取
-仓库内已有的 pack,因此“不发网络请求”不能排除该公告;一个恶意或损坏的
-仓库可能让扫描进程 OOM。
+- Official tag: [v1.9.7](https://github.com/libgit2/libgit2/releases/tag/v1.9.7)
+- Commit: `49e408b3208bc3093757a1c2db938d3590f3f412`
+- Source: `https://codeload.github.com/libgit2/libgit2/tar.gz/refs/tags/v1.9.7`
+- Source SHA-256: `1a4fbe7589e814777ae76b64734ad80f4ecad22cd33a22682a2aaea4ae5375e7`
+- License: [COPYING](COPYING), GPLv2 with the libgit2 linking exception.
 
-当前 arm64 dylib SHA-256:
+This replaces 1.9.0 and includes the 1.9.5 fix for
+[GHSA-27m5-gxxh-x79j / CVE-2026-53585](https://github.com/libgit2/libgit2/security/advisories/GHSA-27m5-gxxh-x79j),
+which limits delta result-size allocation before applying instructions,
+including when reading local packs. Version 1.9.7 also includes subsequent
+maintenance and security fixes. This does not impose an application-wide
+memory bound on every valid repository operation.
+
+## Binary layout
+
+`lib/libgit2.1.9.7.dylib`, `lib/libgit2.1.9.dylib` and `lib/libgit2.dylib`
+contain the same signed binary. Existing SwiftPM and Xcode references retain
+`@rpath/libgit2.1.9.dylib` (compatibility version 1.9.0, current version 1.9.7).
+The dSYM has the same UUID as the binary; the former 1.9.0 file and symbols
+were replaced. These are distributable dependency assets, not test outputs.
+
+Dylib SHA-256 (all three names):
 
 ```
-e3e7e4b05f5890ccbfada922f7e545fac886bc9465a4df08a1c58882e179914c  lib/libgit2.1.9.dylib
+3ac5026263c08474c65f5a49634d6c26aa9ecaab3d9c6d58ae80c9cb25f4726c
 ```
 
-## 升级验收清单(替换二进制前逐项确认)
+UUID: `72EE3096-7A01-35EE-85ED-F7DA52048BD2`.
+Runtime dependencies are system libz, libiconv and libSystem; no Homebrew
+runtime paths are embedded. The ad-hoc signature is replaced by the app's
+normal CodeSignOnCopy step when packaging.
 
-1. **版本**:解包后 `git_libgit2_version` 报告 ≥ 1.9.5;`include/git2/version.h`
-   与 dylib 实际版本一致(审查发现过头文件与二进制漂移的可能,两者都要核)。
-2. **来源与配方**:记录源码 tarball URL / commit、cmake 主要开关
-   (`BUILD_SHARED_LIBS`、`USE_SSH`、`USE_HTTPS`、`REGEX_BACKEND`、
-   `USE_BUNDLED_ZLIB` 等)与构建命令,写入本文件,保证可复现。
-3. **架构与部署目标**:arm64,macOS 部署目标与 Package.swift 一致;
-   `otool -l` 核对 `LC_ID_DYLIB` install name 与旧 dylib 相同
-   (`@rpath/libgit2.1.9.dylib` 形态),否则链接脚本需同步调整。
-4. **校验值**:记录新 dylib 的 SHA-256 于本文件。
-5. **冒烟验证**:`GitCommitFactsTests` 全绿;对一个含 packfile 的真实仓库
-   执行 `GitRepo.log` + `diffTree` 读取正常。
-6. **回归关注点**:升级后首跑留意 `AppHealthMonitor` 的 `Git.scan.*`
-   错误上报与 `git_commit_scan` 游标是否正常推进。
+## Build recipe
+
+Extract the source into a task directory under `$TMPDIR`. Set `SRC`, `BUILD`
+and `OUT` to directories there. The headers are copied from that exact tag.
+The build used Xcode's Apple clang and the macOS SDK on macOS 26.6.2.
+
+```sh
+SDK="$(xcrun --sdk macosx --show-sdk-path)"
+cmake -S "$SRC" -B "$BUILD" \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_C_COMPILER=/usr/bin/clang \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+  -DCMAKE_OSX_SYSROOT="$SDK" -DCMAKE_INSTALL_NAME_DIR=@rpath \
+  "-DCMAKE_C_FLAGS=-fdebug-prefix-map=$SRC=libgit2-1.9.7 -fdebug-prefix-map=$BUILD=libgit2-build" \
+  -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=OFF -DBUILD_CLI=OFF \
+  -DUSE_SSH=OFF -DUSE_HTTPS=OFF -DUSE_GSSAPI=OFF -DUSE_NTLMCLIENT=OFF \
+  -DREGEX_BACKEND=regcomp -DUSE_BUNDLED_ZLIB=OFF \
+  -DZLIB_INCLUDE_DIR="$SDK/usr/include" -DZLIB_LIBRARY="$SDK/usr/lib/libz.tbd" \
+  -DENABLE_REPRODUCIBLE_BUILDS=ON
+cmake --build "$BUILD" --parallel 4
+mkdir -p "$OUT"
+cp "$BUILD/libgit2.1.9.7.dylib" "$OUT/libgit2.1.9.dylib"
+xcrun dsymutil "$OUT/libgit2.1.9.dylib" -o "$OUT/libgit2.1.9.dylib.dSYM"
+xcrun strip -S -x "$OUT/libgit2.1.9.dylib"
+codesign --force --sign - "$OUT/libgit2.1.9.dylib"
+```
+
+Before replacing the vendored files, verify `git_libgit2_version`, header
+version, SHA-256, `otool -L`, `LC_BUILD_VERSION`, matching dSYM UUIDs and a
+packed-repository log/diff pass. Hashes can differ across toolchains and
+build paths; record updated provenance whenever rebuilding.

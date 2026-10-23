@@ -1,51 +1,108 @@
 import Foundation
 
-/// Insertion-ordered bounded cache (2026-10-23 review F07).
-///
-/// The previous policy cleared the whole table once it exceeded its capacity.
-/// With a history larger than the capacity, one steady-state pass re-inserted
-/// every entry and the next pass re-read and re-parsed every file again —
-/// the 4KB head reads the cache exists to prevent came back forever.
-///
-/// Exceeding capacity now evicts only the oldest quarter. Unchanged entries
-/// that survive keep hitting their fingerprint, so a pass over a large,
-/// stable history re-reads just the evicted slice (and re-inserts it with a
-/// fresh recency stamp). Raise the capacity rather than lowering it: the
-/// working set is "every session file that already exists", which only grows.
+/// Bounded cache with a protected history segment and a rotating admission
+/// window. A sequential scan larger than capacity cannot evict the protected
+/// entries before visiting them again. Window hits promote active files into
+/// the protected segment; its oldest entry moves back to the window.
 final class OrderedBoundedCache<Value>: @unchecked Sendable {
-    private struct Entry {
-        let value: Value
-        var stamp: Int
+    private final class Entry {
+        let key: String
+        var value: Value
+        var isProtected = false
+        weak var previous: Entry?
+        var next: Entry?
+
+        init(key: String, value: Value) {
+            self.key = key
+            self.value = value
+        }
     }
 
     private let lock = NSLock()
     private var entries: [String: Entry] = [:]
-    private var nextStamp = 0
-    private let capacity: Int
-    /// Number of oldest entries dropped per eviction pass.
-    private let evictionBatch: Int
+    private let protectedCapacity: Int
+    private let windowCapacity: Int
+    private var protectedCount = 0
+    private var windowCount = 0
+    private var protectedHead: Entry?
+    private var protectedTail: Entry?
+    private var windowHead: Entry?
+    private var windowTail: Entry?
 
     init(capacity: Int) {
-        self.capacity = max(1, capacity)
-        self.evictionBatch = max(1, self.capacity / 4)
+        let capacity = max(1, capacity)
+        windowCapacity = max(1, capacity / 4)
+        protectedCapacity = capacity - windowCapacity
+    }
+
+    deinit {
+        // Break long chains while the dictionary still owns every entry.
+        for entry in entries.values { entry.next = nil }
     }
 
     func value(for key: String) -> Value? {
-        lock.withLock { entries[key]?.value }
+        lock.withLock {
+            guard let entry = entries[key] else { return nil }
+            detach(entry)
+            append(entry, protected: protectedCapacity > 0)
+            if protectedCount > protectedCapacity, let oldest = protectedHead {
+                detach(oldest)
+                append(oldest, protected: false)
+            }
+            trimWindow()
+            return entry.value
+        }
     }
 
     func insert(_ value: Value, for key: String) {
         lock.withLock {
-            if entries.count >= capacity, entries[key] == nil {
-                // Keep the newest (capacity - evictionBatch) stamps; the older
-                // evictionBatch entries drop.
-                let cutoff = nextStamp - (capacity - evictionBatch)
-                for (staleKey, entry) in entries where entry.stamp < cutoff {
-                    entries.removeValue(forKey: staleKey)
-                }
+            if let entry = entries[key] {
+                entry.value = value
+                let wasProtected = entry.isProtected
+                detach(entry)
+                append(entry, protected: wasProtected)
+            } else {
+                let entry = Entry(key: key, value: value)
+                entries[key] = entry
+                append(entry, protected: protectedCount < protectedCapacity)
             }
-            entries[key] = Entry(value: value, stamp: nextStamp)
-            nextStamp += 1
+            trimWindow()
+        }
+    }
+
+    private func append(_ entry: Entry, protected: Bool) {
+        entry.isProtected = protected
+        let tail = protected ? protectedTail : windowTail
+        entry.previous = tail
+        tail?.next = entry
+        if protected {
+            if protectedHead == nil { protectedHead = entry }
+            protectedTail = entry
+            protectedCount += 1
+        } else {
+            if windowHead == nil { windowHead = entry }
+            windowTail = entry
+            windowCount += 1
+        }
+    }
+
+    private func detach(_ entry: Entry) {
+        if let previous = entry.previous { previous.next = entry.next }
+        else if entry.isProtected { protectedHead = entry.next }
+        else { windowHead = entry.next }
+        if let next = entry.next { next.previous = entry.previous }
+        else if entry.isProtected { protectedTail = entry.previous }
+        else { windowTail = entry.previous }
+        entry.previous = nil
+        entry.next = nil
+        if entry.isProtected { protectedCount -= 1 }
+        else { windowCount -= 1 }
+    }
+
+    private func trimWindow() {
+        while windowCount > windowCapacity, let oldest = windowHead {
+            detach(oldest)
+            entries.removeValue(forKey: oldest.key)
         }
     }
 

@@ -25,6 +25,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
     private var stopped = false // scanQueue only
     private var watchingEnabled = false // scanQueue only
     private var positionsLoaded = false // retry if DB was not ready at init
+    private var claudeReplayPrepared = false // scanQueue only; durable state lives in SQLite
     private var suppressConsumptionEvents = false // initial history scan only
     private let liveObservationStartMs = Int64(Date().timeIntervalSince1970 * 1_000)
 
@@ -125,40 +126,32 @@ nonisolated final class LogWatcher: @unchecked Sendable {
         }
     }
 
-    /// One-shot guard for the F03 cache-creation-token heal. Bumped only if a
-    /// future schema change needs to run a new backfill generation.
-    private static let claudeTokenHealDoneKey = "usage_event_claude_cache_creation_heal_v1"
-
-    /// scanQueue only. Returns true when this launch should re-read the Claude
-    /// project files to backfill NULL `cache_creation_tokens` (F03).
-    private func resetClaudePositionsForTokenHealIfNeeded() -> Bool {
+    /// Rewind checkpoints and record that preparation in one transaction.
+    /// Never trust the former UserDefaults completion flag: it could be set
+    /// while both the import and the checkpoint write had failed.
+    private func prepareClaudeTokenReplayIfNeeded() -> Bool {
         dispatchPrecondition(condition: .onQueue(scanQueue))
-        guard !UserDefaults.standard.bool(forKey: Self.claudeTokenHealDoneKey) else { return false }
-        let hasMissing: Bool
+        if claudeReplayPrepared { return true }
         do {
-            hasMissing = try database.readSynchronously { db in
-                try Bool.fetchOne(db, sql: """
-                    SELECT EXISTS(SELECT 1 FROM usage_event
-                                  WHERE source = 'claude-code' AND cache_creation_tokens IS NULL)
-                    """) ?? false
+            let positions: [String: UInt64]? = try database.writeSynchronously { db in
+                guard try LogCheckpointStore.prepareClaudeTokenReplay(
+                    in: db, projectDirectory: homeDirectory.appendingPathComponent(".claude/projects").path
+                ) else { return nil }
+                return try LogCheckpointStore.load(in: db)
             }
+            if let positions {
+                filePositions = positions
+                pendingPositions.removeAll(keepingCapacity: true)
+                positionsLoaded = true
+            }
+            claudeReplayPrepared = true
+            AppHealthMonitor.shared.clearIngestError(source: "log.claudeReplay")
+            return true
         } catch {
-            Logger.warning("LogWatcher: token-heal check failed, skipping this launch: \(error)")
+            Logger.warning("LogWatcher: Claude replay preparation failed: \(error)")
+            AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "log.claudeReplay")
             return false
         }
-        guard hasMissing else { return false }
-        let prefix = homeDirectory.appendingPathComponent(".claude/projects")
-            .resolvingSymlinksInPath().path + "/"
-        var reset = 0
-        for (path, _) in filePositions where path.hasPrefix(prefix) {
-            filePositions[path] = 0
-            pendingPositions[path] = 0
-            reset += 1
-        }
-        if reset > 0 {
-            Logger.info("LogWatcher: re-reading \(reset) Claude file(s) to backfill cache-creation tokens")
-        }
-        return true
     }
 
     func start() {
@@ -168,23 +161,13 @@ nonisolated final class LogWatcher: @unchecked Sendable {
             guard let self else { return }
             self.stopped = false
             if !self.positionsLoaded { self.loadPositionsFromDB() }
-            // F03 backfill: rows persisted while the scanner dropped
-            // cache_creation_input_tokens carry NULL. Re-reading those files
-            // once heals them through the upsert's COALESCE (dedupe keys keep
-            // it idempotent), and the checkpoint stays at zero until a file's
-            // re-read fully succeeds, so an interrupted launch resumes.
-            let tokenHealPending = self.resetClaudePositionsForTokenHealIfNeeded()
+            guard self.prepareClaudeTokenReplayIfNeeded() else { return }
             let isColdStart = self.filePositions.values.allSatisfy { $0 == 0 }
             self.suppressConsumptionEvents = true
             defer { self.suppressConsumptionEvents = false }
             LogWatcher.backfill.setActive(isColdStart)
             self.watchingEnabled = true
             self.runScan(includeClaudeProjects: true, activity: activity)
-            if tokenHealPending {
-                // Arm the one-shot guard only after a full pass, so quitting
-                // mid-import retries the heal on the next launch.
-                UserDefaults.standard.set(true, forKey: Self.claudeTokenHealDoneKey)
-            }
             LogWatcher.backfill.setActive(false)
             if isColdStart {
                 // A previous launch could have cached a snapshot before the
@@ -246,6 +229,7 @@ nonisolated final class LogWatcher: @unchecked Sendable {
 
     private func runScan(includeClaudeProjects: Bool, activity: LocalDataProcessing.Activity) {
         dispatchPrecondition(condition: .onQueue(scanQueue))
+        guard prepareClaudeTokenReplayIfNeeded() else { return }
         processingActivity = activity
         defer { processingActivity = nil }
         scanChanged = false

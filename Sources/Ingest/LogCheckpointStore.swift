@@ -13,6 +13,28 @@ enum LogCheckpointStore {
         return true
     }
 
+    /// The marker means checkpoints were durably rewound, not that a scan
+    /// succeeded. A failed import therefore still restarts at zero next launch.
+    /// Call inside a write transaction so the marker cannot outlive the reset.
+    static func prepareClaudeTokenReplay(in db: Database, projectDirectory: String) throws -> Bool {
+        try db.execute(sql: "CREATE TABLE IF NOT EXISTS log_ingest_state (key TEXT PRIMARY KEY, value INTEGER NOT NULL)")
+        let key = "claude_cache_creation_scanner_replay_v2"
+        guard try Int.fetchOne(db, sql: "SELECT value FROM log_ingest_state WHERE key = ?", arguments: [key]) != 1 else { return false }
+        let prefix = RepositoryScope.canonicalPath(projectDirectory) + "/"
+        let hasMissing = try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM usage_event
+                          WHERE source = 'claude-code' AND cache_creation_tokens IS NULL)
+            """) ?? false
+        if hasMissing {
+            try db.execute(sql: """
+                UPDATE logwatcher_position SET byte_offset = 0
+                WHERE substr(file_path, 1, length(?)) = ?
+                """, arguments: [prefix, prefix])
+        }
+        try db.execute(sql: "INSERT OR REPLACE INTO log_ingest_state VALUES (?, 1)", arguments: [key])
+        return true
+    }
+
     static func load(in db: Database) throws -> [String: UInt64] {
         var positions: [String: UInt64] = [:]
         for row in try Row.fetchAll(db, sql: "SELECT file_path, byte_offset FROM logwatcher_position") {

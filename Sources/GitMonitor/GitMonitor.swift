@@ -33,10 +33,16 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     /// claiming to time out each libgit2 call.
     private let gitOpQueue = DispatchQueue(label: "com.wxy.aipulse.git.op",
                                            qos: .utility, attributes: .concurrent)
-    /// Maximum simultaneous native git reads across all repositories.
-    private static let maxConcurrentGitReads = 2
-    private let gitReadSlots = DispatchSemaphore(value: maxConcurrentGitReads)
-    /// Wall-clock budget for one repository read pass. A pass that runs out
+    /// Each worker owns its read and persistence. A slow database therefore
+    /// applies backpressure instead of accumulating unbounded result batches.
+    private let gitReadQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "xingyu.wang.aipulse.git.read"
+        queue.qualityOfService = .utility
+        queue.maxConcurrentOperationCount = 2
+        return queue
+    }()
+    /// Wall-clock budget for one repository's remaining diff work. A pass that runs out
     /// stops diffing with `complete = false`: facts collected so far persist,
     /// the cursor stays at the previous head, and the next poll retries.
     private static let scanPassBudgetSeconds: TimeInterval = 60
@@ -212,7 +218,8 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 Logger.warning("GitMonitor: explicit refresh proceeded with \(pending.count) scan(s) unfinished")
                 break
             }
-            try? await Task.sleep(for: .milliseconds(50))
+            do { try await Task.sleep(for: .milliseconds(50)) }
+            catch { return } // Cancellation stops waiting; owned scans still finish.
             pending = pending.intersection(lock.withLock { scanningRepos })
         }
     }
@@ -234,9 +241,8 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     // MARK: - Private
 
     /// Claims and dispatches one bounded read pass for `repo`. Returns false
-    /// when the repo was unauthorized, already scanning, or no read slot was
-    /// free (F04) — in every skipped case the cursor is left untouched and a
-    /// later poll retries.
+    /// when the repo was unauthorized or already queued/scanning. Every other
+    /// repository is queued, including when both native readers are occupied.
     @discardableResult
     private func scanRecentCommits(repo: String) -> Bool {
         guard authorizedRoot(for: repo) != nil else { return false }
@@ -248,19 +254,15 @@ nonisolated final class GitMonitor: @unchecked Sendable {
         guard state.0 else { return false }
         let lastHash = state.1
         let repoName = URL(fileURLWithPath: repo).lastPathComponent
-        // Try to claim a native-read slot without blocking: a saturated pool
-        // skips this repo for the round instead of piling unbounded queued
-        // work onto the concurrent queue (F04).
-        guard gitReadSlots.wait(timeout: .now()) == .success else {
-            lock.withLock { _ = scanningRepos.remove(repo) }
-            Logger.debug("GitMonitor: read pool saturated, skipping \(repoName) this round")
-            return false
-        }
         let activity = LocalDataProcessing.shared.begin(.reading)
-        gitOpQueue.async { [self] in
+        gitReadQueue.addOperation { [self] in
             defer {
-                gitReadSlots.signal()
                 activity.finish()
+                lock.withLock { _ = scanningRepos.remove(repo) }
+            }
+            // Authorization can change while an operation waits in the queue.
+            guard authorizedRoot(for: repo) != nil else {
+                return
             }
             do {
                 let gitRepo = GitRepo(path: repo)
@@ -270,24 +272,29 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 let coverageSince = Int(coverageStart.timeIntervalSince1970 * 1000)
                 let batch = try gitRepo.log(since: lastHash, sinceTimestamp: coverageSince / 1000, authorEmail: authorEmail)
                 guard let head = batch.headHash else {
-                    lock.withLock { _ = scanningRepos.remove(repo) }
                     return
                 }
                 var changes: [CodeChange] = []
+                let completedDiffs = try AppDatabase.shared.readSynchronously { db in
+                    Set(try String.fetchAll(db, sql: """
+                        SELECT commit_hash FROM git_commit
+                        WHERE repo_path = ? AND ts >= ? AND diff_scanned = 1
+                        """, arguments: [repo, coverageSince]))
+                }
+                var newlyCompletedDiffs: [String] = []
                 var complete = true
                 let passDeadline = Date().addingTimeInterval(Self.scanPassBudgetSeconds)
                 for commit in batch.commits {
-                    // The diff loop is where a heavy repository spends its
-                    // time. Stop the pass at the deadline: partial facts
-                    // persist below, the cursor stays, and the next poll
-                    // retries from the same head (idempotent INSERT OR
-                    // IGNORE) instead of blocking a slot forever (F04).
+                    // A prior partial pass committed these results atomically
+                    // with their progress markers, including zero-line diffs.
+                    if completedDiffs.contains(commit.hash) { continue }
                     if Date() >= passDeadline {
                         complete = false
                         Logger.info("GitMonitor: scan pass deadline reached for \(repoName); will retry")
                         break
                     }
                     guard let stats = gitRepo.diffTree(hash: commit.hash) else { complete = false; continue }
+                    newlyCompletedDiffs.append(commit.hash)
                     if stats.added > 0 || stats.deleted > 0 {
                         let tool = Self.attributedToolFromTrailer(commit.message)
                         changes.append(CodeChange(commitHash: commit.hash, ts: commit.ts * 1000,
@@ -297,34 +304,32 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                     }
                 }
                 let readyChanges = changes
+                let readyDiffs = newlyCompletedDiffs
                 let readComplete = complete
-                let preparation = LocalDataProcessing.shared.begin(.preparing)
-                Task { [self] in
-                    defer { preparation.finish() }
-                    defer { lock.withLock { _ = scanningRepos.remove(repo) } }
-                    guard authorizedRoot(for: repo) != nil else { return }
-                    do {
-                        let changed = try await AppDatabase.shared.write { db in
-                            try Self.persistBatch(in: db, repo: repo, commits: batch.commits,
-                                changes: readyChanges, headHash: readComplete ? head : lastHash,
-                                coverageSince: coverageSince, authorEmail: authorEmail,
-                                complete: readComplete)
-                        }
-                        if readComplete { lock.withLock { lastSeenCommit[repo] = head } }
-                        if changed { DataRefreshCoordinator.shared.notifyPhaseGitScan() }
-                        if readComplete {
-                            AppHealthMonitor.shared.clearIngestError(source: "Git.scan.\(repo)")
-                        } else {
-                            AppHealthMonitor.shared.reportIngestError(
-                                "Some commit diffs could not be read; scan will retry.", source: "Git.scan.\(repo)")
-                        }
-                    } catch {
-                        Logger.error("Git batch persistence failed: \(error)")
-                        AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Git.scan.\(repo)")
+                // Keep the bounded worker until persistence commits, so the
+                // waiter and the queue share the same completion boundary.
+                activity.update(.preparing)
+                guard authorizedRoot(for: repo) != nil else { return }
+                do {
+                    let changed = try AppDatabase.shared.writeSynchronously { db in
+                        try Self.persistBatch(in: db, repo: repo, commits: batch.commits,
+                            changes: readyChanges, headHash: readComplete ? head : lastHash,
+                            coverageSince: coverageSince, authorEmail: authorEmail,
+                            complete: readComplete, completedDiffHashes: readyDiffs)
                     }
+                    if readComplete { lock.withLock { lastSeenCommit[repo] = head } }
+                    if changed { DataRefreshCoordinator.shared.notifyPhaseGitScan() }
+                    if readComplete {
+                        AppHealthMonitor.shared.clearIngestError(source: "Git.scan.\(repo)")
+                    } else {
+                        AppHealthMonitor.shared.reportIngestError(
+                            "Some commit diffs could not be read; scan will retry.", source: "Git.scan.\(repo)")
+                    }
+                } catch {
+                    Logger.error("Git batch persistence failed: \(error)")
+                    AppHealthMonitor.shared.reportIngestError(error.localizedDescription, source: "Git.scan.\(repo)")
                 }
             } catch {
-                lock.withLock { _ = scanningRepos.remove(repo) }
                 Logger.error("Git scan failed for \(repoName): \(error.localizedDescription)")
                 if let gitError = error as? GitReadError, gitError.isPermissionFailure {
                     let roots = UserDefaults.standard.stringArray(forKey: "repo_search_dirs") ?? []
@@ -343,7 +348,8 @@ nonisolated final class GitMonitor: @unchecked Sendable {
     /// of line counts, and the cursor is committed only with the captured facts.
     static func persistBatch(in db: Database, repo: String, commits: [GitCommitSummary],
                              changes: [CodeChange], headHash: String?, coverageSince: Int,
-                             authorEmail: String?, complete: Bool) throws -> Bool {
+                             authorEmail: String?, complete: Bool,
+                             completedDiffHashes: [String] = []) throws -> Bool {
         var changed = false
         for commit in commits {
             try db.execute(sql: """
@@ -362,6 +368,11 @@ nonisolated final class GitMonitor: @unchecked Sendable {
                 """, arguments: [change.commitHash, change.ts, change.repoPath, change.added, change.deleted,
                                  change.isMerge, change.attributedTool, change.attribution])
             changed = changed || db.changesCount > 0
+        }
+        for hash in completedDiffHashes {
+            try db.execute(sql: """
+                UPDATE git_commit SET diff_scanned = 1 WHERE repo_path = ? AND commit_hash = ?
+                """, arguments: [repo, hash])
         }
         try db.execute(sql: """
             INSERT INTO git_commit_scan (repo_path, head_hash, updated_at, coverage_since, author_email, status)
