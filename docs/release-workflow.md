@@ -49,6 +49,37 @@ Edit the draft release notes using the global
 structured `Store Copy Handoff` section, but does not write final App Store
 copy.
 
+Each announcement must distinguish **macOS**, **iOS (including Apple Watch)**,
+and **Shared** changes in both its English and Chinese sections. Name the
+affected app/widgets and versions. If a platform or the shared contract did not
+change, state that explicitly; a Mac producer fix is not an iOS client update.
+Keep platform version/build numbers distinct from the shared payload version.
+
+### Automatic handling of pushed tags
+
+The tag-triggered workflow runs `scripts/create-release-draft.py`:
+
+- It checks all pages of the authenticated release list, including drafts.
+  If the tag already has a draft or public Release, it exits without editing
+  the title, body, publication state, or assets. An existing empty body is also
+  preserved; authorized announcement edits remain manual.
+- Only an absent Release is created. The script reads the tagged commit's
+  `RELEASE_DRAFT.md` verbatim, uses its first H1 as the title, and creates a
+  **draft** for the tag/event commit. The H1 must contain the matching `X.Y.Z`
+  version for the stable `vX.Y.Z` tag; missing/invalid notes fail the job instead of using generic
+  download text or generated PR notes.
+- Lookup/authentication/API errors fail the job rather than being interpreted
+  as an absent Release. A creation conflict triggers another lookup, never an
+  edit; a lost response is not automatically retried. Reruns check for an
+  existing Release before doing anything else.
+- Same-tag workflow runs are serialized without cancelling active work.
+  Publishing stays an explicit post-App-Store-approval action; the workflow
+  cannot return a public Release to draft.
+
+Do not rerun the obsolete v2.0.2 release job to repair announcements: that job
+was created from the old workflow. This guard applies to tags whose commits
+include the fixed workflow. Keep an existing release tag unchanged.
+
 ## 3. Generate App Store submission copy
 
 Use the approved draft release's `Store Copy Handoff` metadata as input for

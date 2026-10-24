@@ -2,10 +2,22 @@
 
 ## What's New
 
+### macOS
+
 - Follow symbolic links in local tool logs and development directories, with clearer guidance when the actual target folder needs authorization.
 - See when the Mac is reading, parsing, or preparing local activity. Dashboard tooltips now fit their content.
 
+### iOS and Apple Watch
+
+- No client changes or new builds in this release. The iPhone app, Watch app, and their widgets remain at 2.0.1 (build 33).
+
+### Shared
+
+- No changes to the shared snapshot contract or CloudKit schema. Payload version remains 2.0.0; the macOS update does not require companion-client upgrades.
+
 ## Fixes & Engineering
+
+### macOS
 
 - Queue Git scans without dropping repositories when workers are busy, and resume completed diff work after time limits or restarts.
 - Recover Claude historical cache-token backfills after interrupted writes, using durable replay checkpoints.
@@ -32,10 +44,22 @@
 
 ## 本次改进
 
+### macOS
+
 - 本地工具日志与开发目录支持跟随符号链接；真实目标目录需要额外授权时，提示更明确。
 - Mac 展示读取、解析和准备本地活动的处理阶段；仪表盘提示框按内容调整尺寸。
 
+### iOS 与 Apple Watch
+
+- 本次没有客户端改动或新构建。iPhone、Watch 应用及其小组件保持 2.0.1（构建 33）。
+
+### 公共部分
+
+- 共享快照协议与 CloudKit schema 均未变更，载荷版本仍为 2.0.0；本次 Mac 更新不要求伴侣客户端同步升级。
+
 ## 修复与工程改进
+
+### macOS
 
 - Git 扫描在工作线程繁忙时排队，避免遗漏仓库；超时或重启后复用已完成的差异扫描进度。
 - Claude 历史缓存词元回填采用持久检查点，在写入中断后可以继续恢复。
@@ -61,6 +85,7 @@
 - Version: macOS 2.0.2 (build 34); tag v2.0.2
 - Platforms: macOS app and its bundled Mac widget only
 - Unchanged platforms: iPhone, Apple Watch, and their widgets stay at 2.0.1 (build 33)
+- Shared changes: no shared snapshot-contract or CloudKit schema changes; payload version remains 2.0.0
 - Core themes: safer local collection, symbolic-link target access guidance, visible local processing stages, recoverable Git scanning and Claude history replay, libgit2 security update
 - Deployment: CloudKit record schema and payload version unchanged from 2.0.0; local Git progress migration and durable replay preparation happen on the Mac
 - Verification: PR #96 directed end-to-end checks and CI passed; version-preparation unsigned macOS Release build and bundle metadata checks passed
