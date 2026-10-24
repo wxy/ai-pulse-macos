@@ -36,7 +36,7 @@ jobs:
             xargs -0 -n1 bash -n
 
       - name: Check Python syntax
-        run: python3 -m py_compile scripts/generate-icons.py scripts/check-localizations.py
+        run: python3 -m py_compile scripts/generate-icons.py scripts/check-localizations.py scripts/create-release-draft.py
 
       - name: Validate workflow YAML
         run: |

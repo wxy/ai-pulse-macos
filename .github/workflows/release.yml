@@ -7,23 +7,21 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
-    name: Publish GitHub Release
+    name: Preserve or create release draft
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       # Pinned to the v5.0.0 commit — tag refs are movable.
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
-      - name: Publish GitHub Release
-        # Pinned to the v2.2.2 commit — tag refs are movable.
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
-        with:
-          draft: true
-          name: ${{ github.ref_name }}
-          generate_release_notes: true
-          body: |
-            **Download AI Pulse on the [Mac App Store](https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12).**
-
-            Prefer the App Store for automatic updates and sandbox security. Source code is available here for inspection and building.
+      - name: Preserve existing release or create draft from checked-in notes
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/create-release-draft.py

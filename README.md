@@ -21,9 +21,9 @@ AI Pulse 2.0.2 (build 34) is being prepared for the macOS app and its bundled Ma
 
 > AI Pulse 2.0.2（构建 34）正在准备发布，仅覆盖 macOS App 与内嵌 Mac 小组件。iPhone、Apple Watch 及其小组件保持已发布的 2.0.1（构建 33）。macOS 签名归档与商店提交尚待完成，CloudKit 共享载荷继续使用 2.0.0。
 
-**2.0.2 maintenance update** — Follow symbolic links with clearer target-folder authorization, see local processing stages, and recover interrupted Git scans and Claude history backfills. The update also improves log caching, reduces redundant synchronization, fits dashboard tooltips to their content, and upgrades libgit2 to 1.9.7. See the [release draft](RELEASE_DRAFT.md) for verification and deployment details.
+**2.0.2 macOS maintenance update** — Follow symbolic links with clearer target-folder authorization, see local processing stages, and recover interrupted Git scans and Claude history backfills. The update also improves log caching, reduces redundant synchronization, fits dashboard tooltips to their content, and upgrades libgit2 to 1.9.7. The [release draft](RELEASE_DRAFT.md) lists macOS changes, the unchanged iOS/Watch clients, and the shared data contract separately.
 
-> **2.0.2 维护更新** — 支持跟随符号链接并明确提示真实目录授权，展示本地处理阶段，恢复中断的 Git 扫描与 Claude 历史回填；同时改进日志缓存、减少冗余同步、调整提示框尺寸，并升级 libgit2 至 1.9.7。验证和部署信息见[发布草稿](RELEASE_DRAFT.md)。
+> **2.0.2 macOS 维护更新** — 支持跟随符号链接并明确提示真实目录授权，展示本地处理阶段，恢复中断的 Git 扫描与 Claude 历史回填；同时改进日志缓存、减少冗余同步、调整提示框尺寸，并升级 libgit2 至 1.9.7。[发布草稿](RELEASE_DRAFT.md)分别列明 macOS 改动、保持不变的 iOS／Watch 客户端与公共数据协议。
 
 <p align="center"><img src="assets/readme/section-features.svg" width="100%" alt="Features · 功能"></p>
 
