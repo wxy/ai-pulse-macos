@@ -2,28 +2,28 @@
 
 <p align="center">
   <img src="assets/readme/icon-rounded.png" width="96" height="96" alt="AI Pulse App Icon">&nbsp;
-  <a href="https://apps.apple.com/us/app/ai-pulse/id6786290416?mt=12"><img src="assets/readme/download-button-appstore-mac.svg" width="300" height="69" alt="Mac App Store listing"></a>
+  <a href="https://apps.apple.com/us/app/ai-pulse/id6786290416?platform=mac"><img src="assets/readme/download-button-appstore-mac.svg" width="300" height="69" alt="Mac App Store listing"></a>
 </p>
 
-<p align="center"><code>MACOS 14+ · IOS 17+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · MACOS 2.0.2 DRAFT</code></p>
+<p align="center"><code>MACOS 14+ · IOS 17+ · WATCHOS 10+ · SWIFTUI · SWIFT 6 · MACOS 2.0.2 · IOS/WATCHOS 2.0.1</code></p>
 
 <p align="center">
   <a href="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml"><img src="https://github.com/wxy/ai-pulse-macos/actions/workflows/ci.yml/badge.svg" alt="CI"></a>&nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="License"></a>&nbsp;
-  <img src="https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20iOS%2016%2B%20%7C%20watchOS%2010%2B-lightgrey" alt="Apple platforms">
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B%20%7C%20iOS%2017%2B%20%7C%20watchOS%2010%2B-lightgrey" alt="Apple platforms">
 </p>
 
 AI Pulse makes ongoing AI activity tangible and shows the local Git output alongside it. A consumption pulse, not a precise meter, invoice, or verdict on whether your work was worth the money.
 
 > AI Pulse 让持续的 AI 活动被感受到，并展示伴随的本地 Git 成果。它是消费脉搏，不是精确计量器、账单，也不判断产出是否值得。
 
-AI Pulse 2.0.2 (build 34) is being prepared for the macOS app and its bundled Mac widget. iPhone, Apple Watch, and their widgets remain at the released 2.0.1 (build 33). The signed macOS Archive and App Store submission are pending; the shared CloudKit payload stays at 2.0.0.
+**macOS 2.0.2 is available on the [Mac App Store](https://apps.apple.com/us/app/ai-pulse/id6786290416?platform=mac)**, verified on October 29, 2026. The source release configuration is 2.0.2 (build 34) for the Mac app and bundled Mac widget; iPhone, Apple Watch and their widgets remain at 2.0.1 (build 33). The shared CloudKit payload stays at 2.0.0.
 
-> AI Pulse 2.0.2（构建 34）正在准备发布，仅覆盖 macOS App 与内嵌 Mac 小组件。iPhone、Apple Watch 及其小组件保持已发布的 2.0.1（构建 33）。macOS 签名归档与商店提交尚待完成，CloudKit 共享载荷继续使用 2.0.0。
+> **macOS 2.0.2 已在 [Mac App Store](https://apps.apple.com/us/app/ai-pulse/id6786290416?platform=mac) 上架**，于 2026-10-29 核对。源码发布配置中，Mac App 与内嵌小组件为 2.0.2（构建 34）；iPhone、Apple Watch 及其小组件保持 2.0.1（构建 33），CloudKit 共享载荷继续使用 2.0.0。
 
-**2.0.2 macOS maintenance update** — Follow symbolic links with clearer target-folder authorization, see local processing stages, and recover interrupted Git scans and Claude history backfills. The update also improves log caching, reduces redundant synchronization, fits dashboard tooltips to their content, and upgrades libgit2 to 1.9.7. The [release draft](RELEASE_DRAFT.md) lists macOS changes, the unchanged iOS/Watch clients, and the shared data contract separately.
+**2.0.2 macOS maintenance update** — Follow symbolic links with clearer target-folder authorization, see local processing stages, and recover interrupted Git scans and Claude history backfills. The update also improves log caching, reduces redundant synchronization, fits dashboard tooltips to their content, and upgrades libgit2 to 1.9.7. The [preparation record](RELEASE_DRAFT.md) lists macOS changes, unchanged iOS/Watch clients, and the shared data contract. Its pending-Archive/store wording records the preparation stage; the public Mac App Store now offers 2.0.2. The GitHub 2.0.2 Release is still a draft, a separate publication state.
 
-> **2.0.2 macOS 维护更新** — 支持跟随符号链接并明确提示真实目录授权，展示本地处理阶段，恢复中断的 Git 扫描与 Claude 历史回填；同时改进日志缓存、减少冗余同步、调整提示框尺寸，并升级 libgit2 至 1.9.7。[发布草稿](RELEASE_DRAFT.md)分别列明 macOS 改动、保持不变的 iOS／Watch 客户端与公共数据协议。
+> **2.0.2 macOS 维护更新** — 支持跟随符号链接并明确提示真实目录授权，展示本地处理阶段，恢复中断的 Git 扫描与 Claude 历史回填；同时改进日志缓存、减少冗余同步、调整提示框尺寸，并升级 libgit2 至 1.9.7。[准备记录](RELEASE_DRAFT.md)分别列明 macOS 改动、保持不变的 iOS／Watch 客户端与公共数据协议；其中归档与商店待办属于准备阶段，公开 Mac App Store 现已提供 2.0.2。GitHub 2.0.2 Release 仍为草稿，其公开状态另行管理。
 
 <p align="center"><img src="assets/readme/section-features.svg" width="100%" alt="Features · 功能"></p>
 
@@ -76,9 +76,9 @@ These retained screenshots show an older interface, not the current 2.0 dashboar
 
 <p align="center"><img src="assets/readme/section-download.svg" width="100%" alt="Download · 下载"></p>
 
-The Mac App Store button links to the released app. The release owner has confirmed the 2.0.1 archive and physical-device acceptance checks passed.
+The Mac App Store button links to macOS 2.0.2. The [iPhone listing](https://apps.apple.com/us/app/ai-pulse/id6786290416?platform=iphone) remains at 2.0.1, alongside the unchanged Watch clients. These platform-specific store pages were checked on October 29, 2026; store availability does not add new real-device or CloudKit acceptance evidence.
 
-> Mac App Store 按钮指向已发布的应用。发布负责人已确认 2.0.1 归档与真机验收通过。
+> Mac App Store 按钮指向 macOS 2.0.2；[iPhone 商店页](https://apps.apple.com/us/app/ai-pulse/id6786290416?platform=iphone)仍为 2.0.1，Watch 客户端保持不变。已于 2026-10-29 按平台核对商店页面；商店可用性不增加新的真机或 CloudKit 验收证据。
 
 <p align="center"><img src="assets/readme/section-getting-started.svg" width="100%" alt="Getting Started · 快速上手"></p>
 
