@@ -21,9 +21,9 @@ AI Pulse makes ongoing AI activity tangible and shows the local Git output along
 
 > **macOS 2.0.2 已在 [Mac App Store](https://apps.apple.com/us/app/ai-pulse/id6786290416?platform=mac) 上架**，于 2026-10-29 核对。源码发布配置中，Mac App 与内嵌小组件为 2.0.2（构建 34）；iPhone、Apple Watch 及其小组件保持 2.0.1（构建 33），CloudKit 共享载荷继续使用 2.0.0。
 
-**2.0.2 macOS maintenance update** — Follow symbolic links with clearer target-folder authorization, see local processing stages, and recover interrupted Git scans and Claude history backfills. The update also improves log caching, reduces redundant synchronization, fits dashboard tooltips to their content, and upgrades libgit2 to 1.9.7. The [preparation record](RELEASE_DRAFT.md) lists macOS changes, unchanged iOS/Watch clients, and the shared data contract. Its pending-Archive/store wording records the preparation stage; the public Mac App Store now offers 2.0.2. The GitHub 2.0.2 Release is still a draft, a separate publication state.
+**2.0.2 macOS maintenance update** — Follow symbolic links with clearer target-folder authorization, see local processing stages, and recover interrupted Git scans and Claude history backfills. The update also improves log caching, reduces redundant synchronization, fits dashboard tooltips to their content, and upgrades libgit2 to 1.9.7. The [preparation record](RELEASE_DRAFT.md) lists macOS changes, unchanged iOS/Watch clients, and the shared data contract. Its pending-Archive/store wording records the preparation stage; the public Mac App Store now offers 2.0.2. The [GitHub 2.0.2 announcement](https://github.com/wxy/ai-pulse-macos/releases/tag/v2.0.2) is now published.
 
-> **2.0.2 macOS 维护更新** — 支持跟随符号链接并明确提示真实目录授权，展示本地处理阶段，恢复中断的 Git 扫描与 Claude 历史回填；同时改进日志缓存、减少冗余同步、调整提示框尺寸，并升级 libgit2 至 1.9.7。[准备记录](RELEASE_DRAFT.md)分别列明 macOS 改动、保持不变的 iOS／Watch 客户端与公共数据协议；其中归档与商店待办属于准备阶段，公开 Mac App Store 现已提供 2.0.2。GitHub 2.0.2 Release 仍为草稿，其公开状态另行管理。
+> **2.0.2 macOS 维护更新** — 支持跟随符号链接并明确提示真实目录授权，展示本地处理阶段，恢复中断的 Git 扫描与 Claude 历史回填；同时改进日志缓存、减少冗余同步、调整提示框尺寸，并升级 libgit2 至 1.9.7。[准备记录](RELEASE_DRAFT.md)分别列明 macOS 改动、保持不变的 iOS／Watch 客户端与公共数据协议；其中归档与商店待办属于准备阶段，公开 Mac App Store 现已提供 2.0.2。[GitHub 2.0.2 正式公告](https://github.com/wxy/ai-pulse-macos/releases/tag/v2.0.2)现已公开。
 
 <p align="center"><img src="assets/readme/section-features.svg" width="100%" alt="Features · 功能"></p>
 
